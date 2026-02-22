@@ -2,30 +2,33 @@
 // UttraiTests
 
 import XCTest
+import GRDB
 @testable import Uttrai
 
 // MARK: - Mock Services
 
-final class MockAudioCaptureService: AudioCaptureService {
+final class MockAudioCaptureService: AudioCapturing {
+    var audioLevel: Float = 0
     var shouldFail = false
     var mockSamples: [Float] = Array(repeating: 0.1, count: 16000) // 1 second
 
-    override func startCapture(deviceID: AudioDeviceID? = nil) throws {
+    func startCapture(deviceID: AudioDeviceID? = nil) throws {
         if shouldFail {
             throw UttraiError.microphoneAccessDenied
         }
     }
 
-    override func stopCapture() -> [Float] {
+    func stopCapture() -> [Float] {
         return mockSamples
     }
 }
 
-actor MockTranscriptionService: TranscriptionService {
+actor MockTranscriptionService: Transcribing {
+    var isLoaded: Bool = true
     var mockResult: String = "Hello world"
     var shouldFail = false
 
-    override func transcribe(audioSamples: [Float]) async throws -> String {
+    func transcribe(audioSamples: [Float]) async throws -> String {
         if shouldFail {
             throw UttraiError.transcriptionFailed(underlying: NSError(
                 domain: "test",
@@ -45,11 +48,22 @@ final class MockTextProcessor: TextProcessor {
     func isAvailable() -> Bool { true }
 }
 
-final class MockInjectionService: TextInjectionService {
+final class MockInjectionService: TextInjecting {
+    var lastTranscript: String?
     var mockResult: InjectionResult = .success
 
-    override func inject(text: String) async -> InjectionResult {
+    func inject(text: String) async -> InjectionResult {
+        if mockResult == .success {
+            lastTranscript = text
+        }
         return mockResult
+    }
+
+    func pasteLastTranscript() async -> InjectionResult {
+        guard let transcript = lastTranscript else {
+            return .blockedSecureField
+        }
+        return await inject(text: transcript)
     }
 }
 
@@ -71,7 +85,7 @@ final class DictationCoordinatorTests: XCTestCase {
         textProcessor = MockTextProcessor()
         injectionService = MockInjectionService()
 
-        let dbQueue = try GRDB.DatabaseQueue(path: ":memory:")
+        let dbQueue = try DatabaseQueue(path: ":memory:")
         databaseManager = try DatabaseManager(dbQueue: dbQueue)
         settings = AppSettings()
 

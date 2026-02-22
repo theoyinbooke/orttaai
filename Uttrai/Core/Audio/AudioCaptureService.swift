@@ -4,8 +4,20 @@
 import AVFoundation
 import os
 
+protocol AudioCapturing: AnyObject {
+    var audioLevel: Float { get }
+    func startCapture(deviceID: AudioDeviceID?) throws
+    func stopCapture() -> [Float]
+}
+
+extension AudioCapturing {
+    func startCapture() throws {
+        try startCapture(deviceID: nil)
+    }
+}
+
 @Observable
-final class AudioCaptureService {
+final class AudioCaptureService: AudioCapturing {
     private(set) var audioLevel: Float = 0
 
     private var engine = AVAudioEngine()

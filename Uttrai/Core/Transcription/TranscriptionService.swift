@@ -5,7 +5,12 @@ import Foundation
 import WhisperKit
 import os
 
-actor TranscriptionService {
+protocol Transcribing: Actor {
+    var isLoaded: Bool { get }
+    func transcribe(audioSamples: [Float]) async throws -> String
+}
+
+actor TranscriptionService: Transcribing {
     private var whisperKit: WhisperKit?
 
     var isLoaded: Bool {

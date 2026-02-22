@@ -21,7 +21,7 @@ PHASE 0: PREREQUISITES & ENVIRONMENT SETUP
 [MANUAL] SETUP-9: Add test target UttraiTests in Xcode with Core/ and Coordination/ subfolders
 [MANUAL] SETUP-10: Verify project builds (Cmd+B) — commit "Project setup complete"
 
-[ ] CHECKPOINT-SETUP: All setup tasks verified complete
+[MANUAL] CHECKPOINT-SETUP: All setup tasks verified complete — pending Xcode project creation (SETUP-4/5/6/9/10)
 
 ================================================================================
 PHASE 1: FOUNDATION (Week 1–2)

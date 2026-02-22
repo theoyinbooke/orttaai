@@ -32,10 +32,10 @@ final class DictationCoordinator {
     private(set) var state: State = .idle
     private(set) var countdownSeconds: Int?
 
-    private let audioService: AudioCaptureService
-    private let transcriptionService: TranscriptionService
+    private let audioService: any AudioCapturing
+    private let transcriptionService: any Transcribing
     private let textProcessor: TextProcessor
-    private let injectionService: TextInjectionService
+    private let injectionService: any TextInjecting
     private let databaseManager: DatabaseManager
     private let settings: AppSettings
 
@@ -47,10 +47,10 @@ final class DictationCoordinator {
     private var processingTask: Task<Void, Never>?
 
     init(
-        audioService: AudioCaptureService,
-        transcriptionService: TranscriptionService,
+        audioService: any AudioCapturing,
+        transcriptionService: any Transcribing,
         textProcessor: TextProcessor,
-        injectionService: TextInjectionService,
+        injectionService: any TextInjecting,
         databaseManager: DatabaseManager,
         settings: AppSettings
     ) {

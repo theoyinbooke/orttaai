@@ -4,12 +4,18 @@
 import Cocoa
 import os
 
-enum InjectionResult {
+enum InjectionResult: Equatable {
     case success
     case blockedSecureField
 }
 
-final class TextInjectionService {
+protocol TextInjecting: AnyObject {
+    var lastTranscript: String? { get }
+    func inject(text: String) async -> InjectionResult
+    func pasteLastTranscript() async -> InjectionResult
+}
+
+final class TextInjectionService: TextInjecting {
     private let clipboard: ClipboardManager
     private(set) var lastTranscript: String?
 
