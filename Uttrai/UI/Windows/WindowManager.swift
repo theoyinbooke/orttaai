@@ -16,11 +16,16 @@ final class WindowManager {
             return
         }
 
+        let setupView = SetupView(onComplete: { [weak self] in
+            AppSettings().hasCompletedSetup = true
+            self?.closeSetupWindow()
+        })
+
         let window = createWindow(
             title: "Uttrai Setup",
             size: WindowSize.setup,
             resizable: false,
-            content: SetupPlaceholderView()
+            content: setupView
         )
         setupWindow = window
         centerAndShow(window)
@@ -37,7 +42,7 @@ final class WindowManager {
             title: "Uttrai Settings",
             size: WindowSize.settings,
             resizable: false,
-            content: SettingsPlaceholderView()
+            content: SettingsView()
         )
         settingsWindow = window
         centerAndShow(window)
@@ -54,7 +59,7 @@ final class WindowManager {
             title: "Uttrai History",
             size: WindowSize.history,
             resizable: true,
-            content: HistoryPlaceholderView()
+            content: HistoryView()
         )
         window.minSize = WindowSize.historyMin
         historyWindow = window
@@ -98,55 +103,5 @@ final class WindowManager {
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-    }
-}
-
-// MARK: - Placeholder Views (to be replaced in Phase 3)
-
-private struct SetupPlaceholderView: View {
-    var body: some View {
-        VStack {
-            Text("Setup")
-                .font(.Uttrai.title)
-                .foregroundStyle(Color.Uttrai.textPrimary)
-            Text("Setup flow will be implemented in Phase 3")
-                .font(.Uttrai.secondary)
-                .foregroundStyle(Color.Uttrai.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.Uttrai.bgPrimary)
-    }
-}
-
-private struct SettingsPlaceholderView: View {
-    var body: some View {
-        VStack {
-            Text("Settings")
-                .font(.Uttrai.title)
-                .foregroundStyle(Color.Uttrai.textPrimary)
-            Text("Settings will be implemented in Phase 3")
-                .font(.Uttrai.secondary)
-                .foregroundStyle(Color.Uttrai.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.Uttrai.bgPrimary)
-    }
-}
-
-private struct HistoryPlaceholderView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "waveform.circle")
-                .font(.system(size: 40))
-                .foregroundStyle(Color.Uttrai.textTertiary)
-            Text("No transcriptions yet.")
-                .font(.Uttrai.body)
-                .foregroundStyle(Color.Uttrai.textSecondary)
-            Text("Press Ctrl+Shift+Space to get started.")
-                .font(.Uttrai.secondary)
-                .foregroundStyle(Color.Uttrai.textTertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.Uttrai.bgPrimary)
     }
 }
