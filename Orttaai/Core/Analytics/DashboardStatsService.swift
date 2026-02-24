@@ -33,7 +33,11 @@ final class DashboardStatsService {
         let today = makeTodaySnapshot(from: todayRecords)
         let trend7d = makeTrendPoints(from: weekRecords, startDay: weekStart)
         let topApps7d = makeTopApps(from: weekRecords)
-        let performance = makePerformance(from: weekRecords, currentModelId: currentModelId)
+        let performance = makePerformance(
+            from: weekRecords,
+            modelSourceRecords: recentRecords,
+            currentModelId: currentModelId
+        )
         let recent = makeRecentDictations(from: recentRecords)
 
         return DashboardStatsPayload(
@@ -146,20 +150,39 @@ final class DashboardStatsService {
 
     private func makePerformance(
         from records: [Transcription],
+        modelSourceRecords: [Transcription],
         currentModelId: String?
     ) -> DashboardPerformanceHealth {
-        let avgProcessing: Int? = records.isEmpty
-            ? nil
-            : Int((Double(records.reduce(0) { $0 + max(0, $1.processingDurationMs) }) / Double(records.count)).rounded())
+        let modelId = resolvedModelId(currentModelId: currentModelId, records: modelSourceRecords)
+        let modelScopedRecords = recordsForModel(modelId, in: records)
+        let processingValues = modelScopedRecords.map { max(0, $0.processingDurationMs) }
+        let transcriptionValues = modelScopedRecords.compactMap(\.transcriptionDurationMs)
+        let injectionValues = modelScopedRecords.compactMap(\.injectionDurationMs)
+
+        let avgProcessing = averageLatency(from: processingValues)
+        let processingP50 = percentileLatency(from: processingValues, percentile: 0.50)
+        let processingP95 = percentileLatency(from: processingValues, percentile: 0.95)
+        let avgTranscription = averageLatency(from: transcriptionValues)
+        let transcriptionP50 = percentileLatency(from: transcriptionValues, percentile: 0.50)
+        let transcriptionP95 = percentileLatency(from: transcriptionValues, percentile: 0.95)
+        let avgInjection = averageLatency(from: injectionValues)
+        let injectionP50 = percentileLatency(from: injectionValues, percentile: 0.50)
+        let injectionP95 = percentileLatency(from: injectionValues, percentile: 0.95)
         let level = performanceLevel(for: avgProcessing)
-        let recommendation = recommendationText(for: level)
-        let modelId = resolvedModelId(currentModelId: currentModelId, records: records)
 
         return DashboardPerformanceHealth(
             level: level,
+            sampleCount: modelScopedRecords.count,
             averageProcessingMs: avgProcessing,
-            currentModelId: modelId,
-            recommendation: recommendation
+            processingP50Ms: processingP50,
+            processingP95Ms: processingP95,
+            averageTranscriptionMs: avgTranscription,
+            transcriptionP50Ms: transcriptionP50,
+            transcriptionP95Ms: transcriptionP95,
+            averageInjectionMs: avgInjection,
+            injectionP50Ms: injectionP50,
+            injectionP95Ms: injectionP95,
+            currentModelId: modelId
         )
     }
 
@@ -198,13 +221,28 @@ final class DashboardStatsService {
     }
 
     private func resolvedModelId(currentModelId: String?, records: [Transcription]) -> String {
-        if let currentModelId, !currentModelId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return currentModelId
+        if let currentModelId {
+            let normalized = canonicalModelID(currentModelId)
+            if !normalized.isEmpty {
+                return normalized
+            }
         }
-        if let recentModel = records.first?.modelId, !recentModel.isEmpty {
-            return recentModel
+        if let recentModel = records.first?.modelId {
+            let normalized = canonicalModelID(recentModel)
+            if !normalized.isEmpty {
+                return normalized
+            }
         }
         return "Not set"
+    }
+
+    private func recordsForModel(_ modelId: String, in records: [Transcription]) -> [Transcription] {
+        let normalizedTargetModel = canonicalModelID(modelId)
+        guard !normalizedTargetModel.isEmpty else { return [] }
+
+        return records.filter { record in
+            canonicalModelID(record.modelId) == normalizedTargetModel
+        }
     }
 
     private func performanceLevel(for averageProcessingMs: Int?) -> DashboardPerformanceLevel {
@@ -218,17 +256,50 @@ final class DashboardStatsService {
         return .slow
     }
 
-    private func recommendationText(for level: DashboardPerformanceLevel) -> String {
-        switch level {
-        case .noData:
-            return "Complete a few dictations to unlock performance insights."
-        case .fast:
-            return "Performance looks great. Keep your current model."
-        case .normal:
-            return "Performance is stable. Try a smaller model if you want lower latency."
-        case .slow:
-            return "Latency is high. Switch to a smaller model in Settings > Model."
+    private func averageLatency(from values: [Int]) -> Int? {
+        let valid = values.filter { $0 >= 0 }
+        guard !valid.isEmpty else { return nil }
+        return Int((Double(valid.reduce(0, +)) / Double(valid.count)).rounded())
+    }
+
+    private func percentileLatency(from values: [Int], percentile: Double) -> Int? {
+        let valid = values.filter { $0 >= 0 }.sorted()
+        guard !valid.isEmpty else { return nil }
+
+        let p = max(0, min(percentile, 1))
+        guard valid.count > 1 else { return valid[0] }
+
+        let rank = p * Double(valid.count - 1)
+        let lowerIndex = Int(rank.rounded(.down))
+        let upperIndex = Int(rank.rounded(.up))
+
+        if lowerIndex == upperIndex {
+            return valid[lowerIndex]
         }
+
+        let weight = rank - Double(lowerIndex)
+        let lower = Double(valid[lowerIndex])
+        let upper = Double(valid[upperIndex])
+        return Int((lower + (upper - lower) * weight).rounded())
+    }
+
+    private func canonicalModelID(_ modelId: String) -> String {
+        let trimmed = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let pattern = #"_\d+(mb|gb)$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return trimmed
+        }
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        if let match = regex.firstMatch(in: trimmed, options: [], range: range),
+           match.range.location != NSNotFound,
+           let swiftRange = Range(match.range, in: trimmed),
+           swiftRange.upperBound == trimmed.endIndex
+        {
+            return String(trimmed[..<swiftRange.lowerBound])
+        }
+        return trimmed
     }
 
     private func previewText(_ text: String, limit: Int = 120) -> String {

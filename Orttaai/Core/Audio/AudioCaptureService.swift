@@ -27,6 +27,7 @@ final class AudioCaptureService: AudioCapturing {
     private var _samples: [Float] = []
     private let _currentLevel = OSAllocatedUnfairLock(initialState: Float(0))
     private var levelTimer: DispatchSourceTimer?
+    private let captureBufferSize: AVAudioFrameCount = 1024
 
     /// Target format for WhisperKit: 16kHz mono Float32
     private static let whisperFormat = AVAudioFormat(
@@ -71,7 +72,7 @@ final class AudioCaptureService: AudioCapturing {
         converter = conv
 
         // Install tap at HARDWARE format — AVAudioEngine input taps do not support format conversion
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: captureBufferSize, format: hwFormat) { [weak self] buffer, _ in
             guard let self = self, let converter = self.converter else { return }
 
             // Reset converter state so residual samples from the previous callback

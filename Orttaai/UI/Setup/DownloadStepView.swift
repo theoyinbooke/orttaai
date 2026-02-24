@@ -4,6 +4,18 @@
 import SwiftUI
 import os
 
+enum QuickStartModelSelector {
+    static func modelId(for dictationLanguage: String) -> String {
+        let language = dictationLanguage
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if language == "en" || language.hasPrefix("en-") {
+            return "openai_whisper-tiny.en"
+        }
+        return "openai_whisper-tiny"
+    }
+}
+
 private enum SetupDownloadStage {
     case downloading
     case loading
@@ -34,6 +46,7 @@ private enum SetupDownloadStage {
 
 struct DownloadStepView: View {
     @Binding var isModelReady: Bool
+    @AppStorage("dictationLanguage") private var dictationLanguage: String = "en"
     @State private var isDownloading = false
     @State private var downloadComplete = false
     @State private var errorMessage: String?
@@ -42,6 +55,16 @@ struct DownloadStepView: View {
     @State private var transcriptionService = TranscriptionService()
 
     private let hardwareInfo = HardwareDetector.detect()
+
+    private var quickStartModelId: String {
+        QuickStartModelSelector.modelId(for: dictationLanguage)
+    }
+
+    private var quickStartModelSummary: String {
+        quickStartModelId == "openai_whisper-tiny.en"
+            ? "English-optimized model for the fastest first dictation."
+            : "Multilingual model for the fastest first dictation."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -67,17 +90,32 @@ struct DownloadStepView: View {
             .background(Color.Orttaai.bgSecondary)
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
 
-            // Recommended model
+            // Fast-first setup model
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Recommended Model")
+                Text("Quick Start Model")
                     .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                Text(quickStartModelId)
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.accent)
+
+                Text(quickStartModelSummary)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+
+                Divider()
+                    .overlay(Color.Orttaai.border)
+
+                Text("Recommended for your Mac")
+                    .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Text(hardwareInfo.recommendedModel)
                     .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.accent)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
 
-                Text("This model provides the best balance of speed and accuracy for your hardware.")
+                Text("After your first successful dictation, Orttaai downloads this in the background so you can upgrade accuracy with one click.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
@@ -136,7 +174,7 @@ struct DownloadStepView: View {
     }
 
     private func startDownload() {
-        let modelId = hardwareInfo.recommendedModel
+        let modelId = quickStartModelId
         guard !modelId.isEmpty else {
             errorMessage = "Orttaai requires an Apple Silicon Mac."
             isModelReady = false
@@ -179,7 +217,10 @@ struct DownloadStepView: View {
                 }
                 await transcriptionService.warmUp()
                 await MainActor.run {
-                    AppSettings().selectedModelId = modelId
+                    let settings = AppSettings()
+                    settings.selectedModelId = modelId
+                    settings.activeModelId = modelId
+                    configureFastFirstOnboarding(settings: settings, quickModelId: modelId)
                     isDownloading = false
                     downloadComplete = true
                     isModelReady = true
@@ -196,5 +237,20 @@ struct DownloadStepView: View {
                 }
             }
         }
+    }
+
+    private func configureFastFirstOnboarding(settings: AppSettings, quickModelId: String) {
+        let recommendedModelId = ModelManager.normalizedModelID(
+            hardwareInfo.recommendedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        let normalizedQuickModelId = ModelManager.normalizedModelID(quickModelId)
+        let shouldEnableFastFirst = !recommendedModelId.isEmpty && recommendedModelId != normalizedQuickModelId
+
+        settings.fastFirstOnboardingEnabled = shouldEnableFastFirst
+        settings.fastFirstRecommendedModelId = shouldEnableFastFirst ? recommendedModelId : ""
+        settings.fastFirstPrefetchStarted = false
+        settings.fastFirstPrefetchReady = false
+        settings.fastFirstUpgradeDismissed = false
+        settings.fastFirstPrefetchErrorMessage = ""
     }
 }

@@ -8,7 +8,8 @@ struct AboutView: View {
     private let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     private let isHomebrew = Bundle.main.isHomebrewInstall
     private let emailURL = URL(string: "mailto:Oyinbookeola@outlook.com")!
-    private let githubURL = URL(string: "https://github.com/theoyinbooke")!
+    private let githubURL = AppLinks.githubProfileURL
+    private let repoURL = AppLinks.githubRepositoryURL
     private let youtubeURL = URL(string: "https://youtube.com/c/theoyinbooke")!
 
     var body: some View {
@@ -101,7 +102,21 @@ struct AboutView: View {
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
 
-                Link(destination: githubURL) {
+                HStack(spacing: Spacing.sm) {
+                    Link(destination: AppLinks.newIssueURL(kind: .bug, version: version, build: build)) {
+                        Label("Report Bug", systemImage: "ant")
+                            .font(.Orttaai.bodyMedium)
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary))
+
+                    Link(destination: AppLinks.newIssueURL(kind: .support, version: version, build: build)) {
+                        Label("Get Support", systemImage: "lifepreserver")
+                            .font(.Orttaai.bodyMedium)
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary))
+                }
+
+                Link(destination: repoURL) {
                     Label("Contribute on GitHub", systemImage: "arrow.up.right.square")
                         .font(.Orttaai.bodyMedium)
                 }

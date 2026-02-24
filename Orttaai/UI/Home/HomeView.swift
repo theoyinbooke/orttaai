@@ -2,6 +2,7 @@
 // Orttaai
 
 import SwiftUI
+import Foundation
 
 enum HomeLayoutMode {
     case regular
@@ -50,7 +51,12 @@ struct HomeView: View {
         .onAppear {
             if !viewModel.hasLoaded {
                 viewModel.load()
+            } else {
+                viewModel.refreshFastFirstState()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fastFirstUpgradeAvailabilityDidChange)) { _ in
+            viewModel.refreshFastFirstState()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Orttaai home dashboard")
@@ -81,6 +87,7 @@ struct HomeView: View {
                     subtitle: bannerSubtitle,
                     buttonTitle: bannerButtonTitle,
                     showsArtwork: !isCompact,
+                    isButtonDisabled: isBannerButtonDisabled,
                     onButtonTap: bannerAction
                 )
 
@@ -121,6 +128,9 @@ struct HomeView: View {
     }
 
     private var bannerTitle: String {
+        if viewModel.shouldShowFastFirstUpgradePrompt {
+            return "Recommended model is ready"
+        }
         if viewModel.payload.today.sessions == 0 {
             return "Start your first dictation"
         }
@@ -131,6 +141,9 @@ struct HomeView: View {
     }
 
     private var bannerSubtitle: String {
+        if viewModel.shouldShowFastFirstUpgradePrompt {
+            return "Switch to \(viewModel.fastFirstRecommendedModelDisplayName) now for better accuracy, while keeping your fast start."
+        }
         if viewModel.payload.today.sessions == 0 {
             return "Grant permissions and run a quick test to start dictating anywhere on your Mac."
         }
@@ -141,6 +154,9 @@ struct HomeView: View {
     }
 
     private var bannerButtonTitle: String {
+        if viewModel.shouldShowFastFirstUpgradePrompt {
+            return viewModel.isApplyingFastFirstUpgrade ? "Applying..." : "Use Recommended Model"
+        }
         if viewModel.payload.today.sessions == 0 {
             return "Run Setup"
         }
@@ -150,7 +166,15 @@ struct HomeView: View {
         return "Open History"
     }
 
+    private var isBannerButtonDisabled: Bool {
+        viewModel.shouldShowFastFirstUpgradePrompt && viewModel.isApplyingFastFirstUpgrade
+    }
+
     private func bannerAction() {
+        if viewModel.shouldShowFastFirstUpgradePrompt {
+            viewModel.applyFastFirstUpgrade()
+            return
+        }
         if viewModel.payload.today.sessions == 0 {
             onRunSetup()
             return

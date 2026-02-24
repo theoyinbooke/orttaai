@@ -12,6 +12,9 @@ final class HomeViewModel {
     private(set) var payload: DashboardStatsPayload = .empty
     private(set) var isLoading = false
     private(set) var hasLoaded = false
+    private(set) var isApplyingFastFirstUpgrade = false
+    private(set) var fastFirstRecommendedModelId: String?
+    private(set) var fastFirstPrefetchReady = false
     var errorMessage: String?
 
     private let statsService: DashboardStatsService?
@@ -21,6 +24,7 @@ final class HomeViewModel {
     init(statsService: DashboardStatsService?, settings: AppSettings) {
         self.statsService = statsService
         self.settings = settings
+        refreshFastFirstState()
     }
 
     convenience init() {
@@ -30,11 +34,24 @@ final class HomeViewModel {
         )
     }
 
+    var shouldShowFastFirstUpgradePrompt: Bool {
+        guard fastFirstPrefetchReady else { return false }
+        guard let recommendedModelId = fastFirstRecommendedModelId else { return false }
+        guard !settings.fastFirstUpgradeDismissed else { return false }
+        return currentModelIdForComparison() != ModelManager.normalizedModelID(recommendedModelId)
+    }
+
+    var fastFirstRecommendedModelDisplayName: String {
+        guard let id = fastFirstRecommendedModelId else { return "Recommended model" }
+        return HomeViewModel.formatModelDisplayName(id)
+    }
+
     func load() {
         guard !isLoading else { return }
         guard let statsService else {
             errorMessage = "Couldn't load dashboard data."
             hasLoaded = true
+            refreshFastFirstState()
             return
         }
 
@@ -45,7 +62,10 @@ final class HomeViewModel {
         }
 
         do {
-            payload = try statsService.load(currentModelId: settings.selectedModelId)
+            let activeModelId = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+            payload = try statsService.load(
+                currentModelId: activeModelId.isEmpty ? nil : activeModelId
+            )
             errorMessage = nil
         } catch {
             payload = .empty
@@ -53,6 +73,7 @@ final class HomeViewModel {
             Logger.database.error("Dashboard load failed: \(error.localizedDescription)")
         }
 
+        refreshFastFirstState()
         startObservingIfNeeded()
     }
 
@@ -76,6 +97,44 @@ final class HomeViewModel {
         }
     }
 
+    func refreshFastFirstState() {
+        let recommended = ModelManager.normalizedModelID(
+            settings.fastFirstRecommendedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        fastFirstRecommendedModelId = recommended.isEmpty ? nil : recommended
+        fastFirstPrefetchReady = settings.fastFirstOnboardingEnabled && settings.fastFirstPrefetchReady
+    }
+
+    func applyFastFirstUpgrade() {
+        guard !isApplyingFastFirstUpgrade else { return }
+        guard shouldShowFastFirstUpgradePrompt else { return }
+        guard let modelId = fastFirstRecommendedModelId else { return }
+
+        isApplyingFastFirstUpgrade = true
+        errorMessage = nil
+
+        Task {
+            defer { isApplyingFastFirstUpgrade = false }
+
+            do {
+                if let manager = ModelManager.shared {
+                    try await manager.switchModel(toModelId: modelId)
+                } else {
+                    settings.selectedModelId = modelId
+                    settings.activeModelId = modelId
+                }
+                settings.fastFirstOnboardingEnabled = false
+                settings.fastFirstUpgradeDismissed = true
+                settings.fastFirstPrefetchReady = false
+                refreshFastFirstState()
+                refresh()
+            } catch {
+                errorMessage = "Couldn't switch to recommended model."
+                Logger.model.error("Fast-first upgrade switch failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func startObservingIfNeeded() {
         guard observation == nil else { return }
         guard let statsService else { return }
@@ -94,6 +153,33 @@ final class HomeViewModel {
             Logger.database.error("Failed to initialize DashboardStatsService: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    private func currentModelIdForComparison() -> String {
+        let active = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !active.isEmpty {
+            return ModelManager.normalizedModelID(active)
+        }
+        return ModelManager.normalizedModelID(settings.selectedModelId.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func formatModelDisplayName(_ id: String) -> String {
+        var name = id
+            .replacingOccurrences(of: "openai_whisper-", with: "Whisper ")
+            .replacingOccurrences(of: "openai_whisper_", with: "Whisper ")
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+
+        name = name.split(separator: " ")
+            .map { word in
+                let w = String(word)
+                if w.hasPrefix("v") && w.count <= 3 { return w.uppercased() }
+                if w == "en" || w == ".en" { return "(English)" }
+                return w.prefix(1).uppercased() + w.dropFirst()
+            }
+            .joined(separator: " ")
+
+        return name.replacingOccurrences(of: ".(English)", with: " (English)")
     }
 
 }

@@ -21,7 +21,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var modelManager: ModelManager?
     private var coordinator: DictationCoordinator?
 
-    private var stateObservationTask: Task<Void, Never>?
+    private var waveformUpdateTask: Task<Void, Never>?
+    private var lastWaveformLevelBucket: Int = -1
     private var runtimeServicesStarted = false
     private var shortcutObserver: NSObjectProtocol?
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
@@ -102,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
-        stateObservationTask?.cancel()
+        stopWaveformUpdates()
         if let shortcutObserver {
             NotificationCenter.default.removeObserver(shortcutObserver)
         }
@@ -241,13 +242,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try await transcription.loadModel(named: settings.selectedModelId)
                 await transcription.warmUp()
+                let runtimeModelID = await transcription.loadedModelID() ?? settings.selectedModelId
                 await MainActor.run {
+                    settings.activeModelId = runtimeModelID
                     self.statusBarController?.updateIcon(state: .idle)
                     self.statusBarMenu?.updateStatusLine("Ready")
                     Logger.model.info("Model warm-up complete")
                 }
             } catch {
                 await MainActor.run {
+                    settings.activeModelId = ""
                     self.statusBarController?.updateIcon(state: .error)
                     self.statusBarMenu?.updateStatusLine("Model not loaded")
                     Logger.model.error("Model warm-up failed: \(error.localizedDescription)")
@@ -300,32 +304,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - State Observation
 
     private func observeCoordinatorState() {
-        // Poll coordinator state to update UI
-        stateObservationTask = Task { @MainActor [weak self] in
-            var lastState: DictationCoordinator.State?
-
-            while !Task.isCancelled {
-                guard let self = self, let coordinator = self.coordinator else {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                    continue
-                }
-
-                let currentState = coordinator.state
-                if currentState != lastState {
-                    let previousState = lastState
-                    lastState = currentState
-                    self.handleStateChange(currentState, previousState: previousState)
-                }
-
-                if case .recording = currentState {
-                    self.floatingPanel?.updateContent(
-                        WaveformView(audioLevel: coordinator.audioLevel)
-                    )
-                }
-
-                try? await Task.sleep(nanoseconds: 33_000_000) // ~30fps
-            }
+        guard let coordinator = coordinator else { return }
+        coordinator.onStateChange = { [weak self] state, previousState in
+            self?.handleStateChange(state, previousState: previousState)
         }
+        handleStateChange(coordinator.state, previousState: nil)
     }
 
     private func handleStateChange(_ state: DictationCoordinator.State, previousState: DictationCoordinator.State?) {
@@ -333,12 +316,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch state {
         case .idle:
+            stopWaveformUpdates()
             statusBarController?.updateIcon(state: .idle)
             statusBarMenu?.updateStatusLine("Ready")
             floatingPanel?.transitionToHandle()
             postDictationSignal(.idle, message: "Ready")
 
         case .recording:
+            startWaveformUpdates()
             statusBarController?.updateIcon(state: .recording)
             statusBarMenu?.updateStatusLine("Recording...")
             floatingPanel?.transitionToRecording(
@@ -347,6 +332,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             postDictationSignal(.recording, message: "Listening... Speak now.")
 
         case .processing(let estimate):
+            stopWaveformUpdates()
             statusBarController?.updateIcon(state: .processing)
             statusBarMenu?.updateStatusLine("Processing...")
             let estimateText = estimate.map { "~\(Int($0))s to process" }
@@ -356,12 +342,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             postDictationSignal(.processing, message: "Transcribing...")
 
         case .injecting:
+            stopWaveformUpdates()
             statusBarController?.updateIcon(state: .processing)
             statusBarMenu?.updateStatusLine("Processing...")
             floatingPanel?.transitionToHandle()
             postDictationSignal(.injecting, message: "Pasting text...")
 
         case .error(let message):
+            stopWaveformUpdates()
             statusBarController?.updateIcon(state: .error)
             statusBarMenu?.updateStatusLine("Error")
             floatingPanel?.transitionToError(
@@ -369,6 +357,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             postDictationSignal(.error, message: message)
         }
+    }
+
+    private func startWaveformUpdates() {
+        stopWaveformUpdates()
+        lastWaveformLevelBucket = -1
+        waveformUpdateTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self = self, let coordinator = self.coordinator else { break }
+                guard case .recording = coordinator.state else { break }
+
+                let level = max(0, min(coordinator.audioLevel, 1))
+                let bucket = Int((level * 24).rounded())
+                if bucket != self.lastWaveformLevelBucket {
+                    self.lastWaveformLevelBucket = bucket
+                    self.floatingPanel?.updateContent(WaveformView(audioLevel: level))
+                }
+
+                try? await Task.sleep(nanoseconds: 33_000_000) // ~30fps while recording only
+            }
+        }
+    }
+
+    private func stopWaveformUpdates() {
+        waveformUpdateTask?.cancel()
+        waveformUpdateTask = nil
+        lastWaveformLevelBucket = -1
     }
 
     private func postDictationSignal(_ state: DictationStateSignal, message: String) {

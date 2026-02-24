@@ -82,7 +82,7 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(payload.header.activeDays7d, 2)
     }
 
-    func testPerformanceRecommendationThresholds() throws {
+    func testPerformanceLevelThresholds() throws {
         // no data
         var payload = try service.load(currentModelId: nil)
         XCTAssertEqual(payload.performance.level, .noData)
@@ -101,6 +101,106 @@ final class DashboardStatsServiceTests: XCTestCase {
         try save(text: "a b c", dayOffset: 0, recordingMs: 1_000, processingMs: 6_500)
         payload = try service.load(currentModelId: nil)
         XCTAssertEqual(payload.performance.level, .slow)
+    }
+
+    func testPerformanceTelemetryAveragesUseRecordedStageData() throws {
+        try save(
+            text: "alpha beta",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 1_300,
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 5,
+                transcriptionMs: 720,
+                textProcessingMs: 9,
+                injectionMs: 84,
+                appActivationMs: 28,
+                clipboardRestoreDelayMs: 76
+            )
+        )
+        try save(
+            text: "gamma delta",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 1_500,
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 6,
+                transcriptionMs: 880,
+                textProcessingMs: 10,
+                injectionMs: 92,
+                appActivationMs: 34,
+                clipboardRestoreDelayMs: 82
+            )
+        )
+
+        let payload = try service.load(currentModelId: nil)
+        XCTAssertEqual(payload.performance.averageTranscriptionMs, 800)
+        XCTAssertEqual(payload.performance.averageInjectionMs, 88)
+        XCTAssertEqual(payload.performance.processingP50Ms, 1_400)
+        XCTAssertEqual(payload.performance.processingP95Ms, 1_490)
+        XCTAssertEqual(payload.performance.sampleCount, 2)
+    }
+
+    func testPerformanceLatencyUsesCurrentModelOnlyWithPercentiles() throws {
+        try save(
+            text: "alpha one",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 1_000,
+            modelId: "model-a",
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 5,
+                transcriptionMs: 100,
+                textProcessingMs: 8,
+                injectionMs: 50,
+                appActivationMs: 10,
+                clipboardRestoreDelayMs: 40
+            )
+        )
+        try save(
+            text: "alpha two",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 3_000,
+            modelId: "model-a",
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 7,
+                transcriptionMs: 500,
+                textProcessingMs: 9,
+                injectionMs: 150,
+                appActivationMs: 14,
+                clipboardRestoreDelayMs: 44
+            )
+        )
+        try save(
+            text: "beta one",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 8_000,
+            modelId: "model-b",
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 8,
+                transcriptionMs: 2_000,
+                textProcessingMs: 11,
+                injectionMs: 400,
+                appActivationMs: 22,
+                clipboardRestoreDelayMs: 48
+            )
+        )
+
+        let payload = try service.load(currentModelId: "model-a")
+
+        XCTAssertEqual(payload.performance.currentModelId, "model-a")
+        XCTAssertEqual(payload.performance.sampleCount, 2)
+        XCTAssertEqual(payload.performance.averageProcessingMs, 2_000)
+        XCTAssertEqual(payload.performance.processingP50Ms, 2_000)
+        XCTAssertEqual(payload.performance.processingP95Ms, 2_900)
+        XCTAssertEqual(payload.performance.averageTranscriptionMs, 300)
+        XCTAssertEqual(payload.performance.transcriptionP50Ms, 300)
+        XCTAssertEqual(payload.performance.transcriptionP95Ms, 480)
+        XCTAssertEqual(payload.performance.averageInjectionMs, 100)
+        XCTAssertEqual(payload.performance.injectionP50Ms, 100)
+        XCTAssertEqual(payload.performance.injectionP95Ms, 145)
     }
 
     func testRecentDictationIncludesMetadataAndSupportsDelete() throws {
@@ -195,8 +295,10 @@ final class DashboardStatsServiceTests: XCTestCase {
         dayOffset: Int,
         recordingMs: Int,
         processingMs: Int = 1_000,
+        modelId: String = "test-model",
         appName: String? = "TextEdit",
-        minuteOffset: Int = 0
+        minuteOffset: Int = 0,
+        latency: DictationLatencyTelemetry? = nil
     ) throws {
         let day = calendar.date(byAdding: .day, value: dayOffset, to: now)!
         let createdAt = calendar.date(byAdding: .minute, value: minuteOffset, to: day) ?? day
@@ -205,7 +307,8 @@ final class DashboardStatsServiceTests: XCTestCase {
             appName: appName,
             recordingMs: recordingMs,
             processingMs: processingMs,
-            modelId: "test-model",
+            modelId: modelId,
+            latency: latency,
             createdAt: createdAt
         )
     }

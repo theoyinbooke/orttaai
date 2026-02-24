@@ -53,7 +53,7 @@ final class WindowManager {
         }
 
         let window = createWindow(
-            title: "Orttaai Home",
+            title: "Orttaai",
             size: WindowSize.home,
             resizable: true,
             content: HomeShellView(
@@ -104,7 +104,9 @@ final class WindowManager {
         )
         window.title = title
         window.backgroundColor = NSColor.Orttaai.bgPrimary
-        window.isMovableByWindowBackground = true
+        // Keep interactive content draggable/selectable (sliders, text selection, etc.)
+        // and restrict window move behavior to the title bar.
+        window.isMovableByWindowBackground = false
         window.contentView = NSHostingView(rootView: content)
         window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.moveToActiveSpace)

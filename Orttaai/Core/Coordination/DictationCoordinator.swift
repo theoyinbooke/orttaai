@@ -30,7 +30,14 @@ final class DictationCoordinator {
         }
     }
 
-    private(set) var state: State = .idle
+    var onStateChange: ((State, State?) -> Void)?
+
+    private(set) var state: State = .idle {
+        didSet {
+            guard state != oldValue else { return }
+            onStateChange?(state, oldValue)
+        }
+    }
     private(set) var countdownSeconds: Int?
 
     private let audioService: any AudioCapturing
@@ -124,11 +131,7 @@ final class DictationCoordinator {
 
         processingTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
-            await self.processRecording(
-                samples: samples,
-                recordingDurationMs: Int(duration * 1000),
-                startTime: startTime
-            )
+            await self.processRecording(samples: samples, recordingDurationMs: Int(duration * 1000))
         }
     }
 
@@ -137,49 +140,98 @@ final class DictationCoordinator {
     @MainActor
     private func processRecording(
         samples: [Float],
-        recordingDurationMs: Int,
-        startTime: Date
+        recordingDurationMs: Int
     ) async {
         let appName = NSWorkspace.shared.frontmostAppName
         let appBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let processingStart = CFAbsoluteTimeGetCurrent()
+        var settingsSyncMs: Int?
+        var transcriptionMs: Int?
+        var textProcessingMs: Int?
+        var injectionMs: Int?
+        var injectionTelemetry: InjectionTelemetry?
 
         do {
             // Sync transcription settings before transcribing
+            let settingsSyncStart = CFAbsoluteTimeGetCurrent()
+            let requestedLanguage = settings.dictationLanguage
+            let effectiveLanguage = (settings.lowLatencyModeEnabled && requestedLanguage == "auto")
+                ? "en"
+                : requestedLanguage
             await transcriptionService.updateSettings(
-                language: settings.dictationLanguage,
-                computeMode: settings.computeMode
+                language: effectiveLanguage,
+                computeMode: settings.computeMode,
+                lowLatencyMode: settings.lowLatencyModeEnabled,
+                decodingPreferences: settings.decodingPreferences
             )
+            settingsSyncMs = Int((CFAbsoluteTimeGetCurrent() - settingsSyncStart) * 1000)
 
             // Transcribe
+            let transcriptionStart = CFAbsoluteTimeGetCurrent()
             let transcript = try await transcriptionService.transcribe(audioSamples: samples)
+            transcriptionMs = Int((CFAbsoluteTimeGetCurrent() - transcriptionStart) * 1000)
 
             // Process through text processor
+            let textProcessStart = CFAbsoluteTimeGetCurrent()
             let input = TextProcessorInput(
                 rawTranscript: transcript,
                 targetApp: appName,
                 mode: .raw
             )
             let output = try await textProcessor.process(input)
+            textProcessingMs = Int((CFAbsoluteTimeGetCurrent() - textProcessStart) * 1000)
 
             // Inject into the app that was focused when the user started recording
             state = .injecting
+            injectionService.lowLatencyModeEnabled = settings.lowLatencyModeEnabled
+            let injectionStart = CFAbsoluteTimeGetCurrent()
             let result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
+            injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
+            injectionTelemetry = injectionService.lastInjectionTelemetry
 
             let processingMs = Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000)
 
             switch result {
             case .success:
-                // Save to database
-                try? databaseManager.saveTranscription(
-                    text: output.text,
-                    appName: appName,
-                    bundleID: appBundleID,
-                    recordingMs: recordingDurationMs,
-                    processingMs: processingMs,
-                    modelId: settings.selectedModelId
+                let runtimeModelID = await transcriptionService.loadedModelID()
+                let resolvedModelID: String = {
+                    if let runtimeModelID, !runtimeModelID.isEmpty {
+                        return runtimeModelID
+                    }
+                    let activeModelID = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !activeModelID.isEmpty {
+                        return activeModelID
+                    }
+                    return settings.selectedModelId
+                }()
+                settings.activeModelId = resolvedModelID
+
+                let textToSave = output.text
+                let databaseManager = self.databaseManager
+                let latency = DictationLatencyTelemetry(
+                    settingsSyncMs: settingsSyncMs,
+                    transcriptionMs: transcriptionMs,
+                    textProcessingMs: textProcessingMs,
+                    injectionMs: injectionMs,
+                    appActivationMs: injectionTelemetry?.appActivationMs,
+                    clipboardRestoreDelayMs: injectionTelemetry?.clipboardRestoreDelayMs
                 )
+                DispatchQueue.global(qos: .utility).async {
+                    try? databaseManager.saveTranscription(
+                        text: textToSave,
+                        appName: appName,
+                        bundleID: appBundleID,
+                        recordingMs: recordingDurationMs,
+                        processingMs: processingMs,
+                        modelId: resolvedModelID,
+                        latency: latency
+                    )
+                }
+                maybeStartFastFirstPrefetch(afterSuccessfulDictationWith: resolvedModelID)
                 state = .idle
+                Logger.dictation.info(
+                    "Latency telemetry (ms): settings=\(settingsSyncMs ?? -1), transcribe=\(transcriptionMs ?? -1), process=\(textProcessingMs ?? -1), inject=\(injectionMs ?? -1), activate=\(injectionTelemetry?.appActivationMs ?? -1), restoreDelay=\(injectionTelemetry?.clipboardRestoreDelayMs ?? -1), pipeline=\(processingMs)"
+                )
                 Logger.dictation.info("Dictation complete: \(output.text.prefix(50))... (\(processingMs)ms)")
 
             case .blockedSecureField:
@@ -195,6 +247,38 @@ final class DictationCoordinator {
             Logger.dictation.error("Processing failed: \(error.localizedDescription)")
             state = .error(message: "Couldn't transcribe. Try again.")
             autoDismissError()
+        }
+    }
+
+    private func maybeStartFastFirstPrefetch(afterSuccessfulDictationWith activeModelId: String) {
+        guard settings.fastFirstOnboardingEnabled else { return }
+        guard !settings.fastFirstPrefetchStarted else { return }
+
+        let recommendedModelId = ModelManager.normalizedModelID(
+            settings.fastFirstRecommendedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        guard !recommendedModelId.isEmpty else { return }
+        guard recommendedModelId != ModelManager.normalizedModelID(activeModelId) else { return }
+
+        settings.fastFirstPrefetchStarted = true
+        settings.fastFirstPrefetchReady = false
+        settings.fastFirstPrefetchErrorMessage = ""
+        NotificationCenter.default.post(name: .fastFirstUpgradeAvailabilityDidChange, object: nil)
+
+        Task.detached(priority: .utility) {
+            let outcome = await ModelManager.prefetchModelIfNeeded(recommendedModelId)
+            await MainActor.run {
+                let appSettings = AppSettings()
+                switch outcome {
+                case .alreadyAvailable, .downloaded:
+                    appSettings.fastFirstPrefetchReady = true
+                    appSettings.fastFirstPrefetchErrorMessage = ""
+                case .failed(let message):
+                    appSettings.fastFirstPrefetchStarted = false
+                    appSettings.fastFirstPrefetchErrorMessage = message
+                }
+                NotificationCenter.default.post(name: .fastFirstUpgradeAvailabilityDidChange, object: nil)
+            }
         }
     }
 

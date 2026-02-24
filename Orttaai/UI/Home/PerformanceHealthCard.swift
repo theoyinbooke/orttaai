@@ -15,6 +15,12 @@ struct PerformanceHealthCard: View {
 
                 Spacer()
 
+                if health.sampleCount > 0 {
+                    Text("\(health.sampleCount) samples")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                }
+
                 Text(levelLabel)
                     .font(.Orttaai.caption)
                     .foregroundStyle(levelColor)
@@ -31,10 +37,10 @@ struct PerformanceHealthCard: View {
                 ],
                 spacing: Spacing.md
             ) {
-                metricCell(title: "Avg Processing", value: processingLabel)
-                metricCell(title: "Status", value: levelLabel)
+                metricCell(title: "Pipeline", value: averageLatencySummary(health.averageProcessingMs))
+                metricCell(title: "Transcribe", value: averageLatencySummary(health.averageTranscriptionMs))
+                metricCell(title: "Inject", value: averageLatencySummary(health.averageInjectionMs))
                 metricCell(title: "Current Model", value: health.currentModelId, isMonospaced: true)
-                metricCell(title: "Guidance", value: guidanceLabel)
             }
         }
         .padding(Spacing.lg)
@@ -42,15 +48,15 @@ struct PerformanceHealthCard: View {
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "Performance health \(levelLabel). Average processing \(processingLabel). Current model \(health.currentModelId). Recommendation: \(health.recommendation)"
+            "Performance health \(levelLabel). Pipeline \(averageLatencySummary(health.averageProcessingMs)). Transcription \(averageLatencySummary(health.averageTranscriptionMs)). Injection \(averageLatencySummary(health.averageInjectionMs)). Current model \(health.currentModelId)."
         )
     }
 
-    private var processingLabel: String {
-        guard let averageProcessingMs = health.averageProcessingMs else {
+    private func averageLatencySummary(_ average: Int?) -> String {
+        guard let average else {
             return "No data"
         }
-        return "\(averageProcessingMs) ms"
+        return "Avg \(average) ms"
     }
 
     private var levelLabel: String {
@@ -71,15 +77,6 @@ struct PerformanceHealthCard: View {
         }
     }
 
-    private var guidanceLabel: String {
-        switch health.level {
-        case .noData: return "Need more dictations"
-        case .fast: return "Keep current model"
-        case .normal: return "Smaller model for speed"
-        case .slow: return "Switch to smaller model"
-        }
-    }
-
     private func metricCell(
         title: String,
         value: String,
@@ -93,7 +90,7 @@ struct PerformanceHealthCard: View {
             Text(value)
                 .font(isMonospaced ? .Orttaai.mono : .Orttaai.heading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-                .lineLimit(1)
+                .lineLimit(isMonospaced ? 1 : 2)
                 .truncationMode(.middle)
         }
         .padding(Spacing.md)

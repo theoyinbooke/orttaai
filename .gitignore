@@ -5,3 +5,9 @@ xcuserdata/
 DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 *.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Release artifacts
+/dist/
+*.dmg
+*.xcarchive
+*.xcresult

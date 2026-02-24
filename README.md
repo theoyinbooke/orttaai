@@ -86,6 +86,8 @@ Build: `Cmd+B`
 Run: `Cmd+R`
 Test: `Cmd+U`
 
+For signed + notarized DMG distribution, see [`RELEASE.md`](RELEASE.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR process.

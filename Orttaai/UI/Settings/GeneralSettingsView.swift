@@ -9,26 +9,8 @@ import KeyboardShortcuts
 struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
-    @AppStorage("dictationLanguage") private var dictationLanguage = "en"
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 45
     @State private var showClearConfirmation = false
-
-    private let supportedLanguages: [(code: String, name: String)] = [
-        ("en", "English"),
-        ("es", "Spanish"),
-        ("fr", "French"),
-        ("de", "German"),
-        ("ja", "Japanese"),
-        ("zh", "Chinese"),
-        ("ko", "Korean"),
-        ("pt", "Portuguese"),
-        ("it", "Italian"),
-        ("nl", "Dutch"),
-        ("ru", "Russian"),
-        ("ar", "Arabic"),
-        ("hi", "Hindi"),
-        ("auto", "Auto-detect"),
-    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -63,61 +45,36 @@ struct GeneralSettingsView: View {
             .padding(Spacing.lg)
             .dashboardCard()
 
-            // Transcription settings
-            VStack(spacing: 0) {
-                // Language picker
-                HStack(alignment: .center, spacing: Spacing.md) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Dictation Language")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack {
+                    Text("Max Recording Duration")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
 
-                        Text("Setting a specific language is faster than Auto-detect.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
+                    Spacer()
 
-                    Spacer(minLength: Spacing.lg)
-
-                    Picker("", selection: $dictationLanguage) {
-                        ForEach(supportedLanguages, id: \.code) { lang in
-                            Text(lang.name).tag(lang.code)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 150)
+                    Text("\(maxRecordingDuration)s")
+                        .font(.Orttaai.mono)
+                        .foregroundStyle(Color.Orttaai.accent)
                 }
 
-                divider
+                Slider(
+                    value: Binding(
+                        get: { Double(maxRecordingDuration) },
+                        set: { maxRecordingDuration = Int($0) }
+                    ),
+                    in: 10...120,
+                    step: 5
+                )
+                .tint(Color.Orttaai.accent)
 
-                // Max recording duration slider
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    HStack {
-                        Text("Max Recording Duration")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("How long a single recording can last before auto-stopping.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
 
-                        Spacer()
-
-                        Text("\(maxRecordingDuration)s")
-                            .font(.Orttaai.mono)
-                            .foregroundStyle(Color.Orttaai.accent)
-                    }
-
-                    Slider(
-                        value: Binding(
-                            get: { Double(maxRecordingDuration) },
-                            set: { maxRecordingDuration = Int($0) }
-                        ),
-                        in: 10...120,
-                        step: 5
-                    )
-                    .tint(Color.Orttaai.accent)
-
-                    Text("How long a single recording can last before auto-stopping.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("Model tuning options are in Settings > Model.")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
             }
             .padding(Spacing.lg)
             .dashboardCard()

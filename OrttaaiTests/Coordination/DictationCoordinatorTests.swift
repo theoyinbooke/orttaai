@@ -28,6 +28,11 @@ actor MockTranscriptionService: Transcribing {
     var isLoaded: Bool = true
     var mockResult: String = "Hello world"
     var shouldFail = false
+    var mockLoadedModelID: String? = "test-model"
+
+    func loadedModelID() -> String? {
+        mockLoadedModelID
+    }
 
     func transcribe(audioSamples: [Float]) async throws -> String {
         if shouldFail {
@@ -40,7 +45,12 @@ actor MockTranscriptionService: Transcribing {
         return mockResult
     }
 
-    func updateSettings(language: String, computeMode: String) {
+    func updateSettings(
+        language: String,
+        computeMode: String,
+        lowLatencyMode: Bool,
+        decodingPreferences: DecodingPreferences
+    ) {
         // No-op for tests
     }
 }
@@ -55,6 +65,7 @@ final class MockTextProcessor: TextProcessor {
 
 final class MockInjectionService: TextInjecting {
     var lastTranscript: String?
+    var lowLatencyModeEnabled: Bool = false
     var mockResult: InjectionResult = .success
 
     func inject(text: String, targetApp: NSRunningApplication? = nil) async -> InjectionResult {

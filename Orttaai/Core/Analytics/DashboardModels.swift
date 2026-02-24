@@ -43,9 +43,17 @@ enum DashboardPerformanceLevel {
 
 struct DashboardPerformanceHealth {
     let level: DashboardPerformanceLevel
+    let sampleCount: Int
     let averageProcessingMs: Int?
+    let processingP50Ms: Int?
+    let processingP95Ms: Int?
+    let averageTranscriptionMs: Int?
+    let transcriptionP50Ms: Int?
+    let transcriptionP95Ms: Int?
+    let averageInjectionMs: Int?
+    let injectionP50Ms: Int?
+    let injectionP95Ms: Int?
     let currentModelId: String
-    let recommendation: String
 }
 
 struct DashboardRecentDictation: Identifiable {
@@ -78,9 +86,17 @@ extension DashboardTodaySnapshot {
 extension DashboardPerformanceHealth {
     static let empty = DashboardPerformanceHealth(
         level: .noData,
+        sampleCount: 0,
         averageProcessingMs: nil,
-        currentModelId: "Not set",
-        recommendation: "Complete a few dictations to unlock performance insights."
+        processingP50Ms: nil,
+        processingP95Ms: nil,
+        averageTranscriptionMs: nil,
+        transcriptionP50Ms: nil,
+        transcriptionP95Ms: nil,
+        averageInjectionMs: nil,
+        injectionP50Ms: nil,
+        injectionP95Ms: nil,
+        currentModelId: "Not set"
     )
 }
 

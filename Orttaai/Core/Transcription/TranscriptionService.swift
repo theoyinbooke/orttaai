@@ -8,8 +8,14 @@ import os
 
 protocol Transcribing: Actor {
     var isLoaded: Bool { get }
+    func loadedModelID() -> String?
     func transcribe(audioSamples: [Float]) async throws -> String
-    func updateSettings(language: String, computeMode: String)
+    func updateSettings(
+        language: String,
+        computeMode: String,
+        lowLatencyMode: Bool,
+        decodingPreferences: DecodingPreferences
+    )
 }
 
 enum SetupModelLoadStage: Sendable {
@@ -19,6 +25,7 @@ enum SetupModelLoadStage: Sendable {
 
 actor TranscriptionService: Transcribing {
     private var whisperKit: WhisperKit?
+    private var loadedModelIDValue: String?
 
     /// Language code for transcription (e.g. "en", "es", "auto").
     /// Set from AppSettings.dictationLanguage before transcribing.
@@ -26,9 +33,15 @@ actor TranscriptionService: Transcribing {
 
     /// Compute mode string from settings. Maps to MLComputeUnits.
     var computeModeSetting: String = "cpuAndNeuralEngine"
+    var lowLatencyModeEnabled: Bool = false
+    var decodingPreferences: DecodingPreferences = .default
 
     var isLoaded: Bool {
         whisperKit != nil
+    }
+
+    func loadedModelID() -> String? {
+        loadedModelIDValue
     }
 
     func loadModel(named modelName: String) async throws {
@@ -42,6 +55,7 @@ actor TranscriptionService: Transcribing {
 
         let wk = try await WhisperKit(config)
         whisperKit = wk
+        loadedModelIDValue = modelName
 
         Logger.transcription.info("Model loaded: \(modelName)")
     }
@@ -76,6 +90,7 @@ actor TranscriptionService: Transcribing {
 
         let wk = try await WhisperKit(config)
         whisperKit = wk
+        loadedModelIDValue = modelName
         Logger.transcription.info("Setup model prepared: \(modelName)")
     }
 
@@ -87,14 +102,20 @@ actor TranscriptionService: Transcribing {
         Logger.transcription.info("Transcribing \(audioSamples.count) samples")
 
         let decodingLanguage: String? = (language == "auto") ? nil : language
+        let resolvedDecoding = resolvedDecodingOptions()
 
         let options = DecodingOptions(
             language: decodingLanguage,
-            temperature: 0.0,
+            temperature: resolvedDecoding.temperature,
+            temperatureFallbackCount: resolvedDecoding.fallbackCount,
+            topK: resolvedDecoding.topK,
             skipSpecialTokens: true,
             withoutTimestamps: true,
             wordTimestamps: false,
-            concurrentWorkerCount: 4,
+            compressionRatioThreshold: resolvedDecoding.compressionRatioThreshold,
+            logProbThreshold: resolvedDecoding.logProbThreshold,
+            noSpeechThreshold: resolvedDecoding.noSpeechThreshold,
+            concurrentWorkerCount: resolvedDecoding.workerCount,
             chunkingStrategy: .vad
         )
 
@@ -123,6 +144,7 @@ actor TranscriptionService: Transcribing {
 
     func unloadModel() {
         whisperKit = nil
+        loadedModelIDValue = nil
         Logger.transcription.info("Model unloaded")
     }
 
@@ -140,9 +162,16 @@ actor TranscriptionService: Transcribing {
         }
     }
 
-    func updateSettings(language: String, computeMode: String) {
+    func updateSettings(
+        language: String,
+        computeMode: String,
+        lowLatencyMode: Bool,
+        decodingPreferences: DecodingPreferences
+    ) {
         self.language = language
         self.computeModeSetting = computeMode
+        self.lowLatencyModeEnabled = lowLatencyMode
+        self.decodingPreferences = decodingPreferences.clamped()
     }
 
     private func computeOptions() -> ModelComputeOptions {
@@ -158,6 +187,83 @@ actor TranscriptionService: Transcribing {
         return ModelComputeOptions(
             audioEncoderCompute: units,
             textDecoderCompute: units
+        )
+    }
+
+    private func preferredConcurrentWorkerCount() -> Int {
+        guard lowLatencyModeEnabled else { return 4 }
+
+        let modelID = loadedModelIDValue?.lowercased() ?? ""
+        if modelID.contains("tiny") || modelID.contains("small") || modelID.contains("base") {
+            return 2
+        }
+        return 3
+    }
+
+    private func resolvedDecodingOptions() -> (
+        temperature: Float,
+        topK: Int,
+        fallbackCount: Int,
+        compressionRatioThreshold: Float?,
+        logProbThreshold: Float?,
+        noSpeechThreshold: Float?,
+        workerCount: Int
+    ) {
+        let prefs = decodingPreferences.clamped()
+        let autoWorkerCount = preferredConcurrentWorkerCount()
+
+        // Preset baselines keep fast defaults safe for onboarding.
+        var temperature: Float
+        var topK: Int
+        var fallbackCount: Int
+        var compressionRatioThreshold: Float?
+        var logProbThreshold: Float?
+        var noSpeechThreshold: Float?
+
+        switch prefs.preset {
+        case .fast:
+            temperature = 0.0
+            topK = 3
+            fallbackCount = 1
+            compressionRatioThreshold = 2.4
+            logProbThreshold = -1.0
+            noSpeechThreshold = 0.65
+        case .balanced:
+            temperature = 0.0
+            topK = 5
+            fallbackCount = 3
+            compressionRatioThreshold = 2.4
+            logProbThreshold = -1.0
+            noSpeechThreshold = 0.6
+        case .accuracy:
+            temperature = 0.2
+            topK = 8
+            fallbackCount = 5
+            compressionRatioThreshold = 2.8
+            logProbThreshold = -1.2
+            noSpeechThreshold = 0.5
+        }
+
+        var workerCount = autoWorkerCount
+
+        if prefs.expertOverridesEnabled {
+            temperature = Float(prefs.temperature)
+            topK = prefs.topK
+            fallbackCount = prefs.fallbackCount
+            compressionRatioThreshold = Float(prefs.compressionRatioThreshold)
+            logProbThreshold = Float(prefs.logProbThreshold)
+            noSpeechThreshold = Float(prefs.noSpeechThreshold)
+            workerCount = prefs.workerCount == 0 ? autoWorkerCount : prefs.workerCount
+        }
+
+        return (
+            temperature: temperature,
+            topK: topK,
+            fallbackCount: fallbackCount,
+            compressionRatioThreshold: compressionRatioThreshold,
+            logProbThreshold: logProbThreshold,
+            noSpeechThreshold: noSpeechThreshold,
+            workerCount: workerCount
         )
     }
 }

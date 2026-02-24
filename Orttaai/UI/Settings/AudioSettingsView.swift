@@ -7,7 +7,6 @@ import os
 
 struct AudioSettingsView: View {
     @AppStorage("selectedAudioDeviceID") private var selectedDeviceID = ""
-    @AppStorage("computeMode") private var computeMode = "cpuAndNeuralEngine"
     @State private var audioDeviceManager = AudioDeviceManager()
     @State private var audioLevel: Float = 0
     @State private var testCapture: AudioCaptureService?
@@ -91,37 +90,6 @@ struct AudioSettingsView: View {
                 RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                     .stroke(Color.Orttaai.warning.opacity(0.35), lineWidth: BorderWidth.standard)
             )
-
-            // Advanced: Compute mode
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Advanced")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                HStack(alignment: .center, spacing: Spacing.md) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Compute Mode")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-
-                        Text("CPU + Neural Engine is fastest on Apple Silicon.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-
-                    Spacer(minLength: Spacing.lg)
-
-                    Picker("", selection: $computeMode) {
-                        Text("CPU + Neural Engine (Recommended)").tag("cpuAndNeuralEngine")
-                        Text("CPU + GPU").tag("cpuAndGPU")
-                        Text("CPU Only").tag("cpuOnly")
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 280)
-                }
-            }
-            .padding(Spacing.lg)
-            .dashboardCard()
 
             if audioDeviceManager.devices.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.sm) {

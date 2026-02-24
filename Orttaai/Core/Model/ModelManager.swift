@@ -57,6 +57,21 @@ struct ModelInfo: Identifiable {
     let isEnglishOnly: Bool
 }
 
+struct DownloadedModelMetrics: Sendable {
+    let modelDirectories: [String: URL]
+    let totalBytes: Int64
+
+    var downloadedModelIDs: Set<String> {
+        Set(modelDirectories.keys)
+    }
+}
+
+enum ModelPrefetchOutcome: Sendable, Equatable {
+    case alreadyAvailable
+    case downloaded
+    case failed(message: String)
+}
+
 @Observable
 final class ModelManager {
     /// Set by AppDelegate after initialization so views can access the shared instance.
@@ -71,6 +86,11 @@ final class ModelManager {
     private let transcriptionService: TranscriptionService
     private let downloader: ModelDownloader
     private let modelsDirectory: URL
+    nonisolated private static let requiredModelComponents = [
+        "MelSpectrogram",
+        "AudioEncoder",
+        "TextDecoder",
+    ]
 
     init(
         transcriptionService: TranscriptionService,
@@ -97,7 +117,7 @@ final class ModelManager {
             let deviceSupport = WhisperKit.recommendedModels()
             let hardware = HardwareDetector.detect()
 
-            var models = allModelNames.compactMap { name -> ModelInfo? in
+            let models = allModelNames.compactMap { name -> ModelInfo? in
                 // Skip internal/test variants
                 guard !name.contains("test") else { return nil }
 
@@ -115,18 +135,7 @@ final class ModelManager {
                 )
             }
 
-            // Sort: recommended first, then supported, then by size ascending
-            models.sort { a, b in
-                if a.isDeviceRecommended != b.isDeviceRecommended {
-                    return a.isDeviceRecommended
-                }
-                if a.isDeviceSupported != b.isDeviceSupported {
-                    return a.isDeviceSupported
-                }
-                return a.downloadSizeMB < b.downloadSizeMB
-            }
-
-            availableModels = models
+            availableModels = Self.sortModelsBySize(models)
             Logger.model.info("Fetched \(models.count) available models")
         } catch {
             Logger.model.error("Failed to fetch models, using hardcoded list: \(error.localizedDescription)")
@@ -145,6 +154,7 @@ final class ModelManager {
             state = .loading
             try await transcriptionService.loadModel(named: model.id)
             currentModelId = model.id
+            AppSettings().activeModelId = model.id
             state = .loaded
             Logger.model.info("Model loaded: \(model.id)")
 
@@ -164,6 +174,7 @@ final class ModelManager {
         state = .loading
         do {
             try await transcriptionService.loadModel(named: modelId)
+            AppSettings().activeModelId = modelId
             state = .loaded
         } catch {
             state = .error(error.localizedDescription)
@@ -172,21 +183,78 @@ final class ModelManager {
     }
 
     func switchModel(to model: ModelInfo) async throws {
+        AppSettings().activeModelId = ""
         await transcriptionService.unloadModel()
         currentModelId = model.id
         try await download(model: model)
     }
 
-    func deleteModel(named modelId: String) throws {
-        let modelDir = modelsDirectory.appendingPathComponent(modelId)
-        if FileManager.default.fileExists(atPath: modelDir.path) {
-            try FileManager.default.removeItem(at: modelDir)
+    func switchModel(toModelId modelId: String) async throws {
+        let normalizedModelId = Self.normalizedModelID(modelId)
+
+        if let available = availableModels.first(where: { Self.normalizedModelID($0.id) == normalizedModelId }) {
+            try await switchModel(to: available)
+            return
         }
-        if currentModelId == modelId {
+
+        let support = WhisperKit.recommendedModels()
+        let hardware = HardwareDetector.detect()
+        let fallback = ModelInfo(
+            id: normalizedModelId,
+            name: formatDisplayName(normalizedModelId),
+            downloadSizeMB: estimateSize(normalizedModelId),
+            description: descriptionFor(normalizedModelId),
+            minimumTier: tierFor(normalizedModelId, ramGB: hardware.ramGB),
+            speedLabel: speedLabelFor(normalizedModelId),
+            accuracyLabel: accuracyLabelFor(normalizedModelId),
+            isDeviceRecommended: normalizedModelId == Self.normalizedModelID(support.default),
+            isDeviceSupported: support.supported.map(Self.normalizedModelID).contains(normalizedModelId),
+            isEnglishOnly: isEnglishOnly(normalizedModelId)
+        )
+        try await switchModel(to: fallback)
+    }
+
+    func deleteModel(named modelId: String) throws {
+        var removedAny = false
+        let normalizedTargetID = Self.normalizedModelID(modelId)
+        let detectedMetrics = Self.detectDownloadedModelMetrics()
+        if let detectedModelDir = detectedMetrics.modelDirectories[normalizedTargetID],
+           FileManager.default.fileExists(atPath: detectedModelDir.path)
+        {
+            try FileManager.default.removeItem(at: detectedModelDir)
+            removedAny = true
+        }
+
+        let appSupportModelDir = modelsDirectory.appendingPathComponent(normalizedTargetID)
+        if FileManager.default.fileExists(atPath: appSupportModelDir.path) {
+            try FileManager.default.removeItem(at: appSupportModelDir)
+            removedAny = true
+        }
+
+        if FileManager.default.fileExists(atPath: modelsDirectory.path),
+           let entries = try? FileManager.default.contentsOfDirectory(
+               at: modelsDirectory,
+               includingPropertiesForKeys: nil,
+               options: [.skipsHiddenFiles]
+           )
+        {
+            for entry in entries where Self.normalizedModelID(entry.lastPathComponent) == normalizedTargetID {
+                if FileManager.default.fileExists(atPath: entry.path) {
+                    try FileManager.default.removeItem(at: entry)
+                    removedAny = true
+                }
+            }
+        }
+
+        if Self.normalizedModelID(currentModelId ?? "") == normalizedTargetID {
             currentModelId = nil
             state = .notDownloaded
         }
-        Logger.model.info("Model deleted: \(modelId)")
+        if removedAny {
+            Logger.model.info("Model deleted: \(normalizedTargetID)")
+        } else {
+            Logger.model.info("No local model files found for: \(normalizedTargetID)")
+        }
     }
 
     // MARK: - Private: Hardcoded Fallback
@@ -194,7 +262,7 @@ final class ModelManager {
     private func setupHardcodedModels() {
         let deviceSupport = WhisperKit.recommendedModels()
 
-        availableModels = [
+        availableModels = Self.sortModelsBySize([
             ModelInfo(
                 id: "openai_whisper-large-v3_turbo",
                 name: "Whisper Large V3 Turbo",
@@ -219,23 +287,209 @@ final class ModelManager {
                 isDeviceSupported: deviceSupport.supported.contains("openai_whisper-small"),
                 isEnglishOnly: false
             ),
-        ]
+        ])
     }
 
     private func checkExistingModels() {
-        guard FileManager.default.fileExists(atPath: modelsDirectory.path) else {
-            state = .notDownloaded
-            return
+        state = Self.detectDownloadedModelMetrics().downloadedModelIDs.isEmpty ? .notDownloaded : .downloaded
+    }
+
+    nonisolated static func sortModelsBySize(_ models: [ModelInfo]) -> [ModelInfo] {
+        models.sorted { a, b in
+            if a.downloadSizeMB != b.downloadSizeMB {
+                return a.downloadSizeMB < b.downloadSizeMB
+            }
+            if a.name != b.name {
+                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+            }
+            return a.id < b.id
+        }
+    }
+
+    nonisolated static func sortModelsByRecommendation(_ models: [ModelInfo]) -> [ModelInfo] {
+        models.sorted { a, b in
+            if a.isDeviceRecommended != b.isDeviceRecommended {
+                return a.isDeviceRecommended
+            }
+            if a.isDeviceSupported != b.isDeviceSupported {
+                return a.isDeviceSupported
+            }
+            if a.downloadSizeMB != b.downloadSizeMB {
+                return a.downloadSizeMB < b.downloadSizeMB
+            }
+            if a.name != b.name {
+                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+            }
+            return a.id < b.id
+        }
+    }
+
+    nonisolated static func normalizedModelID(_ modelId: String) -> String {
+        let trimmed = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+
+        let pattern = #"_\d+(mb|gb)$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return trimmed
+        }
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        if let match = regex.firstMatch(in: trimmed, options: [], range: range),
+           match.range.location != NSNotFound,
+           let swiftRange = Range(match.range, in: trimmed),
+           swiftRange.upperBound == trimmed.endIndex
+        {
+            return String(trimmed[..<swiftRange.lowerBound])
+        }
+        return trimmed
+    }
+
+    nonisolated static func detectDownloadedModelMetrics(in roots: [URL]? = nil) -> DownloadedModelMetrics {
+        let modelRoots = roots ?? modelStorageRoots()
+        let downloadedDirectories = detectDownloadedModelDirectories(in: modelRoots)
+        let totalBytes = downloadedDirectories.values.reduce(Int64(0)) { total, directory in
+            total + directoryByteSize(directory)
+        }
+        return DownloadedModelMetrics(modelDirectories: downloadedDirectories, totalBytes: totalBytes)
+    }
+
+    nonisolated static func prefetchModelIfNeeded(_ modelId: String) async -> ModelPrefetchOutcome {
+        let normalizedModelId = normalizedModelID(modelId)
+        guard !normalizedModelId.isEmpty else {
+            return .failed(message: "Missing model id.")
+        }
+
+        let downloadedModelIDs = Set(detectDownloadedModelMetrics().modelDirectories.keys)
+        if downloadedModelIDs.contains(normalizedModelId) {
+            return .alreadyAvailable
         }
 
         do {
-            let contents = try FileManager.default.contentsOfDirectory(atPath: modelsDirectory.path)
-            if !contents.isEmpty {
-                state = .downloaded
-            }
+            _ = try await WhisperKit.download(variant: normalizedModelId)
+            return .downloaded
         } catch {
-            Logger.model.error("Failed to check models directory: \(error.localizedDescription)")
+            return .failed(message: error.localizedDescription)
         }
+    }
+
+    nonisolated private static func modelStorageRoots() -> [URL] {
+        let fileManager = FileManager.default
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+        let home = URL.homeDirectory
+
+        let env = ProcessInfo.processInfo.environment
+        var roots: [URL] = [
+            appSupport?.appendingPathComponent("Orttaai/Models"),
+            documents?.appendingPathComponent("huggingface"),
+            home.appendingPathComponent(".cache/huggingface"),
+            home.appendingPathComponent("Library/Caches/huggingface"),
+        ].compactMap { $0 }
+
+        if let hfHome = env["HF_HOME"], !hfHome.isEmpty {
+            roots.append(URL(fileURLWithPath: hfHome))
+        }
+        if let hfHubCache = env["HF_HUB_CACHE"], !hfHubCache.isEmpty {
+            roots.append(URL(fileURLWithPath: hfHubCache))
+        }
+
+        var dedupedRoots: [URL] = []
+        var seenPaths = Set<String>()
+        for root in roots {
+            if seenPaths.insert(root.path).inserted {
+                dedupedRoots.append(root)
+            }
+        }
+        return dedupedRoots
+    }
+
+    nonisolated private static func detectDownloadedModelDirectories(in roots: [URL]) -> [String: URL] {
+        let fileManager = FileManager.default
+        var downloadedDirectories: [String: URL] = [:]
+
+        for root in roots where fileManager.fileExists(atPath: root.path) {
+            if root.lastPathComponent.hasPrefix("openai_whisper-"), isValidModelDirectory(root) {
+                insertDownloadedModelDirectory(root, into: &downloadedDirectories)
+            }
+
+            guard let enumerator = fileManager.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else {
+                continue
+            }
+
+            for case let url as URL in enumerator {
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+                guard values?.isDirectory == true else { continue }
+
+                let modelID = url.lastPathComponent
+                guard modelID.hasPrefix("openai_whisper-") else { continue }
+
+                if isValidModelDirectory(url) {
+                    insertDownloadedModelDirectory(url, into: &downloadedDirectories)
+                    enumerator.skipDescendants()
+                }
+            }
+        }
+
+        return downloadedDirectories
+    }
+
+    nonisolated private static func insertDownloadedModelDirectory(
+        _ directoryURL: URL,
+        into downloadedDirectories: inout [String: URL]
+    ) {
+        let rawID = directoryURL.lastPathComponent
+        let normalizedID = normalizedModelID(rawID)
+        if normalizedID.isEmpty {
+            return
+        }
+
+        guard let existing = downloadedDirectories[normalizedID] else {
+            downloadedDirectories[normalizedID] = directoryURL
+            return
+        }
+
+        // Prefer canonical model directories over size-suffixed aliases.
+        let existingIsCanonical = existing.lastPathComponent == normalizedID
+        let candidateIsCanonical = rawID == normalizedID
+        if candidateIsCanonical && !existingIsCanonical {
+            downloadedDirectories[normalizedID] = directoryURL
+        }
+    }
+
+    nonisolated private static func isValidModelDirectory(_ directory: URL) -> Bool {
+        let fileManager = FileManager.default
+        return requiredModelComponents.allSatisfy { component in
+            let compiledModelPath = directory.appendingPathComponent("\(component).mlmodelc").path
+            let packageModelPath = directory
+                .appendingPathComponent("\(component).mlpackage/Data/com.apple.CoreML/model.mlmodel")
+                .path
+            return fileManager.fileExists(atPath: compiledModelPath) || fileManager.fileExists(atPath: packageModelPath)
+        }
+    }
+
+    nonisolated private static func directoryByteSize(_ directory: URL) -> Int64 {
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var total = Int64(0)
+        for case let fileURL as URL in enumerator {
+            let values = try? fileURL.resourceValues(
+                forKeys: [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey]
+            )
+            guard values?.isRegularFile == true else { continue }
+            let fileBytes = values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? values?.fileSize ?? 0
+            total += Int64(fileBytes)
+        }
+        return total
     }
 
     // MARK: - Private: Model Metadata

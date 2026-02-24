@@ -135,4 +135,30 @@ final class DatabaseManagerTests: XCTestCase {
         let records = try db.fetchRecent()
         XCTAssertEqual(records.count, 0)
     }
+
+    func testLatencyTelemetryPersistence() throws {
+        try db.saveTranscription(
+            text: "Telemetry entry",
+            appName: "TextEdit",
+            recordingMs: 2_100,
+            processingMs: 980,
+            modelId: "test",
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 4,
+                transcriptionMs: 600,
+                textProcessingMs: 7,
+                injectionMs: 72,
+                appActivationMs: 25,
+                clipboardRestoreDelayMs: 68
+            )
+        )
+
+        let record = try XCTUnwrap(try db.fetchRecent(limit: 1).first)
+        XCTAssertEqual(record.settingsSyncDurationMs, 4)
+        XCTAssertEqual(record.transcriptionDurationMs, 600)
+        XCTAssertEqual(record.textProcessingDurationMs, 7)
+        XCTAssertEqual(record.injectionDurationMs, 72)
+        XCTAssertEqual(record.appActivationDurationMs, 25)
+        XCTAssertEqual(record.clipboardRestoreDelayMs, 68)
+    }
 }

@@ -5,6 +5,15 @@ import Foundation
 import GRDB
 import os
 
+struct DictationLatencyTelemetry: Sendable {
+    let settingsSyncMs: Int?
+    let transcriptionMs: Int?
+    let textProcessingMs: Int?
+    let injectionMs: Int?
+    let appActivationMs: Int?
+    let clipboardRestoreDelayMs: Int?
+}
+
 final class DatabaseManager {
     private let dbQueue: DatabaseQueue
     private static let maxRecords = 500
@@ -54,6 +63,17 @@ final class DatabaseManager {
             )
         }
 
+        migrator.registerMigration("v2_latency_telemetry") { db in
+            try db.alter(table: "transcription") { t in
+                t.add(column: "settingsSyncDurationMs", .integer)
+                t.add(column: "transcriptionDurationMs", .integer)
+                t.add(column: "textProcessingDurationMs", .integer)
+                t.add(column: "injectionDurationMs", .integer)
+                t.add(column: "appActivationDurationMs", .integer)
+                t.add(column: "clipboardRestoreDelayMs", .integer)
+            }
+        }
+
         return migrator
     }
 
@@ -67,6 +87,7 @@ final class DatabaseManager {
         processingMs: Int,
         modelId: String,
         audioDevice: String? = nil,
+        latency: DictationLatencyTelemetry? = nil,
         createdAt: Date = Date()
     ) throws {
         try dbQueue.write { db in
@@ -77,6 +98,12 @@ final class DatabaseManager {
                 targetAppBundleID: bundleID,
                 recordingDurationMs: recordingMs,
                 processingDurationMs: processingMs,
+                settingsSyncDurationMs: latency?.settingsSyncMs,
+                transcriptionDurationMs: latency?.transcriptionMs,
+                textProcessingDurationMs: latency?.textProcessingMs,
+                injectionDurationMs: latency?.injectionMs,
+                appActivationDurationMs: latency?.appActivationMs,
+                clipboardRestoreDelayMs: latency?.clipboardRestoreDelayMs,
                 modelId: modelId,
                 audioDevice: audioDevice
             )
@@ -159,20 +186,18 @@ final class DatabaseManager {
         limit: Int = 50,
         onChange: @escaping ([Transcription]) -> Void
     ) -> DatabaseCancellable {
-        let observation = DatabaseRegionObservation(tracking: Transcription.all())
+        let observation = ValueObservation.tracking { db in
+            try Transcription
+                .order(Column("createdAt").desc)
+                .limit(limit)
+                .fetchAll(db)
+        }
         return observation.start(
             in: dbQueue,
             onError: { error in
                 Logger.database.error("Observation error: \(error.localizedDescription)")
             },
-            onChange: { _ in
-                do {
-                    let records = try self.fetchRecent(limit: limit)
-                    onChange(records)
-                } catch {
-                    Logger.database.error("Observation fetch failed: \(error.localizedDescription)")
-                }
-            }
+            onChange: onChange
         )
     }
 }

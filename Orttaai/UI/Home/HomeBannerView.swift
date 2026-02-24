@@ -8,6 +8,7 @@ struct HomeBannerView: View {
     let subtitle: String
     let buttonTitle: String
     let showsArtwork: Bool
+    let isButtonDisabled: Bool
     let onButtonTap: () -> Void
 
     var body: some View {
@@ -24,6 +25,7 @@ struct HomeBannerView: View {
 
                 Button(buttonTitle, action: onButtonTap)
                     .buttonStyle(OrttaaiButtonStyle(.primary))
+                    .disabled(isButtonDisabled)
                     .accessibilityHint("Opens the suggested next action.")
             }
             .frame(maxWidth: .infinity, alignment: .leading)

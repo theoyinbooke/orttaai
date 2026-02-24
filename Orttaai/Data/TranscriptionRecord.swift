@@ -12,6 +12,12 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     var targetAppBundleID: String?
     var recordingDurationMs: Int
     var processingDurationMs: Int
+    var settingsSyncDurationMs: Int?
+    var transcriptionDurationMs: Int?
+    var textProcessingDurationMs: Int?
+    var injectionDurationMs: Int?
+    var appActivationDurationMs: Int?
+    var clipboardRestoreDelayMs: Int?
     var modelId: String
     var audioDevice: String?
 
