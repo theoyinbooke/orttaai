@@ -59,8 +59,16 @@ Shortcuts can be customized in Settings > General.
 
 | Model | Size | RAM Required | Best For |
 |-------|------|-------------|----------|
-| Whisper Large V3 Turbo | ~950MB | 16GB+ | Best accuracy |
-| Whisper Small | ~300MB | 8GB+ | Lower RAM usage |
+| Whisper Tiny | ~70MB | 8GB+ | Quick notes, commands |
+| Whisper Tiny (English) | ~70MB | 8GB+ | Fast English dictation |
+| Whisper Base | ~140MB | 8GB+ | Short dictation |
+| Whisper Base (English) | ~140MB | 8GB+ | Short English dictation |
+| Whisper Small | ~300MB | 8GB+ | General dictation |
+| Whisper Small (English) | ~300MB | 8GB+ | General English dictation |
+| Whisper Medium | ~770MB | 16GB+ | Longer dictation |
+| Whisper Medium (English) | ~770MB | 16GB+ | Longer English dictation |
+| Whisper Large V3 Turbo | ~950MB | 16GB+ | Maximum accuracy, optimized speed |
+| Whisper Large V3 | ~1500MB | 16GB+ | Highest accuracy, slowest |
 
 ## Building from Source
 
