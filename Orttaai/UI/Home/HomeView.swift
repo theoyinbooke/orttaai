@@ -53,10 +53,55 @@ struct HomeView: View {
                 viewModel.load()
             } else {
                 viewModel.refreshFastFirstState()
+                viewModel.evaluateGitHubStarPromptIfNeeded()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .fastFirstUpgradeAvailabilityDidChange)) { _ in
             viewModel.refreshFastFirstState()
+        }
+        .alert(
+            "Are you enjoying Orttaai?",
+            isPresented: Binding(
+                get: { viewModel.githubStarPromptStep == .enjoyment },
+                set: { newValue in
+                    if !newValue {
+                        viewModel.clearGitHubPromptState()
+                    }
+                }
+            )
+        ) {
+            Button("Yes") {
+                viewModel.respondToEnjoymentPrompt(enjoying: true)
+            }
+            Button("Not now", role: .cancel) {
+                viewModel.maybeLaterForGitHubPrompt()
+            }
+        } message: {
+            Text("Would you like to support the project by starring it on GitHub?")
+        }
+        .confirmationDialog(
+            "Support Orttaai on GitHub",
+            isPresented: Binding(
+                get: { viewModel.githubStarPromptStep == .star },
+                set: { newValue in
+                    if !newValue {
+                        viewModel.clearGitHubPromptState()
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Star on GitHub") {
+                viewModel.starOnGitHub()
+            }
+            Button("No thanks", role: .destructive) {
+                viewModel.dismissGitHubPromptPermanently()
+            }
+            Button("Maybe later", role: .cancel) {
+                viewModel.maybeLaterForGitHubPrompt()
+            }
+        } message: {
+            Text("Your star helps more people discover Orttaai.")
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Orttaai home dashboard")

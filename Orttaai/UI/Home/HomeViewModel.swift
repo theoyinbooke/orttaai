@@ -6,6 +6,13 @@ import os
 import GRDB
 import AppKit
 
+enum GitHubStarPromptStep: String, Identifiable {
+    case enjoyment
+    case star
+
+    var id: String { rawValue }
+}
+
 @MainActor
 @Observable
 final class HomeViewModel {
@@ -15,11 +22,16 @@ final class HomeViewModel {
     private(set) var isApplyingFastFirstUpgrade = false
     private(set) var fastFirstRecommendedModelId: String?
     private(set) var fastFirstPrefetchReady = false
+    private(set) var githubStarPromptStep: GitHubStarPromptStep?
     var errorMessage: String?
 
     private let statsService: DashboardStatsService?
     private let settings: AppSettings
     private var observation: DatabaseCancellable?
+    private let githubStarPromptCooldown: TimeInterval = 7 * 24 * 60 * 60
+    private let githubStarPromptMinimumSessions = 3
+    private let githubStarPromptMinimumWords = 200
+    private let githubStarPromptMaxShows = 3
 
     init(statsService: DashboardStatsService?, settings: AppSettings) {
         self.statsService = statsService
@@ -75,10 +87,65 @@ final class HomeViewModel {
 
         refreshFastFirstState()
         startObservingIfNeeded()
+        evaluateGitHubStarPromptIfNeeded()
     }
 
     func refresh() {
         load()
+    }
+
+    func evaluateGitHubStarPromptIfNeeded() {
+        guard githubStarPromptStep == nil else { return }
+        guard hasLoaded else { return }
+        guard !settings.githubStarPromptCompleted else { return }
+
+        let hasEnoughUsage = payload.today.sessions >= githubStarPromptMinimumSessions ||
+            payload.header.words7d >= githubStarPromptMinimumWords
+        guard hasEnoughUsage else { return }
+
+        if settings.githubStarPromptShownCount >= githubStarPromptMaxShows {
+            settings.githubStarPromptCompleted = true
+            return
+        }
+
+        let now = Date().timeIntervalSince1970
+        if settings.githubStarPromptLastShownAtEpoch > 0,
+           now - settings.githubStarPromptLastShownAtEpoch < githubStarPromptCooldown
+        {
+            return
+        }
+
+        settings.githubStarPromptShownCount += 1
+        settings.githubStarPromptLastShownAtEpoch = now
+        githubStarPromptStep = .enjoyment
+    }
+
+    func respondToEnjoymentPrompt(enjoying: Bool) {
+        guard githubStarPromptStep == .enjoyment else { return }
+        if enjoying {
+            githubStarPromptStep = .star
+        } else {
+            githubStarPromptStep = nil
+        }
+    }
+
+    func starOnGitHub() {
+        settings.githubStarPromptCompleted = true
+        githubStarPromptStep = nil
+        NSWorkspace.shared.open(AppLinks.githubRepositoryURL)
+    }
+
+    func maybeLaterForGitHubPrompt() {
+        githubStarPromptStep = nil
+    }
+
+    func dismissGitHubPromptPermanently() {
+        settings.githubStarPromptCompleted = true
+        githubStarPromptStep = nil
+    }
+
+    func clearGitHubPromptState() {
+        githubStarPromptStep = nil
     }
 
     func copyRecentDictation(_ entry: DashboardRecentDictation) {

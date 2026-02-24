@@ -96,6 +96,9 @@ final class AppSettings: ObservableObject {
     @AppStorage("fastFirstPrefetchReady") var fastFirstPrefetchReady: Bool = false
     @AppStorage("fastFirstUpgradeDismissed") var fastFirstUpgradeDismissed: Bool = false
     @AppStorage("fastFirstPrefetchErrorMessage") var fastFirstPrefetchErrorMessage: String = ""
+    @AppStorage("githubStarPromptCompleted") var githubStarPromptCompleted: Bool = false
+    @AppStorage("githubStarPromptShownCount") var githubStarPromptShownCount: Int = 0
+    @AppStorage("githubStarPromptLastShownAtEpoch") var githubStarPromptLastShownAtEpoch: Double = 0
 
     // Transcription
     @AppStorage("dictationLanguage") var dictationLanguage: String = "en"
