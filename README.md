@@ -62,13 +62,6 @@ Shortcuts can be customized in Settings > General.
 | Whisper Large V3 Turbo | ~950MB | 16GB+ | Best accuracy |
 | Whisper Small | ~300MB | 8GB+ | Lower RAM usage |
 
-## Dashboard Rollout Toggle (Dev)
-
-Orttaai uses a local rollout key for Home workspace default routing:
-
-- `homeWorkspaceAutoOpenEnabled = true` (default): Home appears as `Home` and auto-opens on app reopen.
-- `homeWorkspaceAutoOpenEnabled = false`: Home appears as `Home (Preview)` and does not auto-open on app reopen.
-
 ## Building from Source
 
 ```bash
@@ -85,8 +78,6 @@ Requirements:
 Build: `Cmd+B`
 Run: `Cmd+R`
 Test: `Cmd+U`
-
-For signed + notarized DMG distribution, see [`RELEASE.md`](RELEASE.md).
 
 ## Contributing
 

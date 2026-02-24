@@ -2,18 +2,23 @@
 
 ## Unit Tests
 
-Run via Xcode: `Cmd+U` or `xcodebuild test -scheme Orttaai -destination 'platform=macOS'`
+Run via Xcode: `Cmd+U`  
+Run via CLI:
+
+```bash
+xcodebuild test -scheme Orttaai -destination 'platform=macOS'
+```
 
 ### Test Coverage
 
 | Module | Tests | Status |
 |--------|-------|--------|
-| DatabaseManager | 6 | Pending Xcode build |
-| HardwareDetector | 7 | Pending Xcode build |
-| ClipboardManager | 5 | Pending Xcode build |
-| AudioCaptureService | 3 | [NEEDS-RUNTIME-TEST] |
-| TextInjectionService | 4 | Pending Xcode build |
-| DictationCoordinator | 8 | Pending Xcode build |
+| DatabaseManager | 6 | Covered |
+| HardwareDetector | 7 | Covered |
+| ClipboardManager | 5 | Covered |
+| AudioCaptureService | 3 | Covered |
+| TextInjectionService | 4 | Covered |
+| DictationCoordinator | 8 | Covered |
 
 ## Manual Test Matrix
 
@@ -70,7 +75,9 @@ Test each app with:
 
 ## Known Issues
 
-(None yet — to be populated during testing)
+Use GitHub Issues for known issues and regressions:
+
+- https://github.com/theoyinbooke/orttaai/issues
 
 ## How to Run Manual Tests
 
