@@ -1,18 +1,18 @@
-# Contributing to Uttrai
+# Contributing to Orttaai
 
-Thank you for your interest in contributing to Uttrai!
+Thank you for your interest in contributing to Orttaai!
 
 ## Development Setup
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/theoyinbooke/uttrai.git
-   cd uttrai
+   git clone https://github.com/theoyinbooke/orttaai.git
+   cd orttaai
    ```
 
 2. **Open in Xcode**
    ```bash
-   open Uttrai.xcodeproj
+   open Orttaai.xcodeproj
    ```
 
 3. **Build and run**
@@ -26,14 +26,14 @@ Thank you for your interest in contributing to Uttrai!
 
 - **Swift**: Follow Swift API Design Guidelines
 - **Naming**: Use descriptive names. Avoid abbreviations except well-known ones (URL, ID, etc.)
-- **Design tokens**: Always use `Color.Uttrai.*`, `Font.Uttrai.*`, `Spacing.*` — never hardcode values
+- **Design tokens**: Always use `Color.Orttaai.*`, `Font.Orttaai.*`, `Spacing.*` — never hardcode values
 - **Logging**: Use the appropriate `Logger` category (`Logger.audio`, `Logger.ui`, etc.)
-- **Error handling**: Use `UttraiError` cases. Provide `errorDescription` and `recoverySuggestion`.
+- **Error handling**: Use `OrttaaiError` cases. Provide `errorDescription` and `recoverySuggestion`.
 
 ## Architecture
 
 ```
-Uttrai/
+Orttaai/
 ├── App/          — App entry point, AppDelegate, AppState
 ├── Core/         — Business logic services
 │   ├── Audio/         — Audio capture, device management
@@ -76,7 +76,7 @@ When filing issues, include:
 - Mac model (chip and RAM)
 - Steps to reproduce
 - Expected vs actual behavior
-- Console logs (filter by `com.uttrai.app` in Console.app)
+- Console logs (filter by `com.orttaai.app` in Console.app)
 
 ## Areas Where Help is Needed
 

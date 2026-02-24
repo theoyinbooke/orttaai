@@ -1,0 +1,149 @@
+================================================================================
+ORTTAAI DASHBOARD BUILD CHECKLIST
+================================================================================
+Based on: orttaai-dashboard-implementation-plan.md
+Track: Mark [x] when complete. Leave [ ] for pending. [BLOCKED] if stuck.
+
+================================================================================
+PHASE 0: ALIGNMENT & WIREFRAME
+================================================================================
+
+[ ] DASH-0.1: Finalize V1 module list (individual-first, no team features)
+[ ] DASH-0.2: Confirm dashboard copy/text for all cards
+[ ] DASH-0.3: Confirm hero banner art direction + export format
+[ ] DASH-0.4: Lock Home window size + min resize behavior
+
+[ ] CHECKPOINT-PHASE0: Approved wireframe and content map
+
+================================================================================
+PHASE 1: WINDOW + NAVIGATION PLUMBING
+================================================================================
+
+[x] DASH-1.1: Add homeWindow to WindowManager
+[x] DASH-1.2: Implement showHomeWindow() + lifecycle methods
+[x] DASH-1.3: Add Home menu item in StatusBarMenu
+[x] DASH-1.4: Wire Home action in AppDelegate
+[x] DASH-1.5: Route app reopen to Home when setup is complete
+
+[x] CHECKPOINT-PHASE1: Home window opens from menu and reopen; setup/settings/history unchanged
+
+================================================================================
+PHASE 2: DATA AGGREGATION LAYER
+================================================================================
+
+[x] DASH-2.1: Create DashboardModels.swift domain models
+[x] DASH-2.2: Implement DashboardStatsService metric computation
+[x] DASH-2.3: Add dashboard query helpers in DatabaseManager (date windows)
+[x] DASH-2.4: Implement local date bucketing for 7-day trend
+[x] DASH-2.5: Add Performance Health recommendation rules
+[x] DASH-2.6: Add DashboardStatsServiceTests (edge cases + formulas)
+
+[x] CHECKPOINT-PHASE2: Metrics deterministic, tested, and local-only
+
+================================================================================
+PHASE 3: HOME UI SCAFFOLDING
+================================================================================
+
+[x] DASH-3.1: Implement HomeView shell (scroll + section spacing)
+[x] DASH-3.2: Build Home header + stat chips
+[x] DASH-3.3: Build hero banner card + CTA handling
+[x] DASH-3.4: Build Today Snapshot card
+[x] DASH-3.5: Build Top Apps card + Quick Actions card
+[x] DASH-3.6: Build Recent Dictations card/list
+
+[x] CHECKPOINT-PHASE3: Full static UI with real data wiring placeholders
+
+================================================================================
+PHASE 4: TREND + LIVE REFRESH + INTERACTION
+================================================================================
+
+[x] DASH-4.1: Implement 7-day trend chart (Swift Charts)
+[x] DASH-4.2: Add live updates using DB observation
+[x] DASH-4.3: Add empty states for each module
+[x] DASH-4.4: Hook quick actions to settings/setup/history flows
+
+[x] CHECKPOINT-PHASE4: Dashboard updates live and supports one-click navigation
+
+================================================================================
+PHASE 5: POLISH & QUALITY
+================================================================================
+
+[x] DASH-5.1: Add loading/skeleton states with restrained motion
+[x] DASH-5.2: Add accessibility labels, keyboard navigation, reduced-motion support
+[x] DASH-5.3: Validate spacing/contrast/type hierarchy against design system
+[ ] DASH-5.4: Manual QA on empty/new/power-user data profiles
+[ ] DASH-5.5: Update docs and screenshots for dashboard (docs done, screenshots pending)
+
+[ ] CHECKPOINT-PHASE5: Production-ready dashboard quality and no regressions
+
+================================================================================
+PHASE 6: UNIFIED HOME WORKSPACE (SIDEBAR + TABLE)
+================================================================================
+
+[x] DASH-6.1: Add left sidebar navigation shell in Home window
+[x] DASH-6.2: Route menu actions (Home/History/Settings) into Home sections
+[x] DASH-6.3: Host Settings/Model/History inside Home workspace content area
+[x] DASH-6.4: Refactor Recent Dictations to compact table rows with copy/delete actions
+[x] DASH-6.5: Add transcript detail modal from table row open
+[x] DASH-6.6: Add responsive behavior (collapsed sidebar + compact dashboard columns)
+
+[x] CHECKPOINT-PHASE6: Home is now a unified workspace for primary navigation
+
+================================================================================
+PHASE 7: HARDENING & CLEANUP
+================================================================================
+
+[x] DASH-7.1: Confirm/remove residual legacy popup-window routing paths
+[x] DASH-7.2: Expand DashboardStatsService tests for recent-row shaping (limit/sanitization/fallback app)
+[x] DASH-7.3: Add DatabaseManager delete tests for row-action reliability
+[x] DASH-7.4: Update implementation/QA tracker docs for unified Home architecture
+
+[x] CHECKPOINT-PHASE7: Unified Home routing + recent table actions are hardened with tests
+
+================================================================================
+PHASE 8: ROLLOUT CONTROLS
+================================================================================
+
+[x] DASH-8.1: Add local Home auto-open rollout toggle in AppSettings
+[x] DASH-8.2: Gate app reopen default route to Home using rollout toggle
+[x] DASH-8.3: Label Home menu entry as preview during soft-launch mode
+[x] DASH-8.4: Update rollout docs/checklists for staged release behavior
+
+[x] CHECKPOINT-PHASE8: Home rollout can be soft-launched without forced default routing
+
+================================================================================
+PHASE 9: DEFAULT HOME REOPEN
+================================================================================
+
+[x] DASH-9.1: Set Home auto-open toggle default to enabled
+[x] DASH-9.2: Preserve preview fallback when toggle is manually disabled
+[x] DASH-9.3: Update rollout docs/checklists for default-on behavior
+
+[x] CHECKPOINT-PHASE9: Home is now default reopen destination with reversible local override
+
+================================================================================
+TESTING CHECKLIST
+================================================================================
+
+[x] UNIT: Word counting edge cases
+[x] UNIT: WPM division safety
+[x] UNIT: Date bucketing correctness
+[x] UNIT: Active-day computation
+[x] UNIT: Recommendation threshold logic
+[ ] INTEGRATION: Home window open/close repeatedly
+[ ] INTEGRATION: Menu action routes correctly
+[ ] INTEGRATION: Live refresh after new dictation
+[ ] MANUAL: Empty history profile
+[ ] MANUAL: Light history profile (1-10 rows)
+[ ] MANUAL: Heavy history profile (500 rows)
+[ ] MANUAL: Mixed app names + nil app names
+[ ] MANUAL: Mixed short/long recordings
+
+================================================================================
+ROLL-OUT CHECKLIST
+================================================================================
+
+[x] DASH-ROLL-1: Add local feature toggle for Home dashboard during build
+[x] DASH-ROLL-2: Soft launch via Home menu item
+[x] DASH-ROLL-3: Make Home default reopen destination after validation
+[x] DASH-ROLL-4: Final stakeholder sign-off

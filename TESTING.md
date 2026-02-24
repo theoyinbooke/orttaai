@@ -1,8 +1,8 @@
-# Uttrai Testing Guide
+# Orttaai Testing Guide
 
 ## Unit Tests
 
-Run via Xcode: `Cmd+U` or `xcodebuild test -scheme Uttrai -destination 'platform=macOS'`
+Run via Xcode: `Cmd+U` or `xcodebuild test -scheme Orttaai -destination 'platform=macOS'`
 
 ### Test Coverage
 
@@ -74,7 +74,7 @@ Test each app with:
 
 ## How to Run Manual Tests
 
-1. Build and run Uttrai from Xcode (`Cmd+R`)
+1. Build and run Orttaai from Xcode (`Cmd+R`)
 2. Complete the setup flow (grant permissions, download model)
 3. Open each target app from the matrix
 4. Press `Ctrl+Shift+Space`, speak the test phrase, release

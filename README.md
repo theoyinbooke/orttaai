@@ -1,4 +1,4 @@
-# Uttrai
+# Orttaai
 
 **Native macOS voice keyboard powered by WhisperKit.**
 
@@ -14,6 +14,7 @@ Press a hotkey, speak, and your words appear at the cursor — in any app. All p
 - **Recording cap** — 45-second maximum with countdown at 35 seconds.
 - **Menu bar app** — Lives in your menu bar with status icon showing current state.
 - **History** — Searchable history of all transcriptions with live updates.
+- **Personal Home dashboard** — Sleek at-a-glance view for 7-day activity, speed trends, top apps, and quick actions.
 - **Model management** — Download and switch between Whisper models based on your hardware.
 - **Auto-updates** — Sparkle integration for direct downloads; Homebrew-managed updates for cask installs.
 
@@ -28,16 +29,16 @@ Press a hotkey, speak, and your words appear at the cursor — in any app. All p
 ### Homebrew (Recommended)
 
 ```bash
-brew install --cask uttrai
+brew install --cask orttaai
 ```
 
 ### Direct Download
 
-Download the latest `.dmg` from [GitHub Releases](https://github.com/theoyinbooke/uttrai/releases).
+Download the latest `.dmg` from [GitHub Releases](https://github.com/theoyinbooke/orttaai/releases).
 
 ## Permissions
 
-Uttrai requires three macOS permissions:
+Orttaai requires three macOS permissions:
 
 1. **Microphone** — Captures your voice for transcription
 2. **Accessibility** — Simulates paste to inject text at your cursor
@@ -61,12 +62,19 @@ Shortcuts can be customized in Settings > General.
 | Whisper Large V3 Turbo | ~950MB | 16GB+ | Best accuracy |
 | Whisper Small | ~300MB | 8GB+ | Lower RAM usage |
 
+## Dashboard Rollout Toggle (Dev)
+
+Orttaai uses a local rollout key for Home workspace default routing:
+
+- `homeWorkspaceAutoOpenEnabled = true` (default): Home appears as `Home` and auto-opens on app reopen.
+- `homeWorkspaceAutoOpenEnabled = false`: Home appears as `Home (Preview)` and does not auto-open on app reopen.
+
 ## Building from Source
 
 ```bash
-git clone https://github.com/theoyinbooke/uttrai.git
-cd uttrai
-open Uttrai.xcodeproj
+git clone https://github.com/theoyinbooke/orttaai.git
+cd orttaai
+open Orttaai.xcodeproj
 ```
 
 Requirements:
