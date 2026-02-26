@@ -4,6 +4,7 @@
 import Cocoa
 import KeyboardShortcuts
 import os
+import Sparkle
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -12,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowManager: WindowManager?
     private var appState: AppState?
     private var floatingPanel: FloatingPanelController?
+    private var updaterController: SPUStandardUpdaterController?
 
     // Core services
     private var audioService: AudioCaptureService?
@@ -54,6 +56,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarMenu = StatusBarMenu()
         windowManager = WindowManager()
         floatingPanel = FloatingPanelController()
+        configureUpdater()
 
         windowManager?.onSetupCompleted = { [weak self] in
             guard let self = self else { return }
@@ -79,6 +82,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBarMenu?.onSettingsAction = { [weak self] in
             self?.openHomeWorkspace(section: .settings)
+        }
+        statusBarMenu?.onCheckForUpdatesAction = { [weak self] in
+            self?.checkForUpdates()
         }
         statusBarMenu?.onQuitAction = {
             NSApplication.shared.terminate(nil)
@@ -140,6 +146,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openHomeWorkspace(section: HomeSection) {
         windowManager?.showHomeWindow(section: section)
+    }
+
+    private func configureUpdater() {
+        guard !Bundle.main.isHomebrewInstall else {
+            updaterController = nil
+            return
+        }
+
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+    }
+
+    private func checkForUpdates() {
+        updaterController?.checkForUpdates(nil)
     }
 
     private func setupCoreServices(settings: AppSettings) {

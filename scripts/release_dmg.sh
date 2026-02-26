@@ -12,12 +12,12 @@ Options:
   --version <x.y.z>         Override MARKETING_VERSION from Xcode build settings.
   --project <path>          Xcode project path (default: Orttaai.xcodeproj).
   --scheme <name>           Xcode scheme (default: Orttaai).
+  --spm-packages-dir <path> SwiftPM packages/artifacts cache dir (default: .spm-local).
   --configuration <name>    Build configuration (default: Release).
   --app-name <name>         App bundle name (default: Orttaai).
   --team-id <id>            Apple Team ID (default: from Xcode build settings).
   --notary-profile <name>   notarytool keychain profile (default: ORTTAAI_NOTARY).
   --output-dir <path>       Artifact directory root (default: dist).
-  --skip-notarize           Build/sign/package only; skip notary submit + staple.
   -h, --help                Show this help.
 
 Prerequisites:
@@ -37,6 +37,7 @@ require_cmd() {
 
 PROJECT_PATH="Orttaai.xcodeproj"
 SCHEME="Orttaai"
+SPM_PACKAGES_DIR=".spm-local"
 CONFIGURATION="Release"
 APP_NAME="Orttaai"
 NOTARY_PROFILE="ORTTAAI_NOTARY"
@@ -57,6 +58,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --scheme)
       SCHEME="${2:-}"
+      shift 2
+      ;;
+    --spm-packages-dir)
+      SPM_PACKAGES_DIR="${2:-}"
       shift 2
       ;;
     --configuration)
@@ -80,8 +85,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --skip-notarize)
-      SKIP_NOTARIZE=1
-      shift
+      echo "--skip-notarize is disabled for this project. Notarization is always required." >&2
+      exit 1
       ;;
     -h|--help)
       usage
@@ -109,7 +114,17 @@ if [[ ! -d "$PROJECT_PATH" ]]; then
   exit 1
 fi
 
-BUILD_SETTINGS="$(xcodebuild -project "$PROJECT_PATH" -scheme "$SCHEME" -showBuildSettings)"
+XCODEBUILD_COMMON_ARGS=(
+  -project "$PROJECT_PATH"
+  -scheme "$SCHEME"
+)
+if [[ -n "$SPM_PACKAGES_DIR" ]]; then
+  XCODEBUILD_COMMON_ARGS+=(
+    -clonedSourcePackagesDirPath "$SPM_PACKAGES_DIR"
+  )
+fi
+
+BUILD_SETTINGS="$(xcodebuild "${XCODEBUILD_COMMON_ARGS[@]}" -showBuildSettings)"
 MARKETING_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F' = ' '/MARKETING_VERSION =/{print $2; exit}')"
 TEAM_ID_FROM_XCODE="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F' = ' '/DEVELOPMENT_TEAM =/{print $2; exit}')"
 
@@ -125,6 +140,8 @@ if [[ -z "${TEAM_ID:-}" ]]; then
   echo "Unable to resolve Team ID. Pass --team-id." >&2
   exit 1
 fi
+
+echo "==> Notarization profile: $NOTARY_PROFILE"
 
 DEVELOPER_ID_SHA="$(security find-identity -v -p codesigning | awk '/Developer ID Application/{print $2; exit}')"
 if [[ -z "${DEVELOPER_ID_SHA:-}" ]]; then
@@ -156,15 +173,22 @@ DMG_VOLUME_ICON_SOURCE=""
 rm -rf "$ARTIFACT_ROOT"
 mkdir -p "$ARTIFACT_ROOT"
 
+if [[ -n "$SPM_PACKAGES_DIR" ]]; then
+  echo "==> Resolving Swift packages (cache: $SPM_PACKAGES_DIR)"
+else
+  echo "==> Resolving Swift packages"
+fi
+xcodebuild -resolvePackageDependencies "${XCODEBUILD_COMMON_ARGS[@]}"
+
 echo "==> Archiving app ($SCHEME, $CONFIGURATION)"
 # Keep archive signing automatic to avoid forcing Developer ID onto SwiftPM dependency targets.
 # Developer ID signing is applied after archive by re-signing the archived .app bundle.
 xcodebuild archive \
-  -project "$PROJECT_PATH" \
-  -scheme "$SCHEME" \
+  "${XCODEBUILD_COMMON_ARGS[@]}" \
   -configuration "$CONFIGURATION" \
   -archivePath "$ARCHIVE_PATH" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
+  CURRENT_PROJECT_VERSION="$VERSION" \
   SKIP_INSTALL=NO
 
 if [[ ! -d "$ARCHIVED_APP_PATH" ]]; then
@@ -351,4 +375,5 @@ echo
 echo "Next:"
 echo "  1) Upload DMG to your website or GitHub Releases."
 echo "  2) Update Homebrew cask SHA (orttaai.rb) if publishing via Homebrew."
-echo "  3) Update Sparkle appcast if you are shipping in-app updates."
+echo "  3) Update Sparkle appcast:"
+echo "     scripts/update_appcast.sh --version $VERSION"

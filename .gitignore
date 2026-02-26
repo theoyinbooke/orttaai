@@ -3,6 +3,8 @@
 /Packages
 xcuserdata/
 DerivedData/
+.spm-local/
+.spm-local.bak.*/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 *.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
 

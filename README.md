@@ -87,6 +87,20 @@ Build: `Cmd+B`
 Run: `Cmd+R`
 Test: `Cmd+U`
 
+## Sparkle Appcast (Maintainers)
+
+After creating and uploading a notarized DMG release, regenerate the appcast:
+
+```bash
+scripts/update_appcast.sh --version 1.0.3
+git add Orttaai/Resources/appcast.xml
+git commit -m "Update Sparkle appcast for v1.0.3"
+git push
+```
+
+The app reads updates from:
+`https://raw.githubusercontent.com/theoyinbooke/orttaai/main/Orttaai/Resources/appcast.xml`
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR process.
