@@ -64,7 +64,7 @@ struct HomeView: View {
             isPresented: Binding(
                 get: { viewModel.githubStarPromptStep == .enjoyment },
                 set: { newValue in
-                    if !newValue {
+                    if !newValue, viewModel.githubStarPromptStep == .enjoyment {
                         viewModel.clearGitHubPromptState()
                     }
                 }
@@ -84,7 +84,7 @@ struct HomeView: View {
             isPresented: Binding(
                 get: { viewModel.githubStarPromptStep == .star },
                 set: { newValue in
-                    if !newValue {
+                    if !newValue, viewModel.githubStarPromptStep == .star {
                         viewModel.clearGitHubPromptState()
                     }
                 }

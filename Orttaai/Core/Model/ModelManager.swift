@@ -135,8 +135,9 @@ final class ModelManager {
                 )
             }
 
-            availableModels = Self.sortModelsBySize(models)
-            Logger.model.info("Fetched \(models.count) available models")
+            let deduplicatedModels = Self.deduplicateModelsByNormalizedID(models)
+            availableModels = Self.sortModelsBySize(deduplicatedModels)
+            Logger.model.info("Fetched \(models.count) available models (\(deduplicatedModels.count) unique)")
         } catch {
             Logger.model.error("Failed to fetch models, using hardcoded list: \(error.localizedDescription)")
             setupHardcodedModels()
@@ -146,19 +147,29 @@ final class ModelManager {
     // MARK: - Model Operations
 
     func download(model: ModelInfo) async throws {
-        state = .downloading(progress: 0)
+        let normalizedModelID = Self.normalizedModelID(model.id)
+        let isAlreadyDownloaded = Self.detectDownloadedModelMetrics().downloadedModelIDs.contains(normalizedModelID)
+        state = isAlreadyDownloaded ? .loading : .downloading(progress: 0)
 
-        Logger.model.info("Starting download of model: \(model.id)")
+        if isAlreadyDownloaded {
+            Logger.model.info("Loading downloaded model: \(model.id)")
+        } else {
+            Logger.model.info("Starting download of model: \(model.id)")
+        }
 
         do {
-            state = .loading
+            if !isAlreadyDownloaded {
+                state = .loading
+            }
             try await transcriptionService.loadModel(named: model.id)
             currentModelId = model.id
             AppSettings().activeModelId = model.id
             state = .loaded
             Logger.model.info("Model loaded: \(model.id)")
 
-            ModelDownloader.postDownloadNotification(modelName: model.name)
+            if !isAlreadyDownloaded {
+                ModelDownloader.postDownloadNotification(modelName: model.name)
+            }
         } catch {
             state = .error(error.localizedDescription)
             Logger.model.error("Model download/load failed: \(error.localizedDescription)")
@@ -322,6 +333,66 @@ final class ModelManager {
             }
             return a.id < b.id
         }
+    }
+
+    nonisolated static func deduplicateModelsByNormalizedID(_ models: [ModelInfo]) -> [ModelInfo] {
+        let grouped = Dictionary(grouping: models) { canonicalModelListID($0.id) }
+        return grouped.compactMap { _, variants in
+            guard !variants.isEmpty else { return nil }
+            let preferred = preferredModelVariant(for: variants)
+
+            return ModelInfo(
+                id: preferred.id,
+                name: preferred.name,
+                downloadSizeMB: variants.map(\.downloadSizeMB).min() ?? preferred.downloadSizeMB,
+                description: preferred.description,
+                minimumTier: preferred.minimumTier,
+                speedLabel: preferred.speedLabel,
+                accuracyLabel: preferred.accuracyLabel,
+                isDeviceRecommended: variants.contains(where: { $0.isDeviceRecommended }),
+                isDeviceSupported: variants.contains(where: { $0.isDeviceSupported }),
+                isEnglishOnly: variants.contains(where: { $0.isEnglishOnly })
+            )
+        }
+    }
+
+    nonisolated private static func preferredModelVariant(for variants: [ModelInfo]) -> ModelInfo {
+        variants.sorted { a, b in
+            let aIsCanonical = canonicalModelListID(a.id) == a.id
+            let bIsCanonical = canonicalModelListID(b.id) == b.id
+            if aIsCanonical != bIsCanonical {
+                return aIsCanonical
+            }
+            if a.isDeviceRecommended != b.isDeviceRecommended {
+                return a.isDeviceRecommended
+            }
+            if a.downloadSizeMB != b.downloadSizeMB {
+                return a.downloadSizeMB < b.downloadSizeMB
+            }
+            if a.id.count != b.id.count {
+                return a.id.count < b.id.count
+            }
+            return a.id.localizedCaseInsensitiveCompare(b.id) == .orderedAscending
+        }.first ?? variants[0]
+    }
+
+    nonisolated static func canonicalModelListID(_ modelId: String) -> String {
+        var canonical = normalizedModelID(modelId)
+        guard !canonical.isEmpty else { return canonical }
+
+        // Collapse date-stamped aliases such as "...-v20240930_turbo" to a stable family id.
+        let dateTagPattern = #"([-_])v\d{8}(?=([-_]|$))"#
+        if let regex = try? NSRegularExpression(pattern: dateTagPattern, options: [.caseInsensitive]) {
+            let range = NSRange(canonical.startIndex..<canonical.endIndex, in: canonical)
+            canonical = regex.stringByReplacingMatches(in: canonical, options: [], range: range, withTemplate: "$1")
+        }
+
+        while canonical.contains("__") { canonical = canonical.replacingOccurrences(of: "__", with: "_") }
+        while canonical.contains("--") { canonical = canonical.replacingOccurrences(of: "--", with: "-") }
+        canonical = canonical.replacingOccurrences(of: "_-", with: "-")
+        canonical = canonical.replacingOccurrences(of: "-_", with: "-")
+        canonical = canonical.trimmingCharacters(in: CharacterSet(charactersIn: "_-"))
+        return canonical
     }
 
     nonisolated static func normalizedModelID(_ modelId: String) -> String {

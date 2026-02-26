@@ -153,8 +153,8 @@ struct ModelSettingsView: View {
     }
 
     private var selectedModel: ModelInfo? {
-        let normalizedSelection = ModelManager.normalizedModelID(selectedModelId)
-        return models.first(where: { ModelManager.normalizedModelID($0.id) == normalizedSelection })
+        let canonicalSelection = ModelManager.canonicalModelListID(selectedModelId)
+        return models.first(where: { ModelManager.canonicalModelListID($0.id) == canonicalSelection })
     }
 
     private var displayNameForCurrentModel: String {
@@ -503,12 +503,14 @@ struct ModelSettingsView: View {
     // MARK: - Model Row
 
     private func compactModelRow(_ model: ModelInfo) -> some View {
-        let modelID = ModelManager.normalizedModelID(model.id)
-        let selectedID = ModelManager.normalizedModelID(selectedModelId)
+        let modelID = ModelManager.canonicalModelListID(model.id)
+        let selectedID = ModelManager.canonicalModelListID(selectedModelId)
+        let downloadedCanonicalIDs = Set(downloadedModelIDs.map(ModelManager.canonicalModelListID))
         let isSelected = modelID == selectedID
-        let isDownloaded = downloadedModelIDs.contains(modelID)
+        let isDownloaded = downloadedCanonicalIDs.contains(modelID)
         let isUnsupported = !model.isDeviceSupported
         let isThisSwitching = switchingModelId == model.id && isSwitching
+        let switchingStatusText = isDownloaded ? "Switching..." : "Downloading..."
 
         return HStack(spacing: Spacing.sm) {
             Button {
@@ -542,7 +544,7 @@ struct ModelSettingsView: View {
                     Spacer(minLength: Spacing.sm)
 
                     if isThisSwitching {
-                        Text("Downloading...")
+                        Text(switchingStatusText)
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.accent)
                     } else if isSelected {

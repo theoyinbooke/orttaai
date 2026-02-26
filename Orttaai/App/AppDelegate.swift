@@ -130,8 +130,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Setup
 
     private func startSetupFlow() {
-        UserDefaults.standard.set(false, forKey: hasCompletedSetupKey)
-        appState?.settings.hasCompletedSetup = false
+        // "Run Setup" from menu/home is a maintenance path for an already-complete user.
+        // Do not reset completion state unless we are in first-run onboarding.
+        if !UserDefaults.standard.bool(forKey: hasCompletedSetupKey) {
+            appState?.settings.hasCompletedSetup = false
+        }
         windowManager?.showSetupWindow()
     }
 
