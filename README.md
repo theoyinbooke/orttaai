@@ -2,7 +2,7 @@
 
 **Native macOS voice keyboard powered by WhisperKit.**
 
-Press a hotkey, speak, and your words appear at the cursor — in any app. All processing happens on-device. Your voice never leaves your Mac.
+Giving you back your second hand. Press a hotkey, speak, and your words appear at the cursor — in any app. All processing happens on-device. Your voice never leaves your Mac.
 
 ## Features
 
