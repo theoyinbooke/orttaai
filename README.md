@@ -16,6 +16,7 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 - **History** — Searchable history of all transcriptions with live updates.
 - **Personal Memory (Dictionary + Snippets)** — Save your own term replacements and phrase expansions, then apply them automatically during dictation.
 - **AI Suggestions from History** — Generate suggested dictionary/snippet entries from your recent local history (Apple Foundation Models when available, with fallback).
+- **Writing Insights panel** — Generate on-demand insights about your dictation patterns from recent history (Apple Foundation Models when available, with fallback).
 - **Personal Home dashboard** — Sleek at-a-glance view for 7-day activity, speed trends, top apps, and quick actions.
 - **Model management** — Download and switch between Whisper models based on your hardware.
 - **Auto-updates** — Sparkle integration for direct downloads; Homebrew-managed updates for cask installs.
@@ -47,6 +48,16 @@ Orttaai requires three macOS permissions:
 3. **Input Monitoring** — Detects your push-to-talk hotkey
 
 All processing happens locally. Your voice and text never leave your Mac.
+
+## Apple Foundation Models Integration
+
+Orttaai uses **Apple Foundation Models** (on supported macOS versions/devices) for local language analysis features:
+
+- **Memory learning suggestions** — Proposes new dictionary replacements and snippet expansions from your recent transcription history.
+- **Writing insights generation** — Summarizes writing/speaking patterns in the Insights panel so you can spot habits and trends.
+- **Safe fallback path** — If Apple Foundation Models is unavailable, Orttaai automatically falls back to a local heuristic analyzer.
+
+These features are designed to stay local-first and work without sending your transcription history to external services.
 
 ## Keyboard Shortcuts
 
@@ -114,6 +125,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 ## Acknowledgments
 
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — On-device speech recognition
+- [Apple Foundation Models](https://developer.apple.com/documentation/foundationmodels) — On-device language analysis for memory suggestions and writing insights
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — SQLite database toolkit
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Auto-update framework
 - [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) — Shortcut recording
