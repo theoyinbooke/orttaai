@@ -39,6 +39,20 @@ brew install --cask orttaai
 
 Download the latest `.dmg` from [GitHub Releases](https://github.com/theoyinbooke/orttaai/releases).
 
+## Screenshots
+
+### Home Overview
+
+![Orttaai Home Overview](docs/images/home-overview.png)
+
+### Insights Panel
+
+![Orttaai Writing Insights Panel](docs/images/insights-pane.png)
+
+### Model Management
+
+![Orttaai Model Management Page](docs/images/model-page.png)
+
 ## Permissions
 
 Orttaai requires three macOS permissions:
