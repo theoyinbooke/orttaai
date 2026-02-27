@@ -14,6 +14,8 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 - **Recording cap** — 45-second maximum with countdown at 35 seconds.
 - **Menu bar app** — Lives in your menu bar with status icon showing current state.
 - **History** — Searchable history of all transcriptions with live updates.
+- **Personal Memory (Dictionary + Snippets)** — Save your own term replacements and phrase expansions, then apply them automatically during dictation.
+- **AI Suggestions from History** — Generate suggested dictionary/snippet entries from your recent local history (Apple Foundation Models when available, with fallback).
 - **Personal Home dashboard** — Sleek at-a-glance view for 7-day activity, speed trends, top apps, and quick actions.
 - **Model management** — Download and switch between Whisper models based on your hardware.
 - **Auto-updates** — Sparkle integration for direct downloads; Homebrew-managed updates for cask installs.
@@ -92,9 +94,9 @@ Test: `Cmd+U`
 After creating and uploading a notarized DMG release, regenerate the appcast:
 
 ```bash
-scripts/update_appcast.sh --version 1.0.3
+scripts/update_appcast.sh --version 1.0.4
 git add Orttaai/Resources/appcast.xml
-git commit -m "Update Sparkle appcast for v1.0.3"
+git commit -m "Update Sparkle appcast for v1.0.4"
 git push
 ```
 

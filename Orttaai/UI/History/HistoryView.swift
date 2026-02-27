@@ -25,6 +25,7 @@ struct HistoryView: View {
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
+            let showDuration = width >= 920
             let showWords = width >= 920
             let showLatency = width >= 1_060
             let showModel = width >= 1_280
@@ -48,25 +49,14 @@ struct HistoryView: View {
                 } else if filteredEntries.isEmpty {
                     noResultsState
                 } else {
-                    VStack(spacing: 0) {
-                        tableHeaderRow(
-                            appColumnWidth: appColumnWidth,
-                            showWords: showWords,
-                            showLatency: showLatency,
-                            showModel: showModel
-                        )
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, Spacing.sm)
-
-                        Divider()
-                            .background(Color.Orttaai.border)
-
-                        ScrollView(showsIndicators: false) {
-                            LazyVStack(spacing: 0) {
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                            Section {
                                 ForEach(Array(filteredEntries.enumerated()), id: \.element.id) { index, entry in
                                     tableRow(
                                         entry,
                                         appColumnWidth: appColumnWidth,
+                                        showDuration: showDuration,
                                         showWords: showWords,
                                         showLatency: showLatency,
                                         showModel: showModel
@@ -77,6 +67,22 @@ struct HistoryView: View {
                                             .background(Color.Orttaai.border.opacity(0.6))
                                     }
                                 }
+                            } header: {
+                                VStack(spacing: 0) {
+                                    tableHeaderRow(
+                                        appColumnWidth: appColumnWidth,
+                                        showDuration: showDuration,
+                                        showWords: showWords,
+                                        showLatency: showLatency,
+                                        showModel: showModel
+                                    )
+                                    .padding(.horizontal, Spacing.sm)
+                                    .padding(.vertical, Spacing.sm)
+
+                                    Divider()
+                                        .background(Color.Orttaai.border)
+                                }
+                                .background(Color.Orttaai.bgSecondary.opacity(0.96))
                             }
                         }
                     }
@@ -192,6 +198,7 @@ struct HistoryView: View {
 
     private func tableHeaderRow(
         appColumnWidth: CGFloat,
+        showDuration: Bool,
         showWords: Bool,
         showLatency: Bool,
         showModel: Bool
@@ -199,7 +206,11 @@ struct HistoryView: View {
         HStack(spacing: Spacing.sm) {
             tableHeaderText("Time", width: 96, alignment: .leading)
             tableHeaderText("App", width: appColumnWidth, alignment: .leading)
-            tableHeaderText("Transcript", width: nil, alignment: .leading)
+            tableHeaderText("Transcript", width: nil, alignment: .leading, expands: true)
+
+            if showDuration {
+                tableHeaderText("Duration", width: 84, alignment: .trailing)
+            }
 
             if showWords {
                 tableHeaderText("Words", width: 64, alignment: .trailing)
@@ -215,18 +226,26 @@ struct HistoryView: View {
 
             tableHeaderText("Actions", width: 88, alignment: .center)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func tableHeaderText(_ text: String, width: CGFloat?, alignment: Alignment) -> some View {
+    private func tableHeaderText(
+        _ text: String,
+        width: CGFloat?,
+        alignment: Alignment,
+        expands: Bool = false
+    ) -> some View {
         Text(text)
             .font(.Orttaai.caption)
             .foregroundStyle(Color.Orttaai.textTertiary)
             .frame(width: width, alignment: alignment)
+            .frame(maxWidth: expands ? .infinity : nil, alignment: alignment)
     }
 
     private func tableRow(
         _ entry: HistoryTableEntry,
         appColumnWidth: CGFloat,
+        showDuration: Bool,
         showWords: Bool,
         showLatency: Bool,
         showModel: Bool
@@ -251,16 +270,23 @@ struct HistoryView: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            if showDuration {
+                Text(HistoryDurationFormatter.string(fromMilliseconds: entry.recordingMs))
+                    .font(.Orttaai.secondary.monospacedDigit())
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .frame(width: 84, alignment: .trailing)
+            }
+
             if showWords {
                 Text("\(entry.wordCount)")
-                    .font(.Orttaai.secondary)
+                    .font(.Orttaai.secondary.monospacedDigit())
                     .foregroundStyle(Color.Orttaai.textSecondary)
                     .frame(width: 64, alignment: .trailing)
             }
 
             if showLatency {
                 Text("\(entry.processingMs) ms")
-                    .font(.Orttaai.secondary)
+                    .font(.Orttaai.secondary.monospacedDigit())
                     .foregroundStyle(Color.Orttaai.textSecondary)
                     .frame(width: 84, alignment: .trailing)
             }
@@ -299,7 +325,7 @@ struct HistoryView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(entry.appName), \(entry.previewText), \(entry.wordCount) words, \(entry.processingMs) milliseconds."
+            "\(entry.appName), \(entry.previewText), duration \(HistoryDurationFormatter.string(fromMilliseconds: entry.recordingMs)), \(entry.wordCount) words, \(entry.processingMs) milliseconds."
         )
         .accessibilityHint("Double tap to open full transcript.")
     }
@@ -460,6 +486,7 @@ struct HistoryView: View {
                 fullText: normalizedText,
                 previewText: previewText,
                 wordCount: normalizedText.split(whereSeparator: \.isWhitespace).count,
+                recordingMs: max(0, record.recordingDurationMs),
                 processingMs: max(0, record.processingDurationMs),
                 modelId: modelId
             )
@@ -474,8 +501,28 @@ private struct HistoryTableEntry: Identifiable {
     let fullText: String
     let previewText: String
     let wordCount: Int
+    let recordingMs: Int
     let processingMs: Int
     let modelId: String
+}
+
+private enum HistoryDurationFormatter {
+    static func string(fromMilliseconds milliseconds: Int) -> String {
+        let clamped = max(0, milliseconds)
+        let totalSeconds = clamped / 1_000
+        let hours = totalSeconds / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+        let seconds = totalSeconds % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        if minutes > 0 {
+            return String(format: "%d:%02d", minutes, seconds)
+        }
+
+        return String(format: "%.1fs", Double(clamped) / 1_000)
+    }
 }
 
 private struct HistoryTranscriptDetailModal: View {
@@ -529,6 +576,10 @@ private struct HistoryTranscriptDetailModal: View {
                     .foregroundStyle(Color.Orttaai.textSecondary)
 
                 Spacer()
+
+                Label(HistoryDurationFormatter.string(fromMilliseconds: entry.recordingMs), systemImage: "timer")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
 
                 Label("\(entry.processingMs) ms", systemImage: "speedometer")
                     .font(.Orttaai.secondary)

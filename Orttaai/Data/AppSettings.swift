@@ -90,6 +90,9 @@ final class AppSettings: ObservableObject {
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
+    @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
+    @AppStorage("snippetsEnabled") var snippetsEnabled: Bool = true
+    @AppStorage("aiSuggestionsEnabled") var aiSuggestionsEnabled: Bool = false
     @AppStorage("fastFirstOnboardingEnabled") var fastFirstOnboardingEnabled: Bool = false
     @AppStorage("fastFirstRecommendedModelId") var fastFirstRecommendedModelId: String = ""
     @AppStorage("fastFirstPrefetchStarted") var fastFirstPrefetchStarted: Bool = false

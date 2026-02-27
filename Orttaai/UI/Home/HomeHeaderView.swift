@@ -7,6 +7,8 @@ struct HomeHeaderView: View {
     let stats: DashboardHeaderStats
     let isRefreshing: Bool
     let isCompact: Bool
+    let isInsightsVisible: Bool
+    let onToggleInsights: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.lg) {
@@ -33,6 +35,15 @@ struct HomeHeaderView: View {
                         StatChipView(label: "avg WPM", value: "\(stats.averageWPM7d)")
                     }
                 }
+
+                Button {
+                    onToggleInsights()
+                } label: {
+                    Label(isInsightsVisible ? "Hide Insights" : "Insights", systemImage: "sparkles.rectangle.stack")
+                        .font(.Orttaai.secondary)
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                .help(isInsightsVisible ? "Hide writing insights panel" : "Open writing insights panel")
 
                 if isRefreshing {
                     HStack(spacing: Spacing.xs) {

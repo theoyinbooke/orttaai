@@ -14,4 +14,5 @@ extension Logger {
     static let database = Logger(subsystem: subsystem, category: "database")
     static let model = Logger(subsystem: subsystem, category: "model")
     static let dictation = Logger(subsystem: subsystem, category: "dictation")
+    static let memory = Logger(subsystem: subsystem, category: "memory")
 }

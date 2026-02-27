@@ -108,64 +108,108 @@ struct HomeView: View {
     }
 
     private var content: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.xl) {
-                HomeHeaderView(
-                    stats: viewModel.payload.header,
-                    isRefreshing: viewModel.isLoading && viewModel.hasLoaded,
-                    isCompact: isCompact
-                )
-
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.error)
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm)
-                        .background(Color.Orttaai.errorSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
-                        .accessibilityLabel("Dashboard error: \(errorMessage)")
-                }
-
-                HomeBannerView(
-                    title: bannerTitle,
-                    subtitle: bannerSubtitle,
-                    buttonTitle: bannerButtonTitle,
-                    showsArtwork: !isCompact,
-                    isButtonDisabled: isBannerButtonDisabled,
-                    onButtonTap: bannerAction
-                )
-
-                rowLayout(
-                    left: TodaySnapshotCard(snapshot: viewModel.payload.today),
-                    right: PerformanceHealthCard(health: viewModel.payload.performance)
-                )
-
-                TrendCardView(points: viewModel.payload.trend7d, showsLegend: !isCompact)
-
-                rowLayout(
-                    left: TopAppsCard(apps: viewModel.payload.topApps7d),
-                    right: QuickActionsCard(
-                        onOpenSettings: onOpenSettings,
-                        onOpenModelSettings: onOpenModelSettings,
-                        onOpenHistory: onOpenHistory,
-                        onRunSetup: onRunSetup,
-                        onRefresh: viewModel.refresh
+        HStack(alignment: .top, spacing: Spacing.lg) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
+                    HomeHeaderView(
+                        stats: viewModel.payload.header,
+                        isRefreshing: viewModel.isLoading && viewModel.hasLoaded,
+                        isCompact: isCompact,
+                        isInsightsVisible: viewModel.isInsightsPanelVisible,
+                        onToggleInsights: viewModel.toggleInsightsPanel
                     )
-                )
 
-                RecentDictationsCard(
-                    entries: viewModel.payload.recent,
-                    isCompact: isCompact,
-                    onOpenHistory: onOpenHistory,
-                    onCopyEntry: viewModel.copyRecentDictation,
-                    onDeleteEntry: { entry in
-                        viewModel.deleteRecentDictation(id: entry.id)
+                    if let errorMessage = viewModel.errorMessage {
+                        Text(errorMessage)
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.error)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.sm)
+                            .background(Color.Orttaai.errorSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+                            .accessibilityLabel("Dashboard error: \(errorMessage)")
+                    }
+
+                    HomeBannerView(
+                        title: bannerTitle,
+                        subtitle: bannerSubtitle,
+                        buttonTitle: bannerButtonTitle,
+                        showsArtwork: !isCompact,
+                        isButtonDisabled: isBannerButtonDisabled,
+                        onButtonTap: bannerAction
+                    )
+
+                    rowLayout(
+                        left: TodaySnapshotCard(snapshot: viewModel.payload.today),
+                        right: PerformanceHealthCard(health: viewModel.payload.performance)
+                    )
+
+                    TrendCardView(points: viewModel.payload.trend7d, showsLegend: !isCompact)
+
+                    rowLayout(
+                        left: TopAppsCard(apps: viewModel.payload.topApps7d),
+                        right: QuickActionsCard(
+                            onOpenSettings: onOpenSettings,
+                            onOpenModelSettings: onOpenModelSettings,
+                            onOpenHistory: onOpenHistory,
+                            onRunSetup: onRunSetup,
+                            onRefresh: viewModel.refresh
+                        )
+                    )
+
+                    RecentDictationsCard(
+                        entries: viewModel.payload.recent,
+                        isCompact: isCompact,
+                        onOpenHistory: onOpenHistory,
+                        onCopyEntry: viewModel.copyRecentDictation,
+                        onDeleteEntry: { entry in
+                            viewModel.deleteRecentDictation(id: entry.id)
+                        }
+                    )
+                }
+                .padding(Spacing.xxl)
+            }
+
+            if viewModel.isInsightsPanelVisible {
+                HomeInsightsPanel(
+                    snapshot: viewModel.insightsSnapshot,
+                    request: viewModel.insightsRequest,
+                    availableApps: viewModel.insightsAvailableApps,
+                    historyItems: viewModel.insightsHistoryItems,
+                    selectedHistoryID: viewModel.insightsSelectedHistoryID,
+                    compareItemIDs: viewModel.insightsCompareItemIDs,
+                    comparison: viewModel.insightsComparison,
+                    freshness: viewModel.insightsFreshness,
+                    isGenerating: viewModel.isGeneratingInsights,
+                    errorMessage: viewModel.insightsErrorMessage,
+                    statusMessage: viewModel.insightsStatusMessage,
+                    onGenerate: viewModel.refreshInsights,
+                    onTimeRangeChange: viewModel.setInsightsTimeRange,
+                    onGenerationModeChange: viewModel.setInsightsGenerationMode,
+                    onAppFilterModeChange: viewModel.setInsightsAppFilterMode,
+                    onToggleAppSelection: viewModel.toggleInsightsAppSelection,
+                    onClearAppSelection: viewModel.clearInsightsAppSelection,
+                    onLoadSnapshot: viewModel.loadInsightsSnapshotFromHistory,
+                    onTogglePinHistory: viewModel.toggleInsightsHistoryPin,
+                    onDeleteHistoryItem: viewModel.deleteInsightsHistoryItem,
+                    onToggleCompareItem: viewModel.toggleInsightsCompareItem,
+                    onClearComparison: viewModel.clearInsightsComparison,
+                    onClose: {
+                        viewModel.setInsightsPanelVisible(false)
                     }
                 )
+                .frame(width: isCompact ? 320 : 380)
+                .transition(
+                    reduceMotion
+                        ? .identity
+                        : .move(edge: .trailing).combined(with: .opacity)
+                )
             }
-            .padding(Spacing.xxl)
         }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.2),
+            value: viewModel.isInsightsPanelVisible
+        )
     }
 
     private var isCompact: Bool {

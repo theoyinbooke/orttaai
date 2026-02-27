@@ -168,11 +168,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupCoreServices(settings: AppSettings) {
         let audio = AudioCaptureService()
         let transcription = TranscriptionService()
-        let textProcessor = PassthroughProcessor()
         let injection = TextInjectionService()
 
         do {
             let db = try DatabaseManager()
+            let textProcessor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
             databaseManager = db
 
             let coord = DictationCoordinator(
@@ -214,6 +214,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } else {
                 self.activateRuntimeServicesIfNeeded()
+                // Launching from the Dock should surface Home immediately.
+                self.openHomeWorkspace(section: .overview)
             }
         }
     }

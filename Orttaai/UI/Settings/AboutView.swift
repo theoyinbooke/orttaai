@@ -102,26 +102,27 @@ struct AboutView: View {
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
 
-                HStack(spacing: Spacing.sm) {
-                    Link(destination: AppLinks.newIssueURL(kind: .bug, version: version, build: build)) {
-                        Label("Report Bug", systemImage: "ant")
-                            .font(.Orttaai.bodyMedium)
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.sm) {
+                        Link(destination: AppLinks.newIssueURL(kind: .bug, version: version, build: build)) {
+                            Label("Report Bug", systemImage: "ant")
+                                .font(.Orttaai.bodyMedium)
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary))
 
-                    Link(destination: AppLinks.newIssueURL(kind: .support, version: version, build: build)) {
-                        Label("Get Support", systemImage: "lifepreserver")
-                            .font(.Orttaai.bodyMedium)
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-                }
+                        Link(destination: AppLinks.newIssueURL(kind: .support, version: version, build: build)) {
+                            Label("Get Support", systemImage: "lifepreserver")
+                                .font(.Orttaai.bodyMedium)
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary))
 
-                Link(destination: repoURL) {
-                    Label("Contribute on GitHub", systemImage: "arrow.up.right.square")
-                        .font(.Orttaai.bodyMedium)
+                        Link(destination: repoURL) {
+                            Label("Contribute on GitHub", systemImage: "arrow.up.right.square")
+                                .font(.Orttaai.bodyMedium)
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary))
+                    }
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .padding(.top, Spacing.xs)
             }
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)

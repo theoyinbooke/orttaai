@@ -38,6 +38,8 @@ struct HomeShellView: View {
                     onRunSetup: onRunSetup,
                     layoutMode: compactOverview ? .compact : .regular
                 )
+            case .memory:
+                MemoryView()
             case .history:
                 HistoryView()
             case .settings:
