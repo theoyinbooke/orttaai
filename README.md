@@ -43,7 +43,7 @@ Download the latest `.dmg` from [GitHub Releases](https://github.com/theoyinbook
 
 ### Home Overview
 
-![Orttaai Home Overview](docs/images/home-overview.png)
+![Orttaai Home Overview](docs/images/home-overview-v2.png)
 
 ### Insights Panel
 
