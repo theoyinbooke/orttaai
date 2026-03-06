@@ -9,6 +9,7 @@ protocol AudioCapturing: AnyObject {
     var audioLevel: Float { get }
     func startCapture(deviceID: AudioDeviceID?) throws
     func stopCapture() -> [Float]
+    func currentSamplesSnapshot() -> [Float]
 }
 
 extension AudioCapturing {
@@ -19,6 +20,8 @@ extension AudioCapturing {
 
 @Observable
 final class AudioCaptureService: AudioCapturing {
+    private static let targetSampleRate = 16_000
+
     private(set) var audioLevel: Float = 0
 
     private var engine = AVAudioEngine()
@@ -28,11 +31,12 @@ final class AudioCaptureService: AudioCapturing {
     private let _currentLevel = OSAllocatedUnfairLock(initialState: Float(0))
     private var levelTimer: DispatchSourceTimer?
     private let captureBufferSize: AVAudioFrameCount = 1024
+    private let reservedSampleCapacity = AudioCaptureService.targetSampleRate * 50
 
     /// Target format for WhisperKit: 16kHz mono Float32
     private static let whisperFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
-        sampleRate: 16000,
+        sampleRate: Double(targetSampleRate),
         channels: 1,
         interleaved: false
     )!
@@ -40,6 +44,10 @@ final class AudioCaptureService: AudioCapturing {
     func startCapture(deviceID: AudioDeviceID? = nil) throws {
         // Recreate engine each session to avoid stale state after previous stops/crashes
         engine = AVAudioEngine()
+        sampleQueue.sync {
+            _samples.removeAll(keepingCapacity: true)
+            _samples.reserveCapacity(reservedSampleCapacity)
+        }
 
         // Set specific audio device if provided
         if let deviceID = deviceID {
@@ -149,7 +157,7 @@ final class AudioCaptureService: AudioCapturing {
 
         let capturedSamples = sampleQueue.sync {
             let samples = _samples
-            _samples.removeAll()
+            _samples.removeAll(keepingCapacity: true)
             return samples
         }
 
@@ -158,5 +166,9 @@ final class AudioCaptureService: AudioCapturing {
 
         Logger.audio.info("Audio capture stopped, \(capturedSamples.count) samples collected")
         return capturedSamples
+    }
+
+    func currentSamplesSnapshot() -> [Float] {
+        sampleQueue.sync { _samples }
     }
 }

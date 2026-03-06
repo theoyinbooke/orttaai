@@ -234,17 +234,16 @@ ln -sfn /Applications "$DMG_STAGING_PATH/Applications"
 if [[ -f "Orttaai/Resources/dmg-background.png" ]]; then
   mkdir -p "$DMG_STAGING_PATH/.background"
   ditto "Orttaai/Resources/dmg-background.png" "$DMG_STAGING_PATH/$DMG_BACKGROUND_IN_DMG"
-elif [[ -f "orttaai.png" ]]; then
+elif [[ -f "scripts/generate_dmg_background.swift" ]]; then
   mkdir -p "$DMG_STAGING_PATH/.background"
-  if command -v sips >/dev/null 2>&1; then
-    # Resize hero image to a Finder-window-friendly background.
-    if ! sips -s format png -z 360 640 "orttaai.png" --out "$DMG_BACKGROUND_SOURCE" >/dev/null 2>&1; then
-      ditto "orttaai.png" "$DMG_BACKGROUND_SOURCE"
-    fi
-  else
-    ditto "orttaai.png" "$DMG_BACKGROUND_SOURCE"
+  if ! swift "scripts/generate_dmg_background.swift" \
+    --output "$DMG_BACKGROUND_SOURCE" \
+    --app-path "$APP_PATH" \
+    --app-name "$APP_NAME"; then
+    echo "Warning: could not generate DMG background; continuing without a custom background."
+  elif [[ -f "$DMG_BACKGROUND_SOURCE" ]]; then
+    ditto "$DMG_BACKGROUND_SOURCE" "$DMG_STAGING_PATH/$DMG_BACKGROUND_IN_DMG"
   fi
-  ditto "$DMG_BACKGROUND_SOURCE" "$DMG_STAGING_PATH/$DMG_BACKGROUND_IN_DMG"
 fi
 
 rm -f "$DMG_RW_PATH" "$DMG_PATH"

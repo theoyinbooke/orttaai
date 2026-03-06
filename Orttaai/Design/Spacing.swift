@@ -31,8 +31,8 @@ enum WindowSize {
     static let settings = CGSize(width: 500, height: 400)
     static let history = CGSize(width: 480, height: 600)
     static let historyMin = CGSize(width: 480, height: 300)
-    static let floatingPanelHandle = CGSize(width: 260, height: 32)
-    static let floatingPanelRecording = CGSize(width: 120, height: 32)
+    static let floatingPanelHandle = CGSize(width: 332, height: 32)
+    static let floatingPanelRecording = CGSize(width: 250, height: 42)
     static let floatingPanelProcessing = CGSize(width: 140, height: 28)
     static let floatingPanelError = CGSize(width: 200, height: 28)
 }

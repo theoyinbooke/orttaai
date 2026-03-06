@@ -342,6 +342,18 @@ final class DatabaseManager {
         Logger.database.info("All transcriptions deleted")
     }
 
+    func resetAllLocalData() throws {
+        _ = try dbQueue.write { db in
+            try Transcription.deleteAll(db)
+            try db.execute(sql: "DELETE FROM dictionary_entry")
+            try db.execute(sql: "DELETE FROM snippet_entry")
+            try db.execute(sql: "DELETE FROM learning_suggestion")
+            try db.execute(sql: "DELETE FROM writing_insight_snapshot")
+        }
+        NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+        Logger.database.info("All local database content deleted")
+    }
+
     @discardableResult
     func deleteTranscription(id: Int64) throws -> Bool {
         return try dbQueue.write { db in
@@ -513,6 +525,10 @@ final class DatabaseManager {
 
     // MARK: - Personal Memory
 
+    private func postPersonalMemoryDidChange() {
+        NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+    }
+
     func fetchDictionaryEntries(includeInactive: Bool = true) throws -> [DictionaryEntry] {
         try dbQueue.read { db in
             var request = DictionaryEntry
@@ -540,7 +556,7 @@ final class DatabaseManager {
             )
         }
 
-        return try dbQueue.write { db in
+        let entry = try dbQueue.write { db in
             let normalizedSource = PersonalMemoryNormalizer.normalizedKey(trimmedSource)
             let now = Date()
 
@@ -574,12 +590,18 @@ final class DatabaseManager {
             }
             return entry
         }
+        postPersonalMemoryDidChange()
+        return entry
     }
 
     func deleteDictionaryEntry(id: Int64) throws -> Bool {
-        try dbQueue.write { db in
+        let deleted = try dbQueue.write { db in
             try DictionaryEntry.deleteOne(db, key: id)
         }
+        if deleted {
+            postPersonalMemoryDidChange()
+        }
+        return deleted
     }
 
     func updateDictionaryEntry(
@@ -599,7 +621,7 @@ final class DatabaseManager {
             )
         }
 
-        return try dbQueue.write { db in
+        let entry = try dbQueue.write { db in
             guard var entry = try DictionaryEntry.fetchOne(db, key: id) else {
                 throw NSError(
                     domain: "com.orttaai.database",
@@ -630,6 +652,8 @@ final class DatabaseManager {
             try entry.update(db)
             return entry
         }
+        postPersonalMemoryDidChange()
+        return entry
     }
 
     func incrementDictionaryUsage(id: Int64) throws {
@@ -672,7 +696,7 @@ final class DatabaseManager {
             )
         }
 
-        return try dbQueue.write { db in
+        let entry = try dbQueue.write { db in
             let normalizedTrigger = PersonalMemoryNormalizer.normalizedKey(trimmedTrigger)
             let now = Date()
 
@@ -704,12 +728,18 @@ final class DatabaseManager {
             }
             return entry
         }
+        postPersonalMemoryDidChange()
+        return entry
     }
 
     func deleteSnippetEntry(id: Int64) throws -> Bool {
-        try dbQueue.write { db in
+        let deleted = try dbQueue.write { db in
             try SnippetEntry.deleteOne(db, key: id)
         }
+        if deleted {
+            postPersonalMemoryDidChange()
+        }
+        return deleted
     }
 
     func updateSnippetEntry(
@@ -728,7 +758,7 @@ final class DatabaseManager {
             )
         }
 
-        return try dbQueue.write { db in
+        let entry = try dbQueue.write { db in
             guard var entry = try SnippetEntry.fetchOne(db, key: id) else {
                 throw NSError(
                     domain: "com.orttaai.database",
@@ -758,6 +788,8 @@ final class DatabaseManager {
             try entry.update(db)
             return entry
         }
+        postPersonalMemoryDidChange()
+        return entry
     }
 
     func incrementSnippetUsage(id: Int64) throws {

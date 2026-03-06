@@ -54,8 +54,10 @@ final class DictationCoordinator {
         max(0, maxDuration - 10)
     }
     private let minDuration: TimeInterval = 0.5
+    private let liveDecodePollIntervalNs: UInt64 = 750_000_000
 
     private var capTimerTask: Task<Void, Never>?
+    private var liveDecodeTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
     private var targetApp: NSRunningApplication?
 
@@ -79,6 +81,17 @@ final class DictationCoordinator {
         audioService.audioLevel
     }
 
+    var targetAppName: String? {
+        guard let targetApp else { return nil }
+        let name = targetApp.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? nil : name
+    }
+
+    var recordingElapsedSeconds: Int? {
+        guard case .recording(let startTime) = state else { return nil }
+        return max(0, Int(Date().timeIntervalSince(startTime)))
+    }
+
     // MARK: - Public API
 
     func startRecording() {
@@ -93,6 +106,7 @@ final class DictationCoordinator {
             try audioService.startCapture()
             state = .recording(startTime: Date())
             startCapTimer()
+            startLiveDecodeLoop()
             Logger.dictation.info("Recording started")
         } catch {
             state = .error(message: "Microphone access needed")
@@ -111,6 +125,8 @@ final class DictationCoordinator {
         capTimerTask?.cancel()
         capTimerTask = nil
         countdownSeconds = nil
+        liveDecodeTask?.cancel()
+        liveDecodeTask = nil
 
         // Stop capture
         let samples = audioService.stopCapture()
@@ -119,6 +135,10 @@ final class DictationCoordinator {
         // Check minimum duration
         guard duration >= minDuration else {
             state = .idle
+            targetApp = nil
+            Task {
+                await transcriptionService.cancelLiveTranscriptionSession()
+            }
             databaseManager.logSkippedRecording(duration: duration)
             Logger.dictation.info("Recording too short (\(duration, format: .fixed(precision: 2))s), skipping")
             return
@@ -154,21 +174,12 @@ final class DictationCoordinator {
         do {
             // Sync transcription settings before transcribing
             let settingsSyncStart = CFAbsoluteTimeGetCurrent()
-            let requestedLanguage = settings.dictationLanguage
-            let effectiveLanguage = (settings.lowLatencyModeEnabled && requestedLanguage == "auto")
-                ? "en"
-                : requestedLanguage
-            await transcriptionService.updateSettings(
-                language: effectiveLanguage,
-                computeMode: settings.computeMode,
-                lowLatencyMode: settings.lowLatencyModeEnabled,
-                decodingPreferences: settings.decodingPreferences
-            )
+            await syncTranscriptionSettings()
             settingsSyncMs = Int((CFAbsoluteTimeGetCurrent() - settingsSyncStart) * 1000)
 
-            // Transcribe
+            // Finalize using any speculative work started while recording.
             let transcriptionStart = CFAbsoluteTimeGetCurrent()
-            let transcript = try await transcriptionService.transcribe(audioSamples: samples)
+            let transcript = try await transcriptionService.finalizeLiveTranscription(audioSamples: samples)
             transcriptionMs = Int((CFAbsoluteTimeGetCurrent() - transcriptionStart) * 1000)
 
             // Process through text processor
@@ -229,6 +240,7 @@ final class DictationCoordinator {
                 }
                 maybeStartFastFirstPrefetch(afterSuccessfulDictationWith: resolvedModelID)
                 state = .idle
+                targetApp = nil
                 Logger.dictation.info(
                     "Latency telemetry (ms): settings=\(settingsSyncMs ?? -1), transcribe=\(transcriptionMs ?? -1), process=\(textProcessingMs ?? -1), inject=\(injectionMs ?? -1), activate=\(injectionTelemetry?.appActivationMs ?? -1), restoreDelay=\(injectionTelemetry?.clipboardRestoreDelayMs ?? -1), pipeline=\(processingMs)"
                 )
@@ -236,16 +248,20 @@ final class DictationCoordinator {
 
             case .blockedSecureField:
                 state = .error(message: "Can't dictate into password fields")
+                targetApp = nil
                 autoDismissError()
 
             case .noTranscript:
                 state = .error(message: "No transcript available to paste")
+                targetApp = nil
                 autoDismissError()
             }
 
         } catch {
+            await transcriptionService.cancelLiveTranscriptionSession()
             Logger.dictation.error("Processing failed: \(error.localizedDescription)")
             state = .error(message: "Couldn't transcribe. Try again.")
+            targetApp = nil
             autoDismissError()
         }
     }
@@ -305,6 +321,36 @@ final class DictationCoordinator {
             Logger.dictation.info("Cap timer fired at \(self.maxDuration)s — stopping recording")
             self.stopRecording()
         }
+    }
+
+    private func startLiveDecodeLoop() {
+        liveDecodeTask?.cancel()
+        liveDecodeTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+
+            await self.syncTranscriptionSettings()
+            guard !Task.isCancelled else { return }
+            await self.transcriptionService.beginLiveTranscriptionSession()
+
+            while !Task.isCancelled {
+                let snapshot = self.audioService.currentSamplesSnapshot()
+                await self.transcriptionService.processLiveAudioSnapshot(snapshot)
+                try? await Task.sleep(nanoseconds: self.liveDecodePollIntervalNs)
+            }
+        }
+    }
+
+    private func syncTranscriptionSettings() async {
+        let requestedLanguage = settings.dictationLanguage
+        let effectiveLanguage = (settings.lowLatencyModeEnabled && requestedLanguage == "auto")
+            ? "en"
+            : requestedLanguage
+        await transcriptionService.updateSettings(
+            language: effectiveLanguage,
+            computeMode: settings.computeMode,
+            lowLatencyMode: settings.lowLatencyModeEnabled,
+            decodingPreferences: settings.decodingPreferences
+        )
     }
 
     func estimateProcessingTime(_ recordingDuration: TimeInterval) -> TimeInterval {

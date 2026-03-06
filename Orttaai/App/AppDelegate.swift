@@ -25,6 +25,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var waveformUpdateTask: Task<Void, Never>?
     private var lastWaveformLevelBucket: Int = -1
+    private var lastRecordingCountdown: Int?
+    private var lastRecordingElapsedSeconds: Int?
+    private var lastRecordingTargetAppName: String?
     private var runtimeServicesStarted = false
     private var shortcutObserver: NSObjectProtocol?
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
@@ -38,6 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppResetService.handleLaunchArguments()
+
         // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
@@ -56,6 +61,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarMenu = StatusBarMenu()
         windowManager = WindowManager()
         floatingPanel = FloatingPanelController()
+        floatingPanel?.onStartRecording = { [weak self] in
+            self?.coordinator?.startRecording()
+        }
+        floatingPanel?.onStopRecording = { [weak self] in
+            self?.coordinator?.stopRecording()
+        }
         configureUpdater()
 
         windowManager?.onSetupCompleted = { [weak self] in
@@ -257,6 +268,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if KeyboardShortcuts.getShortcut(for: .pushToTalk) == nil {
             KeyboardShortcuts.setShortcut(defaultShortcut, for: .pushToTalk)
         }
+
+        floatingPanel?.shortcutHintLabel = currentPushToTalkLabel()
     }
 
     private func warmUpModel() {
@@ -320,6 +333,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             Logger.hotkey.info("Push-to-talk shortcut changed, restarting hotkey listener")
             self.isPushToTalkPressed = false
+            self.floatingPanel?.shortcutHintLabel = self.currentPushToTalkLabel()
             let started = self.startHotkeyService()
             if !started {
                 self.statusBarController?.updateIcon(state: .error)
@@ -355,9 +369,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             statusBarController?.updateIcon(state: .recording)
             statusBarMenu?.updateStatusLine("Recording...")
             floatingPanel?.transitionToRecording(
-                content: WaveformView(audioLevel: coordinator?.audioLevel ?? 0)
+                content: WaveformView(
+                    audioLevel: coordinator?.audioLevel ?? 0,
+                    elapsedSeconds: coordinator?.recordingElapsedSeconds ?? 0,
+                    onStop: { [weak self] in
+                        self?.coordinator?.stopRecording()
+                    }
+                )
             )
-            postDictationSignal(.recording, message: "Listening... Speak now.")
+            let targetAppName = coordinator?.targetAppName
+            let countdownSeconds = coordinator?.countdownSeconds
+            let elapsedSeconds = coordinator?.recordingElapsedSeconds
+            lastRecordingTargetAppName = targetAppName
+            lastRecordingCountdown = countdownSeconds
+            lastRecordingElapsedSeconds = elapsedSeconds
+            postDictationSignal(
+                .recording,
+                message: "Listening... Speak now.",
+                targetAppName: targetAppName,
+                countdownSeconds: countdownSeconds,
+                elapsedRecordingSeconds: elapsedSeconds
+            )
 
         case .processing(let estimate):
             stopWaveformUpdates()
@@ -390,17 +422,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startWaveformUpdates() {
         stopWaveformUpdates()
         lastWaveformLevelBucket = -1
+        lastRecordingCountdown = coordinator?.countdownSeconds
+        lastRecordingElapsedSeconds = coordinator?.recordingElapsedSeconds
+        lastRecordingTargetAppName = coordinator?.targetAppName
         waveformUpdateTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self = self, let coordinator = self.coordinator else { break }
                 guard case .recording = coordinator.state else { break }
 
                 let level = max(0, min(coordinator.audioLevel, 1))
+                let elapsedSeconds = coordinator.recordingElapsedSeconds ?? 0
+                let countdownSeconds = coordinator.countdownSeconds
+                let targetAppName = coordinator.targetAppName
                 let bucket = Int((level * 24).rounded())
-                if bucket != self.lastWaveformLevelBucket {
+                let didWaveformChange = bucket != self.lastWaveformLevelBucket
+                let didElapsedChange = elapsedSeconds != self.lastRecordingElapsedSeconds
+                let didSignalChange = countdownSeconds != self.lastRecordingCountdown ||
+                    targetAppName != self.lastRecordingTargetAppName ||
+                    didElapsedChange
+
+                if didWaveformChange || didElapsedChange {
                     self.lastWaveformLevelBucket = bucket
-                    self.floatingPanel?.updateContent(WaveformView(audioLevel: level))
+                    self.floatingPanel?.updateContent(
+                        WaveformView(
+                            audioLevel: level,
+                            elapsedSeconds: elapsedSeconds,
+                            onStop: { [weak self] in
+                                self?.coordinator?.stopRecording()
+                            }
+                        )
+                    )
                 }
+
+                if didSignalChange {
+                    self.lastRecordingCountdown = countdownSeconds
+                    self.lastRecordingTargetAppName = targetAppName
+                    self.postDictationSignal(
+                        .recording,
+                        message: "Listening... Speak now.",
+                        targetAppName: targetAppName,
+                        countdownSeconds: countdownSeconds,
+                        elapsedRecordingSeconds: elapsedSeconds
+                    )
+                }
+
+                self.lastRecordingElapsedSeconds = elapsedSeconds
 
                 try? await Task.sleep(nanoseconds: 33_000_000) // ~30fps while recording only
             }
@@ -411,16 +477,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         waveformUpdateTask?.cancel()
         waveformUpdateTask = nil
         lastWaveformLevelBucket = -1
+        lastRecordingCountdown = nil
+        lastRecordingElapsedSeconds = nil
+        lastRecordingTargetAppName = nil
     }
 
-    private func postDictationSignal(_ state: DictationStateSignal, message: String) {
+    private func postDictationSignal(
+        _ state: DictationStateSignal,
+        message: String,
+        targetAppName: String? = nil,
+        countdownSeconds: Int? = nil,
+        elapsedRecordingSeconds: Int? = nil
+    ) {
+        var userInfo: [String: Any] = [
+            DictationNotificationKey.state: state.rawValue,
+            DictationNotificationKey.message: message
+        ]
+        if let targetAppName, !targetAppName.isEmpty {
+            userInfo[DictationNotificationKey.targetAppName] = targetAppName
+        }
+        if let countdownSeconds {
+            userInfo[DictationNotificationKey.countdownSeconds] = countdownSeconds
+        }
+        if let elapsedRecordingSeconds {
+            userInfo[DictationNotificationKey.elapsedRecordingSeconds] = elapsedRecordingSeconds
+        }
+
         NotificationCenter.default.post(
             name: .dictationStateDidChange,
             object: nil,
-            userInfo: [
-                DictationNotificationKey.state: state.rawValue,
-                DictationNotificationKey.message: message
-            ]
+            userInfo: userInfo
         )
     }
 
@@ -443,5 +529,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let sound = NSSound(named: cue) else { return }
         sound.volume = 0.45
         sound.play()
+    }
+
+    private func currentPushToTalkLabel() -> String {
+        guard let shortcut = KeyboardShortcuts.getShortcut(for: .pushToTalk) else {
+            return "Ctrl + Shift + Space"
+        }
+        return formatShortcut(shortcut)
+    }
+
+    private func formatShortcut(_ shortcut: KeyboardShortcuts.Shortcut) -> String {
+        var parts: [String] = []
+        if shortcut.modifiers.contains(.control) {
+            parts.append("Ctrl")
+        }
+        if shortcut.modifiers.contains(.shift) {
+            parts.append("Shift")
+        }
+        if shortcut.modifiers.contains(.option) {
+            parts.append("Option")
+        }
+        if shortcut.modifiers.contains(.command) {
+            parts.append("Cmd")
+        }
+
+        parts.append(displayName(for: shortcut.key))
+        return parts.joined(separator: " + ")
+    }
+
+    private func displayName(for key: KeyboardShortcuts.Key?) -> String {
+        guard let key else {
+            return "Space"
+        }
+
+        let bareShortcut = KeyboardShortcuts.Shortcut(key, modifiers: [])
+        if let keyEquivalent = bareShortcut.nsMenuItemKeyEquivalent {
+            switch keyEquivalent {
+            case " ":
+                return "Space"
+            case "\t":
+                return "Tab"
+            case "\r":
+                return "Return"
+            default:
+                return keyEquivalent.uppercased()
+            }
+        }
+
+        return "Key \(key.rawValue)"
     }
 }

@@ -13,8 +13,10 @@ struct HistoryView: View {
     @State private var detailEntry: HistoryTableEntry?
     @State private var pendingDeleteEntry: HistoryTableEntry?
     @State private var errorMessage: String?
+    @State private var infoMessage: String?
     @State private var copiedEntryID: Int64?
     @State private var copyFeedbackTask: Task<Void, Never>?
+    @State private var snippetDraft: SnippetDraft?
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -41,6 +43,16 @@ struct HistoryView: View {
                         .padding(.horizontal, Spacing.md)
                         .padding(.vertical, Spacing.sm)
                         .background(Color.Orttaai.errorSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+                }
+
+                if let infoMessage {
+                    Text(infoMessage)
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
+                        .background(Color.Orttaai.bgSecondary)
                         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
                 }
 
@@ -107,6 +119,25 @@ struct HistoryView: View {
                 entry: entry,
                 onCopy: {
                     copyTranscript(entry.fullText)
+                },
+                onCreateSnippet: {
+                    detailEntry = nil
+                    DispatchQueue.main.async {
+                        snippetDraft = SnippetDraft(
+                            id: entry.id,
+                            entry: entry,
+                            trigger: suggestedSnippetTrigger(for: entry.fullText)
+                        )
+                    }
+                }
+            )
+        }
+        .sheet(item: $snippetDraft) { draft in
+            CreateSnippetSheet(
+                initialTrigger: draft.trigger,
+                transcript: draft.entry.fullText,
+                onSave: { trigger in
+                    saveSnippet(trigger: trigger, transcript: draft.entry.fullText)
                 }
             )
         }
@@ -224,7 +255,7 @@ struct HistoryView: View {
                 tableHeaderText("Model", width: 140, alignment: .leading)
             }
 
-            tableHeaderText("Actions", width: 88, alignment: .center)
+            tableHeaderText("Actions", width: 120, alignment: .center)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -301,6 +332,14 @@ struct HistoryView: View {
             }
 
             HStack(spacing: Spacing.xs) {
+                iconButton(systemName: "text.badge.plus", label: "Create Snippet") {
+                    snippetDraft = SnippetDraft(
+                        id: entry.id,
+                        entry: entry,
+                        trigger: suggestedSnippetTrigger(for: entry.fullText)
+                    )
+                }
+
                 let isCopied = copiedEntryID == entry.id
                 iconButton(
                     systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc",
@@ -315,7 +354,7 @@ struct HistoryView: View {
                     pendingDeleteEntry = entry
                 }
             }
-            .frame(width: 88, alignment: .center)
+            .frame(width: 120, alignment: .center)
         }
         .padding(.vertical, Spacing.sm)
         .padding(.horizontal, Spacing.sm)
@@ -424,6 +463,18 @@ struct HistoryView: View {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    private func saveSnippet(trigger: String, transcript: String) {
+        do {
+            let db = try DatabaseManager()
+            _ = try db.upsertSnippetEntry(trigger: trigger, expansion: transcript, isActive: true)
+            infoMessage = "Saved snippet \"\(trigger)\" to Memory."
+            errorMessage = nil
+        } catch {
+            infoMessage = nil
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func showCopyFeedback(for id: Int64) {
         copiedEntryID = id
         copyFeedbackTask?.cancel()
@@ -446,6 +497,15 @@ struct HistoryView: View {
             errorMessage = "Couldn't delete dictation."
             Logger.database.error("Failed to delete history entry: \(error.localizedDescription)")
         }
+    }
+
+    private func suggestedSnippetTrigger(for text: String) -> String {
+        let tokens = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: \.isWhitespace)
+            .prefix(4)
+            .map(String.init)
+        return tokens.joined(separator: " ").lowercased()
     }
 
     private func makeTableEntries(from records: [Transcription]) -> [HistoryTableEntry] {
@@ -528,6 +588,7 @@ private enum HistoryDurationFormatter {
 private struct HistoryTranscriptDetailModal: View {
     let entry: HistoryTableEntry
     let onCopy: () -> Void
+    let onCreateSnippet: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -591,10 +652,111 @@ private struct HistoryTranscriptDetailModal: View {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
                 .buttonStyle(OrttaaiButtonStyle(.primary))
+
+                Button {
+                    onCreateSnippet()
+                } label: {
+                    Label("Use as Snippet", systemImage: "text.badge.plus")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
             }
         }
         .padding(Spacing.xxl)
         .frame(minWidth: 700, minHeight: 440)
+        .background(Color.Orttaai.bgPrimary)
+    }
+}
+
+private struct SnippetDraft: Identifiable {
+    let id: Int64
+    let entry: HistoryTableEntry
+    let trigger: String
+}
+
+private struct CreateSnippetSheet: View {
+    let transcript: String
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var trigger: String
+
+    init(initialTrigger: String, transcript: String, onSave: @escaping (String) -> Void) {
+        self.transcript = transcript
+        self.onSave = onSave
+        _trigger = State(initialValue: initialTrigger)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Create Snippet")
+                        .font(.Orttaai.heading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+
+                    Text("Save this transcript as reusable text you can trigger during dictation.")
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
+
+                Spacer()
+
+                Button("Cancel") {
+                    dismiss()
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Trigger phrase")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                TextField("Type a short phrase like meeting recap", text: $trigger)
+                    .textFieldStyle(.plain)
+                    .font(.Orttaai.body)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.Orttaai.bgSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.input)
+                            .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
+                    )
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Expansion preview")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                ScrollView(showsIndicators: false) {
+                    Text(transcript)
+                        .font(.Orttaai.body)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(minHeight: 150)
+                .padding(Spacing.md)
+                .background(Color.Orttaai.bgSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+            }
+
+            HStack {
+                Spacer()
+
+                Button("Save Snippet") {
+                    onSave(trigger.trimmingCharacters(in: .whitespacesAndNewlines))
+                    dismiss()
+                }
+                .buttonStyle(OrttaaiButtonStyle(.primary))
+                .disabled(trigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(Spacing.xxl)
+        .frame(width: 560, height: 420)
         .background(Color.Orttaai.bgPrimary)
     }
 }

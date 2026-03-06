@@ -2,6 +2,7 @@
 // Orttaai
 
 import SwiftUI
+import Foundation
 import KeyboardShortcuts
 
 struct ReadyStepView: View {
@@ -11,6 +12,9 @@ struct ReadyStepView: View {
     @State private var quickTestMessage = "Waiting for hotkey."
     @State private var hasDetectedHotkey = false
     @State private var hotkeyLabel = "Ctrl + Space"
+    @State private var targetAppName: String?
+    @State private var countdownSeconds: Int?
+    @State private var elapsedRecordingSeconds: Int?
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
 
     var body: some View {
@@ -41,13 +45,15 @@ struct ReadyStepView: View {
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
 
-                Text("Hold the hotkey while speaking, then release to transcribe and paste.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 400)
+            Text("Hold the hotkey while speaking, then release to transcribe and paste.")
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
+                feedbackSummary
+
                 Text("Quick Test")
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
@@ -126,6 +132,10 @@ struct ReadyStepView: View {
             } else {
                 quickTestMessage = fallbackMessage(for: state)
             }
+
+            targetAppName = notification.userInfo?[DictationNotificationKey.targetAppName] as? String
+            countdownSeconds = notification.userInfo?[DictationNotificationKey.countdownSeconds] as? Int
+            elapsedRecordingSeconds = notification.userInfo?[DictationNotificationKey.elapsedRecordingSeconds] as? Int
         }
         .onReceive(NotificationCenter.default.publisher(for: shortcutChangeNotification)) { notification in
             guard
@@ -146,6 +156,30 @@ struct ReadyStepView: View {
             return quickTestMessage
         }
         return "Waiting for hotkey. Hold \(hotkeyLabel)."
+    }
+
+    private var feedbackSummary: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                statusPill(title: "State", value: stateTitle, tint: statusColor)
+
+                if let targetAppName, !targetAppName.isEmpty {
+                    statusPill(title: "Destination", value: targetAppName, tint: Color.Orttaai.accent)
+                }
+
+                if let elapsedRecordingSeconds, quickTestState == .recording {
+                    statusPill(title: "Recorded", value: formattedDuration(elapsedRecordingSeconds), tint: Color.Orttaai.success)
+                }
+
+                if let countdownSeconds, quickTestState == .recording {
+                    statusPill(title: "Time Left", value: "\(countdownSeconds)s", tint: Color.Orttaai.warning)
+                }
+            }
+
+            Text("Orttaai pastes back into the app that was focused when you started recording.")
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+        }
     }
 
     private var statusIconName: String {
@@ -176,6 +210,21 @@ struct ReadyStepView: View {
         }
     }
 
+    private var stateTitle: String {
+        switch quickTestState {
+        case .idle:
+            return hasDetectedHotkey ? "Ready" : "Waiting"
+        case .recording:
+            return "Listening"
+        case .processing:
+            return "Transcribing"
+        case .injecting:
+            return "Pasting"
+        case .error:
+            return "Error"
+        }
+    }
+
     private func fallbackMessage(for state: DictationStateSignal) -> String {
         switch state {
         case .idle:
@@ -197,6 +246,12 @@ struct ReadyStepView: View {
             return
         }
         hotkeyLabel = formatShortcut(shortcut)
+    }
+
+    private func formattedDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 
     private func formatShortcut(_ shortcut: KeyboardShortcuts.Shortcut) -> String {
@@ -238,5 +293,24 @@ struct ReadyStepView: View {
         }
 
         return "Key \(key.rawValue)"
+    }
+
+    private func statusPill(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.Orttaai.textTertiary)
+            Text(value)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 6)
+        .background(tint.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.card)
+                .stroke(tint.opacity(0.22), lineWidth: BorderWidth.standard)
+        )
     }
 }

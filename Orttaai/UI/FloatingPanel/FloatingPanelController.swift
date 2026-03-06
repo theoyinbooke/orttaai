@@ -6,6 +6,10 @@ import SwiftUI
 import os
 
 final class FloatingPanelController: NSObject {
+    var onStartRecording: (() -> Void)?
+    var onStopRecording: (() -> Void)?
+    var shortcutHintLabel: String = "Ctrl + Shift + Space"
+
     private var panel: NSPanel!
     private var hostingView: NSHostingView<AnyView>?
     private var handleLayer: CALayer!
@@ -202,22 +206,12 @@ final class FloatingPanelController: NSObject {
         guard panelState == .handle, !isShowingHint else { return }
         isShowingHint = true
 
-        // Show hint text + dark background — NO resize, panel stays same frame
-        let hintView = HStack(spacing: 4) {
-            Text("Hold")
-                .foregroundStyle(.white.opacity(0.5))
-            Text("Ctrl + Shift + Space")
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.white.opacity(0.1))
-                )
-            Text("to dictate")
-                .foregroundStyle(.white.opacity(0.5))
-        }
-        .font(.system(size: 11, weight: .medium))
+        let hintView = FloatingPanelHintView(
+            shortcutLabel: shortcutHintLabel,
+            onStart: { [weak self] in
+                self?.onStartRecording?()
+            }
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         updateContent(hintView)

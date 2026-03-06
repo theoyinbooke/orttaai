@@ -34,13 +34,37 @@ struct HomeView: View {
     }
 
     var body: some View {
-        Group {
-            if viewModel.isLoading && !viewModel.hasLoaded {
-                HomeLoadingView()
-                    .transition(reduceMotion ? .identity : .opacity)
-            } else {
-                content
-                    .transition(reduceMotion ? .identity : .opacity)
+        ZStack {
+            Group {
+                if viewModel.isLoading && !viewModel.hasLoaded {
+                    HomeLoadingView()
+                        .transition(reduceMotion ? .identity : .opacity)
+                } else {
+                    content
+                        .transition(reduceMotion ? .identity : .opacity)
+                }
+            }
+            .blur(radius: viewModel.githubStarPromptStep == nil ? 0 : 2)
+            .allowsHitTesting(viewModel.githubStarPromptStep == nil)
+
+            if let promptStep = viewModel.githubStarPromptStep {
+                HomeGitHubPromptOverlay(
+                    step: promptStep,
+                    onEnjoying: {
+                        viewModel.respondToEnjoymentPrompt(enjoying: true)
+                    },
+                    onMaybeLater: {
+                        viewModel.maybeLaterForGitHubPrompt()
+                    },
+                    onStar: {
+                        viewModel.starOnGitHub()
+                    },
+                    onDismissPermanently: {
+                        viewModel.dismissGitHubPromptPermanently()
+                    }
+                )
+                .zIndex(1)
+                .accessibilityAddTraits(.isModal)
             }
         }
         .animation(
@@ -58,50 +82,6 @@ struct HomeView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .fastFirstUpgradeAvailabilityDidChange)) { _ in
             viewModel.refreshFastFirstState()
-        }
-        .alert(
-            "Are you enjoying Orttaai?",
-            isPresented: Binding(
-                get: { viewModel.githubStarPromptStep == .enjoyment },
-                set: { newValue in
-                    if !newValue, viewModel.githubStarPromptStep == .enjoyment {
-                        viewModel.clearGitHubPromptState()
-                    }
-                }
-            )
-        ) {
-            Button("Yes") {
-                viewModel.respondToEnjoymentPrompt(enjoying: true)
-            }
-            Button("Not now", role: .cancel) {
-                viewModel.maybeLaterForGitHubPrompt()
-            }
-        } message: {
-            Text("Would you like to support the project by starring it on GitHub?")
-        }
-        .confirmationDialog(
-            "Support Orttaai on GitHub",
-            isPresented: Binding(
-                get: { viewModel.githubStarPromptStep == .star },
-                set: { newValue in
-                    if !newValue, viewModel.githubStarPromptStep == .star {
-                        viewModel.clearGitHubPromptState()
-                    }
-                }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Star on GitHub") {
-                viewModel.starOnGitHub()
-            }
-            Button("No thanks", role: .destructive) {
-                viewModel.dismissGitHubPromptPermanently()
-            }
-            Button("Maybe later", role: .cancel) {
-                viewModel.maybeLaterForGitHubPrompt()
-            }
-        } message: {
-            Text("Your star helps more people discover Orttaai.")
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Orttaai home dashboard")

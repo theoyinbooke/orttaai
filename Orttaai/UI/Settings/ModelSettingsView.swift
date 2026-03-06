@@ -19,7 +19,7 @@ private enum ModelSortMode: String, CaseIterable {
 }
 
 struct ModelSettingsView: View {
-    @AppStorage("selectedModelId") private var selectedModelId = "openai_whisper-large-v3_turbo"
+    @AppStorage("selectedModelId") private var selectedModelId = "openai_whisper-small"
     @AppStorage("modelSortMode") private var modelSortModeRaw: String = ModelSortMode.size.rawValue
     @AppStorage("lowLatencyModeEnabled") private var lowLatencyModeEnabled = false
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"

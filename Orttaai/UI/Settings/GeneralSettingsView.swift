@@ -2,6 +2,7 @@
 // Orttaai
 
 import SwiftUI
+import AppKit
 import ServiceManagement
 import os
 import KeyboardShortcuts
@@ -11,6 +12,7 @@ struct GeneralSettingsView: View {
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 45
     @State private var showClearConfirmation = false
+    @State private var showResetConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -128,6 +130,23 @@ struct GeneralSettingsView: View {
                 } message: {
                     Text("This will permanently delete all transcriptions. This cannot be undone.")
                 }
+
+                Button("Reset App Data") {
+                    showResetConfirmation = true
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true))
+                .confirmationDialog(
+                    "Reset App Data?",
+                    isPresented: $showResetConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Reset and Quit", role: .destructive) {
+                        resetAppData()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This clears onboarding state, history, Personal Memory, insights, and downloaded models, then quits Orttaai.")
+                }
             }
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -161,6 +180,19 @@ struct GeneralSettingsView: View {
         } catch {
             Logger.database.error("Failed to clear history: \(error.localizedDescription)")
         }
+    }
+
+    private func resetAppData() {
+        do {
+            let db = try DatabaseManager()
+            try db.resetAllLocalData()
+        } catch {
+            Logger.database.error("Failed to reset local database content: \(error.localizedDescription)")
+        }
+
+        AppResetService.resetUserDefaults()
+        AppResetService.removeDownloadedModels()
+        NSApplication.shared.terminate(nil)
     }
 
     private var divider: some View {

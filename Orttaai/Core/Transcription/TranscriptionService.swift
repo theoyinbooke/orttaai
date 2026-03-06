@@ -10,6 +10,10 @@ protocol Transcribing: Actor {
     var isLoaded: Bool { get }
     func loadedModelID() -> String?
     func transcribe(audioSamples: [Float]) async throws -> String
+    func beginLiveTranscriptionSession()
+    func processLiveAudioSnapshot(_ audioSamples: [Float])
+    func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String
+    func cancelLiveTranscriptionSession()
     func updateSettings(
         language: String,
         computeMode: String,
@@ -24,8 +28,26 @@ enum SetupModelLoadStage: Sendable {
 }
 
 actor TranscriptionService: Transcribing {
+    private struct LiveTranscriptionResult: Sendable {
+        let sampleCount: Int
+        let text: String
+    }
+
+    private struct LiveTranscriptionSession {
+        let id = UUID()
+        var latestResult: LiveTranscriptionResult?
+        var lastQueuedSampleCount: Int = 0
+        var activeSampleCount: Int = 0
+        var task: Task<LiveTranscriptionResult?, Never>?
+    }
+
+    private static let liveTranscriptionMinSampleCount = 16_000 * 2
+    private static let liveTranscriptionIncrementSampleCount = 16_000
+    private static let liveTranscriptionReuseSlackSampleCount = 16_000 / 2
+
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
+    private var liveSession: LiveTranscriptionSession?
 
     /// Language code for transcription (e.g. "en", "es", "auto").
     /// Set from AppSettings.dictationLanguage before transcribing.
@@ -95,51 +117,70 @@ actor TranscriptionService: Transcribing {
     }
 
     func transcribe(audioSamples: [Float]) async throws -> String {
-        guard let wk = whisperKit else {
-            throw OrttaaiError.modelNotLoaded
-        }
-
         Logger.transcription.info("Transcribing \(audioSamples.count) samples")
-
-        let decodingLanguage: String? = (language == "auto") ? nil : language
-        let resolvedDecoding = resolvedDecodingOptions()
-
-        let options = DecodingOptions(
-            language: decodingLanguage,
-            temperature: resolvedDecoding.temperature,
-            temperatureFallbackCount: resolvedDecoding.fallbackCount,
-            topK: resolvedDecoding.topK,
-            skipSpecialTokens: true,
-            withoutTimestamps: true,
-            wordTimestamps: false,
-            compressionRatioThreshold: resolvedDecoding.compressionRatioThreshold,
-            logProbThreshold: resolvedDecoding.logProbThreshold,
-            noSpeechThreshold: resolvedDecoding.noSpeechThreshold,
-            concurrentWorkerCount: resolvedDecoding.workerCount,
-            chunkingStrategy: .vad
-        )
-
-        let results = try await wk.transcribe(audioArray: audioSamples, decodeOptions: options)
-
-        guard let result = results.first else {
-            throw OrttaaiError.transcriptionFailed(underlying: NSError(
-                domain: "com.orttaai",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
-            ))
-        }
-
-        let text = result.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            throw OrttaaiError.transcriptionFailed(underlying: NSError(
-                domain: "com.orttaai",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
-            ))
-        }
-
+        let text = try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
         Logger.transcription.info("Transcription complete: \(text.prefix(50))...")
         return text
+    }
+
+    func beginLiveTranscriptionSession() {
+        cancelLiveTranscriptionSession()
+        liveSession = LiveTranscriptionSession()
+        Logger.transcription.debug("Live transcription session started")
+    }
+
+    func processLiveAudioSnapshot(_ audioSamples: [Float]) {
+        guard whisperKit != nil else { return }
+        guard var session = liveSession else { return }
+        guard audioSamples.count >= Self.liveTranscriptionMinSampleCount else { return }
+        guard session.task == nil else { return }
+        guard audioSamples.count - session.lastQueuedSampleCount >= Self.liveTranscriptionIncrementSampleCount else { return }
+
+        let sessionID = session.id
+        session.lastQueuedSampleCount = audioSamples.count
+        session.activeSampleCount = audioSamples.count
+        session.task = Task { [weak self] in
+            guard let self else { return nil }
+            return await self.runLiveTranscription(audioSamples: audioSamples, sessionID: sessionID)
+        }
+        liveSession = session
+    }
+
+    func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String {
+        let finalSampleCount = audioSamples.count
+        let reuseThreshold = max(0, finalSampleCount - Self.liveTranscriptionReuseSlackSampleCount)
+
+        if var session = liveSession {
+            if session.activeSampleCount >= reuseThreshold, let task = session.task {
+                if let result = await task.value, result.sampleCount >= reuseThreshold {
+                    liveSession = nil
+                    Logger.transcription.debug("Using speculative transcription result at \(result.sampleCount) samples")
+                    return result.text
+                }
+                session.task = nil
+                session.activeSampleCount = 0
+                liveSession = session
+            } else if let task = session.task {
+                task.cancel()
+                session.task = nil
+                session.activeSampleCount = 0
+                liveSession = session
+            }
+
+            if let latestResult = session.latestResult, latestResult.sampleCount >= reuseThreshold {
+                liveSession = nil
+                Logger.transcription.debug("Reusing cached speculative transcript at \(latestResult.sampleCount) samples")
+                return latestResult.text
+            }
+        }
+
+        defer { liveSession = nil }
+        return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+    }
+
+    func cancelLiveTranscriptionSession() {
+        liveSession?.task?.cancel()
+        liveSession = nil
     }
 
     func unloadModel() {
@@ -172,6 +213,98 @@ actor TranscriptionService: Transcribing {
         self.computeModeSetting = computeMode
         self.lowLatencyModeEnabled = lowLatencyMode
         self.decodingPreferences = decodingPreferences.clamped()
+    }
+
+    private func runLiveTranscription(
+        audioSamples: [Float],
+        sessionID: UUID
+    ) async -> LiveTranscriptionResult? {
+        let result: LiveTranscriptionResult?
+
+        do {
+            let text = try await performTranscription(audioSamples: audioSamples, allowCancellation: true)
+            result = Task.isCancelled ? nil : LiveTranscriptionResult(sampleCount: audioSamples.count, text: text)
+        } catch {
+            if !Task.isCancelled {
+                Logger.transcription.debug("Speculative transcription skipped: \(error.localizedDescription)")
+            }
+            result = nil
+        }
+
+        if var session = liveSession, session.id == sessionID {
+            session.task = nil
+            session.activeSampleCount = 0
+            if let result, result.sampleCount >= session.latestResult?.sampleCount ?? 0 {
+                session.latestResult = result
+            }
+            liveSession = session
+        }
+
+        return result
+    }
+
+    private func performTranscription(
+        audioSamples: [Float],
+        allowCancellation: Bool
+    ) async throws -> String {
+        guard let wk = whisperKit else {
+            throw OrttaaiError.modelNotLoaded
+        }
+
+        try Task.checkCancellation()
+        let callback: TranscriptionCallback = allowCancellation ? { _ in
+            Task.isCancelled ? false : nil
+        } : nil
+
+        let results = try await wk.transcribe(
+            audioArray: audioSamples,
+            decodeOptions: makeDecodingOptions(),
+            callback: callback
+        )
+
+        try Task.checkCancellation()
+        return try transcriptionText(from: results)
+    }
+
+    private func makeDecodingOptions() -> DecodingOptions {
+        let decodingLanguage: String? = (language == "auto") ? nil : language
+        let resolvedDecoding = resolvedDecodingOptions()
+
+        return DecodingOptions(
+            language: decodingLanguage,
+            temperature: resolvedDecoding.temperature,
+            temperatureFallbackCount: resolvedDecoding.fallbackCount,
+            topK: resolvedDecoding.topK,
+            skipSpecialTokens: true,
+            withoutTimestamps: true,
+            wordTimestamps: false,
+            compressionRatioThreshold: resolvedDecoding.compressionRatioThreshold,
+            logProbThreshold: resolvedDecoding.logProbThreshold,
+            noSpeechThreshold: resolvedDecoding.noSpeechThreshold,
+            concurrentWorkerCount: resolvedDecoding.workerCount,
+            chunkingStrategy: .vad
+        )
+    }
+
+    private func transcriptionText(from results: [TranscriptionResult]) throws -> String {
+        guard let result = results.first else {
+            throw OrttaaiError.transcriptionFailed(underlying: NSError(
+                domain: "com.orttaai",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
+            ))
+        }
+
+        let text = result.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            throw OrttaaiError.transcriptionFailed(underlying: NSError(
+                domain: "com.orttaai",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
+            ))
+        }
+
+        return text
     }
 
     private func computeOptions() -> ModelComputeOptions {

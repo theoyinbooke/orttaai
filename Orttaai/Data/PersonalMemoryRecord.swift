@@ -4,6 +4,10 @@
 import Foundation
 import GRDB
 
+extension Notification.Name {
+    static let personalMemoryDidChange = Notification.Name("Orttaai.personalMemoryDidChange")
+}
+
 enum LearningSuggestionType: String, Codable, CaseIterable {
     case dictionary
     case snippet

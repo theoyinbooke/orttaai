@@ -19,4 +19,7 @@ enum DictationStateSignal: String {
 enum DictationNotificationKey {
     static let state = "state"
     static let message = "message"
+    static let targetAppName = "targetAppName"
+    static let countdownSeconds = "countdownSeconds"
+    static let elapsedRecordingSeconds = "elapsedRecordingSeconds"
 }

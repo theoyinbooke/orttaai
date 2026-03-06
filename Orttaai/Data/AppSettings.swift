@@ -81,7 +81,7 @@ struct DecodingPreferences: Sendable, Equatable {
 final class AppSettings: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
 
-    @AppStorage("selectedModelId") var selectedModelId: String = "openai_whisper-large-v3_turbo"
+    @AppStorage("selectedModelId") var selectedModelId: String = "openai_whisper-small"
     @AppStorage("activeModelId") var activeModelId: String = ""
     @AppStorage("selectedAudioDeviceID") var selectedAudioDeviceID: String = ""
     @AppStorage("polishModeEnabled") var polishModeEnabled: Bool = false

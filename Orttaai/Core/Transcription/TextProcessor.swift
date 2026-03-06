@@ -29,10 +29,27 @@ protocol TextProcessor {
 final class RuleBasedTextProcessor: TextProcessor {
     private let databaseManager: DatabaseManager
     private let settings: AppSettings
+    private var cachedDictionaryEntries: [DictionaryEntry] = []
+    private var cachedSnippetEntries: [SnippetEntry] = []
+    private var memoryCacheIsDirty = true
+    private var memoryChangeObserver: NSObjectProtocol?
 
     init(databaseManager: DatabaseManager, settings: AppSettings) {
         self.databaseManager = databaseManager
         self.settings = settings
+        memoryChangeObserver = NotificationCenter.default.addObserver(
+            forName: .personalMemoryDidChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.memoryCacheIsDirty = true
+        }
+    }
+
+    deinit {
+        if let memoryChangeObserver {
+            NotificationCenter.default.removeObserver(memoryChangeObserver)
+        }
     }
 
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
@@ -43,10 +60,14 @@ final class RuleBasedTextProcessor: TextProcessor {
 
         var resolvedText = trimmedInput
         var changes: [String] = []
+        let shouldApplyDictionary = settings.dictionaryEnabled
+        let shouldApplySnippets = settings.snippetsEnabled
+        let activeRules = (shouldApplyDictionary || shouldApplySnippets)
+            ? try loadActiveRulesIfNeeded()
+            : ActivePersonalMemoryRules(dictionaryEntries: [], snippetEntries: [])
 
-        if settings.dictionaryEnabled {
-            let dictionaryEntries = try databaseManager.fetchDictionaryEntries(includeInactive: false)
-            let result = applyDictionary(to: resolvedText, entries: dictionaryEntries)
+        if shouldApplyDictionary {
+            let result = applyDictionary(to: resolvedText, entries: activeRules.dictionaryEntries)
             resolvedText = result.text
             changes.append(contentsOf: result.changes)
             for entryID in result.appliedEntryIDs {
@@ -54,9 +75,8 @@ final class RuleBasedTextProcessor: TextProcessor {
             }
         }
 
-        if settings.snippetsEnabled {
-            let snippets = try databaseManager.fetchSnippetEntries(includeInactive: false)
-            if let matchedSnippet = resolveSnippet(for: resolvedText, snippets: snippets) {
+        if shouldApplySnippets {
+            if let matchedSnippet = resolveSnippet(for: resolvedText, snippets: activeRules.snippetEntries) {
                 let previousText = resolvedText
                 resolvedText = matchedSnippet.expansion
                 changes.append("Snippet expanded: '\(previousText)' -> '\(matchedSnippet.expansion)'")
@@ -71,6 +91,18 @@ final class RuleBasedTextProcessor: TextProcessor {
 
     func isAvailable() -> Bool {
         true
+    }
+
+    private func loadActiveRulesIfNeeded() throws -> ActivePersonalMemoryRules {
+        if memoryCacheIsDirty {
+            cachedDictionaryEntries = try databaseManager.fetchDictionaryEntries(includeInactive: false)
+            cachedSnippetEntries = try databaseManager.fetchSnippetEntries(includeInactive: false)
+            memoryCacheIsDirty = false
+        }
+        return ActivePersonalMemoryRules(
+            dictionaryEntries: cachedDictionaryEntries,
+            snippetEntries: cachedSnippetEntries
+        )
     }
 
     private func applyDictionary(
@@ -143,6 +175,11 @@ final class RuleBasedTextProcessor: TextProcessor {
 
         return nil
     }
+}
+
+private struct ActivePersonalMemoryRules {
+    let dictionaryEntries: [DictionaryEntry]
+    let snippetEntries: [SnippetEntry]
 }
 
 final class PassthroughProcessor: TextProcessor {

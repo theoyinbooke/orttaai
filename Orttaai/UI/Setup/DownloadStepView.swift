@@ -10,9 +10,9 @@ enum QuickStartModelSelector {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         if language == "en" || language.hasPrefix("en-") {
-            return "openai_whisper-tiny.en"
+            return "openai_whisper-small.en"
         }
-        return "openai_whisper-tiny"
+        return "openai_whisper-small"
     }
 }
 
@@ -48,10 +48,11 @@ struct DownloadStepView: View {
     @Binding var isModelReady: Bool
     @AppStorage("dictationLanguage") private var dictationLanguage: String = "en"
     @State private var isDownloading = false
-    @State private var downloadComplete = false
+    @State private var installedModelId: String?
     @State private var errorMessage: String?
     @State private var downloadProgress: Double = 0
     @State private var downloadStage: SetupDownloadStage = .downloading
+    @State private var downloadingModelId: String?
     @State private var transcriptionService = TranscriptionService()
 
     private let hardwareInfo = HardwareDetector.detect()
@@ -61,9 +62,21 @@ struct DownloadStepView: View {
     }
 
     private var quickStartModelSummary: String {
-        quickStartModelId == "openai_whisper-tiny.en"
-            ? "English-optimized model for the fastest first dictation."
-            : "Multilingual model for the fastest first dictation."
+        quickStartModelId == "openai_whisper-small.en"
+            ? "English-optimized model that keeps first-run dictation responsive without dropping too much accuracy."
+            : "Multilingual model that balances first-run speed and accuracy."
+    }
+
+    private var recommendedModelId: String {
+        hardwareInfo.recommendedModel
+    }
+
+    private var recommendedModelSummary: String {
+        "Best match for your Mac if you want to prioritize recognition quality over first-run download time."
+    }
+
+    private var showsSeparateRecommendedCard: Bool {
+        ModelManager.normalizedModelID(recommendedModelId) != ModelManager.normalizedModelID(quickStartModelId)
     }
 
     var body: some View {
@@ -90,39 +103,25 @@ struct DownloadStepView: View {
             .background(Color.Orttaai.bgSecondary)
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
 
-            // Fast-first setup model
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Quick Start Model")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+            modelCard(
+                title: "Quick Start Model",
+                badge: "Faster setup",
+                modelId: quickStartModelId,
+                summary: quickStartModelSummary,
+                footnote: "Smaller download. Best if you want the fastest first dictation.",
+                accentColor: .Orttaai.accent
+            )
 
-                Text(quickStartModelId)
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.accent)
-
-                Text(quickStartModelSummary)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-
-                Divider()
-                    .overlay(Color.Orttaai.border)
-
-                Text("Recommended for your Mac")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text(hardwareInfo.recommendedModel)
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-
-                Text("After your first successful dictation, Orttaai downloads this in the background so you can upgrade accuracy with one click.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
+            if showsSeparateRecommendedCard {
+                modelCard(
+                    title: "Recommended for Your Mac",
+                    badge: "Higher accuracy",
+                    modelId: recommendedModelId,
+                    summary: recommendedModelSummary,
+                    footnote: "Larger download. Good if you want to start with the best fit for this Mac.",
+                    accentColor: .Orttaai.textPrimary
+                )
             }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.Orttaai.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
 
             if isDownloading {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -143,12 +142,18 @@ struct DownloadStepView: View {
                     Text(downloadStage.detail)
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textTertiary)
+
+                    if let downloadingModelId {
+                        Text("Downloading: \(downloadingModelId)")
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                    }
                 }
-            } else if downloadComplete {
+            } else if let installedModelId {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Color.Orttaai.success)
-                    Text("Model downloaded and ready")
+                    Text("\(installedModelId) downloaded and ready")
                         .font(.Orttaai.body)
                         .foregroundStyle(Color.Orttaai.success)
                 }
@@ -157,24 +162,83 @@ struct DownloadStepView: View {
                     Text(error)
                         .font(.Orttaai.body)
                         .foregroundStyle(Color.Orttaai.error)
-
-                    Button("Retry") {
-                        errorMessage = nil
-                        startDownload()
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.primary))
                 }
-            } else {
-                Button("Download Model") {
-                    startDownload()
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
             }
         }
     }
 
-    private func startDownload() {
-        let modelId = quickStartModelId
+    @ViewBuilder
+    private func modelCard(
+        title: String,
+        badge: String,
+        modelId: String,
+        summary: String,
+        footnote: String,
+        accentColor: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(title)
+                        .font(.Orttaai.subheading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+
+                    Text(badge)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(accentColor)
+                }
+
+                Spacer()
+
+                Button(actionTitle(for: modelId)) {
+                    startDownload(modelId: modelId)
+                }
+                .buttonStyle(OrttaaiButtonStyle(isInstalled(modelId) ? .secondary : .primary))
+                .disabled(isDownloading || isInstalled(modelId))
+            }
+
+            Text(modelId)
+                .font(.Orttaai.mono)
+                .foregroundStyle(accentColor)
+
+            Text(summary)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+
+            Text(footnote)
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+
+            if isInstalled(modelId) {
+                Label("Selected for setup", systemImage: "checkmark.circle.fill")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.success)
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.Orttaai.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+    }
+
+    private func actionTitle(for modelId: String) -> String {
+        if isInstalled(modelId) {
+            return "Ready"
+        }
+        if isDownloading && downloadingModelId == modelId {
+            return "Downloading..."
+        }
+        if installedModelId != nil {
+            return "Download Instead"
+        }
+        return "Download"
+    }
+
+    private func isInstalled(_ modelId: String) -> Bool {
+        ModelManager.normalizedModelID(installedModelId ?? "") == ModelManager.normalizedModelID(modelId)
+    }
+
+    private func startDownload(modelId: String) {
         guard !modelId.isEmpty else {
             errorMessage = "Orttaai requires an Apple Silicon Mac."
             isModelReady = false
@@ -182,7 +246,7 @@ struct DownloadStepView: View {
         }
 
         isDownloading = true
-        downloadComplete = false
+        downloadingModelId = modelId
         errorMessage = nil
         isModelReady = false
         downloadProgress = 0
@@ -222,13 +286,14 @@ struct DownloadStepView: View {
                     settings.activeModelId = modelId
                     configureFastFirstOnboarding(settings: settings, quickModelId: modelId)
                     isDownloading = false
-                    downloadComplete = true
+                    downloadingModelId = nil
+                    installedModelId = modelId
                     isModelReady = true
                 }
             } catch {
                 await MainActor.run {
                     isDownloading = false
-                    downloadComplete = false
+                    downloadingModelId = nil
                     isModelReady = false
                     downloadProgress = 0
                     downloadStage = .downloading
