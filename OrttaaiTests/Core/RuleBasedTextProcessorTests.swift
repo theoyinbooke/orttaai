@@ -63,4 +63,46 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         XCTAssertEqual(output.text, "insert my email and whispr")
         XCTAssertTrue(output.changes.isEmpty)
     }
+
+    func testDictionaryCacheInvalidatesAfterUpdate() async throws {
+        _ = try db.upsertDictionaryEntry(source: "whispr", target: "Wispr")
+
+        let firstOutput = try await processor.process(
+            TextProcessorInput(rawTranscript: "whispr flow", targetApp: nil, mode: .raw)
+        )
+        XCTAssertEqual(firstOutput.text, "Wispr flow")
+
+        let entry = try XCTUnwrap(try db.fetchDictionaryEntries().first)
+        _ = try db.updateDictionaryEntry(
+            id: try XCTUnwrap(entry.id),
+            source: "whispr",
+            target: "Whisper",
+            isCaseSensitive: false,
+            isActive: true
+        )
+
+        let secondOutput = try await processor.process(
+            TextProcessorInput(rawTranscript: "whispr flow", targetApp: nil, mode: .raw)
+        )
+        XCTAssertEqual(secondOutput.text, "Whisper flow")
+    }
+
+    func testSnippetCacheInvalidatesAfterDelete() async throws {
+        let entry = try db.upsertSnippetEntry(
+            trigger: "my email",
+            expansion: "theoyinbooke@gmail.com"
+        )
+
+        let firstOutput = try await processor.process(
+            TextProcessorInput(rawTranscript: "insert my email", targetApp: nil, mode: .raw)
+        )
+        XCTAssertEqual(firstOutput.text, "theoyinbooke@gmail.com")
+
+        _ = try db.deleteSnippetEntry(id: try XCTUnwrap(entry.id))
+
+        let secondOutput = try await processor.process(
+            TextProcessorInput(rawTranscript: "insert my email", targetApp: nil, mode: .raw)
+        )
+        XCTAssertEqual(secondOutput.text, "insert my email")
+    }
 }

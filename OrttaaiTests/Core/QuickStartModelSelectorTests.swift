@@ -6,12 +6,12 @@ import XCTest
 
 final class QuickStartModelSelectorTests: XCTestCase {
     func testUsesEnglishVariantForEnglishLanguage() {
-        XCTAssertEqual(QuickStartModelSelector.modelId(for: "en"), "openai_whisper-tiny.en")
-        XCTAssertEqual(QuickStartModelSelector.modelId(for: "en-US"), "openai_whisper-tiny.en")
+        XCTAssertEqual(QuickStartModelSelector.modelId(for: "en"), "openai_whisper-small.en")
+        XCTAssertEqual(QuickStartModelSelector.modelId(for: "en-US"), "openai_whisper-small.en")
     }
 
     func testUsesMultilingualVariantForNonEnglishLanguage() {
-        XCTAssertEqual(QuickStartModelSelector.modelId(for: "auto"), "openai_whisper-tiny")
-        XCTAssertEqual(QuickStartModelSelector.modelId(for: "es"), "openai_whisper-tiny")
+        XCTAssertEqual(QuickStartModelSelector.modelId(for: "auto"), "openai_whisper-small")
+        XCTAssertEqual(QuickStartModelSelector.modelId(for: "es"), "openai_whisper-small")
     }
 }

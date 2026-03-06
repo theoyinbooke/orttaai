@@ -22,6 +22,10 @@ final class MockAudioCaptureService: AudioCapturing {
     func stopCapture() -> [Float] {
         return mockSamples
     }
+
+    func currentSamplesSnapshot() -> [Float] {
+        mockSamples
+    }
 }
 
 actor MockTranscriptionService: Transcribing {
@@ -29,6 +33,10 @@ actor MockTranscriptionService: Transcribing {
     var mockResult: String = "Hello world"
     var shouldFail = false
     var mockLoadedModelID: String? = "test-model"
+    var beginLiveSessionCallCount = 0
+    var processedLiveSampleCounts: [Int] = []
+    var finalizeLiveTranscriptionCallCount = 0
+    var cancelLiveSessionCallCount = 0
 
     func loadedModelID() -> String? {
         mockLoadedModelID
@@ -43,6 +51,23 @@ actor MockTranscriptionService: Transcribing {
             ))
         }
         return mockResult
+    }
+
+    func beginLiveTranscriptionSession() {
+        beginLiveSessionCallCount += 1
+    }
+
+    func processLiveAudioSnapshot(_ audioSamples: [Float]) {
+        processedLiveSampleCounts.append(audioSamples.count)
+    }
+
+    func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String {
+        finalizeLiveTranscriptionCallCount += 1
+        return try await transcribe(audioSamples: audioSamples)
+    }
+
+    func cancelLiveTranscriptionSession() {
+        cancelLiveSessionCallCount += 1
     }
 
     func updateSettings(
@@ -182,6 +207,7 @@ final class DictationCoordinatorTests: XCTestCase {
     func testSecureFieldBlock() async {
         injectionService.mockResult = .blockedSecureField
         coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
         coordinator.stopRecording()
 
         // Wait for async processing
@@ -204,5 +230,33 @@ final class DictationCoordinatorTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             XCTAssertEqual(coordinator.state, .idle, "Error should auto-dismiss to idle")
         }
+    }
+
+    @MainActor
+    func testStartRecordingBeginsLiveTranscriptionSession() async {
+        coordinator.startRecording()
+
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        let beginCallCount = await transcriptionService.beginLiveSessionCallCount
+        XCTAssertEqual(beginCallCount, 1)
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testStopRecordingFinalizesThroughLiveTranscriptionPath() async {
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 1_100_000_000)
+        coordinator.stopRecording()
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        let finalizeCallCount = await transcriptionService.finalizeLiveTranscriptionCallCount
+        XCTAssertEqual(finalizeCallCount, 1)
+
+        let liveSampleCounts = await transcriptionService.processedLiveSampleCounts
+        XCTAssertFalse(liveSampleCounts.isEmpty)
     }
 }
