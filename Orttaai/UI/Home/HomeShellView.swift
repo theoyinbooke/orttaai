@@ -121,7 +121,11 @@ struct HomeShellView: View {
 
                         Text(section.subtitle)
                             .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
+                            .foregroundStyle(
+                                navigation.selectedSection == section
+                                    ? Color.Orttaai.textSecondary
+                                    : Color.Orttaai.textSecondary.opacity(0.92)
+                            )
                             .lineLimit(1)
                     }
                 }
@@ -131,7 +135,7 @@ struct HomeShellView: View {
             .foregroundStyle(
                 navigation.selectedSection == section
                     ? Color.Orttaai.textPrimary
-                    : Color.Orttaai.textSecondary
+                    : Color.Orttaai.textPrimary.opacity(0.92)
             )
             .padding(.horizontal, collapsed ? Spacing.sm : Spacing.md)
             .padding(.vertical, collapsed ? Spacing.sm : Spacing.md)

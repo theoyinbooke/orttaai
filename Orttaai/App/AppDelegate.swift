@@ -183,7 +183,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             let db = try DatabaseManager()
-            let textProcessor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
+            let baseTextProcessor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
+            let textProcessor = LocalLLMTextProcessor(
+                baseProcessor: baseTextProcessor,
+                settings: settings
+            )
             databaseManager = db
 
             let coord = DictationCoordinator(

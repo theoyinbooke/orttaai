@@ -119,6 +119,16 @@ final class AppSettings: ObservableObject {
     @AppStorage("decodingNoSpeechThreshold") var decodingNoSpeechThreshold: Double = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") var decodingWorkerCount: Int = DecodingPreferences.defaultWorkerCount
 
+    // Local LLM (Ollama)
+    @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = false
+    @AppStorage("localLLMEndpoint") var localLLMEndpoint: String = "http://127.0.0.1:11434"
+    @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma3:1b"
+    @AppStorage("localLLMPolishTimeoutMs") var localLLMPolishTimeoutMs: Int = 650
+    @AppStorage("localLLMPolishMaxChars") var localLLMPolishMaxChars: Int = 280
+    @AppStorage("localLLMInsightsEnabled") var localLLMInsightsEnabled: Bool = false
+    @AppStorage("localLLMInsightsModel") var localLLMInsightsModel: String = "qwen3.5:0.8b"
+    @AppStorage("localLLMInsightsTimeoutMs") var localLLMInsightsTimeoutMs: Int = 7000
+
     var selectedAudioDevice: String? {
         selectedAudioDeviceID.isEmpty ? nil : selectedAudioDeviceID
     }
@@ -139,5 +149,46 @@ final class AppSettings: ObservableObject {
             noSpeechThreshold: decodingNoSpeechThreshold,
             workerCount: decodingWorkerCount
         ).clamped()
+    }
+
+    var normalizedLocalLLMEndpoint: String {
+        let trimmed = localLLMEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "http://127.0.0.1:11434" : trimmed
+    }
+
+    var normalizedLocalLLMPolishModel: String {
+        sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma3:1b")
+    }
+
+    var normalizedLocalLLMInsightsModel: String {
+        sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+    }
+
+    var clampedLocalLLMPolishTimeoutMs: Int {
+        let clamped = max(80, min(1_500, localLLMPolishTimeoutMs))
+        // Migrate from old default that is too low for real local generation latency.
+        if clamped == 220 {
+            return 650
+        }
+        return clamped
+    }
+
+    var clampedLocalLLMPolishMaxChars: Int {
+        max(80, min(2_000, localLLMPolishMaxChars))
+    }
+
+    var clampedLocalLLMInsightsTimeoutMs: Int {
+        max(1_500, min(30_000, localLLMInsightsTimeoutMs))
+    }
+
+    private func sanitizeLocalLLMModel(_ value: String, fallback: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return fallback
+        }
+        if trimmed.lowercased().contains("llama") {
+            return fallback
+        }
+        return trimmed
     }
 }

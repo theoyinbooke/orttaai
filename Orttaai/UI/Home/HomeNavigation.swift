@@ -8,8 +8,8 @@ enum HomeSection: String, CaseIterable, Identifiable {
     case overview
     case memory
     case history
-    case settings
     case model
+    case settings
     case about
 
     var id: String { rawValue }

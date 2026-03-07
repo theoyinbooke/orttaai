@@ -346,8 +346,189 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
     }
 }
 
+final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
+    let name = "Ollama (Local)"
+
+    private let settings: AppSettings
+    private let ollamaClient: OllamaClient
+
+    init(
+        settings: AppSettings = AppSettings(),
+        ollamaClient: OllamaClient = OllamaClient()
+    ) {
+        self.settings = settings
+        self.ollamaClient = ollamaClient
+    }
+
+    func isAvailable() -> Bool {
+        settings.localLLMInsightsEnabled
+    }
+
+    func analyze(transcriptions: [Transcription]) async -> WritingInsightPayload? {
+        guard settings.localLLMInsightsEnabled else { return nil }
+
+        let model = settings.normalizedLocalLLMInsightsModel
+        guard !model.isEmpty else { return nil }
+
+        let historyLines = transcriptions
+            .prefix(180)
+            .map { record -> String in
+                let text = record.text
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .replacingOccurrences(of: "\r", with: " ")
+                guard !text.isEmpty else { return "" }
+                let clamped = text.count > 240 ? String(text.prefix(240)) + "..." : text
+                let app = normalizedAppName(record.targetAppName)
+                return "\(app): \(clamped)"
+            }
+            .filter { !$0.isEmpty }
+
+        guard !historyLines.isEmpty else { return nil }
+
+        let prompt = """
+        Analyze this user's dictation history and produce concise speaking and writing insights.
+
+        Return ONLY valid JSON matching exactly:
+        {
+          "summary": "one short paragraph",
+          "signals": [
+            {"label": "Sessions", "value": "12", "detail": "short note"}
+          ],
+          "patterns": [
+            {"title": "pattern title", "detail": "what this means", "evidence": "proof"}
+          ],
+          "strengths": ["short bullet", "short bullet"],
+          "opportunities": ["short bullet", "short bullet"]
+        }
+
+        Rules:
+        - Keep summary under 55 words.
+        - Max 4 signals, 6 patterns, 4 strengths, 4 opportunities.
+        - Focus on speaking clarity, pacing cues, and repeated phrasing habits.
+        - Use practical, actionable language.
+
+        History:
+        \(historyLines.enumerated().map { "[\($0.offset + 1)] \($0.element)" }.joined(separator: "\n"))
+        """
+
+        let startedAt = Date()
+        let thinkEnabled = true
+        let requestedTimeoutMs = settings.clampedLocalLLMInsightsTimeoutMs
+        let timeoutMs = effectiveInsightsTimeoutMs(
+            requestedTimeoutMs: requestedTimeoutMs,
+            model: model,
+            thinkEnabled: thinkEnabled
+        )
+        if timeoutMs != requestedTimeoutMs {
+            Logger.ai.debug("Ollama insights timeout adjusted [model=\(model), requestedMs=\(requestedTimeoutMs), effectiveMs=\(timeoutMs)]")
+        }
+        Logger.ai.debug("Ollama insights request started [model=\(model), samples=\(historyLines.count), timeoutMs=\(timeoutMs), think=\(thinkEnabled)]")
+
+        do {
+            let response = try await ollamaClient.generate(
+                baseURLString: settings.normalizedLocalLLMEndpoint,
+                model: model,
+                prompt: prompt,
+                timeoutMs: timeoutMs,
+                think: thinkEnabled,
+                temperature: 0.15,
+                numPredict: 1_200
+            )
+
+            guard let jsonPayload = extractJSONObject(from: response) else {
+                Logger.ai.warning("Ollama insights response did not include JSON payload")
+                return nil
+            }
+            guard let data = jsonPayload.data(using: .utf8) else { return nil }
+            let parsed = try JSONDecoder().decode(AppleWritingInsightsResponse.self, from: data)
+            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+            Logger.ai.debug("Ollama insights completed [model=\(model), elapsedMs=\(elapsedMs)]")
+            return sanitize(parsed)
+        } catch {
+            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+            Logger.ai.error("Ollama insights failed [model=\(model), elapsedMs=\(elapsedMs)]: \(error.localizedDescription)")
+            Logger.ai.error("Ollama insights failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func sanitize(_ parsed: AppleWritingInsightsResponse) -> WritingInsightPayload {
+        let summary = parsed.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let signals = parsed.signals.prefix(4).compactMap { signal -> WritingInsightSignal? in
+            let label = signal.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = signal.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = signal.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !label.isEmpty, !value.isEmpty else { return nil }
+            return WritingInsightSignal(label: label, value: value, detail: detail)
+        }
+        let patterns = parsed.patterns.prefix(6).compactMap { pattern -> WritingInsightPattern? in
+            let title = pattern.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = pattern.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            let evidence = pattern.evidence?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, !detail.isEmpty else { return nil }
+            return WritingInsightPattern(
+                title: title,
+                detail: detail,
+                evidence: evidence?.isEmpty == true ? nil : evidence
+            )
+        }
+        let strengths = parsed.strengths
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(4)
+            .map { $0 }
+        let opportunities = parsed.opportunities
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(4)
+            .map { $0 }
+
+        return WritingInsightPayload(
+            summary: summary.isEmpty ? "Insights generated from your recent dictation sessions." : summary,
+            signals: Array(signals),
+            patterns: Array(patterns),
+            strengths: Array(strengths),
+            opportunities: Array(opportunities)
+        )
+    }
+
+    private func normalizedAppName(_ appName: String?) -> String {
+        guard let appName else { return "Unknown App" }
+        let trimmed = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unknown App" : trimmed
+    }
+
+    private func extractJSONObject(from text: String) -> String? {
+        guard let firstBrace = text.firstIndex(of: "{"),
+              let lastBrace = text.lastIndex(of: "}") else {
+            return nil
+        }
+        return String(text[firstBrace...lastBrace])
+    }
+
+    private func effectiveInsightsTimeoutMs(
+        requestedTimeoutMs: Int,
+        model: String,
+        thinkEnabled: Bool
+    ) -> Int {
+        max(requestedTimeoutMs, recommendedInsightsTimeoutMs(for: model, thinkEnabled: thinkEnabled))
+    }
+
+    private func recommendedInsightsTimeoutMs(for model: String, thinkEnabled: Bool) -> Int {
+        guard thinkEnabled else { return 7_000 }
+        let lower = model.lowercased()
+        if lower.hasPrefix("qwen") {
+            return 12_000
+        }
+        return 9_000
+    }
+}
+
 final class WritingInsightsService {
     private let databaseManager: DatabaseManager
+    private let settings: AppSettings
+    private let ollamaAnalyzer: WritingInsightAnalyzing
     private let appleAnalyzer: WritingInsightAnalyzing
     private let heuristicAnalyzer: WritingInsightAnalyzing
     private let agingSessionThreshold = 6
@@ -356,10 +537,14 @@ final class WritingInsightsService {
 
     init(
         databaseManager: DatabaseManager,
+        settings: AppSettings = AppSettings(),
+        ollamaAnalyzer: WritingInsightAnalyzing? = nil,
         appleAnalyzer: WritingInsightAnalyzing = AppleFoundationWritingInsightAnalyzer(),
         heuristicAnalyzer: WritingInsightAnalyzing = HeuristicWritingInsightAnalyzer()
     ) {
         self.databaseManager = databaseManager
+        self.settings = settings
+        self.ollamaAnalyzer = ollamaAnalyzer ?? OllamaWritingInsightAnalyzer(settings: settings)
         self.appleAnalyzer = appleAnalyzer
         self.heuristicAnalyzer = heuristicAnalyzer
     }
@@ -367,26 +552,30 @@ final class WritingInsightsService {
     func generateInsights(request: WritingInsightsRequest = .default) async -> WritingInsightsRunResult {
         do {
             let history = try filteredHistory(request: request)
+            let chain = resolveAnalyzerChain()
             guard !history.isEmpty else {
                 return WritingInsightsRunResult(
                     snapshot: nil,
                     persistedSnapshotID: nil,
                     sampleCount: 0,
-                    analyzerName: heuristicAnalyzer.name,
+                    analyzerName: chain.primary.name,
                     usedFallback: false,
                     errorMessage: nil,
                     persistenceWarning: nil
                 )
             }
 
-            let shouldUseApple = appleAnalyzer.isAvailable()
-            let primaryAnalyzer = shouldUseApple ? appleAnalyzer : heuristicAnalyzer
             var usedFallback = false
 
-            var payload = await primaryAnalyzer.analyze(transcriptions: history)
-            if payload == nil && shouldUseApple {
-                payload = await heuristicAnalyzer.analyze(transcriptions: history)
-                usedFallback = true
+            var resolvedAnalyzerName = chain.primary.name
+            var payload = await chain.primary.analyze(transcriptions: history)
+
+            if payload == nil, let fallback = chain.fallback {
+                payload = await fallback.analyze(transcriptions: history)
+                usedFallback = payload != nil
+                if usedFallback {
+                    resolvedAnalyzerName = fallback.name
+                }
             }
 
             guard let payload else {
@@ -394,14 +583,13 @@ final class WritingInsightsService {
                     snapshot: nil,
                     persistedSnapshotID: nil,
                     sampleCount: history.count,
-                    analyzerName: shouldUseApple ? appleAnalyzer.name : heuristicAnalyzer.name,
+                    analyzerName: resolvedAnalyzerName,
                     usedFallback: usedFallback,
                     errorMessage: "Couldn't generate insights yet.",
                     persistenceWarning: nil
                 )
             }
 
-            let resolvedAnalyzerName = shouldUseApple && !usedFallback ? appleAnalyzer.name : heuristicAnalyzer.name
             let snapshot = WritingInsightSnapshot(
                 generatedAt: Date(),
                 sampleCount: history.count,
@@ -440,7 +628,7 @@ final class WritingInsightsService {
                 snapshot: nil,
                 persistedSnapshotID: nil,
                 sampleCount: 0,
-                analyzerName: heuristicAnalyzer.name,
+                analyzerName: resolveAnalyzerChain().primary.name,
                 usedFallback: false,
                 errorMessage: "Couldn't generate insights yet.",
                 persistenceWarning: nil
@@ -583,6 +771,20 @@ final class WritingInsightsService {
         return Array(filtered.prefix(request.generationMode.historyLimit))
     }
 
+    private func resolveAnalyzerChain() -> (primary: WritingInsightAnalyzing, fallback: WritingInsightAnalyzing?) {
+        if settings.localLLMInsightsEnabled && ollamaAnalyzer.isAvailable() {
+            if appleAnalyzer.isAvailable() {
+                return (primary: ollamaAnalyzer, fallback: appleAnalyzer)
+            }
+            return (primary: ollamaAnalyzer, fallback: heuristicAnalyzer)
+        }
+
+        if appleAnalyzer.isAvailable() {
+            return (primary: appleAnalyzer, fallback: heuristicAnalyzer)
+        }
+
+        return (primary: heuristicAnalyzer, fallback: nil)
+    }
 }
 
 private struct AppleWritingInsightsResponse: Decodable {

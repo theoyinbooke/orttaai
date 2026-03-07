@@ -162,10 +162,11 @@ final class ModelManager {
                 state = .loading
             }
             try await transcriptionService.loadModel(named: model.id)
+            await transcriptionService.warmUp()
             currentModelId = model.id
             AppSettings().activeModelId = model.id
             state = .loaded
-            Logger.model.info("Model loaded: \(model.id)")
+            Logger.model.info("Model loaded and warmed up: \(model.id)")
 
             if !isAlreadyDownloaded {
                 ModelDownloader.postDownloadNotification(modelName: model.name)

@@ -18,6 +18,7 @@ Options:
   --team-id <id>            Apple Team ID (default: from Xcode build settings).
   --notary-profile <name>   notarytool keychain profile (default: ORTTAAI_NOTARY).
   --output-dir <path>       Artifact directory root (default: dist).
+  --dmg-theme <mode>        DMG background theme: auto|light|dark (default: auto).
   -h, --help                Show this help.
 
 Prerequisites:
@@ -45,6 +46,7 @@ OUTPUT_DIR="dist"
 VERSION_OVERRIDE=""
 TEAM_ID_OVERRIDE=""
 SKIP_NOTARIZE=0
+DMG_THEME="auto"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -84,6 +86,10 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_DIR="${2:-}"
       shift 2
       ;;
+    --dmg-theme)
+      DMG_THEME="${2:-}"
+      shift 2
+      ;;
     --skip-notarize)
       echo "--skip-notarize is disabled for this project. Notarization is always required." >&2
       exit 1
@@ -99,6 +105,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$DMG_THEME" in
+  auto|light|dark) ;;
+  *)
+    echo "Invalid --dmg-theme value: $DMG_THEME (expected auto, light, or dark)." >&2
+    exit 1
+    ;;
+esac
 
 require_cmd xcodebuild
 require_cmd xcrun
@@ -239,7 +253,8 @@ elif [[ -f "scripts/generate_dmg_background.swift" ]]; then
   if ! swift "scripts/generate_dmg_background.swift" \
     --output "$DMG_BACKGROUND_SOURCE" \
     --app-path "$APP_PATH" \
-    --app-name "$APP_NAME"; then
+    --app-name "$APP_NAME" \
+    --theme "$DMG_THEME"; then
     echo "Warning: could not generate DMG background; continuing without a custom background."
   elif [[ -f "$DMG_BACKGROUND_SOURCE" ]]; then
     ditto "$DMG_BACKGROUND_SOURCE" "$DMG_STAGING_PATH/$DMG_BACKGROUND_IN_DMG"

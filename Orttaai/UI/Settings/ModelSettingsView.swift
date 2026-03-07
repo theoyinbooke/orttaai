@@ -33,6 +33,14 @@ struct ModelSettingsView: View {
     @AppStorage("decodingLogProbThreshold") private var decodingLogProbThreshold = DecodingPreferences.defaultLogProbThreshold
     @AppStorage("decodingNoSpeechThreshold") private var decodingNoSpeechThreshold = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") private var decodingWorkerCount = DecodingPreferences.defaultWorkerCount
+    @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
+    @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
+    @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma3:1b"
+    @AppStorage("localLLMPolishTimeoutMs") private var localLLMPolishTimeoutMs = 650
+    @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 280
+    @AppStorage("localLLMInsightsEnabled") private var localLLMInsightsEnabled = false
+    @AppStorage("localLLMInsightsModel") private var localLLMInsightsModel = "qwen3.5:0.8b"
+    @AppStorage("localLLMInsightsTimeoutMs") private var localLLMInsightsTimeoutMs = 7000
     @State private var diskUsage: String = "Checking downloaded models..."
     @State private var downloadedModelIDs: Set<String> = []
     @State private var models: [ModelInfo] = []
@@ -44,6 +52,21 @@ struct ModelSettingsView: View {
     @State private var deleteError: String?
     @State private var pendingDeleteModel: ModelInfo?
     @State private var isDeletingModel: Bool = false
+    @State private var ollamaStatusMessage: String = "Check connection to validate local model availability."
+    @State private var ollamaStatusReachable: Bool?
+    @State private var installedOllamaModels: [String] = []
+    @State private var isCheckingOllama: Bool = false
+    @State private var isInstallingOllamaModel: Bool = false
+    @State private var installingOllamaModelName: String?
+    @State private var ollamaInstallStatusMessage: String?
+    @State private var ollamaInstallProgress: Double?
+    @State private var ollamaInstallError: String?
+    @State private var ollamaInstallSuccessMessage: String?
+    @State private var downloadableOllamaModels: [OllamaCatalogModel] = []
+    @State private var isLoadingOllamaCatalog: Bool = false
+    @State private var ollamaCatalogMessage: String = "Check endpoint to load download options."
+    @State private var selectedPolishDownloadModel: String = ""
+    @State private var selectedInsightsDownloadModel: String = ""
 
     private let supportedLanguages: [(code: String, name: String)] = [
         ("en", "English"),
@@ -77,6 +100,7 @@ struct ModelSettingsView: View {
 
                 modelSelectorCard
                 modelParametersCard
+                localLLMCard
 
                 if let switchError {
                     HStack(spacing: Spacing.sm) {
@@ -118,6 +142,10 @@ struct ModelSettingsView: View {
         .onAppear {
             loadInitialModels()
             normalizeAdvancedDecodingValues()
+            normalizeLocalLLMSettings()
+            if localLLMPolishEnabled || localLLMInsightsEnabled {
+                Task { await checkOllamaAvailability() }
+            }
         }
         .onChange(of: modelSortModeRaw) { _, _ in
             models = sortedModelsForCurrentMode(models)
@@ -159,6 +187,50 @@ struct ModelSettingsView: View {
 
     private var displayNameForCurrentModel: String {
         selectedModel?.name ?? selectedModelId
+    }
+
+    private var switchingProgressMessage: String? {
+        guard isSwitching, let switchingModelId else { return nil }
+        let displayName = models.first(where: { $0.id == switchingModelId })?.name ?? switchingModelId
+        return "Preparing \(displayName): loading and warming up now so first dictation stays fast."
+    }
+
+    private var ollamaStatusIconName: String {
+        if ollamaStatusReachable == nil {
+            return "questionmark.circle"
+        }
+        return ollamaStatusReachable == true ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+    }
+
+    private var ollamaStatusTint: Color {
+        if ollamaStatusReachable == nil {
+            return Color.Orttaai.textTertiary
+        }
+        return ollamaStatusReachable == true ? Color.Orttaai.success : Color.Orttaai.warning
+    }
+
+    private var normalizedPolishOllamaModel: String {
+        localLLMPolishModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedInsightsOllamaModel: String {
+        localLLMInsightsModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedSelectedPolishDownloadModel: String {
+        selectedPolishDownloadModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedSelectedInsightsDownloadModel: String {
+        selectedInsightsDownloadModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canInstallPolishModel: Bool {
+        !normalizedSelectedPolishDownloadModel.isEmpty
+    }
+
+    private var canInstallInsightsModel: Bool {
+        !normalizedSelectedInsightsDownloadModel.isEmpty
     }
 
     private var modelSortMode: ModelSortMode {
@@ -228,6 +300,17 @@ struct ModelSettingsView: View {
                     .padding(.vertical, Spacing.xs)
                 }
                 .frame(maxHeight: 280)
+            }
+
+            if let switchingProgressMessage {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(switchingProgressMessage)
+                        .lineLimit(2)
+                }
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.accent)
             }
 
             HStack(spacing: Spacing.sm) {
@@ -455,6 +538,304 @@ struct ModelSettingsView: View {
         }
     }
 
+    private var localLLMCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Local LLM (Ollama)")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                Text("Use a small local model to polish punctuation/spelling and generate deeper speaking insights.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+
+            VStack(spacing: 0) {
+                Toggle(isOn: $localLLMPolishEnabled) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Enable Local Text Polish")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+
+                        Text("Runs a fast local post-pass after transcription with strict timeout fallback.")
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
+                }
+                .toggleStyle(OrttaaiToggleStyle())
+
+                divider
+
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Ollama Endpoint")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+
+                    HStack(alignment: .center, spacing: Spacing.sm) {
+                        OrttaaiTextField(placeholder: "http://127.0.0.1:11434", text: $localLLMEndpoint)
+
+                        Button {
+                            Task { await checkOllamaAvailability() }
+                        } label: {
+                            Label("Check", systemImage: "bolt.horizontal.circle")
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary))
+                        .disabled(isCheckingOllama || isInstallingOllamaModel || isLoadingOllamaCatalog)
+                    }
+
+                    HStack(spacing: Spacing.xs) {
+                        if isCheckingOllama {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: ollamaStatusIconName)
+                                .foregroundStyle(ollamaStatusTint)
+                        }
+                        Text(ollamaStatusMessage)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
+
+                    if !installedOllamaModels.isEmpty {
+                        Text("Available on this Mac: \(installedOllamaModels.prefix(6).joined(separator: ", "))")
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                            .lineLimit(2)
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Curated Lightweight Downloads (<= 5B)")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+
+                        if isLoadingOllamaCatalog {
+                            HStack(spacing: Spacing.xs) {
+                                ProgressView().controlSize(.small)
+                                Text("Loading curated lightweight models...")
+                                    .font(.Orttaai.caption)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                            }
+                        } else if !downloadableOllamaModels.isEmpty {
+                            HStack(spacing: Spacing.sm) {
+                                Picker("Polish Download", selection: $selectedPolishDownloadModel) {
+                                    ForEach(downloadableOllamaModels) { model in
+                                        Text(ollamaCatalogLabel(for: model)).tag(model.name)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .frame(width: 320)
+
+                                Button {
+                                    let model = normalizedSelectedPolishDownloadModel
+                                    Task {
+                                        await installOllamaModel(named: model)
+                                        await MainActor.run { localLLMPolishModel = model }
+                                    }
+                                } label: {
+                                    if isInstallingOllamaModel && installingOllamaModelName == normalizedSelectedPolishDownloadModel {
+                                        Label("Installing Polish...", systemImage: "arrow.down.circle")
+                                    } else if isOllamaModelInstalled(normalizedSelectedPolishDownloadModel) {
+                                        Label("Polish Installed", systemImage: "checkmark.circle")
+                                    } else {
+                                        Label("Install Polish", systemImage: "arrow.down.circle")
+                                    }
+                                }
+                                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                                .disabled(
+                                    !canInstallPolishModel ||
+                                        isCheckingOllama ||
+                                        isLoadingOllamaCatalog ||
+                                        isInstallingOllamaModel ||
+                                        isOllamaModelInstalled(normalizedSelectedPolishDownloadModel)
+                                )
+                            }
+
+                            HStack(spacing: Spacing.sm) {
+                                Picker("Insights Download", selection: $selectedInsightsDownloadModel) {
+                                    ForEach(downloadableOllamaModels) { model in
+                                        Text(ollamaCatalogLabel(for: model)).tag(model.name)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .frame(width: 320)
+
+                                Button {
+                                    let model = normalizedSelectedInsightsDownloadModel
+                                    Task {
+                                        await installOllamaModel(named: model)
+                                        await MainActor.run { localLLMInsightsModel = model }
+                                    }
+                                } label: {
+                                    if isInstallingOllamaModel && installingOllamaModelName == normalizedSelectedInsightsDownloadModel {
+                                        Label("Installing Insights...", systemImage: "arrow.down.circle")
+                                    } else if isOllamaModelInstalled(normalizedSelectedInsightsDownloadModel) {
+                                        Label("Insights Installed", systemImage: "checkmark.circle")
+                                    } else {
+                                        Label("Install Insights", systemImage: "arrow.down.circle")
+                                    }
+                                }
+                                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                                .disabled(
+                                    !canInstallInsightsModel ||
+                                    isCheckingOllama ||
+                                        isLoadingOllamaCatalog ||
+                                        isInstallingOllamaModel ||
+                                        isOllamaModelInstalled(normalizedSelectedInsightsDownloadModel)
+                                )
+                            }
+                        } else {
+                            Text(ollamaCatalogMessage)
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                        }
+
+                        if let ollamaInstallStatusMessage {
+                            if let ollamaInstallProgress {
+                                ProgressView(value: ollamaInstallProgress) {
+                                    Text(ollamaInstallStatusMessage)
+                                        .font(.Orttaai.caption)
+                                        .foregroundStyle(Color.Orttaai.textSecondary)
+                                }
+                                .tint(Color.Orttaai.accent)
+                            } else {
+                                HStack(spacing: Spacing.xs) {
+                                    if isInstallingOllamaModel {
+                                        ProgressView().controlSize(.small)
+                                    }
+                                    Text(ollamaInstallStatusMessage)
+                                        .font(.Orttaai.caption)
+                                        .foregroundStyle(Color.Orttaai.textSecondary)
+                                }
+                            }
+                        }
+
+                        if let ollamaInstallSuccessMessage {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Color.Orttaai.success)
+                                Text(ollamaInstallSuccessMessage)
+                                    .font(.Orttaai.caption)
+                                    .foregroundStyle(Color.Orttaai.success)
+                            }
+                        }
+
+                        if let ollamaInstallError {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Color.Orttaai.error)
+                                Text(ollamaInstallError)
+                                    .font(.Orttaai.caption)
+                                    .foregroundStyle(Color.Orttaai.error)
+                            }
+                        }
+                    }
+                }
+
+                divider
+
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Polish Model")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    if !installedOllamaModels.isEmpty {
+                        Picker(
+                            "Use Installed Model",
+                            selection: Binding(
+                                get: { installedPickerSelection(for: normalizedPolishOllamaModel) },
+                                set: { newValue in
+                                    guard newValue != "__custom__" else { return }
+                                    localLLMPolishModel = newValue
+                                }
+                            )
+                        ) {
+                            Text("Custom").tag("__custom__")
+                            ForEach(installedOllamaModels, id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 280)
+                    }
+                    OrttaaiTextField(placeholder: "gemma3:1b", text: $localLLMPolishModel)
+
+                    HStack {
+                        Text("Polish Timeout")
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                        Spacer()
+                        Text("\(localLLMPolishTimeoutMs) ms")
+                            .font(.Orttaai.mono)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { Double(localLLMPolishTimeoutMs) },
+                            set: { localLLMPolishTimeoutMs = Int($0) }
+                        ),
+                        in: 80...1_500,
+                        step: 10
+                    )
+                    .tint(Color.Orttaai.accent)
+
+                    Stepper(value: $localLLMPolishMaxChars, in: 80...2_000, step: 20) {
+                        rowValueLabel("Max Characters", value: "\(localLLMPolishMaxChars)")
+                    }
+                    .help("Long transcripts skip local polish to protect responsiveness.")
+                }
+
+                divider
+
+                Toggle(isOn: $localLLMInsightsEnabled) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Use Ollama for Writing Insights")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                        Text("Uses local LLM analysis to surface speaking and writing patterns.")
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
+                }
+                .toggleStyle(OrttaaiToggleStyle())
+
+                if localLLMInsightsEnabled {
+                    divider
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Insights Model")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                        if !installedOllamaModels.isEmpty {
+                            Picker(
+                                "Use Installed Model",
+                                selection: Binding(
+                                    get: { installedPickerSelection(for: normalizedInsightsOllamaModel) },
+                                    set: { newValue in
+                                        guard newValue != "__custom__" else { return }
+                                        localLLMInsightsModel = newValue
+                                    }
+                                )
+                            ) {
+                                Text("Custom").tag("__custom__")
+                                ForEach(installedOllamaModels, id: \.self) { name in
+                                    Text(name).tag(name)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 280)
+                        }
+                        OrttaaiTextField(placeholder: "qwen3.5:0.8b", text: $localLLMInsightsModel)
+
+                        Stepper(value: $localLLMInsightsTimeoutMs, in: 1_500...30_000, step: 500) {
+                            rowValueLabel("Insights Timeout", value: "\(localLLMInsightsTimeoutMs) ms")
+                        }
+                        .help("Longer timeout is useful for deeper analysis batches.")
+                    }
+                }
+            }
+            .padding(Spacing.lg)
+            .dashboardCard()
+        }
+    }
+
     private var selectorTrigger: some View {
         HStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -510,7 +891,7 @@ struct ModelSettingsView: View {
         let isDownloaded = downloadedCanonicalIDs.contains(modelID)
         let isUnsupported = !model.isDeviceSupported
         let isThisSwitching = switchingModelId == model.id && isSwitching
-        let switchingStatusText = isDownloaded ? "Switching..." : "Downloading..."
+        let switchingStatusText = isDownloaded ? "Loading + warm-up..." : "Downloading + warm-up..."
 
         return HStack(spacing: Spacing.sm) {
             Button {
@@ -755,6 +1136,206 @@ struct ModelSettingsView: View {
         decodingLogProbThreshold = normalized.logProbThreshold
         decodingNoSpeechThreshold = normalized.noSpeechThreshold
         decodingWorkerCount = normalized.workerCount
+    }
+
+    private func normalizeLocalLLMSettings() {
+        localLLMEndpoint = localLLMEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if localLLMEndpoint.isEmpty {
+            localLLMEndpoint = "http://127.0.0.1:11434"
+        }
+
+        localLLMPolishModel = sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma3:1b")
+        localLLMInsightsModel = sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+
+        // Migrate old default (220ms) which is usually too short for local polish.
+        if localLLMPolishTimeoutMs == 220 {
+            localLLMPolishTimeoutMs = 650
+        }
+        localLLMPolishTimeoutMs = max(80, min(1_500, localLLMPolishTimeoutMs))
+        localLLMPolishMaxChars = max(80, min(2_000, localLLMPolishMaxChars))
+        localLLMInsightsTimeoutMs = max(1_500, min(30_000, localLLMInsightsTimeoutMs))
+    }
+
+    private func checkOllamaAvailability() async {
+        isCheckingOllama = true
+        defer { isCheckingOllama = false }
+
+        let health = await OllamaClient().checkHealth(
+            baseURLString: localLLMEndpoint,
+            timeoutMs: 1_500
+        )
+        await MainActor.run {
+            ollamaStatusReachable = health.isReachable
+            ollamaStatusMessage = health.message
+            installedOllamaModels = health.installedModels
+        }
+
+        guard health.isReachable else {
+            await MainActor.run {
+                downloadableOllamaModels = []
+                ollamaCatalogMessage = "Ollama must be reachable before loading downloadable models."
+            }
+            return
+        }
+
+        await fetchOllamaLibraryModels()
+    }
+
+    private func fetchOllamaLibraryModels() async {
+        await MainActor.run {
+            isLoadingOllamaCatalog = true
+            ollamaCatalogMessage = "Loading curated lightweight models..."
+        }
+
+        do {
+            let catalog = try await OllamaClient().fetchLibraryModels(limit: 80)
+            await MainActor.run {
+                downloadableOllamaModels = catalog
+                if catalog.isEmpty {
+                    ollamaCatalogMessage = "No curated lightweight models configured."
+                } else {
+                    ollamaCatalogMessage = "Loaded \(catalog.count) curated models (all <= 5B)."
+                    syncDownloadSelectionsFromCatalog()
+                }
+            }
+        } catch {
+            await MainActor.run {
+                downloadableOllamaModels = []
+                ollamaCatalogMessage = "Could not load Ollama library models: \(error.localizedDescription)"
+            }
+        }
+
+        await MainActor.run {
+            isLoadingOllamaCatalog = false
+        }
+    }
+
+    private func syncDownloadSelectionsFromCatalog() {
+        let names = downloadableOllamaModels.map(\.name)
+        if !names.contains(selectedPolishDownloadModel) {
+            selectedPolishDownloadModel = names.first(where: {
+                canonicalOllamaModelName($0) == canonicalOllamaModelName(localLLMPolishModel)
+            }) ?? names.first ?? ""
+        }
+        if !names.contains(selectedInsightsDownloadModel) {
+            selectedInsightsDownloadModel = names.first(where: {
+                canonicalOllamaModelName($0) == canonicalOllamaModelName(localLLMInsightsModel)
+            }) ?? names.first ?? ""
+        }
+    }
+
+    private func installedPickerSelection(for currentValue: String) -> String {
+        let canonicalCurrent = canonicalOllamaModelName(currentValue)
+        if installedOllamaModels.contains(where: { canonicalOllamaModelName($0) == canonicalCurrent }) {
+            if let matched = installedOllamaModels.first(where: { canonicalOllamaModelName($0) == canonicalCurrent }) {
+                return matched
+            }
+        }
+        return "__custom__"
+    }
+
+    private func ollamaCatalogLabel(for model: OllamaCatalogModel) -> String {
+        if let size = model.sizeBytes, size > 0 {
+            return "\(model.name) (\(formattedByteCount(size)))"
+        }
+        return model.name
+    }
+
+    private func formattedByteCount(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
+    }
+
+    private func sanitizeLocalLLMModel(_ value: String, fallback: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return fallback
+        }
+        if trimmed.lowercased().contains("llama") {
+            return fallback
+        }
+        return trimmed
+    }
+
+    private func installOllamaModel(named modelName: String) async {
+        let normalizedModel = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedModel.isEmpty else {
+            ollamaInstallError = "Enter a model name before install (for example: gemma3:1b)."
+            return
+        }
+
+        await MainActor.run {
+            normalizeLocalLLMSettings()
+            isInstallingOllamaModel = true
+            installingOllamaModelName = normalizedModel
+            ollamaInstallStatusMessage = "Starting download for \(normalizedModel)..."
+            ollamaInstallProgress = nil
+            ollamaInstallError = nil
+            ollamaInstallSuccessMessage = nil
+        }
+
+        do {
+            try await OllamaClient().pullModel(
+                baseURLString: localLLMEndpoint,
+                model: normalizedModel
+            ) { progress in
+                let message = formattedInstallMessage(progress)
+                Task { @MainActor in
+                    ollamaInstallStatusMessage = message
+                    ollamaInstallProgress = progress.fractionCompleted
+                }
+            }
+
+            await MainActor.run {
+                ollamaInstallStatusMessage = nil
+                ollamaInstallProgress = nil
+                ollamaInstallSuccessMessage = "Installed \(normalizedModel)."
+            }
+            await checkOllamaAvailability()
+        } catch {
+            await MainActor.run {
+                ollamaInstallProgress = nil
+                ollamaInstallError = "Install failed for \(normalizedModel): \(error.localizedDescription)"
+            }
+        }
+
+        await MainActor.run {
+            isInstallingOllamaModel = false
+            installingOllamaModelName = nil
+        }
+    }
+
+    private func formattedInstallMessage(_ progress: OllamaPullProgress) -> String {
+        let status = progress.status.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanStatus = status.isEmpty ? "Downloading \(progress.model)..." : status
+        guard let completedBytes = progress.completedBytes, let totalBytes = progress.totalBytes, totalBytes > 0 else {
+            return cleanStatus
+        }
+
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useMB, .useGB]
+        formatter.countStyle = .file
+        let completed = formatter.string(fromByteCount: completedBytes)
+        let total = formatter.string(fromByteCount: totalBytes)
+        let percent = Int((Double(completedBytes) / Double(totalBytes)) * 100)
+        return "\(cleanStatus) (\(percent)% • \(completed)/\(total))"
+    }
+
+    private func isOllamaModelInstalled(_ modelName: String) -> Bool {
+        let canonical = canonicalOllamaModelName(modelName)
+        guard !canonical.isEmpty else { return false }
+        return installedOllamaModels.contains { canonicalOllamaModelName($0) == canonical }
+    }
+
+    private func canonicalOllamaModelName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return "" }
+        if trimmed.contains(":") {
+            return trimmed
+        }
+        return "\(trimmed):latest"
     }
 
     private func rowValueLabel(_ title: String, value: String) -> some View {
