@@ -3,17 +3,10 @@
 import AppKit
 import Foundation
 
-enum ThemeOption: String {
-    case auto
-    case light
-    case dark
-}
-
 struct Options {
     let outputPath: String
     let appPath: String
     let appName: String
-    let theme: ThemeOption
 }
 
 enum ArgumentError: Error, CustomStringConvertible {
@@ -37,7 +30,6 @@ func parseOptions() throws -> Options {
     var outputPath: String?
     var appPath: String?
     var appName = "Orttaai"
-    var theme: ThemeOption = .auto
 
     var iterator = CommandLine.arguments.dropFirst().makeIterator()
     while let arg = iterator.next() {
@@ -52,11 +44,7 @@ func parseOptions() throws -> Options {
             guard let value = iterator.next() else { throw ArgumentError.missingValue(arg) }
             appName = value
         case "--theme":
-            guard let value = iterator.next() else { throw ArgumentError.missingValue(arg) }
-            guard let parsedTheme = ThemeOption(rawValue: value.lowercased()) else {
-                throw ArgumentError.unknownArgument("\(arg) \(value)")
-            }
-            theme = parsedTheme
+            guard iterator.next() != nil else { throw ArgumentError.missingValue(arg) }
         default:
             throw ArgumentError.unknownArgument(arg)
         }
@@ -64,58 +52,7 @@ func parseOptions() throws -> Options {
 
     guard let outputPath else { throw ArgumentError.missingRequired("--output") }
     guard let appPath else { throw ArgumentError.missingRequired("--app-path") }
-    return Options(outputPath: outputPath, appPath: appPath, appName: appName, theme: theme)
-}
-
-struct ThemePalette {
-    let baseBackground: NSColor
-    let gradientTop: NSColor
-    let gradientMid: NSColor
-    let gradientBottom: NSColor
-    let focusColor: NSColor
-    let panelFill: NSColor
-    let panelStroke: NSColor
-    let titleColor: NSColor
-    let subtitleColor: NSColor
-    let accent: NSColor
-}
-
-func detectSystemTheme() -> ThemeOption {
-    let appearance = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")?.lowercased()
-    return appearance == "dark" ? .dark : .light
-}
-
-func palette(for theme: ThemeOption) -> ThemePalette {
-    switch theme {
-    case .dark:
-        return ThemePalette(
-            baseBackground: NSColor(calibratedRed: 0.05, green: 0.08, blue: 0.11, alpha: 1.0),
-            gradientTop: NSColor(calibratedRed: 0.08, green: 0.12, blue: 0.16, alpha: 1.0),
-            gradientMid: NSColor(calibratedRed: 0.04, green: 0.06, blue: 0.08, alpha: 1.0),
-            gradientBottom: NSColor(calibratedRed: 0.03, green: 0.05, blue: 0.07, alpha: 1.0),
-            focusColor: NSColor(calibratedRed: 0.13, green: 0.87, blue: 0.79, alpha: 0.10),
-            panelFill: NSColor(calibratedWhite: 1.0, alpha: 0.045),
-            panelStroke: NSColor(calibratedRed: 0.13, green: 0.87, blue: 0.79, alpha: 0.18),
-            titleColor: NSColor(calibratedWhite: 0.98, alpha: 0.95),
-            subtitleColor: NSColor(calibratedWhite: 0.82, alpha: 0.75),
-            accent: NSColor(calibratedRed: 0.13, green: 0.87, blue: 0.79, alpha: 0.95)
-        )
-    case .light:
-        return ThemePalette(
-            baseBackground: NSColor(calibratedRed: 0.95, green: 0.97, blue: 0.99, alpha: 1.0),
-            gradientTop: NSColor(calibratedRed: 0.99, green: 1.00, blue: 1.00, alpha: 1.0),
-            gradientMid: NSColor(calibratedRed: 0.94, green: 0.97, blue: 0.99, alpha: 1.0),
-            gradientBottom: NSColor(calibratedRed: 0.90, green: 0.94, blue: 0.97, alpha: 1.0),
-            focusColor: NSColor(calibratedRed: 0.08, green: 0.61, blue: 0.55, alpha: 0.09),
-            panelFill: NSColor(calibratedWhite: 1.0, alpha: 0.62),
-            panelStroke: NSColor(calibratedRed: 0.08, green: 0.61, blue: 0.55, alpha: 0.30),
-            titleColor: NSColor(calibratedRed: 0.12, green: 0.16, blue: 0.21, alpha: 0.96),
-            subtitleColor: NSColor(calibratedRed: 0.28, green: 0.34, blue: 0.40, alpha: 0.90),
-            accent: NSColor(calibratedRed: 0.10, green: 0.64, blue: 0.58, alpha: 0.95)
-        )
-    case .auto:
-        return palette(for: detectSystemTheme())
-    }
+    return Options(outputPath: outputPath, appPath: appPath, appName: appName)
 }
 
 func drawCenteredText(_ text: String, y: CGFloat, attributes: [NSAttributedString.Key: Any], width: CGFloat) {
@@ -188,8 +125,6 @@ func makeBitmap(size: NSSize) -> NSBitmapImageRep? {
 do {
     let options = try parseOptions()
     let canvasSize = NSSize(width: 720, height: 400)
-    let resolvedTheme = options.theme == .auto ? detectSystemTheme() : options.theme
-    let colors = palette(for: resolvedTheme)
 
     guard let bitmap = makeBitmap(size: canvasSize),
           let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
@@ -203,47 +138,25 @@ do {
     NSGraphicsContext.current = context
 
     let rect = NSRect(origin: .zero, size: canvasSize)
-    colors.baseBackground.setFill()
+    NSColor.white.setFill()
     rect.fill()
-
-    NSGradient(colorsAndLocations:
-        (colors.gradientTop, 0.0),
-        (colors.gradientMid, 0.55),
-        (colors.gradientBottom, 1.0)
-    )?.draw(in: rect, angle: 90)
-
-    for panelRect in [
-        NSRect(x: 102, y: 118, width: 156, height: 140),
-        NSRect(x: 462, y: 118, width: 156, height: 140)
-    ] {
-        if let glow = NSGradient(starting: colors.focusColor, ending: .clear) {
-            glow.draw(in: NSBezierPath(ovalIn: panelRect.insetBy(dx: -18, dy: -12)), relativeCenterPosition: .zero)
-        }
-
-        let panel = NSBezierPath(roundedRect: panelRect, xRadius: 28, yRadius: 28)
-        colors.panelFill.setFill()
-        panel.fill()
-        colors.panelStroke.setStroke()
-        panel.lineWidth = 1.5
-        panel.stroke()
-    }
 
     let titleAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 24, weight: .semibold),
-        .foregroundColor: colors.titleColor
+        .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1.0)
     ]
     let subtitleAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-        .foregroundColor: colors.subtitleColor
+        .foregroundColor: NSColor(calibratedWhite: 0.36, alpha: 1.0)
     ]
 
-    drawCenteredText("Drag \(options.appName) to Applications", y: 332, attributes: titleAttributes, width: canvasSize.width)
-    drawCenteredText("Install by dropping the app onto the Applications folder.", y: 304, attributes: subtitleAttributes, width: canvasSize.width)
+    drawCenteredText("Drag \(options.appName) to Applications", y: 348, attributes: titleAttributes, width: canvasSize.width)
+    drawCenteredText("Install by dropping the app onto the Applications folder.", y: 322, attributes: subtitleAttributes, width: canvasSize.width)
 
     drawArrow(
-        from: CGPoint(x: 258, y: 188),
-        to: CGPoint(x: 462, y: 188),
-        color: colors.accent
+        from: CGPoint(x: 274, y: 240),
+        to: CGPoint(x: 406, y: 240),
+        color: NSColor(calibratedWhite: 0.60, alpha: 1.0)
     )
 
     let outputURL = URL(fileURLWithPath: options.outputPath)
