@@ -33,9 +33,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
     private let hasCompletedSetupKey = "hasCompletedSetup"
     private var isPushToTalkPressed = false
-    private let recordingStartCue = NSSound.Name("Tink")
+    private let recordingStartCue = NSSound.Name("Glass")
     private let recordingStopCue = NSSound.Name("Pop")
     private let errorCue = NSSound.Name("Funk")
+    private var activeCueSound: NSSound?
     private var isHomeWorkspaceAutoOpenEnabled: Bool {
         appState?.settings.homeWorkspaceAutoOpenEnabled ?? false
     }
@@ -517,21 +518,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func playDictationCueIfNeeded(_ state: DictationCoordinator.State, previousState: DictationCoordinator.State?) {
         switch state {
         case .recording:
-            playSoundCue(named: recordingStartCue)
+            playSoundCue(named: recordingStartCue, volume: 0.6)
         case .processing:
             if case .recording = previousState {
-                playSoundCue(named: recordingStopCue)
+                playSoundCue(named: recordingStopCue, volume: 0.45)
             }
         case .error:
-            playSoundCue(named: errorCue)
+            playSoundCue(named: errorCue, volume: 0.5)
         default:
             break
         }
     }
 
-    private func playSoundCue(named cue: NSSound.Name) {
+    private func playSoundCue(named cue: NSSound.Name, volume: Float) {
         guard let sound = NSSound(named: cue) else { return }
-        sound.volume = 0.45
+        activeCueSound?.stop()
+        activeCueSound = sound
+        sound.volume = volume
         sound.play()
     }
 

@@ -119,9 +119,9 @@ Test: `Cmd+U`
 After creating and uploading a notarized DMG release, regenerate the appcast:
 
 ```bash
-scripts/update_appcast.sh --version 1.0.4
+scripts/update_appcast.sh --version <x.y.z>
 git add Orttaai/Resources/appcast.xml
-git commit -m "Update Sparkle appcast for v1.0.4"
+git commit -m "Update Sparkle appcast for v<x.y.z>"
 git push
 ```
 

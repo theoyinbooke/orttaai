@@ -44,6 +44,9 @@ actor TranscriptionService: Transcribing {
     private static let liveTranscriptionMinSampleCount = 16_000 * 2
     private static let liveTranscriptionIncrementSampleCount = 16_000
     private static let liveTranscriptionReuseSlackSampleCount = 16_000 / 2
+    private static let transcriptionSampleRate = 16_000
+    private static let mergedTranscriptSeparator = " "
+    private static let liveTranscriptionReuseMaxAudioSeconds = 15.0
 
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
@@ -149,13 +152,21 @@ actor TranscriptionService: Transcribing {
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String {
         let finalSampleCount = audioSamples.count
         let reuseThreshold = max(0, finalSampleCount - Self.liveTranscriptionReuseSlackSampleCount)
+        let speculativeReuseEligible = Self.isSpeculativeReuseEligible(finalSampleCount: finalSampleCount)
 
         if var session = liveSession {
-            if session.activeSampleCount >= reuseThreshold, let task = session.task {
+            if speculativeReuseEligible, session.activeSampleCount >= reuseThreshold, let task = session.task {
                 if let result = await task.value, result.sampleCount >= reuseThreshold {
-                    liveSession = nil
-                    Logger.transcription.debug("Using speculative transcription result at \(result.sampleCount) samples")
-                    return result.text
+                    if let rejectionReason = Self.speculativeReuseRejectionReason(
+                        for: result.text,
+                        finalSampleCount: finalSampleCount
+                    ) {
+                        Logger.transcription.debug("Skipping speculative transcription reuse: \(rejectionReason)")
+                    } else {
+                        liveSession = nil
+                        Logger.transcription.debug("Using speculative transcription result at \(result.sampleCount) samples")
+                        return result.text
+                    }
                 }
                 session.task = nil
                 session.activeSampleCount = 0
@@ -167,10 +178,19 @@ actor TranscriptionService: Transcribing {
                 liveSession = session
             }
 
-            if let latestResult = session.latestResult, latestResult.sampleCount >= reuseThreshold {
-                liveSession = nil
-                Logger.transcription.debug("Reusing cached speculative transcript at \(latestResult.sampleCount) samples")
-                return latestResult.text
+            if speculativeReuseEligible,
+               let latestResult = session.latestResult,
+               latestResult.sampleCount >= reuseThreshold {
+                if let rejectionReason = Self.speculativeReuseRejectionReason(
+                    for: latestResult.text,
+                    finalSampleCount: finalSampleCount
+                ) {
+                    Logger.transcription.debug("Skipping cached speculative transcript reuse: \(rejectionReason)")
+                } else {
+                    liveSession = nil
+                    Logger.transcription.debug("Reusing cached speculative transcript at \(latestResult.sampleCount) samples")
+                    return latestResult.text
+                }
             }
         }
 
@@ -255,15 +275,37 @@ actor TranscriptionService: Transcribing {
         let callback: TranscriptionCallback = allowCancellation ? { _ in
             Task.isCancelled ? false : nil
         } : nil
+        let primaryOptions = makeDecodingOptions()
 
         let results = try await wk.transcribe(
             audioArray: audioSamples,
-            decodeOptions: makeDecodingOptions(),
+            decodeOptions: primaryOptions,
             callback: callback
         )
 
         try Task.checkCancellation()
-        return try transcriptionText(from: results)
+        if let text = Self.mergedTranscriptionText(from: results) {
+            return text
+        }
+
+        guard !allowCancellation else {
+            throw Self.noTranscriptionResultError()
+        }
+
+        let relaxedOptions = Self.relaxedDecodingOptions(from: primaryOptions)
+        Logger.transcription.info("Primary decode returned empty transcript; retrying with relaxed thresholds")
+
+        let retriedResults = try await wk.transcribe(
+            audioArray: audioSamples,
+            decodeOptions: relaxedOptions,
+            callback: nil
+        )
+
+        try Task.checkCancellation()
+        guard let retriedText = Self.mergedTranscriptionText(from: retriedResults) else {
+            throw Self.noTranscriptionResultError()
+        }
+        return retriedText
     }
 
     private func makeDecodingOptions() -> DecodingOptions {
@@ -287,24 +329,74 @@ actor TranscriptionService: Transcribing {
     }
 
     private func transcriptionText(from results: [TranscriptionResult]) throws -> String {
-        guard let result = results.first else {
-            throw OrttaaiError.transcriptionFailed(underlying: NSError(
-                domain: "com.orttaai",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
-            ))
+        guard let text = Self.mergedTranscriptionText(from: results) else {
+            throw Self.noTranscriptionResultError()
         }
-
-        let text = result.text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            throw OrttaaiError.transcriptionFailed(underlying: NSError(
-                domain: "com.orttaai",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
-            ))
-        }
-
         return text
+    }
+
+    nonisolated static func relaxedDecodingOptions(from options: DecodingOptions) -> DecodingOptions {
+        var relaxed = options
+        relaxed.chunkingStrategy = .none
+        relaxed.noSpeechThreshold = nil
+        relaxed.logProbThreshold = nil
+        relaxed.compressionRatioThreshold = nil
+        relaxed.firstTokenLogProbThreshold = nil
+        relaxed.temperatureFallbackCount = max(options.temperatureFallbackCount, 3)
+        relaxed.topK = max(options.topK, 5)
+        return relaxed
+    }
+
+    nonisolated static func noTranscriptionResultError() -> OrttaaiError {
+        OrttaaiError.transcriptionFailed(underlying: NSError(
+            domain: "com.orttaai",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
+        ))
+    }
+
+    nonisolated static func mergedTranscriptionText(from results: [TranscriptionResult]) -> String? {
+        let merged = results
+            .map { normalizedTranscriptionText($0.text) }
+            .filter { !$0.isEmpty }
+            .joined(separator: mergedTranscriptSeparator)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return merged.isEmpty ? nil : merged
+    }
+
+    nonisolated static func normalizedTranscriptionText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"\[BLANK_AUDIO\]"#, with: " ", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated static func isSpeculativeReuseEligible(finalSampleCount: Int) -> Bool {
+        let audioSeconds = Double(finalSampleCount) / Double(transcriptionSampleRate)
+        return audioSeconds <= liveTranscriptionReuseMaxAudioSeconds
+    }
+
+    nonisolated static func speculativeReuseRejectionReason(
+        for text: String,
+        finalSampleCount: Int
+    ) -> String? {
+        let normalized = normalizedTranscriptionText(text)
+        guard !normalized.isEmpty else {
+            return "transcript was empty after normalization"
+        }
+
+        guard isSpeculativeReuseEligible(finalSampleCount: finalSampleCount) else {
+            let audioSeconds = Double(finalSampleCount) / Double(transcriptionSampleRate)
+            return "audio too long for speculative reuse (\(Int(audioSeconds.rounded()))s)"
+        }
+
+        let audioSeconds = Double(finalSampleCount) / Double(transcriptionSampleRate)
+        if audioSeconds >= 8, normalized.count < max(8, Int(audioSeconds.rounded(.down))) {
+            return "transcript too short for audio length"
+        }
+
+        return nil
     }
 
     private func computeOptions() -> ModelComputeOptions {

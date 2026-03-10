@@ -5,6 +5,7 @@ import SwiftUI
 import Cocoa
 import Combine
 import AVFoundation
+import ApplicationServices
 import os
 
 struct PermissionStepView: View {
@@ -15,6 +16,9 @@ struct PermissionStepView: View {
     @State private var inputMonitoringGranted = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let appDidBecomeActive = NotificationCenter.default.publisher(
+        for: NSApplication.didBecomeActiveNotification
+    )
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -48,9 +52,7 @@ struct PermissionStepView: View {
                 title: "Accessibility",
                 description: "Simulates paste to inject text at your cursor",
                 status: accessibilityGranted ? .granted : .notGranted,
-                action: {
-                    openSystemSettings("Privacy_Accessibility")
-                }
+                action: requestAccessibilityPermission
             )
 
             // Input Monitoring
@@ -79,10 +81,14 @@ struct PermissionStepView: View {
                 }
             }
             .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.Orttaai.bgSecondary)
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
         }
         .onReceive(timer) { _ in
+            checkPermissions()
+        }
+        .onReceive(appDidBecomeActive) { _ in
             checkPermissions()
         }
         .onAppear {
@@ -152,7 +158,24 @@ struct PermissionStepView: View {
         AVCaptureDevice.requestAccess(for: .audio) { granted in
             DispatchQueue.main.async {
                 micGranted = granted
+                allGranted = micGranted && accessibilityGranted
             }
+        }
+    }
+
+    private func requestAccessibilityPermission() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let isTrusted = AXIsProcessTrustedWithOptions(options)
+
+        accessibilityGranted = isTrusted
+        allGranted = micGranted && accessibilityGranted
+
+        guard !isTrusted else { return }
+
+        openSystemSettings("Privacy_Accessibility")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            checkPermissions()
         }
     }
 

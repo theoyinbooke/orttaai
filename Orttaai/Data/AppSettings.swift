@@ -105,7 +105,7 @@ final class AppSettings: ObservableObject {
 
     // Transcription
     @AppStorage("dictationLanguage") var dictationLanguage: String = "en"
-    @AppStorage("maxRecordingDuration") var maxRecordingDuration: Int = 45
+    @AppStorage("maxRecordingDuration") var maxRecordingDuration: Int = 60
 
     // Advanced / Compute
     @AppStorage("computeMode") var computeMode: String = "cpuAndNeuralEngine"

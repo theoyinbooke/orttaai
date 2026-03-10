@@ -21,6 +21,7 @@ extension AudioCapturing {
 @Observable
 final class AudioCaptureService: AudioCapturing {
     private static let targetSampleRate = 16_000
+    private static let maxSupportedRecordingDurationSeconds = 120
 
     private(set) var audioLevel: Float = 0
 
@@ -31,7 +32,7 @@ final class AudioCaptureService: AudioCapturing {
     private let _currentLevel = OSAllocatedUnfairLock(initialState: Float(0))
     private var levelTimer: DispatchSourceTimer?
     private let captureBufferSize: AVAudioFrameCount = 1024
-    private let reservedSampleCapacity = AudioCaptureService.targetSampleRate * 50
+    private let reservedSampleCapacity = AudioCaptureService.targetSampleRate * AudioCaptureService.maxSupportedRecordingDurationSeconds
 
     /// Target format for WhisperKit: 16kHz mono Float32
     private static let whisperFormat = AVAudioFormat(
