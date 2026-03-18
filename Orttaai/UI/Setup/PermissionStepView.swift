@@ -16,6 +16,8 @@ struct PermissionStepView: View {
     @State private var inputMonitoringGranted = false
     @State private var accessibilityCheckCount = 0
     @State private var showAccessibilityTroubleshooting = false
+    @State private var inputMonitoringCheckCount = 0
+    @State private var showInputMonitoringTroubleshooting = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let appDidBecomeActive = NotificationCenter.default.publisher(
@@ -101,6 +103,42 @@ struct PermissionStepView: View {
                 status: inputMonitoringGranted ? .granted : .notGranted,
                 action: requestInputMonitoringPermission
             )
+
+            // Input Monitoring troubleshooting tip
+            if showInputMonitoringTroubleshooting && !inputMonitoringGranted {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Label("Toggle fix needed", systemImage: "exclamationmark.triangle.fill")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.accent)
+
+                    Text("macOS shows Orttaai as enabled but isn't recognizing it. This happens after updates or reinstalls.")
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        instructionRow(number: 1, text: "Open Input Monitoring in System Settings (button above)")
+                        instructionRow(number: 2, text: "Toggle Orttaai OFF")
+                        instructionRow(number: 3, text: "Toggle Orttaai back ON")
+                        instructionRow(number: 4, text: "Quit and reopen Orttaai if it still doesn't update")
+                    }
+                    .padding(.top, Spacing.xs)
+
+                    Text("If that doesn't work, remove Orttaai with \"−\" then re-add it with \"+\". This permission is optional — you can skip it.")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Spacing.xs)
+                }
+                .padding(Spacing.lg)
+                .background(Color.Orttaai.accent.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.card)
+                        .stroke(Color.Orttaai.accent.opacity(0.25), lineWidth: BorderWidth.standard)
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             // Trust statement
             HStack(spacing: Spacing.md) {
@@ -208,7 +246,44 @@ struct PermissionStepView: View {
     }
 
     private func checkInputMonitoring() {
-        inputMonitoringGranted = CGPreflightListenEventAccess()
+        // CGPreflightListenEventAccess() can return stale results after app
+        // updates (same TCC issue as accessibility). Fall back to actually
+        // attempting a passive event tap — if it succeeds, we have permission.
+        var granted = CGPreflightListenEventAccess()
+        if !granted {
+            if let tap = CGEvent.tapCreate(
+                tap: .cgSessionEventTap,
+                place: .tailAppendEventTap,
+                options: .listenOnly,
+                eventsOfInterest: CGEventMask(1 << CGEventType.keyDown.rawValue),
+                callback: { _, _, event, _ in Unmanaged.passRetained(event) },
+                userInfo: nil
+            ) {
+                // Tap created successfully — permission is actually granted.
+                // The tap is never installed on a run loop, so it has no side effects.
+                _ = tap
+                granted = true
+            }
+        }
+
+        inputMonitoringGranted = granted
+
+        // Show troubleshooting tip after ~8 seconds of failed checks.
+        if !inputMonitoringGranted {
+            inputMonitoringCheckCount += 1
+            if inputMonitoringCheckCount >= 8 && !showInputMonitoringTroubleshooting {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showInputMonitoringTroubleshooting = true
+                }
+            }
+        } else {
+            inputMonitoringCheckCount = 0
+            if showInputMonitoringTroubleshooting {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showInputMonitoringTroubleshooting = false
+                }
+            }
+        }
     }
 
     private func requestMicrophonePermission() {
