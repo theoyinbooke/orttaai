@@ -14,6 +14,8 @@ struct PermissionStepView: View {
     @State private var micGranted = false
     @State private var accessibilityGranted = false
     @State private var inputMonitoringGranted = false
+    @State private var accessibilityCheckCount = 0
+    @State private var showAccessibilityTroubleshooting = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     private let appDidBecomeActive = NotificationCenter.default.publisher(
@@ -54,6 +56,41 @@ struct PermissionStepView: View {
                 status: accessibilityGranted ? .granted : .notGranted,
                 action: requestAccessibilityPermission
             )
+
+            // Accessibility troubleshooting tip
+            if showAccessibilityTroubleshooting && !accessibilityGranted {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Label("Toggle fix needed", systemImage: "exclamationmark.triangle.fill")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.accent)
+
+                    Text("macOS shows Orttaai as enabled but isn't recognizing the current app. This happens after updates or reinstalls.")
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        instructionRow(number: 1, text: "Open Accessibility in System Settings (button above)")
+                        instructionRow(number: 2, text: "Toggle Orttaai OFF")
+                        instructionRow(number: 3, text: "Toggle Orttaai back ON")
+                    }
+                    .padding(.top, Spacing.xs)
+
+                    Text("If that doesn't work, click the \"−\" button to remove Orttaai from the list, then click \"+\" to re-add it.")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Spacing.xs)
+                }
+                .padding(Spacing.lg)
+                .background(Color.Orttaai.accent.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.card)
+                        .stroke(Color.Orttaai.accent.opacity(0.25), lineWidth: BorderWidth.standard)
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             // Input Monitoring
             PermissionRow(
@@ -144,6 +181,26 @@ struct PermissionStepView: View {
         // Accessibility
         accessibilityGranted = AXIsProcessTrusted()
 
+        // Track consecutive failed accessibility checks to show troubleshooting tip.
+        // After ~8 seconds of polling (8 checks at 1s interval) with accessibility
+        // still not detected, show the toggle-off/on workaround. This covers the
+        // common macOS issue where the TCC entry is stale after an app update.
+        if !accessibilityGranted {
+            accessibilityCheckCount += 1
+            if accessibilityCheckCount >= 8 && !showAccessibilityTroubleshooting {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showAccessibilityTroubleshooting = true
+                }
+            }
+        } else {
+            accessibilityCheckCount = 0
+            if showAccessibilityTroubleshooting {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showAccessibilityTroubleshooting = false
+                }
+            }
+        }
+
         // Input Monitoring is optional.
         checkInputMonitoring()
 
@@ -187,6 +244,19 @@ struct PermissionStepView: View {
     private func openSystemSettings(_ pane: String) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func instructionRow(number: Int, text: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Text("\(number).")
+                .font(.Orttaai.secondary.monospacedDigit())
+                .foregroundStyle(Color.Orttaai.accent)
+                .frame(width: 16, alignment: .trailing)
+            Text(text)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
