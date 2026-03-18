@@ -62,27 +62,20 @@ struct PermissionStepView: View {
             // Accessibility troubleshooting tip
             if showAccessibilityTroubleshooting && !accessibilityGranted {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Label("Toggle fix needed", systemImage: "exclamationmark.triangle.fill")
+                    Label("Permission not detected", systemImage: "exclamationmark.triangle.fill")
                         .font(.Orttaai.bodyMedium)
                         .foregroundStyle(Color.Orttaai.accent)
 
-                    Text("macOS shows Orttaai as enabled but isn't recognizing the current app. This happens after updates or reinstalls.")
+                    Text("macOS has stale permission records from a previous version. Click the button below to clear them, then grant access again.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        instructionRow(number: 1, text: "Open Accessibility in System Settings (button above)")
-                        instructionRow(number: 2, text: "Toggle Orttaai OFF")
-                        instructionRow(number: 3, text: "Toggle Orttaai back ON")
+                    Button("Reset & Grant Access") {
+                        resetAndRequestAccessibility()
                     }
+                    .buttonStyle(OrttaaiButtonStyle(.primary))
                     .padding(.top, Spacing.xs)
-
-                    Text("If that doesn't work, click the \"−\" button to remove Orttaai from the list, then click \"+\" to re-add it.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, Spacing.xs)
                 }
                 .padding(Spacing.lg)
                 .background(Color.Orttaai.accent.opacity(0.08))
@@ -107,28 +100,20 @@ struct PermissionStepView: View {
             // Input Monitoring troubleshooting tip
             if showInputMonitoringTroubleshooting && !inputMonitoringGranted {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Label("Toggle fix needed", systemImage: "exclamationmark.triangle.fill")
+                    Label("Permission not detected", systemImage: "exclamationmark.triangle.fill")
                         .font(.Orttaai.bodyMedium)
                         .foregroundStyle(Color.Orttaai.accent)
 
-                    Text("macOS shows Orttaai as enabled but isn't recognizing it. This happens after updates or reinstalls.")
+                    Text("macOS has stale permission records. Click below to clear them, then grant access again. This permission is optional — you can skip it.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        instructionRow(number: 1, text: "Open Input Monitoring in System Settings (button above)")
-                        instructionRow(number: 2, text: "Toggle Orttaai OFF")
-                        instructionRow(number: 3, text: "Toggle Orttaai back ON")
-                        instructionRow(number: 4, text: "Quit and reopen Orttaai if it still doesn't update")
+                    Button("Reset & Grant Access") {
+                        resetAndRequestInputMonitoring()
                     }
+                    .buttonStyle(OrttaaiButtonStyle(.primary))
                     .padding(.top, Spacing.xs)
-
-                    Text("If that doesn't work, remove Orttaai with \"−\" then re-add it with \"+\". This permission is optional — you can skip it.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, Spacing.xs)
                 }
                 .padding(Spacing.lg)
                 .background(Color.Orttaai.accent.opacity(0.08))
@@ -311,27 +296,44 @@ struct PermissionStepView: View {
         }
     }
 
+    /// Clears all stale TCC entries for this bundle, then re-requests permission.
+    /// This fixes the common post-update issue where macOS has conflicting records
+    /// from previous builds and toggling off/on in System Settings doesn't help.
+    private func resetAndRequestAccessibility() {
+        resetTCCEntries(service: "Accessibility")
+        accessibilityCheckCount = 0
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            requestAccessibilityPermission()
+        }
+    }
+
     private func requestInputMonitoringPermission() {
         _ = CGRequestListenEventAccess()
         openSystemSettings("Privacy_ListenEvent")
     }
 
-    private func openSystemSettings(_ pane: String) {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
-            NSWorkspace.shared.open(url)
+    private func resetAndRequestInputMonitoring() {
+        resetTCCEntries(service: "ListenEvent")
+        inputMonitoringCheckCount = 0
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            requestInputMonitoringPermission()
         }
     }
 
-    private func instructionRow(number: Int, text: String) -> some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            Text("\(number).")
-                .font(.Orttaai.secondary.monospacedDigit())
-                .foregroundStyle(Color.Orttaai.accent)
-                .frame(width: 16, alignment: .trailing)
-            Text(text)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private func resetTCCEntries(service: String) {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", service, bundleID]
+        try? process.run()
+        process.waitUntilExit()
+    }
+
+    private func openSystemSettings(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+            NSWorkspace.shared.open(url)
         }
     }
 

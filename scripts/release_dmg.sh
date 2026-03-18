@@ -353,6 +353,14 @@ trap - EXIT
 hdiutil convert "$DMG_RW_PATH" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH"
 rm -f "$DMG_RW_PATH" "$DMG_BACKGROUND_SOURCE"
 
+# Clean up intermediate .app bundles that macOS Launch Services and TCC
+# will index, creating duplicate Spotlight entries and stale permission
+# records. Only the DMG (and the app inside it) should survive.
+echo "==> Cleaning intermediate app bundles (prevents stale Spotlight/TCC entries)"
+rm -rf "$DMG_STAGING_PATH"
+rm -rf "$EXPORT_PATH"
+rm -rf "$ARCHIVE_PATH"
+
 if [[ "$SKIP_NOTARIZE" -eq 0 ]]; then
   echo "==> Submitting DMG for notarization"
   xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
