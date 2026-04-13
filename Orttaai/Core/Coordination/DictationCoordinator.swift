@@ -176,8 +176,8 @@ final class DictationCoordinator {
         samples: [Float],
         recordingDurationMs: Int
     ) async {
-        let appName = NSWorkspace.shared.frontmostAppName
-        let appBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let appName = self.targetApp?.localizedName ?? NSWorkspace.shared.frontmostAppName
+        let appBundleID = self.targetApp?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let processingStart = CFAbsoluteTimeGetCurrent()
         var settingsSyncMs: Int?
         var transcriptionMs: Int?

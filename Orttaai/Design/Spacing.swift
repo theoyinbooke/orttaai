@@ -27,12 +27,12 @@ enum BorderWidth {
 
 enum WindowSize {
     static let setup = CGSize(width: 600, height: 750)
-    static let home = CGSize(width: 900, height: 680)
+    static let home = CGSize(width: 1040, height: 680)
     static let settings = CGSize(width: 920, height: 720)
     static let history = CGSize(width: 480, height: 600)
     static let historyMin = CGSize(width: 480, height: 300)
     static let floatingPanelHandle = CGSize(width: 332, height: 32)
-    static let floatingPanelRecording = CGSize(width: 250, height: 42)
+    static let floatingPanelRecording = CGSize(width: 286, height: 42)
     static let floatingPanelProcessing = CGSize(width: 140, height: 28)
     static let floatingPanelError = CGSize(width: 200, height: 28)
 }

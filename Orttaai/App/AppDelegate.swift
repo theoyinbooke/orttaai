@@ -412,6 +412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 content: WaveformView(
                     audioLevel: coordinator?.audioLevel ?? 0,
                     elapsedSeconds: coordinator?.recordingElapsedSeconds ?? 0,
+                    countdownSeconds: coordinator?.countdownSeconds,
                     onStop: { [weak self] in
                         self?.coordinator?.stopRecording()
                     }
@@ -477,16 +478,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let bucket = Int((level * 24).rounded())
                 let didWaveformChange = bucket != self.lastWaveformLevelBucket
                 let didElapsedChange = elapsedSeconds != self.lastRecordingElapsedSeconds
-                let didSignalChange = countdownSeconds != self.lastRecordingCountdown ||
+                let didCountdownChange = countdownSeconds != self.lastRecordingCountdown
+                let didSignalChange = didCountdownChange ||
                     targetAppName != self.lastRecordingTargetAppName ||
                     didElapsedChange
 
-                if didWaveformChange || didElapsedChange {
+                if didWaveformChange || didElapsedChange || didCountdownChange {
                     self.lastWaveformLevelBucket = bucket
                     self.floatingPanel?.updateContent(
                         WaveformView(
                             audioLevel: level,
                             elapsedSeconds: elapsedSeconds,
+                            countdownSeconds: countdownSeconds,
                             onStop: { [weak self] in
                                 self?.coordinator?.stopRecording()
                             }

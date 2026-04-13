@@ -51,12 +51,12 @@ final class TextInjectionService: TextInjecting {
         self.clipboard = clipboard
     }
 
-    func isFocusedElementSecure() -> Bool {
-        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+    func isFocusedElementSecure(in targetApp: NSRunningApplication? = nil) -> Bool {
+        guard let app = targetApp ?? NSWorkspace.shared.frontmostApplication else {
             return false // Fail-open
         }
 
-        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
 
         var focusedElement: AnyObject?
         let focusResult = AXUIElementCopyAttributeValue(
@@ -105,7 +105,10 @@ final class TextInjectionService: TextInjecting {
         lastInjectionTelemetry = nil
 
         // Step 1: Check for secure field BEFORE setting lastTranscript
-        if isFocusedElementSecure() {
+        // Use the target app (captured at recording start) so we check
+        // the correct app, not whatever happens to be frontmost now.
+        let secureCheckApp = targetApp ?? NSWorkspace.shared.frontmostApplication
+        if isFocusedElementSecure(in: secureCheckApp) {
             Logger.injection.info("Blocked: focused element is a secure text field")
             return .blockedSecureField
         }
@@ -131,6 +134,12 @@ final class TextInjectionService: TextInjecting {
 
         if let app = appToActivate, app.bundleIdentifier != Bundle.main.bundleIdentifier {
             Logger.injection.info("Target app active: \(app.isActive), bundle: \(app.bundleIdentifier ?? "?")")
+        }
+
+        // Step 5b: Brief stabilization delay after activation so the window server
+        // finishes transferring keyboard focus before the CGEvent paste arrives.
+        if activationMs > 0 {
+            try? await Task.sleep(nanoseconds: 30_000_000) // 30ms
         }
 
         // Step 6: Simulate paste

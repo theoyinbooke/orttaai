@@ -10,7 +10,7 @@ import KeyboardShortcuts
 struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
-    @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 60
+    @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 90
     @State private var showClearConfirmation = false
     @State private var showResetConfirmation = false
 

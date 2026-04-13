@@ -7,6 +7,7 @@ import Foundation
 struct WaveformView: View {
     let audioLevel: Float
     let elapsedSeconds: Int
+    var countdownSeconds: Int? = nil
     var onStop: (() -> Void)? = nil
 
     private let barCount = 16
@@ -14,6 +15,12 @@ struct WaveformView: View {
     private let barGap: CGFloat = 2
     private let minBarHeight: CGFloat = 6
     private let maxBarHeight: CGFloat = 18
+
+    private var isCountingDown: Bool { countdownSeconds != nil }
+
+    private var activeTint: Color {
+        isCountingDown ? Color.Orttaai.error : Color.Orttaai.accent
+    }
 
     var body: some View {
         ZStack {
@@ -23,27 +30,49 @@ struct WaveformView: View {
                 HStack(spacing: barGap) {
                     ForEach(0..<barCount, id: \.self) { index in
                         RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
-                            .fill(Color.Orttaai.accent.opacity(0.95))
+                            .fill(activeTint.opacity(0.95))
                             .frame(width: barWidth, height: barHeight(for: index))
                     }
                 }
-                .shadow(color: Color.Orttaai.accent.opacity(Double(audioLevel) * 0.5), radius: 6, y: 0)
+                .shadow(color: activeTint.opacity(Double(audioLevel) * 0.5), radius: 6, y: 0)
 
                 Spacer(minLength: 0)
 
-                Text(formattedElapsed)
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                    .contentTransition(.numericText())
-                    .frame(minWidth: 42, alignment: .trailing)
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xs)
-                    .background(Color.Orttaai.bgPrimary.opacity(0.32))
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
-                            .stroke(Color.Orttaai.border.opacity(0.35), lineWidth: BorderWidth.standard)
-                    )
+                HStack(spacing: Spacing.xs) {
+                    Text(formattedElapsed)
+                        .font(.Orttaai.mono)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .contentTransition(.numericText())
+
+                    if let countdown = countdownSeconds {
+                        Text("\u{00B7}")
+                            .font(.Orttaai.mono)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+
+                        Text("\(countdown)s")
+                            .font(.Orttaai.mono)
+                            .foregroundStyle(Color.Orttaai.error)
+                            .contentTransition(.numericText())
+                    }
+                }
+                .frame(minWidth: 42, alignment: .trailing)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .background(
+                    isCountingDown
+                        ? Color.Orttaai.errorSubtle.opacity(0.32)
+                        : Color.Orttaai.bgPrimary.opacity(0.32)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
+                        .stroke(
+                            isCountingDown
+                                ? Color.Orttaai.error.opacity(0.35)
+                                : Color.Orttaai.border.opacity(0.35),
+                            lineWidth: BorderWidth.standard
+                        )
+                )
 
                 if let onStop {
                     Button(action: onStop) {
@@ -65,12 +94,14 @@ struct WaveformView: View {
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .stroke(Color.Orttaai.accent.opacity(0.16), lineWidth: BorderWidth.standard)
+                .stroke(activeTint.opacity(0.16), lineWidth: BorderWidth.standard)
         )
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, 5)
         .animation(.linear(duration: 0.033), value: audioLevel)
         .animation(.easeInOut(duration: 0.18), value: elapsedSeconds)
+        .animation(.easeInOut(duration: 0.3), value: isCountingDown)
+        .animation(.easeInOut(duration: 0.18), value: countdownSeconds)
     }
 
     private var waveBannerBackground: some View {
@@ -97,8 +128,8 @@ struct WaveformView: View {
                     primary,
                     with: .linearGradient(
                         Gradient(colors: [
-                            Color.Orttaai.accent.opacity(0.24),
-                            Color.Orttaai.accent.opacity(0.06)
+                            activeTint.opacity(0.24),
+                            activeTint.opacity(0.06)
                         ]),
                         startPoint: CGPoint(x: 0, y: 0),
                         endPoint: CGPoint(x: size.width, y: size.height)
@@ -108,7 +139,7 @@ struct WaveformView: View {
                     secondary,
                     with: .linearGradient(
                         Gradient(colors: [
-                            Color.Orttaai.accent.opacity(0.14),
+                            activeTint.opacity(0.14),
                             Color.clear
                         ]),
                         startPoint: CGPoint(x: size.width, y: 0),
