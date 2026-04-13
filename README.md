@@ -19,7 +19,7 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 - **Writing Insights panel** — Generate on-demand insights about your dictation patterns from recent history (Apple Foundation Models when available, with fallback).
 - **Personal Home dashboard** — Sleek at-a-glance view for 7-day activity, speed trends, top apps, and quick actions.
 - **Model management** — Download and switch between Whisper models based on your hardware.
-- **Auto-updates** — Sparkle integration for direct downloads; Homebrew-managed updates for cask installs.
+- **Auto-updates** — Sparkle integration for direct downloads; Homebrew-managed updates when installed from the custom cask tap.
 
 ## Requirements
 
@@ -29,11 +29,17 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 
 ## Installation
 
-### Homebrew (Recommended)
+### Homebrew
+
+Install from the custom tap:
 
 ```bash
-brew install --cask orttaai
+brew tap theoyinbooke/orttaai
+brew install --cask theoyinbooke/orttaai/orttaai
 ```
+
+Tap repository:
+`https://github.com/theoyinbooke/homebrew-orttaai`
 
 ### Direct Download
 
@@ -116,7 +122,18 @@ Test: `Cmd+U`
 
 ## Sparkle Appcast (Maintainers)
 
-After creating and uploading a notarized DMG release, regenerate the appcast:
+Sparkle reads updates from:
+`https://raw.githubusercontent.com/theoyinbooke/orttaai/main/Orttaai/Resources/appcast.xml`
+
+The repository now publishes `appcast.xml` automatically after a GitHub Release is published.
+
+Setup required once:
+
+1. Export your Sparkle EdDSA private key to a file.
+2. Add its contents as a GitHub Actions secret named `SPARKLE_ED_PRIVATE_KEY`.
+3. Publish releases from GitHub with a DMG asset named `Orttaai-<version>.dmg`.
+
+For local backfills or recovery, you can still regenerate manually:
 
 ```bash
 scripts/update_appcast.sh --version <x.y.z>
@@ -124,9 +141,6 @@ git add Orttaai/Resources/appcast.xml
 git commit -m "Update Sparkle appcast for v<x.y.z>"
 git push
 ```
-
-The app reads updates from:
-`https://raw.githubusercontent.com/theoyinbooke/orttaai/main/Orttaai/Resources/appcast.xml`
 
 ## Contributing
 

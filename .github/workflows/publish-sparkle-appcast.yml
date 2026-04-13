@@ -1,0 +1,91 @@
+name: Publish Sparkle Appcast
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the leading v
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish-appcast:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: macos-15
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Sparkle key secret
+        shell: bash
+        run: |
+          if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+            echo "Missing SPARKLE_ED_PRIVATE_KEY secret." >&2
+            exit 1
+          fi
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project Orttaai.xcodeproj -scheme Orttaai -clonedSourcePackagesDirPath .spm-local
+
+      - name: Download DMG from GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-assets
+          gh release download "v${{ steps.version.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "Orttaai-${{ steps.version.outputs.version }}.dmg" \
+            --dir release-assets
+
+      - name: Write Sparkle private key
+        shell: bash
+        run: |
+          umask 177
+          printf '%s' "${SPARKLE_ED_PRIVATE_KEY}" > "$RUNNER_TEMP/sparkle_private_key.pem"
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+
+      - name: Update appcast
+        run: |
+          scripts/update_appcast.sh \
+            --version "${{ steps.version.outputs.version }}" \
+            --dmg "release-assets/Orttaai-${{ steps.version.outputs.version }}.dmg" \
+            --ed-key-file "$RUNNER_TEMP/sparkle_private_key.pem" \
+            --spm-packages-dir .spm-local
+
+      - name: Commit and push appcast
+        shell: bash
+        run: |
+          if git diff --quiet -- Orttaai/Resources/appcast.xml; then
+            echo "No appcast changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Orttaai/Resources/appcast.xml
+          git commit -m "Update Sparkle appcast for v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main

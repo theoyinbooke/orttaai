@@ -397,5 +397,5 @@ echo
 echo "Next:"
 echo "  1) Upload DMG to your website or GitHub Releases."
 echo "  2) Update Homebrew cask SHA (orttaai.rb) if publishing via Homebrew."
-echo "  3) Update Sparkle appcast:"
-echo "     scripts/update_appcast.sh --version $VERSION"
+echo "  3) Publish the GitHub release."
+echo "  4) Sparkle appcast will auto-publish from GitHub Actions once the release is published."

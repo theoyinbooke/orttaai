@@ -444,8 +444,10 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Orttaai needs microphone access to capture your voice for on-device transcription.";
+				INFOPLIST_KEY_SUEnableAutomaticChecks = YES;
 				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/theoyinbooke/orttaai/main/Orttaai/Resources/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "JHms8INGImTNTMWtUhT526kEM+KHawqwc21Z5YEISUs=";
+				INFOPLIST_KEY_SUScheduledCheckInterval = 86400;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -496,8 +498,10 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Orttaai needs microphone access to capture your voice for on-device transcription.";
+				INFOPLIST_KEY_SUEnableAutomaticChecks = YES;
 				INFOPLIST_KEY_SUFeedURL = "https://raw.githubusercontent.com/theoyinbooke/orttaai/main/Orttaai/Resources/appcast.xml";
 				INFOPLIST_KEY_SUPublicEDKey = "JHms8INGImTNTMWtUhT526kEM+KHawqwc21Z5YEISUs=";
+				INFOPLIST_KEY_SUScheduledCheckInterval = 86400;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

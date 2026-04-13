@@ -14,6 +14,7 @@ Options:
   --repo <owner/repo>       GitHub repository slug (default: theoyinbooke/orttaai).
   --output <path>           Appcast output path (default: Orttaai/Resources/appcast.xml).
   --sparkle-bin-dir <path>  Directory containing generate_appcast/sign_update.
+  --spm-packages-dir <path> SwiftPM packages/artifacts cache dir to search (default: .spm-local).
   --ed-key-file <path>      Private EdDSA key file exported from Sparkle generate_keys -x.
   -h, --help                Show this help.
 EOF
@@ -29,6 +30,7 @@ require_cmd() {
 resolve_sparkle_tool() {
   local tool_name="$1"
   local explicit_bin_dir="${2:-}"
+  local spm_packages_dir="${3:-}"
 
   if [[ -n "$explicit_bin_dir" ]]; then
     local explicit_path="$explicit_bin_dir/$tool_name"
@@ -43,6 +45,15 @@ resolve_sparkle_tool() {
   if command -v "$tool_name" >/dev/null 2>&1; then
     command -v "$tool_name"
     return 0
+  fi
+
+  if [[ -n "$spm_packages_dir" && -d "$spm_packages_dir" ]]; then
+    local spm_found_path=""
+    spm_found_path="$(find "$spm_packages_dir" -type f -path "*/artifacts/sparkle/Sparkle/bin/$tool_name" -print -quit 2>/dev/null || true)"
+    if [[ -n "$spm_found_path" && -x "$spm_found_path" ]]; then
+      printf '%s\n' "$spm_found_path"
+      return 0
+    fi
   fi
 
   local derived_data="${HOME}/Library/Developer/Xcode/DerivedData"
@@ -64,6 +75,7 @@ DMG_PATH=""
 REPO_SLUG="theoyinbooke/orttaai"
 OUTPUT_PATH="Orttaai/Resources/appcast.xml"
 SPARKLE_BIN_DIR=""
+SPM_PACKAGES_DIR=".spm-local"
 ED_KEY_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -86,6 +98,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --sparkle-bin-dir)
       SPARKLE_BIN_DIR="${2:-}"
+      shift 2
+      ;;
+    --spm-packages-dir)
+      SPM_PACKAGES_DIR="${2:-}"
       shift 2
       ;;
     --ed-key-file)
@@ -128,8 +144,8 @@ if [[ ! -f "$DMG_PATH" ]]; then
   exit 1
 fi
 
-GENERATE_APPCAST_BIN="$(resolve_sparkle_tool generate_appcast "$SPARKLE_BIN_DIR")"
-SIGN_UPDATE_BIN="$(resolve_sparkle_tool sign_update "$SPARKLE_BIN_DIR")"
+GENERATE_APPCAST_BIN="$(resolve_sparkle_tool generate_appcast "$SPARKLE_BIN_DIR" "$SPM_PACKAGES_DIR")"
+SIGN_UPDATE_BIN="$(resolve_sparkle_tool sign_update "$SPARKLE_BIN_DIR" "$SPM_PACKAGES_DIR")"
 
 if [[ -n "$ED_KEY_FILE" && ! -f "$ED_KEY_FILE" ]]; then
   echo "EdDSA key file not found: $ED_KEY_FILE" >&2
