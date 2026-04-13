@@ -122,6 +122,36 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(metrics.downloadedModelIDs.contains("openai_whisper-large-v3_turbo"))
     }
 
+    func testSetupDownloadedModelResolverPrefersSelectedDownloadedModel() {
+        let resolved = SetupDownloadedModelResolver.resolveInstalledModelID(
+            downloadedModelIDs: ["openai_whisper-small.en", "openai_whisper-large-v3_turbo"],
+            selectedModelID: "openai_whisper-large-v3_turbo",
+            preferredModelIDs: ["openai_whisper-small.en", "openai_whisper-large-v3_turbo"]
+        )
+
+        XCTAssertEqual(resolved, "openai_whisper-large-v3_turbo")
+    }
+
+    func testSetupDownloadedModelResolverFallsBackToPreferredDownloadedModel() {
+        let resolved = SetupDownloadedModelResolver.resolveInstalledModelID(
+            downloadedModelIDs: ["openai_whisper-small.en"],
+            selectedModelID: "openai_whisper-large-v3_turbo",
+            preferredModelIDs: ["openai_whisper-small.en", "openai_whisper-large-v3_turbo"]
+        )
+
+        XCTAssertEqual(resolved, "openai_whisper-small.en")
+    }
+
+    func testSetupDownloadedModelResolverReturnsNilWithoutMatchingDownloadedModel() {
+        let resolved = SetupDownloadedModelResolver.resolveInstalledModelID(
+            downloadedModelIDs: ["openai_whisper-medium"],
+            selectedModelID: "openai_whisper-large-v3_turbo",
+            preferredModelIDs: ["openai_whisper-small.en", "openai_whisper-large-v3_turbo"]
+        )
+
+        XCTAssertNil(resolved)
+    }
+
     private func createFakeModelFiles(at modelDirectory: URL) throws {
         let fileManager = FileManager.default
         let payload = Data(repeating: 0x1, count: 1_024)

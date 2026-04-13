@@ -62,6 +62,10 @@ struct ModelSettingsView: View {
     @State private var ollamaInstallProgress: Double?
     @State private var ollamaInstallError: String?
     @State private var ollamaInstallSuccessMessage: String?
+    @State private var isWarmingOllamaModels: Bool = false
+    @State private var ollamaWarmStatusMessage: String?
+    @State private var ollamaWarmError: String?
+    @State private var ollamaWarmSuccessMessage: String?
     @State private var downloadableOllamaModels: [OllamaCatalogModel] = []
     @State private var isLoadingOllamaCatalog: Bool = false
     @State private var ollamaCatalogMessage: String = "Check endpoint to load download options."
@@ -144,7 +148,10 @@ struct ModelSettingsView: View {
             normalizeAdvancedDecodingValues()
             normalizeLocalLLMSettings()
             if localLLMPolishEnabled || localLLMInsightsEnabled {
-                Task { await checkOllamaAvailability() }
+                Task {
+                    await checkOllamaAvailability()
+                    await warmEnabledOllamaModelsIfNeeded(silent: true)
+                }
             }
         }
         .onChange(of: modelSortModeRaw) { _, _ in
@@ -156,6 +163,24 @@ struct ModelSettingsView: View {
         .onChange(of: dictationLanguage) { _, newValue in
             guard lowLatencyModeEnabled, newValue == "auto" else { return }
             dictationLanguage = "en"
+        }
+        .onChange(of: localLLMPolishEnabled) { _, enabled in
+            guard enabled else { return }
+            Task {
+                if ollamaStatusReachable != true {
+                    await checkOllamaAvailability()
+                }
+                await warmEnabledOllamaModelsIfNeeded(silent: true)
+            }
+        }
+        .onChange(of: localLLMInsightsEnabled) { _, enabled in
+            guard enabled else { return }
+            Task {
+                if ollamaStatusReachable != true {
+                    await checkOllamaAvailability()
+                }
+                await warmEnabledOllamaModelsIfNeeded(silent: true)
+            }
         }
         .confirmationDialog(
             "Remove Downloaded Model?",
@@ -235,6 +260,44 @@ struct ModelSettingsView: View {
 
     private var modelSortMode: ModelSortMode {
         ModelSortMode(rawValue: modelSortModeRaw) ?? .size
+    }
+
+    private var recommendedPolishTimeoutMs: Int {
+        let lower = normalizedPolishOllamaModel.lowercased()
+        if lower.contains("qwen3.5:0.8b") { return 1_300 }
+        if lower.contains("qwen3.5:2b") { return 1_400 }
+        if lower.contains("qwen3.5:4b") { return 1_500 }
+        return 600
+    }
+
+    private var recommendedInsightsTimeoutMs: Int {
+        let lower = normalizedInsightsOllamaModel.lowercased()
+        if lower.hasPrefix("qwen") {
+            return 12_000
+        }
+        return 9_000
+    }
+
+    private var polishRecommendationMessage: String {
+        let lower = normalizedPolishOllamaModel.lowercased()
+        if lower.contains(":4b") {
+            return "This model is usually too heavy for fast polish. `gemma3:1b` is the safer default."
+        }
+        if localLLMPolishTimeoutMs < recommendedPolishTimeoutMs {
+            return "Current timeout is aggressive for this model. Expect cold-start fallbacks until it is warmed."
+        }
+        return "Warm the model once after launch to keep polish inside the timeout budget."
+    }
+
+    private var insightsRecommendationMessage: String {
+        let lower = normalizedInsightsOllamaModel.lowercased()
+        if lower.contains("qwen3.5:4b") {
+            return "This model is noticeably slower for on-device insights. `qwen3.5:0.8b` is the better default for responsiveness."
+        }
+        if localLLMInsightsTimeoutMs < recommendedInsightsTimeoutMs {
+            return "Increase timeout or warm the model if insights fall back too often on first use."
+        }
+        return "Warm the model after launch for the best first-run insights latency."
     }
 
     private var decodingPreset: DecodingPreset {
@@ -583,6 +646,41 @@ struct ModelSettingsView: View {
                         .disabled(isCheckingOllama || isInstallingOllamaModel || isLoadingOllamaCatalog)
                     }
 
+                    HStack(spacing: Spacing.sm) {
+                        Button {
+                            Task {
+                                if ollamaStatusReachable != true {
+                                    await checkOllamaAvailability()
+                                }
+                                await warmEnabledOllamaModelsIfNeeded(silent: false)
+                            }
+                        } label: {
+                            if isWarmingOllamaModels {
+                                Label("Warming Models...", systemImage: "bolt.badge.clock")
+                            } else {
+                                Label("Warm Enabled Models", systemImage: "bolt.fill")
+                            }
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary))
+                        .disabled(
+                            isCheckingOllama ||
+                            isInstallingOllamaModel ||
+                            isLoadingOllamaCatalog ||
+                            isWarmingOllamaModels
+                        )
+
+                        if let ollamaWarmStatusMessage {
+                            HStack(spacing: Spacing.xs) {
+                                if isWarmingOllamaModels {
+                                    ProgressView().controlSize(.small)
+                                }
+                                Text(ollamaWarmStatusMessage)
+                                    .font(.Orttaai.caption)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                            }
+                        }
+                    }
+
                     HStack(spacing: Spacing.xs) {
                         if isCheckingOllama {
                             ProgressView().controlSize(.small)
@@ -727,6 +825,26 @@ struct ModelSettingsView: View {
                                     .foregroundStyle(Color.Orttaai.error)
                             }
                         }
+
+                        if let ollamaWarmSuccessMessage {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Color.Orttaai.success)
+                                Text(ollamaWarmSuccessMessage)
+                                    .font(.Orttaai.caption)
+                                    .foregroundStyle(Color.Orttaai.success)
+                            }
+                        }
+
+                        if let ollamaWarmError {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Color.Orttaai.error)
+                                Text(ollamaWarmError)
+                                    .font(.Orttaai.caption)
+                                    .foregroundStyle(Color.Orttaai.error)
+                            }
+                        }
                     }
                 }
 
@@ -780,6 +898,10 @@ struct ModelSettingsView: View {
                         rowValueLabel("Max Characters", value: "\(localLLMPolishMaxChars)")
                     }
                     .help("Long transcripts skip local polish to protect responsiveness.")
+
+                    Text(polishRecommendationMessage)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
                 }
 
                 divider
@@ -828,6 +950,10 @@ struct ModelSettingsView: View {
                             rowValueLabel("Insights Timeout", value: "\(localLLMInsightsTimeoutMs) ms")
                         }
                         .help("Longer timeout is useful for deeper analysis batches.")
+
+                        Text(insightsRecommendationMessage)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
                     }
                 }
             }
@@ -1257,6 +1383,84 @@ struct ModelSettingsView: View {
             return fallback
         }
         return trimmed
+    }
+
+    private func enabledOllamaModelsToWarm() -> [String] {
+        var models: [String] = []
+        if localLLMPolishEnabled {
+            models.append(normalizedPolishOllamaModel)
+        }
+        if localLLMInsightsEnabled {
+            models.append(normalizedInsightsOllamaModel)
+        }
+
+        return Array(Set(models.filter { !$0.isEmpty })).sorted()
+    }
+
+    private func warmEnabledOllamaModelsIfNeeded(silent: Bool) async {
+        guard ollamaStatusReachable == true else {
+            if !silent {
+                await MainActor.run {
+                    ollamaWarmError = "Ollama must be reachable before models can be warmed."
+                    ollamaWarmSuccessMessage = nil
+                }
+            }
+            return
+        }
+
+        let models = enabledOllamaModelsToWarm()
+        guard !models.isEmpty else {
+            if !silent {
+                await MainActor.run {
+                    ollamaWarmError = "Enable local polish or local insights to warm a model."
+                    ollamaWarmSuccessMessage = nil
+                }
+            }
+            return
+        }
+
+        await MainActor.run {
+            isWarmingOllamaModels = true
+            ollamaWarmStatusMessage = "Priming \(models.joined(separator: ", "))..."
+            ollamaWarmError = nil
+            ollamaWarmSuccessMessage = nil
+        }
+
+        let client = OllamaClient()
+        var warmed: [(name: String, elapsedMs: Int)] = []
+
+        do {
+            for model in models {
+                let elapsedMs = try await client.warmModel(
+                    baseURLString: localLLMEndpoint,
+                    model: model,
+                    timeoutMs: 40_000
+                )
+                warmed.append((name: model, elapsedMs: elapsedMs))
+                await MainActor.run {
+                    ollamaWarmStatusMessage = "Warmed \(model) in \(elapsedMs) ms."
+                }
+            }
+
+            let summary = warmed
+                .map { "\($0.name) (\($0.elapsedMs) ms)" }
+                .joined(separator: ", ")
+            await MainActor.run {
+                ollamaWarmStatusMessage = nil
+                ollamaWarmSuccessMessage = "Warm-up complete: \(summary)"
+            }
+        } catch {
+            await MainActor.run {
+                ollamaWarmError = "Warm-up failed: \(error.localizedDescription)"
+            }
+        }
+
+        await MainActor.run {
+            isWarmingOllamaModels = false
+            if ollamaWarmError != nil {
+                ollamaWarmStatusMessage = nil
+            }
+        }
     }
 
     private func installOllamaModel(named modelName: String) async {

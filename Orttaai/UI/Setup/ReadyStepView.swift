@@ -3,10 +3,13 @@
 
 import SwiftUI
 import Foundation
+import CoreAudio
 import KeyboardShortcuts
+import os
 
 struct ReadyStepView: View {
     var onStart: (() -> Void)?
+    @AppStorage("selectedAudioDeviceID") private var selectedAudioDeviceID = ""
     @State private var quickTestText = ""
     @State private var quickTestState: DictationStateSignal = .idle
     @State private var quickTestMessage = "Waiting for hotkey."
@@ -15,19 +18,28 @@ struct ReadyStepView: View {
     @State private var targetAppName: String?
     @State private var countdownSeconds: Int?
     @State private var elapsedRecordingSeconds: Int?
+    @State private var idleMicLevel: Float = 0
+    @State private var liveDictationLevel: Float = 0
+    @State private var micMonitorCapture: AudioCaptureService?
+    @State private var micLevelTimer: Timer?
+    @State private var micMonitorError: String?
+    @State private var audioDeviceManager = AudioDeviceManager()
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
 
     var body: some View {
-        VStack(spacing: Spacing.xl) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(Color.Orttaai.success)
+        VStack(spacing: Spacing.lg) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(Color.Orttaai.success)
+                    .accessibilityHidden(true)
 
-            Text("Orttaai is ready!")
-                .font(.Orttaai.title)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("Orttaai is ready!")
+                    .font(.Orttaai.title)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+            }
 
-            VStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
                 Text("Press")
                     .font(.Orttaai.body)
                     .foregroundStyle(Color.Orttaai.textSecondary)
@@ -35,23 +47,26 @@ struct ReadyStepView: View {
                 Text(hotkeyLabel)
                     .font(.Orttaai.mono)
                     .foregroundStyle(Color.Orttaai.accent)
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.vertical, Spacing.sm)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 6)
                     .background(Color.Orttaai.bgSecondary)
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
 
-                Text("anywhere to start dictating.")
+                Text("to start dictating.")
                     .font(.Orttaai.body)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
+            .lineLimit(1)
 
             Text("Hold the hotkey while speaking, then release to transcribe and paste.")
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textTertiary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 400)
+                .frame(maxWidth: 380)
 
-            VStack(alignment: .leading, spacing: Spacing.sm) {
+            microphoneCheckCard
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 feedbackSummary
 
                 Text("Quick Test")
@@ -61,6 +76,7 @@ struct ReadyStepView: View {
                 Text("Click inside the field below. Hold \(hotkeyLabel), say something, then release.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 ZStack(alignment: .topLeading) {
                     if quickTestText.isEmpty {
@@ -76,10 +92,10 @@ struct ReadyStepView: View {
                         .foregroundStyle(Color.Orttaai.textPrimary)
                         .scrollContentBackground(.hidden)
                         .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, Spacing.xs)
+                        .padding(.vertical, 2)
                         .background(Color.clear)
                 }
-                .frame(height: 110)
+                .frame(height: 88)
                 .background(Color.Orttaai.bgSecondary)
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
                 .overlay(
@@ -95,9 +111,10 @@ struct ReadyStepView: View {
                     Text(displayMessage)
                         .font(.Orttaai.secondary)
                         .foregroundStyle(statusColor)
+                        .lineLimit(1)
                 }
                 .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
+                .padding(.vertical, 6)
                 .background(Color.Orttaai.bgSecondary)
                 .clipShape(Capsule())
             }
@@ -107,7 +124,6 @@ struct ReadyStepView: View {
                 onStart?()
             }
             .buttonStyle(OrttaaiButtonStyle(.primary))
-            .padding(.top, Spacing.lg)
 
             Text("After this, Orttaai stays in your menu bar.")
                 .font(.Orttaai.caption)
@@ -136,6 +152,13 @@ struct ReadyStepView: View {
             targetAppName = notification.userInfo?[DictationNotificationKey.targetAppName] as? String
             countdownSeconds = notification.userInfo?[DictationNotificationKey.countdownSeconds] as? Int
             elapsedRecordingSeconds = notification.userInfo?[DictationNotificationKey.elapsedRecordingSeconds] as? Int
+            if let audioLevel = notification.userInfo?[DictationNotificationKey.audioLevel] as? Float {
+                liveDictationLevel = max(0, min(audioLevel, 1))
+            } else if state != .recording {
+                liveDictationLevel = 0
+            }
+
+            updateMicMonitorForCurrentState()
         }
         .onReceive(NotificationCenter.default.publisher(for: shortcutChangeNotification)) { notification in
             guard
@@ -148,6 +171,147 @@ struct ReadyStepView: View {
         }
         .onAppear {
             refreshHotkeyLabel()
+            audioDeviceManager.refreshDevices()
+            updateMicMonitorForCurrentState()
+        }
+        .onDisappear {
+            stopMicMonitor()
+        }
+        .onChange(of: selectedAudioDeviceID) { _, _ in
+            audioDeviceManager.refreshDevices()
+            updateMicMonitorForCurrentState(forceRestart: true)
+        }
+    }
+
+    private var microphoneCheckCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                Text("Microphone Check")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+                    .layoutPriority(1)
+
+                Spacer(minLength: Spacing.xs)
+
+                Picker("Microphone input", selection: $selectedAudioDeviceID) {
+                    Text(systemDefaultInputLabel)
+                        .tag("")
+
+                    ForEach(audioDeviceManager.devices) { device in
+                        Text(device.name)
+                            .tag(String(device.id))
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 148, alignment: .trailing)
+
+                Text(monitoringStateLabel)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(monitoringStateColor)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 6)
+                    .background(monitoringStateColor.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            HStack(spacing: Spacing.sm) {
+                Label(activeMicName, systemImage: "mic.fill")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
+
+                AudioLevelMeter(level: displayedMicLevel)
+                    .frame(width: 120, height: 8)
+                    .accessibilityLabel("Microphone input level")
+                    .accessibilityValue("\(Int((displayedMicLevel * 100).rounded())) percent")
+
+                Spacer()
+
+                Text("\(Int((displayedMicLevel * 100).rounded()))%")
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.accent)
+            }
+
+            if let micMonitorError {
+                Text(micMonitorError)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.error)
+                    .lineLimit(2)
+            } else {
+                Text(microphoneCheckMessage)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 420, alignment: .leading)
+        .background(Color.Orttaai.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var displayedMicLevel: Float {
+        if quickTestState == .recording {
+            return liveDictationLevel
+        }
+        return idleMicLevel
+    }
+
+    private var activeMicName: String {
+        if selectedAudioDeviceID.isEmpty {
+            return audioDeviceManager.defaultInputDevice()?.name ?? "System Default"
+        }
+        return audioDeviceManager.devices.first(where: { String($0.id) == selectedAudioDeviceID })?.name ?? "Selected microphone unavailable"
+    }
+
+    private var systemDefaultInputLabel: String {
+        if let defaultInput = audioDeviceManager.defaultInputDevice() {
+            return "System Default (\(defaultInput.name))"
+        }
+        return "System Default"
+    }
+
+    private var monitoringStateLabel: String {
+        switch quickTestState {
+        case .recording:
+            return "Live"
+        case .processing, .injecting:
+            return "Paused"
+        case .error:
+            return "Check mic"
+        case .idle:
+            return micMonitorError == nil ? "Monitoring" : "Unavailable"
+        }
+    }
+
+    private var monitoringStateColor: Color {
+        switch quickTestState {
+        case .recording:
+            return Color.Orttaai.accent
+        case .processing, .injecting:
+            return Color.Orttaai.textSecondary
+        case .error:
+            return Color.Orttaai.error
+        case .idle:
+            return micMonitorError == nil ? Color.Orttaai.success : Color.Orttaai.warning
+        }
+    }
+
+    private var microphoneCheckMessage: String {
+        switch quickTestState {
+        case .recording:
+            return "Meter is now following the live dictation capture."
+        case .processing, .injecting:
+            return "Input monitoring pauses while Orttaai transcribes and pastes."
+        case .error:
+            return "If this stays flat, confirm macOS microphone access and the selected input device."
+        case .idle:
+            return "Speak normally to confirm the bar reacts before you start the quick test."
         }
     }
 
@@ -159,7 +323,7 @@ struct ReadyStepView: View {
     }
 
     private var feedbackSummary: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.sm) {
                 statusPill(title: "State", value: stateTitle, tint: statusColor)
 
@@ -295,6 +459,58 @@ struct ReadyStepView: View {
         return "Key \(key.rawValue)"
     }
 
+    private func updateMicMonitorForCurrentState(forceRestart: Bool = false) {
+        let shouldMonitorIdleInput = quickTestState == .idle
+
+        if !shouldMonitorIdleInput {
+            stopMicMonitor()
+            return
+        }
+
+        if forceRestart {
+            stopMicMonitor()
+        }
+
+        guard micMonitorCapture == nil else { return }
+        startMicMonitor()
+    }
+
+    private func startMicMonitor() {
+        stopMicMonitor()
+
+        let capture = AudioCaptureService()
+        micMonitorError = nil
+
+        do {
+            let selectedDeviceID = resolvedSelectedAudioDeviceID()
+            try capture.startCapture(deviceID: selectedDeviceID)
+            micMonitorCapture = capture
+            micLevelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
+                idleMicLevel = capture.audioLevel
+            }
+        } catch {
+            micMonitorCapture = nil
+            micMonitorError = "Mic check unavailable. Open Audio settings if the bar stays flat."
+            idleMicLevel = 0
+            Logger.audio.error("Ready step mic monitor failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func stopMicMonitor() {
+        micLevelTimer?.invalidate()
+        micLevelTimer = nil
+
+        _ = micMonitorCapture?.stopCapture()
+        micMonitorCapture = nil
+        idleMicLevel = 0
+    }
+
+    private func resolvedSelectedAudioDeviceID() -> AudioDeviceID? {
+        let trimmed = selectedAudioDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let rawID = UInt32(trimmed), rawID != 0 else { return nil }
+        return AudioDeviceID(rawID)
+    }
+
     private func statusPill(title: String, value: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title.uppercased())
@@ -305,7 +521,7 @@ struct ReadyStepView: View {
                 .foregroundStyle(Color.Orttaai.textPrimary)
         }
         .padding(.horizontal, Spacing.sm)
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
         .background(tint.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
         .overlay(

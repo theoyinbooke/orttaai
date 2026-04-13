@@ -58,8 +58,8 @@ final class StatusBarMenu {
         homeItem.target = self
         menu.addItem(homeItem)
 
-        // History
-        let historyItem = NSMenuItem(title: "History", action: #selector(historyAction), keyEquivalent: "")
+        // Analytics
+        let historyItem = NSMenuItem(title: "Analytics", action: #selector(historyAction), keyEquivalent: "")
         historyItem.target = self
         menu.addItem(historyItem)
 

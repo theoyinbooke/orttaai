@@ -12,8 +12,10 @@ final class MockAudioCaptureService: AudioCapturing {
     var audioLevel: Float = 0
     var shouldFail = false
     var mockSamples: [Float] = Array(repeating: 0.1, count: 16000) // 1 second
+    var lastStartCaptureDeviceID: AudioDeviceID?
 
     func startCapture(deviceID: AudioDeviceID? = nil) throws {
+        lastStartCaptureDeviceID = deviceID
         if shouldFail {
             throw OrttaaiError.microphoneAccessDenied
         }
@@ -161,6 +163,33 @@ final class DictationCoordinatorTests: XCTestCase {
         } else {
             XCTFail("Expected recording state")
         }
+    }
+
+    @MainActor
+    func testStartRecordingUsesSelectedAudioDeviceWhenConfigured() {
+        settings.selectedAudioDeviceID = "1234"
+
+        coordinator.startRecording()
+
+        XCTAssertEqual(audioService.lastStartCaptureDeviceID, AudioDeviceID(1234))
+    }
+
+    @MainActor
+    func testStartRecordingFallsBackToSystemDefaultWhenSelectionIsEmpty() {
+        settings.selectedAudioDeviceID = ""
+
+        coordinator.startRecording()
+
+        XCTAssertNil(audioService.lastStartCaptureDeviceID)
+    }
+
+    @MainActor
+    func testStartRecordingFallsBackToSystemDefaultWhenSelectionIsInvalid() {
+        settings.selectedAudioDeviceID = "not-a-device"
+
+        coordinator.startRecording()
+
+        XCTAssertNil(audioService.lastStartCaptureDeviceID)
     }
 
     @MainActor

@@ -84,6 +84,7 @@ final class ModelManager {
     private(set) var switchError: String?
 
     private let transcriptionService: TranscriptionService
+    private let settings: AppSettings
     private let downloader: ModelDownloader
     private let modelsDirectory: URL
     nonisolated private static let requiredModelComponents = [
@@ -94,9 +95,11 @@ final class ModelManager {
 
     init(
         transcriptionService: TranscriptionService,
+        settings: AppSettings = AppSettings(),
         downloader: ModelDownloader = ModelDownloader()
     ) {
         self.transcriptionService = transcriptionService
+        self.settings = settings
         self.downloader = downloader
 
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -158,6 +161,7 @@ final class ModelManager {
         }
 
         do {
+            await settings.syncTranscriptionSettings(to: transcriptionService)
             if !isAlreadyDownloaded {
                 state = .loading
             }
@@ -185,6 +189,7 @@ final class ModelManager {
 
         state = .loading
         do {
+            await settings.syncTranscriptionSettings(to: transcriptionService)
             try await transcriptionService.loadModel(named: modelId)
             AppSettings().activeModelId = modelId
             state = .loaded

@@ -5,17 +5,24 @@ import SwiftUI
 
 struct HomeShellView: View {
     @ObservedObject var navigation: HomeNavigationState
+    @AppStorage("homeSidebarCollapsed") private var homeSidebarCollapsed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onRunSetup: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
-            let collapsedSidebar = width < 1_020
-            let iconOnlySidebar = width < 860
+            let canExpandSidebar = width >= 920
+            let collapsedSidebar = !canExpandSidebar || homeSidebarCollapsed
+            let iconOnlySidebar = width < 820 || homeSidebarCollapsed
             let compactOverview = width < 1_180
 
             HStack(spacing: 0) {
-                sidebar(collapsed: collapsedSidebar, iconOnly: iconOnlySidebar)
+                sidebar(
+                    collapsed: collapsedSidebar,
+                    iconOnly: iconOnlySidebar,
+                    canExpand: canExpandSidebar
+                )
 
                 Divider()
                     .background(Color.Orttaai.border)
@@ -34,14 +41,14 @@ struct HomeShellView: View {
                 HomeView(
                     onOpenSettings: { navigation.selectedSection = .settings },
                     onOpenModelSettings: { navigation.selectedSection = .model },
-                    onOpenHistory: { navigation.selectedSection = .history },
+                    onOpenHistory: { navigation.selectedSection = .analytics },
                     onRunSetup: onRunSetup,
                     layoutMode: compactOverview ? .compact : .regular
                 )
             case .memory:
                 MemoryView()
-            case .history:
-                HistoryView()
+            case .analytics:
+                AnalyticsView()
             case .settings:
                 HomeSettingsWorkspaceView()
             case .model:
@@ -59,20 +66,48 @@ struct HomeShellView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func sidebar(collapsed: Bool, iconOnly: Bool) -> some View {
+    private func sidebar(collapsed: Bool, iconOnly: Bool, canExpand: Bool) -> some View {
         let sidebarWidth: CGFloat = iconOnly ? 72 : (collapsed ? 88 : 240)
 
         return VStack(alignment: collapsed ? .center : .leading, spacing: Spacing.lg) {
-            if !collapsed {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Orttaai Home")
-                        .font(.Orttaai.heading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                if !collapsed {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Orttaai Home")
+                            .font(.Orttaai.heading)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
 
-                    Text("Personal workspace")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        Text("Personal workspace")
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                    }
                 }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    guard canExpand else { return }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                        homeSidebarCollapsed.toggle()
+                    }
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(canExpand ? Color.Orttaai.textSecondary : Color.Orttaai.textTertiary)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                        .fill(Color.Orttaai.bgSecondary.opacity(canExpand ? 0.65 : 0.35))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                        .stroke(Color.Orttaai.border.opacity(0.45), lineWidth: BorderWidth.standard)
+                )
+                .help(canExpand ? (collapsed ? "Expand sidebar" : "Collapse sidebar") : "Widen the window to expand the sidebar")
+                .accessibilityLabel(collapsed ? "Expand sidebar" : "Collapse sidebar")
+                .disabled(!canExpand)
             }
 
             VStack(spacing: Spacing.sm) {

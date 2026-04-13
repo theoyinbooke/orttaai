@@ -25,61 +25,34 @@ final class StatusBarController {
     func updateIcon(state: StatusBarIconState) {
         currentState = state
         stopPulseTimer()
+        applyIcon(for: state)
 
         switch state {
-        case .idle:
-            setTemplateIcon(symbolName: "waveform.circle")
-
         case .recording:
-            setTintedIcon(symbolName: "waveform.circle.fill", color: NSColor.Orttaai.accent)
             startPulseTimer()
-
-        case .processing:
-            setTintedIcon(symbolName: "waveform.circle.fill", color: NSColor.Orttaai.accent)
-
-        case .downloading:
-            setTemplateIcon(symbolName: "waveform.circle")
-            // TODO: Draw progress ring overlay in Phase 3
-
-        case .error:
-            setTemplateIcon(symbolName: "waveform.circle")
-            // TODO: Draw amber dot badge in Phase 3
+        case .idle, .processing, .downloading, .error:
+            break
         }
     }
 
     // MARK: - Private
 
-    private func setTemplateIcon(symbolName: String) {
+    private func applyIcon(for state: StatusBarIconState) {
         guard let button = statusItem.button else { return }
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Orttaai")
-        image?.isTemplate = true
-        button.image = image
+        let renderedState: MenuBarIconRenderer.IconState = switch state {
+        case .idle:
+            .idle
+        case .recording:
+            .recording
+        case .processing:
+            .processing
+        case .downloading(let progress):
+            .downloading(progress: progress)
+        case .error:
+            .error
+        }
+        button.image = MenuBarIconRenderer.renderIcon(for: renderedState)
         button.alphaValue = 1.0
-    }
-
-    private func setTintedIcon(symbolName: String, color: NSColor) {
-        guard let button = statusItem.button else { return }
-        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Orttaai")?
-            .withSymbolConfiguration(config)
-        image?.isTemplate = false
-
-        // Apply tint by drawing into an image with the desired color
-        if let tinted = tintImage(image, with: color) {
-            button.image = tinted
-        }
-    }
-
-    private func tintImage(_ image: NSImage?, with color: NSColor) -> NSImage? {
-        guard let image = image else { return nil }
-        let tinted = NSImage(size: image.size, flipped: false) { rect in
-            image.draw(in: rect)
-            color.set()
-            rect.fill(using: .sourceAtop)
-            return true
-        }
-        tinted.isTemplate = false
-        return tinted
     }
 
     private func startPulseTimer() {

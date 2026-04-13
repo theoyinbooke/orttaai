@@ -103,6 +103,7 @@ final class WindowManager {
             defer: false
         )
         window.title = title
+        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = NSColor.Orttaai.bgPrimary
         // Keep interactive content draggable/selectable (sliders, text selection, etc.)
         // and restrict window move behavior to the title bar.

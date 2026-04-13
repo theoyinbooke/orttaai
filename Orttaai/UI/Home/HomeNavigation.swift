@@ -7,7 +7,7 @@ import Combine
 enum HomeSection: String, CaseIterable, Identifiable {
     case overview
     case memory
-    case history
+    case analytics
     case model
     case settings
     case about
@@ -18,7 +18,7 @@ enum HomeSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "Overview"
         case .memory: return "Memory"
-        case .history: return "History"
+        case .analytics: return "Analytics"
         case .settings: return "Settings"
         case .model: return "Model"
         case .about: return "About"
@@ -29,7 +29,7 @@ enum HomeSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "house"
         case .memory: return "text.book.closed"
-        case .history: return "clock.arrow.circlepath"
+        case .analytics: return "chart.bar.xaxis"
         case .settings: return "gearshape"
         case .model: return "cpu"
         case .about: return "info.circle"
@@ -40,7 +40,7 @@ enum HomeSection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "Daily stats and actions"
         case .memory: return "Dictionary and snippets"
-        case .history: return "Browse recent transcriptions"
+        case .analytics: return "Charts, insights, and history"
         case .settings: return "General and audio controls"
         case .model: return "Model selection and storage"
         case .about: return "Version and acknowledgments"

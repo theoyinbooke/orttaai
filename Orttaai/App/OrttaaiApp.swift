@@ -9,7 +9,7 @@ struct OrttaaiApp: App {
 
     var body: some Scene {
         Settings {
-            Text("Settings placeholder")
+            SettingsView(initialTab: .general)
         }
     }
 }

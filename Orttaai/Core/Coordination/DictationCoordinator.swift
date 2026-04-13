@@ -3,6 +3,7 @@
 
 import Foundation
 import AppKit
+import CoreAudio
 import os
 
 @Observable
@@ -31,6 +32,14 @@ final class DictationCoordinator {
     }
 
     var onStateChange: ((State, State?) -> Void)?
+
+    static func resolvedInputDeviceID(from selectedAudioDeviceID: String?) -> AudioDeviceID? {
+        guard let selectedAudioDeviceID else { return nil }
+        let trimmed = selectedAudioDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let rawID = UInt32(trimmed), rawID != 0 else { return nil }
+        return AudioDeviceID(rawID)
+    }
 
     private(set) var state: State = .idle {
         didSet {
@@ -103,11 +112,16 @@ final class DictationCoordinator {
         do {
             // Capture the target app NOW, before the floating panel appears
             targetApp = NSWorkspace.shared.frontmostApplication
-            try audioService.startCapture()
+            let selectedDeviceID = Self.resolvedInputDeviceID(from: settings.selectedAudioDevice)
+            try audioService.startCapture(deviceID: selectedDeviceID)
             state = .recording(startTime: Date())
             startCapTimer()
             startLiveDecodeLoop()
-            Logger.dictation.info("Recording started")
+            if let selectedDeviceID {
+                Logger.dictation.info("Recording started using preferred input device \(selectedDeviceID)")
+            } else {
+                Logger.dictation.info("Recording started using system default input device")
+            }
         } catch {
             state = .error(message: "Microphone access needed")
             autoDismissError()
@@ -341,16 +355,7 @@ final class DictationCoordinator {
     }
 
     private func syncTranscriptionSettings() async {
-        let requestedLanguage = settings.dictationLanguage
-        let effectiveLanguage = (settings.lowLatencyModeEnabled && requestedLanguage == "auto")
-            ? "en"
-            : requestedLanguage
-        await transcriptionService.updateSettings(
-            language: effectiveLanguage,
-            computeMode: settings.computeMode,
-            lowLatencyMode: settings.lowLatencyModeEnabled,
-            decodingPreferences: settings.decodingPreferences
-        )
+        await settings.syncTranscriptionSettings(to: transcriptionService)
     }
 
     func estimateProcessingTime(_ recordingDuration: TimeInterval) -> TimeInterval {

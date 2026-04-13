@@ -87,7 +87,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openHomeWorkspace(section: .overview)
         }
         statusBarMenu?.onHistoryAction = { [weak self] in
-            self?.openHomeWorkspace(section: .history)
+            self?.openHomeWorkspace(section: .analytics)
         }
         statusBarMenu?.onSetupAction = { [weak self] in
             self?.startSetupFlow()
@@ -204,7 +204,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptionService = transcription
             injectionService = injection
             coordinator = coord
-            let mm = ModelManager(transcriptionService: transcription)
+            let mm = ModelManager(transcriptionService: transcription, settings: settings)
             modelManager = mm
             ModelManager.shared = mm
 
@@ -286,6 +286,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task {
             do {
+                await settings.syncTranscriptionSettings(to: transcription)
                 try await transcription.loadModel(named: settings.selectedModelId)
                 await transcription.warmUp()
                 let runtimeModelID = await transcription.loadedModelID() ?? settings.selectedModelId
@@ -306,6 +307,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func prewarmLocalLLMModelsIfNeeded() {
+        guard let settings = appState?.settings else { return }
+
+        let endpoint = settings.normalizedLocalLLMEndpoint
+        var modelsToWarm: [String] = []
+        if settings.localLLMPolishEnabled {
+            modelsToWarm.append(settings.normalizedLocalLLMPolishModel)
+        }
+        if settings.localLLMInsightsEnabled {
+            modelsToWarm.append(settings.normalizedLocalLLMInsightsModel)
+        }
+
+        let uniqueModels = Array(Set(modelsToWarm)).sorted()
+        guard !uniqueModels.isEmpty else { return }
+        let aiLogger = Logger(subsystem: "com.orttaai.app", category: "ai")
+
+        Task.detached(priority: .utility) {
+            let client = OllamaClient()
+            for model in uniqueModels {
+                do {
+                    let elapsedMs = try await client.warmModel(
+                        baseURLString: endpoint,
+                        model: model,
+                        timeoutMs: 40_000
+                    )
+                    aiLogger.info("Prewarmed local LLM model [model=\(model), elapsedMs=\(elapsedMs)]")
+                } catch {
+                    aiLogger.debug("Local LLM prewarm skipped for \(model): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func activateRuntimeServicesIfNeeded() {
         guard !runtimeServicesStarted else { return }
         let hotkeyStarted = startHotkeyService()
@@ -319,6 +353,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         runtimeServicesStarted = true
         floatingPanel?.show()
         warmUpModel()
+        prewarmLocalLLMModelsIfNeeded()
     }
 
     private func observeShortcutChanges() {
@@ -467,7 +502,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         message: "Listening... Speak now.",
                         targetAppName: targetAppName,
                         countdownSeconds: countdownSeconds,
-                        elapsedRecordingSeconds: elapsedSeconds
+                        elapsedRecordingSeconds: elapsedSeconds,
+                        audioLevel: level
                     )
                 }
 
@@ -492,7 +528,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         message: String,
         targetAppName: String? = nil,
         countdownSeconds: Int? = nil,
-        elapsedRecordingSeconds: Int? = nil
+        elapsedRecordingSeconds: Int? = nil,
+        audioLevel: Float? = nil
     ) {
         var userInfo: [String: Any] = [
             DictationNotificationKey.state: state.rawValue,
@@ -506,6 +543,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let elapsedRecordingSeconds {
             userInfo[DictationNotificationKey.elapsedRecordingSeconds] = elapsedRecordingSeconds
+        }
+        if let audioLevel {
+            userInfo[DictationNotificationKey.audioLevel] = audioLevel
         }
 
         NotificationCenter.default.post(

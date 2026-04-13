@@ -151,6 +151,12 @@ final class AppSettings: ObservableObject {
         ).clamped()
     }
 
+    var effectiveDictationLanguage: String {
+        (lowLatencyModeEnabled && dictationLanguage == "auto")
+            ? "en"
+            : dictationLanguage
+    }
+
     var normalizedLocalLLMEndpoint: String {
         let trimmed = localLLMEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "http://127.0.0.1:11434" : trimmed
@@ -190,5 +196,14 @@ final class AppSettings: ObservableObject {
             return fallback
         }
         return trimmed
+    }
+
+    func syncTranscriptionSettings(to transcriptionService: any Transcribing) async {
+        await transcriptionService.updateSettings(
+            language: effectiveDictationLanguage,
+            computeMode: computeMode,
+            lowLatencyMode: lowLatencyModeEnabled,
+            decodingPreferences: decodingPreferences
+        )
     }
 }

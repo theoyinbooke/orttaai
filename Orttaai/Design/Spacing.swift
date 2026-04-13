@@ -28,7 +28,7 @@ enum BorderWidth {
 enum WindowSize {
     static let setup = CGSize(width: 600, height: 750)
     static let home = CGSize(width: 900, height: 680)
-    static let settings = CGSize(width: 500, height: 400)
+    static let settings = CGSize(width: 920, height: 720)
     static let history = CGSize(width: 480, height: 600)
     static let historyMin = CGSize(width: 480, height: 300)
     static let floatingPanelHandle = CGSize(width: 332, height: 32)

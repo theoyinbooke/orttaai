@@ -50,11 +50,11 @@ final class AudioCaptureService: AudioCapturing {
             _samples.reserveCapacity(reservedSampleCapacity)
         }
 
-        // Set specific audio device if provided
-        if let deviceID = deviceID {
+        let resolvedDeviceID = deviceID ?? Self.defaultInputDeviceID()
+        if resolvedDeviceID != 0 {
             let audioUnit = engine.inputNode.audioUnit!
-            var id = deviceID
-            AudioUnitSetProperty(
+            var id = resolvedDeviceID
+            let status = AudioUnitSetProperty(
                 audioUnit,
                 kAudioOutputUnitProperty_CurrentDevice,
                 kAudioUnitScope_Global,
@@ -62,6 +62,10 @@ final class AudioCaptureService: AudioCapturing {
                 &id,
                 UInt32(MemoryLayout<AudioDeviceID>.size)
             )
+            guard status == noErr else {
+                Logger.audio.error("Failed to bind input device \(resolvedDeviceID): \(status)")
+                throw OrttaaiError.noAudioInput
+            }
         }
 
         let inputNode = engine.inputNode
@@ -72,7 +76,10 @@ final class AudioCaptureService: AudioCapturing {
             throw OrttaaiError.noAudioInput
         }
 
-        Logger.audio.info("Hardware format: \(hwFormat.channelCount) ch, \(hwFormat.sampleRate) Hz")
+        let activeDeviceName = Self.deviceName(for: resolvedDeviceID)
+        Logger.audio.info(
+            "Hardware format: \(hwFormat.channelCount) ch, \(hwFormat.sampleRate) Hz, device: \(activeDeviceName)"
+        )
 
         // Create converter from hardware format → 16kHz mono
         guard let conv = AVAudioConverter(from: hwFormat, to: Self.whisperFormat) else {
@@ -171,5 +178,45 @@ final class AudioCaptureService: AudioCapturing {
 
     func currentSamplesSnapshot() -> [Float] {
         sampleQueue.sync { _samples }
+    }
+
+    private static func defaultInputDeviceID() -> AudioDeviceID {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceID: AudioDeviceID = 0
+        var dataSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &deviceID
+        )
+        return status == noErr ? deviceID : 0
+    }
+
+    private static func deviceName(for deviceID: AudioDeviceID) -> String {
+        guard deviceID != 0 else { return "Unknown" }
+
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceNameCFString,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var name: CFString = "" as CFString
+        var dataSize = UInt32(MemoryLayout<CFString>.size)
+        let status = AudioObjectGetPropertyData(
+            deviceID,
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &name
+        )
+        return status == noErr ? name as String : "Unknown"
     }
 }

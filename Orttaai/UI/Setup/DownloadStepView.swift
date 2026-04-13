@@ -16,6 +16,28 @@ enum QuickStartModelSelector {
     }
 }
 
+enum SetupDownloadedModelResolver {
+    static func resolveInstalledModelID(
+        downloadedModelIDs: Set<String>,
+        selectedModelID: String,
+        preferredModelIDs: [String]
+    ) -> String? {
+        let normalizedSelected = ModelManager.normalizedModelID(selectedModelID)
+        if !normalizedSelected.isEmpty, downloadedModelIDs.contains(normalizedSelected) {
+            return selectedModelID
+        }
+
+        for modelID in preferredModelIDs {
+            let normalized = ModelManager.normalizedModelID(modelID)
+            if !normalized.isEmpty, downloadedModelIDs.contains(normalized) {
+                return modelID
+            }
+        }
+
+        return nil
+    }
+}
+
 private enum SetupDownloadStage {
     case downloading
     case loading
@@ -47,8 +69,10 @@ private enum SetupDownloadStage {
 struct DownloadStepView: View {
     @Binding var isModelReady: Bool
     @AppStorage("dictationLanguage") private var dictationLanguage: String = "en"
+    @AppStorage("selectedModelId") private var selectedModelId: String = "openai_whisper-small"
     @State private var isDownloading = false
     @State private var installedModelId: String?
+    @State private var downloadedModelIDs = Set<String>()
     @State private var errorMessage: String?
     @State private var downloadProgress: Double = 0
     @State private var downloadStage: SetupDownloadStage = .downloading
@@ -165,6 +189,12 @@ struct DownloadStepView: View {
                 }
             }
         }
+        .onAppear {
+            refreshInstalledModelState()
+        }
+        .onChange(of: dictationLanguage) { _, _ in
+            refreshInstalledModelState()
+        }
     }
 
     @ViewBuilder
@@ -193,8 +223,8 @@ struct DownloadStepView: View {
                 Button(actionTitle(for: modelId)) {
                     startDownload(modelId: modelId)
                 }
-                .buttonStyle(OrttaaiButtonStyle(isInstalled(modelId) ? .secondary : .primary))
-                .disabled(isDownloading || isInstalled(modelId))
+                .buttonStyle(OrttaaiButtonStyle(isSelectedForSetup(modelId) ? .secondary : .primary))
+                .disabled(isDownloading || isSelectedForSetup(modelId))
             }
 
             Text(modelId)
@@ -209,10 +239,14 @@ struct DownloadStepView: View {
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textTertiary)
 
-            if isInstalled(modelId) {
+            if isSelectedForSetup(modelId) {
                 Label("Selected for setup", systemImage: "checkmark.circle.fill")
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.success)
+            } else if isDownloaded(modelId) {
+                Label("Downloaded locally", systemImage: "externaldrive.fill.badge.checkmark")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
             }
         }
         .padding(Spacing.lg)
@@ -222,11 +256,14 @@ struct DownloadStepView: View {
     }
 
     private func actionTitle(for modelId: String) -> String {
-        if isInstalled(modelId) {
+        if isSelectedForSetup(modelId) {
             return "Ready"
         }
         if isDownloading && downloadingModelId == modelId {
             return "Downloading..."
+        }
+        if isDownloaded(modelId) {
+            return "Use Downloaded"
         }
         if installedModelId != nil {
             return "Download Instead"
@@ -234,8 +271,12 @@ struct DownloadStepView: View {
         return "Download"
     }
 
-    private func isInstalled(_ modelId: String) -> Bool {
+    private func isSelectedForSetup(_ modelId: String) -> Bool {
         ModelManager.normalizedModelID(installedModelId ?? "") == ModelManager.normalizedModelID(modelId)
+    }
+
+    private func isDownloaded(_ modelId: String) -> Bool {
+        downloadedModelIDs.contains(ModelManager.normalizedModelID(modelId))
     }
 
     private func startDownload(modelId: String) {
@@ -254,26 +295,41 @@ struct DownloadStepView: View {
 
         Task {
             do {
-                try await transcriptionService.prepareModelForSetup(
-                    named: modelId,
-                    onProgress: { progress in
-                        Task { @MainActor in
-                            downloadProgress = max(downloadProgress, progress)
-                            downloadStage = .downloading
-                        }
-                    },
-                    onStageChange: { stage in
-                        Task { @MainActor in
-                            switch stage {
-                            case .downloading:
+                let settings = AppSettings()
+                await settings.syncTranscriptionSettings(to: transcriptionService)
+                let modelAlreadyDownloaded = ModelManager
+                    .detectDownloadedModelMetrics()
+                    .downloadedModelIDs
+                    .contains(ModelManager.normalizedModelID(modelId))
+
+                if modelAlreadyDownloaded {
+                    await MainActor.run {
+                        downloadStage = .loading
+                        downloadProgress = 1
+                    }
+                    try await transcriptionService.loadModel(named: modelId)
+                } else {
+                    try await transcriptionService.prepareModelForSetup(
+                        named: modelId,
+                        onProgress: { progress in
+                            Task { @MainActor in
+                                downloadProgress = max(downloadProgress, progress)
                                 downloadStage = .downloading
-                            case .loading:
-                                downloadStage = .loading
-                                downloadProgress = 1
+                            }
+                        },
+                        onStageChange: { stage in
+                            Task { @MainActor in
+                                switch stage {
+                                case .downloading:
+                                    downloadStage = .downloading
+                                case .loading:
+                                    downloadStage = .loading
+                                    downloadProgress = 1
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
 
                 await MainActor.run {
                     downloadStage = .warmingUp
@@ -281,13 +337,12 @@ struct DownloadStepView: View {
                 }
                 await transcriptionService.warmUp()
                 await MainActor.run {
-                    let settings = AppSettings()
                     settings.selectedModelId = modelId
                     settings.activeModelId = modelId
                     configureFastFirstOnboarding(settings: settings, quickModelId: modelId)
+                    refreshInstalledModelState(selectedModelID: modelId)
                     isDownloading = false
                     downloadingModelId = nil
-                    installedModelId = modelId
                     isModelReady = true
                 }
             } catch {
@@ -317,5 +372,23 @@ struct DownloadStepView: View {
         settings.fastFirstPrefetchReady = false
         settings.fastFirstUpgradeDismissed = false
         settings.fastFirstPrefetchErrorMessage = ""
+    }
+
+    private func refreshInstalledModelState(selectedModelID: String? = nil) {
+        let metrics = ModelManager.detectDownloadedModelMetrics()
+        downloadedModelIDs = metrics.downloadedModelIDs
+
+        let resolvedModelID = SetupDownloadedModelResolver.resolveInstalledModelID(
+            downloadedModelIDs: metrics.downloadedModelIDs,
+            selectedModelID: selectedModelID ?? selectedModelId,
+            preferredModelIDs: [quickStartModelId, recommendedModelId]
+        )
+
+        installedModelId = resolvedModelID
+        isModelReady = resolvedModelID != nil
+
+        if resolvedModelID != nil {
+            errorMessage = nil
+        }
     }
 }

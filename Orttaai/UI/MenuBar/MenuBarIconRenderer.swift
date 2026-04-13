@@ -4,6 +4,7 @@
 import Cocoa
 
 final class MenuBarIconRenderer {
+    private static let pointSize: CGFloat = 16
 
     enum IconState {
         case idle
@@ -31,13 +32,13 @@ final class MenuBarIconRenderer {
     // MARK: - Icon States
 
     private static func idleIcon(size: NSSize) -> NSImage {
-        let image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "Orttaai")!
+        let image = configuredSymbol(named: "waveform.circle")
         image.isTemplate = true
         return image
     }
 
     private static func tintedIcon(symbolName: String, color: NSColor, size: NSSize) -> NSImage {
-        let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Orttaai")!
+        let symbol = configuredSymbol(named: symbolName)
 
         let tinted = NSImage(size: symbol.size, flipped: false) { rect in
             symbol.draw(in: rect)
@@ -51,9 +52,7 @@ final class MenuBarIconRenderer {
 
     private static func downloadingIcon(progress: Double, size: NSSize) -> NSImage {
         let image = NSImage(size: size, flipped: false) { rect in
-            // Base icon
-            let baseIcon = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "Orttaai")!
-            baseIcon.isTemplate = true
+            let baseIcon = configuredSymbol(named: "waveform.circle")
             baseIcon.draw(in: rect)
 
             // Progress ring
@@ -82,9 +81,7 @@ final class MenuBarIconRenderer {
 
     private static func errorIcon(size: NSSize) -> NSImage {
         let image = NSImage(size: size, flipped: false) { rect in
-            // Base icon
-            let baseIcon = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "Orttaai")!
-            baseIcon.isTemplate = true
+            let baseIcon = configuredSymbol(named: "waveform.circle")
             baseIcon.draw(in: rect)
 
             // Error dot
@@ -95,12 +92,18 @@ final class MenuBarIconRenderer {
                 width: dotSize,
                 height: dotSize
             )
-            NSColor.Orttaai.accent.setFill()
+            NSColor.Orttaai.warning.setFill()
             NSBezierPath(ovalIn: dotRect).fill()
 
             return true
         }
         image.isTemplate = false
         return image
+    }
+
+    private static func configuredSymbol(named symbolName: String) -> NSImage {
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        return NSImage(systemSymbolName: symbolName, accessibilityDescription: "Orttaai")?
+            .withSymbolConfiguration(config) ?? NSImage()
     }
 }

@@ -14,7 +14,8 @@ struct AudioInputDevice: Identifiable, Hashable {
 @Observable
 final class AudioDeviceManager {
     private(set) var devices: [AudioInputDevice] = []
-    private var propertyListenerBlock: AudioObjectPropertyListenerBlock?
+    private var deviceListenerBlock: AudioObjectPropertyListenerBlock?
+    private var defaultInputListenerBlock: AudioObjectPropertyListenerBlock?
 
     init() {
         refreshDevices()
@@ -136,8 +137,13 @@ final class AudioDeviceManager {
     }
 
     private func startListeningForDeviceChanges() {
-        var propertyAddress = AudioObjectPropertyAddress(
+        var devicesAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var defaultInputAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
@@ -147,28 +153,49 @@ final class AudioDeviceManager {
                 self?.refreshDevices()
             }
         }
-        propertyListenerBlock = block
+        deviceListenerBlock = block
+        defaultInputListenerBlock = block
 
         AudioObjectAddPropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
+            &devicesAddress,
+            DispatchQueue.main,
+            block
+        )
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultInputAddress,
             DispatchQueue.main,
             block
         )
     }
 
     private func stopListeningForDeviceChanges() {
-        guard let block = propertyListenerBlock else { return }
-        var propertyAddress = AudioObjectPropertyAddress(
+        guard let deviceListenerBlock else { return }
+        var devicesAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
         AudioObjectRemovePropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
+            &devicesAddress,
             DispatchQueue.main,
-            block
+            deviceListenerBlock
         )
+
+        if let defaultInputListenerBlock {
+            var defaultInputAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &defaultInputAddress,
+                DispatchQueue.main,
+                defaultInputListenerBlock
+            )
+        }
     }
 }

@@ -28,17 +28,6 @@ struct OllamaCatalogModel: Sendable, Identifiable {
     var id: String { name }
 }
 
-private let curatedLightweightOllamaModels: [OllamaCatalogModel] = [
-    OllamaCatalogModel(name: "gemma3:1b", sizeBytes: nil),
-    OllamaCatalogModel(name: "gemma3:4b", sizeBytes: 8_600_000_000),
-    OllamaCatalogModel(name: "qwen3.5:0.8b", sizeBytes: nil),
-    OllamaCatalogModel(name: "qwen3.5:2b", sizeBytes: nil),
-    OllamaCatalogModel(name: "qwen3.5:4b", sizeBytes: nil),
-    OllamaCatalogModel(name: "ministral-3:3b", sizeBytes: 4_670_000_000),
-    OllamaCatalogModel(name: "granite4:1b", sizeBytes: nil),
-    OllamaCatalogModel(name: "granite4:3b", sizeBytes: nil),
-]
-
 enum OllamaClientError: LocalizedError {
     case invalidBaseURL
     case invalidResponse
@@ -60,6 +49,17 @@ enum OllamaClientError: LocalizedError {
 }
 
 actor OllamaClient {
+    nonisolated private static let curatedLightweightOllamaModels: [OllamaCatalogModel] = [
+        OllamaCatalogModel(name: "gemma3:1b", sizeBytes: nil),
+        OllamaCatalogModel(name: "gemma3:4b", sizeBytes: 8_600_000_000),
+        OllamaCatalogModel(name: "qwen3.5:0.8b", sizeBytes: nil),
+        OllamaCatalogModel(name: "qwen3.5:2b", sizeBytes: nil),
+        OllamaCatalogModel(name: "qwen3.5:4b", sizeBytes: nil),
+        OllamaCatalogModel(name: "ministral-3:3b", sizeBytes: 4_670_000_000),
+        OllamaCatalogModel(name: "granite4:1b", sizeBytes: nil),
+        OllamaCatalogModel(name: "granite4:3b", sizeBytes: nil),
+    ]
+
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -257,8 +257,28 @@ actor OllamaClient {
 
     func fetchLibraryModels(timeoutMs: Int = 3_200, limit: Int = 80) async throws -> [OllamaCatalogModel] {
         _ = timeoutMs
-        let boundedLimit = max(1, min(limit, curatedLightweightOllamaModels.count))
-        return Array(curatedLightweightOllamaModels.prefix(boundedLimit))
+        let boundedLimit = max(1, min(limit, Self.curatedLightweightOllamaModels.count))
+        return Array(Self.curatedLightweightOllamaModels.prefix(boundedLimit))
+    }
+
+    func warmModel(
+        baseURLString: String,
+        model: String,
+        timeoutMs: Int = 35_000,
+        keepAlive: String = "30m"
+    ) async throws -> Int {
+        let startedAt = Date()
+        _ = try await generate(
+            baseURLString: baseURLString,
+            model: model,
+            prompt: "Reply with OK.",
+            timeoutMs: timeoutMs,
+            think: false,
+            temperature: 0,
+            numPredict: 8,
+            keepAlive: keepAlive
+        )
+        return Int(Date().timeIntervalSince(startedAt) * 1_000)
     }
 
     private func endpointURL(baseURLString: String, path: String) throws -> URL {

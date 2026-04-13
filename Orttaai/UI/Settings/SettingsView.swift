@@ -44,5 +44,6 @@ struct SettingsView: View {
                 .tag(SettingsTab.about)
         }
         .frame(width: WindowSize.settings.width, height: WindowSize.settings.height)
+        .preferredColorScheme(.dark)
     }
 }

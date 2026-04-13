@@ -50,6 +50,7 @@ final class FloatingPanelController: NSObject {
             backing: .buffered,
             defer: false
         )
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false

@@ -22,4 +22,5 @@ enum DictationNotificationKey {
     static let targetAppName = "targetAppName"
     static let countdownSeconds = "countdownSeconds"
     static let elapsedRecordingSeconds = "elapsedRecordingSeconds"
+    static let audioLevel = "audioLevel"
 }
