@@ -6,13 +6,13 @@
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
         <item>
-            <title>1.1.0</title>
-            <pubDate>Mon, 13 Apr 2026 21:38:11 +0000</pubDate>
+            <title>1.1.1</title>
+            <pubDate>Wed, 15 Apr 2026 15:45:30 -0500</pubDate>
             <link>https://github.com/theoyinbooke/orttaai</link>
-            <sparkle:version>1.1.0</sparkle:version>
-            <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+            <sparkle:version>1.1.1</sparkle:version>
+            <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.1.0/Orttaai-1.1.0.dmg" length="10375053" type="application/octet-stream" sparkle:edSignature="SHKQKb/Pl2B+DS/zyI1XleBYTW0yuvLNgY5ptQUQ5ZFEwH2OEWU5QPJNq4bEdUpu6Hit1p0zw+Saz78C+Cm6Dw==" />
+            <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.1.1/Orttaai-1.1.1.dmg" length="10392085" type="application/octet-stream" sparkle:edSignature="sfbFUJUe2sWBfOlFJd+JEdKwU9BYACxgXeh+EUeormWsnQkCLoX9U5rQlECvvJ23lWEZ20/bJeNofztlo/htCQ==" />
         </item>
         <item>
             <title>1.0.11</title>
