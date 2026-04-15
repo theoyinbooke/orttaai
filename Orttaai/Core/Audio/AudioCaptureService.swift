@@ -33,6 +33,7 @@ final class AudioCaptureService: AudioCapturing {
     private var levelTimer: DispatchSourceTimer?
     private let captureBufferSize: AVAudioFrameCount = 1024
     private let reservedSampleCapacity = AudioCaptureService.targetSampleRate * AudioCaptureService.maxSupportedRecordingDurationSeconds
+    private var audioSystemMayBeStale = false
 
     /// Target format for WhisperKit: 16kHz mono Float32
     private static let whisperFormat = AVAudioFormat(
@@ -42,7 +43,31 @@ final class AudioCaptureService: AudioCapturing {
         interleaved: false
     )!
 
+    /// Called by AppDelegate when the system wakes from sleep so the next
+    /// capture attempt knows Core Audio may need extra time to re-initialize.
+    func markAudioSystemStale() {
+        audioSystemMayBeStale = true
+        Logger.audio.info("Audio subsystem marked for revalidation (system wake)")
+    }
+
     func startCapture(deviceID: AudioDeviceID? = nil) throws {
+        let isPostWake = audioSystemMayBeStale
+        audioSystemMayBeStale = false
+
+        do {
+            try configureAndStartEngine(deviceID: deviceID)
+        } catch {
+            guard isPostWake else { throw error }
+            // After system wake, Core Audio may need time to re-initialize.
+            // Wait briefly and retry once before surfacing the error.
+            Logger.audio.warning("Audio start failed post-wake, retrying after delay: \(error.localizedDescription)")
+            Thread.sleep(forTimeInterval: 0.5)
+            try configureAndStartEngine(deviceID: deviceID)
+            Logger.audio.info("Post-wake audio retry succeeded")
+        }
+    }
+
+    private func configureAndStartEngine(deviceID: AudioDeviceID? = nil) throws {
         // Recreate engine each session to avoid stale state after previous stops/crashes
         engine = AVAudioEngine()
         sampleQueue.sync {

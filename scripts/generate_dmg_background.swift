@@ -124,7 +124,7 @@ func makeBitmap(size: NSSize) -> NSBitmapImageRep? {
 
 do {
     let options = try parseOptions()
-    let canvasSize = NSSize(width: 720, height: 400)
+    let canvasSize = NSSize(width: 760, height: 440)
 
     guard let bitmap = makeBitmap(size: canvasSize),
           let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
@@ -150,12 +150,13 @@ do {
         .foregroundColor: NSColor(calibratedWhite: 0.36, alpha: 1.0)
     ]
 
-    drawCenteredText("Drag \(options.appName) to Applications", y: 348, attributes: titleAttributes, width: canvasSize.width)
-    drawCenteredText("Install by dropping the app onto the Applications folder.", y: 322, attributes: subtitleAttributes, width: canvasSize.width)
+    drawCenteredText("Drag \(options.appName) to Applications", y: 388, attributes: titleAttributes, width: canvasSize.width)
+    drawCenteredText("Install by dropping the app onto the Applications folder.", y: 362, attributes: subtitleAttributes, width: canvasSize.width)
 
+    // Arrow y must match Finder icon y in Cocoa coords: canvasHeight - finderY = 440 - 220 = 220
     drawArrow(
-        from: CGPoint(x: 274, y: 240),
-        to: CGPoint(x: 406, y: 240),
+        from: CGPoint(x: 296, y: 220),
+        to: CGPoint(x: 464, y: 220),
         color: NSColor(calibratedWhite: 0.60, alpha: 1.0)
     )
 

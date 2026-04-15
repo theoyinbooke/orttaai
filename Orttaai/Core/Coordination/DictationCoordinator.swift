@@ -68,6 +68,7 @@ final class DictationCoordinator {
     private var capTimerTask: Task<Void, Never>?
     private var liveDecodeTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
+    private var audioHealthTask: Task<Void, Never>?
     private var targetApp: NSRunningApplication?
 
     init(
@@ -117,6 +118,7 @@ final class DictationCoordinator {
             state = .recording(startTime: Date())
             startCapTimer()
             startLiveDecodeLoop()
+            startAudioHealthMonitor()
             if let selectedDeviceID {
                 Logger.dictation.info("Recording started using preferred input device \(selectedDeviceID)")
             } else {
@@ -141,6 +143,8 @@ final class DictationCoordinator {
         countdownSeconds = nil
         liveDecodeTask?.cancel()
         liveDecodeTask = nil
+        audioHealthTask?.cancel()
+        audioHealthTask = nil
 
         // Stop capture
         let samples = audioService.stopCapture()
@@ -350,6 +354,49 @@ final class DictationCoordinator {
                 let snapshot = self.audioService.currentSamplesSnapshot()
                 await self.transcriptionService.processLiveAudioSnapshot(snapshot)
                 try? await Task.sleep(nanoseconds: self.liveDecodePollIntervalNs)
+            }
+        }
+    }
+
+    /// Checks that the audio tap is actually producing samples shortly after
+    /// recording starts. If not (common after macOS sleep/wake when Core Audio
+    /// silently goes stale), tears down the capture and retries once.
+    private func startAudioHealthMonitor() {
+        audioHealthTask?.cancel()
+        audioHealthTask = Task { @MainActor [weak self] in
+            // Allow time for the audio engine to start producing samples.
+            try? await Task.sleep(nanoseconds: 800_000_000) // 800ms
+
+            guard let self, case .recording = self.state else { return }
+
+            let snapshot = self.audioService.currentSamplesSnapshot()
+            if snapshot.isEmpty {
+                Logger.dictation.warning("Audio health check failed — no samples after 800ms, attempting recovery")
+
+                // Tear down the stale capture session.
+                _ = self.audioService.stopCapture()
+
+                // Brief delay for Core Audio to stabilize.
+                try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+
+                // User may have stopped recording in the meantime.
+                guard case .recording = self.state else { return }
+
+                do {
+                    let selectedDeviceID = Self.resolvedInputDeviceID(from: self.settings.selectedAudioDevice)
+                    try self.audioService.startCapture(deviceID: selectedDeviceID)
+                    Logger.dictation.info("Audio capture recovered after health check")
+                } catch {
+                    Logger.dictation.error("Audio recovery failed: \(error.localizedDescription)")
+                    self.capTimerTask?.cancel()
+                    self.capTimerTask = nil
+                    self.countdownSeconds = nil
+                    self.liveDecodeTask?.cancel()
+                    self.liveDecodeTask = nil
+                    self.state = .error(message: "Microphone unavailable. Try again.")
+                    self.targetApp = nil
+                    self.autoDismissError()
+                }
             }
         }
     }

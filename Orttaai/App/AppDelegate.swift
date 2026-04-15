@@ -107,6 +107,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Initialize core services
         setupCoreServices(settings: state.settings)
+        observeSystemWake()
         ensureDefaultShortcuts()
 
         // Check if setup is needed
@@ -261,6 +262,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Logger.hotkey.info("Hotkey handlers registered")
         return true
+    }
+
+    private func observeSystemWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Logger.audio.info("System wake detected — marking audio subsystem for revalidation")
+            self?.audioService?.markAudioSystemStale()
+        }
     }
 
     private func ensureDefaultShortcuts() {
