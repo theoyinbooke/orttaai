@@ -238,8 +238,11 @@ final class FloatingPanelController: NSObject {
             self.handleLayer.opacity = 1
             self.panel.hasShadow = false
         }, completionHandler: { [weak self] in
-            guard self?.panelState == .handle else { return }
-            self?.hostingView?.isHidden = true
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard self.panelState == .handle else { return }
+                self.hostingView?.isHidden = true
+            }
         })
     }
 

@@ -120,7 +120,15 @@ final class DictationCoordinator {
             startLiveDecodeLoop()
             startAudioHealthMonitor()
             if let selectedDeviceID {
-                Logger.dictation.info("Recording started using preferred input device \(selectedDeviceID)")
+                if let activeDeviceID = audioService.activeInputDeviceID, activeDeviceID != selectedDeviceID {
+                    Logger.dictation.warning(
+                        "Recording requested preferred input \(selectedDeviceID), but active input is \(activeDeviceID)"
+                    )
+                } else {
+                    Logger.dictation.info("Recording started using preferred input device \(selectedDeviceID)")
+                }
+            } else if let activeDeviceID = audioService.activeInputDeviceID {
+                Logger.dictation.info("Recording started using input device \(activeDeviceID)")
             } else {
                 Logger.dictation.info("Recording started using system default input device")
             }

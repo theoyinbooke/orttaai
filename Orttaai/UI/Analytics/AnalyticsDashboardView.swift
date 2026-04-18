@@ -25,8 +25,12 @@ final class AnalyticsDashboardViewModel {
 
     private var observation: DatabaseCancellable?
 
-    init(settings: AppSettings = AppSettings()) {
+    init(settings: AppSettings) {
         self.settings = settings
+    }
+
+    convenience init() {
+        self.init(settings: AppSettings())
     }
 
     func load() {

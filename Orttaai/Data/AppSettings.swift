@@ -43,15 +43,15 @@ struct DecodingPreferences: Sendable, Equatable {
     let noSpeechThreshold: Double
     let workerCount: Int
 
-    static let defaultTemperature = 0.0
-    static let defaultTopK = 5
-    static let defaultFallbackCount = 3
-    static let defaultCompressionRatioThreshold = 2.4
-    static let defaultLogProbThreshold = -1.0
-    static let defaultNoSpeechThreshold = 0.6
-    static let defaultWorkerCount = 0 // 0 means auto
+    nonisolated static let defaultTemperature = 0.0
+    nonisolated static let defaultTopK = 5
+    nonisolated static let defaultFallbackCount = 3
+    nonisolated static let defaultCompressionRatioThreshold = 2.4
+    nonisolated static let defaultLogProbThreshold = -1.0
+    nonisolated static let defaultNoSpeechThreshold = 0.6
+    nonisolated static let defaultWorkerCount = 0 // 0 means auto
 
-    static let `default` = DecodingPreferences(
+    nonisolated static let `default` = DecodingPreferences(
         preset: .fast,
         expertOverridesEnabled: false,
         temperature: defaultTemperature,
@@ -63,7 +63,7 @@ struct DecodingPreferences: Sendable, Equatable {
         workerCount: defaultWorkerCount
     )
 
-    func clamped() -> DecodingPreferences {
+    nonisolated func clamped() -> DecodingPreferences {
         DecodingPreferences(
             preset: preset,
             expertOverridesEnabled: expertOverridesEnabled,

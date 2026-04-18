@@ -30,6 +30,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastRecordingTargetAppName: String?
     private var runtimeServicesStarted = false
     private var shortcutObserver: NSObjectProtocol?
+    private var audioResetObserver: NSObjectProtocol?
+    private var isResettingAudioPipeline = false
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
     private let hasCompletedSetupKey = "hasCompletedSetup"
     private var isPushToTalkPressed = false
@@ -118,6 +120,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "App launched, setup complete: \(hasCompletedSetup), home auto-open: \(self.isHomeWorkspaceAutoOpenEnabled)"
         )
         observeShortcutChanges()
+        observeAudioPipelineResetRequests()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -125,6 +128,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stopWaveformUpdates()
         if let shortcutObserver {
             NotificationCenter.default.removeObserver(shortcutObserver)
+        }
+        if let audioResetObserver {
+            NotificationCenter.default.removeObserver(audioResetObserver)
         }
     }
 
@@ -390,9 +396,69 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !started {
                 self.statusBarController?.updateIcon(state: .error)
                 self.statusBarMenu?.updateStatusLine("Permission needed")
-                self.windowManager?.showSetupWindow()
+                Task { @MainActor [weak self] in
+                    self?.windowManager?.showSetupWindow()
+                }
             }
         }
+    }
+
+    private func observeAudioPipelineResetRequests() {
+        audioResetObserver = NotificationCenter.default.addObserver(
+            forName: .audioPipelineResetRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.resetAudioPipeline()
+        }
+    }
+
+    private func resetAudioPipeline() {
+        guard !isResettingAudioPipeline else {
+            return
+        }
+
+        if let coordinator, case .idle = coordinator.state {
+            // Expected state for safe reset.
+        } else if coordinator != nil {
+            postAudioPipelineResetCompletion(
+                success: false,
+                message: "Stop dictation before resetting audio."
+            )
+            return
+        }
+
+        guard let audioService else {
+            postAudioPipelineResetCompletion(
+                success: false,
+                message: "Audio service is unavailable."
+            )
+            return
+        }
+
+        isResettingAudioPipeline = true
+        Logger.audio.info("Audio pipeline reset requested by user")
+
+        stopWaveformUpdates()
+        _ = audioService.stopCapture()
+        audioService.markAudioSystemStale()
+
+        postAudioPipelineResetCompletion(
+            success: true,
+            message: "Audio pipeline reset. Try the microphone level meter again."
+        )
+        isResettingAudioPipeline = false
+    }
+
+    private func postAudioPipelineResetCompletion(success: Bool, message: String) {
+        NotificationCenter.default.post(
+            name: .audioPipelineResetDidComplete,
+            object: nil,
+            userInfo: [
+                AudioPipelineResetNotificationKey.success: success,
+                AudioPipelineResetNotificationKey.message: message
+            ]
+        )
     }
 
     // MARK: - State Observation

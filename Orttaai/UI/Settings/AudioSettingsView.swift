@@ -11,6 +11,9 @@ struct AudioSettingsView: View {
     @State private var audioLevel: Float = 0
     @State private var testCapture: AudioCaptureService?
     @State private var levelTimer: Timer?
+    @State private var isResettingAudioPipeline = false
+    @State private var audioResetMessage: String?
+    @State private var audioResetSucceeded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -91,6 +94,50 @@ struct AudioSettingsView: View {
                     .stroke(Color.Orttaai.warning.opacity(0.35), lineWidth: BorderWidth.standard)
             )
 
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text("Audio Recovery")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                Text("Use this when monitoring gets stuck at 0% or the selected mic no longer responds.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+
+                Button {
+                    requestAudioPipelineReset()
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        if isResettingAudioPipeline {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+
+                        Text(isResettingAudioPipeline ? "Resetting Audio..." : "Reset Audio Pipeline")
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                .disabled(isResettingAudioPipeline)
+
+                if let audioResetMessage {
+                    Text(audioResetMessage)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(audioResetSucceeded ? Color.Orttaai.success : Color.Orttaai.error)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.Orttaai.bgSecondary.opacity(0.7))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                    .stroke(Color.Orttaai.border.opacity(0.7), lineWidth: BorderWidth.standard)
+            )
+
             if audioDeviceManager.devices.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("No audio input devices detected.")
@@ -117,6 +164,19 @@ struct AudioSettingsView: View {
         .onChange(of: selectedDeviceID) { _, _ in
             startLevelMonitoring()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .audioPipelineResetDidComplete)) { notification in
+            let success = notification.userInfo?[AudioPipelineResetNotificationKey.success] as? Bool ?? false
+            let message = notification.userInfo?[AudioPipelineResetNotificationKey.message] as? String
+
+            isResettingAudioPipeline = false
+            audioResetSucceeded = success
+            audioResetMessage = message ?? (success ? "Audio pipeline reset." : "Audio reset failed.")
+            audioDeviceManager.refreshDevices()
+
+            if success {
+                startLevelMonitoring()
+            }
+        }
     }
 
     private var currentDevice: AudioInputDevice? {
@@ -140,11 +200,16 @@ struct AudioSettingsView: View {
         let capture = AudioCaptureService()
         testCapture = capture
         do {
-            if selectedDeviceID.isEmpty {
-                try capture.startCapture()
-            } else if let rawID = UInt32(selectedDeviceID) {
-                try capture.startCapture(deviceID: AudioDeviceID(rawID))
+            let requestedDeviceID = resolvedRequestedDeviceID()
+            try capture.startCapture(deviceID: requestedDeviceID)
+            if let requestedDeviceID,
+               let activeDeviceID = capture.activeInputDeviceID,
+               activeDeviceID != requestedDeviceID {
+                Logger.audio.warning(
+                    "Audio settings monitor requested device \(requestedDeviceID), but active input is \(activeDeviceID)."
+                )
             }
+
             // Update level from capture service
             levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
                 audioLevel = capture.audioLevel
@@ -161,5 +226,37 @@ struct AudioSettingsView: View {
         _ = testCapture?.stopCapture()
         testCapture = nil
         audioLevel = 0
+    }
+
+    private func resolvedRequestedDeviceID() -> AudioDeviceID? {
+        let trimmed = selectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let rawID = UInt32(trimmed), rawID != 0 else {
+            selectedDeviceID = ""
+            return nil
+        }
+
+        let requested = AudioDeviceID(rawID)
+        let stillAvailable = audioDeviceManager.devices.contains(where: { $0.id == requested })
+        guard stillAvailable else {
+            Logger.audio.warning("Stored audio settings device \(rawID) unavailable; reverting to system default")
+            selectedDeviceID = ""
+            return nil
+        }
+
+        return requested
+    }
+
+    private func requestAudioPipelineReset() {
+        guard !isResettingAudioPipeline else { return }
+
+        isResettingAudioPipeline = true
+        audioResetSucceeded = true
+        audioResetMessage = "Resetting audio pipeline..."
+
+        stopLevelMonitoring()
+        audioDeviceManager.refreshDevices()
+
+        NotificationCenter.default.post(name: .audioPipelineResetRequested, object: nil)
     }
 }

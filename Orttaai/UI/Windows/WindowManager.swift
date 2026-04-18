@@ -123,7 +123,7 @@ final class WindowManager {
             window.deminiaturize(nil)
         }
         NSApp.unhide(nil)
-        NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
         window.orderFrontRegardless()
         window.makeKeyAndOrderFront(nil)
         window.makeMain()
@@ -134,7 +134,7 @@ final class WindowManager {
             guard let window else { return }
             guard !window.isVisible || !window.isKeyWindow else { return }
             NSApp.unhide(nil)
-            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            NSRunningApplication.current.activate(options: [.activateAllWindows])
             window.orderFrontRegardless()
             window.makeKeyAndOrderFront(nil)
         }

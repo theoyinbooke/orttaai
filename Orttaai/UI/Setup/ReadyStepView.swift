@@ -484,6 +484,14 @@ struct ReadyStepView: View {
         do {
             let selectedDeviceID = resolvedSelectedAudioDeviceID()
             try capture.startCapture(deviceID: selectedDeviceID)
+            if let selectedDeviceID,
+               let activeDeviceID = capture.activeInputDeviceID,
+               activeDeviceID != selectedDeviceID {
+                Logger.audio.warning(
+                    "Ready-step monitor requested device \(selectedDeviceID), but active input is \(activeDeviceID)."
+                )
+                micMonitorError = "Selected mic could not be activated. Check Audio settings."
+            }
             micMonitorCapture = capture
             micLevelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
                 idleMicLevel = capture.audioLevel
@@ -507,8 +515,21 @@ struct ReadyStepView: View {
 
     private func resolvedSelectedAudioDeviceID() -> AudioDeviceID? {
         let trimmed = selectedAudioDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let rawID = UInt32(trimmed), rawID != 0 else { return nil }
-        return AudioDeviceID(rawID)
+        guard !trimmed.isEmpty else { return nil }
+        guard let rawID = UInt32(trimmed), rawID != 0 else {
+            selectedAudioDeviceID = ""
+            return nil
+        }
+
+        let requested = AudioDeviceID(rawID)
+        let stillAvailable = audioDeviceManager.devices.contains(where: { $0.id == requested })
+        guard stillAvailable else {
+            Logger.audio.warning("Setup-selected input device \(rawID) unavailable; reverting to system default")
+            selectedAudioDeviceID = ""
+            return nil
+        }
+
+        return requested
     }
 
     private func statusPill(title: String, value: String, tint: Color) -> some View {

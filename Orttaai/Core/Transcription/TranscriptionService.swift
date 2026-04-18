@@ -59,7 +59,17 @@ actor TranscriptionService: Transcribing {
     /// Compute mode string from settings. Maps to MLComputeUnits.
     var computeModeSetting: String = "cpuAndNeuralEngine"
     var lowLatencyModeEnabled: Bool = false
-    var decodingPreferences: DecodingPreferences = .default
+    var decodingPreferences = DecodingPreferences(
+        preset: .fast,
+        expertOverridesEnabled: false,
+        temperature: 0.0,
+        topK: 5,
+        fallbackCount: 3,
+        compressionRatioThreshold: 2.4,
+        logProbThreshold: -1.0,
+        noSpeechThreshold: 0.6,
+        workerCount: 0
+    )
 
     var isLoaded: Bool {
         whisperKit != nil
@@ -337,7 +347,7 @@ actor TranscriptionService: Transcribing {
 
     nonisolated static func relaxedDecodingOptions(from options: DecodingOptions) -> DecodingOptions {
         var relaxed = options
-        relaxed.chunkingStrategy = .none
+        relaxed.chunkingStrategy = ChunkingStrategy.none
         relaxed.noSpeechThreshold = nil
         relaxed.logProbThreshold = nil
         relaxed.compressionRatioThreshold = nil

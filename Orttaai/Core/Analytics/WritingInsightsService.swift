@@ -549,7 +549,17 @@ final class WritingInsightsService {
         self.heuristicAnalyzer = heuristicAnalyzer
     }
 
-    func generateInsights(request: WritingInsightsRequest = .default) async -> WritingInsightsRunResult {
+    func generateInsights() async -> WritingInsightsRunResult {
+        let request = WritingInsightsRequest(
+            timeRange: .days30,
+            generationMode: .balanced,
+            appFilterMode: .allApps,
+            selectedApps: []
+        )
+        return await generateInsights(request: request)
+    }
+
+    func generateInsights(request: WritingInsightsRequest) async -> WritingInsightsRunResult {
         do {
             let history = try filteredHistory(request: request)
             let chain = resolveAnalyzerChain()

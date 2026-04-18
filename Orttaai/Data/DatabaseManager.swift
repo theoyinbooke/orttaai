@@ -245,7 +245,7 @@ final class DatabaseManager {
         createdAt: Date = Date()
     ) throws {
         try dbQueue.write { db in
-            var record = Transcription(
+            let record = Transcription(
                 createdAt: createdAt,
                 text: text,
                 targetAppName: appName,
@@ -379,7 +379,7 @@ final class DatabaseManager {
                 )
             }
 
-            var record = WritingInsightSnapshotRecord(
+            let record = WritingInsightSnapshotRecord(
                 generatedAt: snapshot.generatedAt,
                 analyzerName: snapshot.analyzerName,
                 usedFallback: snapshot.usedFallback,

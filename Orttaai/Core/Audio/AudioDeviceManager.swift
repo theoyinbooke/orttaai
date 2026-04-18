@@ -123,17 +123,18 @@ final class AudioDeviceManager {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var name: CFString = "" as CFString
-        var dataSize = UInt32(MemoryLayout<CFString>.size)
+        var unmanagedName: Unmanaged<CFString>?
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         let status = AudioObjectGetPropertyData(
             deviceID,
             &propertyAddress,
             0,
             nil,
             &dataSize,
-            &name
+            &unmanagedName
         )
-        return status == noErr ? name as String : "Unknown Device"
+        guard status == noErr else { return "Unknown Device" }
+        return unmanagedName?.takeRetainedValue() as String? ?? "Unknown Device"
     }
 
     private func startListeningForDeviceChanges() {
