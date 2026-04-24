@@ -18,15 +18,13 @@ struct HomeBannerView: View {
                     .font(.system(size: 26, weight: .semibold))
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
-                Text(subtitle)
-                    .font(.Orttaai.body)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .frame(maxWidth: 420, alignment: .leading)
+                HStack(alignment: .center, spacing: Spacing.lg) {
+                    subtitleText
+                        .layoutPriority(1)
 
-                Button(buttonTitle, action: onButtonTap)
-                    .buttonStyle(OrttaaiButtonStyle(.primary))
-                    .disabled(isButtonDisabled)
-                    .accessibilityHint("Opens the suggested next action.")
+                    bannerButton
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -36,11 +34,27 @@ struct HomeBannerView: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(Spacing.xl)
+        .padding(Spacing.lg)
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Banner. \(title). \(subtitle)")
         .accessibilityHint("Primary action: \(buttonTitle).")
+    }
+
+    private var subtitleText: some View {
+        Text(subtitle)
+            .font(.Orttaai.body)
+            .foregroundStyle(Color.Orttaai.textSecondary)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var bannerButton: some View {
+        Button(buttonTitle, action: onButtonTap)
+            .buttonStyle(OrttaaiButtonStyle(.primary))
+            .disabled(isButtonDisabled)
+            .accessibilityHint("Opens the suggested next action.")
     }
 
     private var bannerArtwork: some View {

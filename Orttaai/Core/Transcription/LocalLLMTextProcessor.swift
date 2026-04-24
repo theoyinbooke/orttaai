@@ -148,7 +148,8 @@ final class LocalLLMTextProcessor: TextProcessor {
         Return ONLY corrected transcript text.
         Keep meaning and wording.
         Fix punctuation, capitalization, spacing, obvious spelling.
-        No markdown, no quotes, no explanations.
+        Preserve existing line breaks, bullet markers, and numbered list markers.
+        Do not add markdown, quotes, or explanations.
 
         \(contextLine)
 

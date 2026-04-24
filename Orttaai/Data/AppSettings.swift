@@ -90,6 +90,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
+    @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
     @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
     @AppStorage("snippetsEnabled") var snippetsEnabled: Bool = true
     @AppStorage("aiSuggestionsEnabled") var aiSuggestionsEnabled: Bool = false

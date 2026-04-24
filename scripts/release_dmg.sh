@@ -128,6 +128,9 @@ if [[ ! -d "$PROJECT_PATH" ]]; then
   exit 1
 fi
 
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd -P)"
+
 XCODEBUILD_COMMON_ARGS=(
   -project "$PROJECT_PATH"
   -scheme "$SCHEME"

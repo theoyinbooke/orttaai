@@ -34,16 +34,16 @@ struct HomeHeaderView: View {
                     if !isCompact {
                         StatChipView(label: "avg WPM", value: "\(stats.averageWPM7d)")
                     }
-                }
 
-                Button {
-                    onToggleInsights()
-                } label: {
-                    Label(isInsightsVisible ? "Hide Insights" : "Insights", systemImage: "sparkles.rectangle.stack")
-                        .font(.Orttaai.secondary)
+                    Button {
+                        onToggleInsights()
+                    } label: {
+                        Label(isInsightsVisible ? "Hide Insights" : "Insights", systemImage: "sparkles.rectangle.stack")
+                            .font(.Orttaai.secondary)
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary))
+                    .help(isInsightsVisible ? "Hide writing insights panel" : "Open writing insights panel")
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .help(isInsightsVisible ? "Hide writing insights panel" : "Open writing insights panel")
 
                 if isRefreshing {
                     HStack(spacing: Spacing.xs) {

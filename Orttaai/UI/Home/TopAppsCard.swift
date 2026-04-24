@@ -4,20 +4,22 @@
 import SwiftUI
 
 struct TopAppsCard: View {
+    static let preferredHeight: CGFloat = 276
+
     let apps: [DashboardTopApp]
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Top Apps (7d)")
+            Text("Top Apps (30d)")
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            if apps.isEmpty {
+            if displayedApps.isEmpty {
                 Text("No app usage data yet.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             } else {
-                ForEach(apps) { app in
+                ForEach(displayedApps) { app in
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         HStack {
                             Text(app.name)
@@ -47,9 +49,18 @@ struct TopAppsCard: View {
             }
         }
         .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: Self.preferredHeight,
+            maxHeight: Self.preferredHeight,
+            alignment: .topLeading
+        )
         .dashboardCard()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Top apps over 7 days")
+        .accessibilityLabel("Top apps over 30 days")
+    }
+
+    private var displayedApps: [DashboardTopApp] {
+        Array(apps.prefix(3))
     }
 }

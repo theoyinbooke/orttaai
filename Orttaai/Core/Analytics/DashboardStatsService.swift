@@ -24,15 +24,17 @@ final class DashboardStatsService {
         let todayStart = calendar.startOfDay(for: now)
         let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now
         let weekStart = calendar.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
+        let thirtyDayStart = calendar.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
 
         let weekRecords = try databaseManager.fetchTranscriptions(from: weekStart, to: tomorrowStart)
+        let thirtyDayRecords = try databaseManager.fetchTranscriptions(from: thirtyDayStart, to: tomorrowStart)
         let todayRecords = weekRecords.filter { $0.createdAt >= todayStart && $0.createdAt < tomorrowStart }
         let recentRecords = try databaseManager.fetchRecent(limit: 12)
 
         let header = makeHeaderStats(from: weekRecords)
         let today = makeTodaySnapshot(from: todayRecords)
-        let trend7d = makeTrendPoints(from: weekRecords, startDay: weekStart)
-        let topApps7d = makeTopApps(from: weekRecords)
+        let trend30d = makeTrendPoints(from: thirtyDayRecords, startDay: thirtyDayStart, dayCount: 30)
+        let topApps30d = makeTopApps(from: thirtyDayRecords, limit: 3)
         let performance = makePerformance(
             from: weekRecords,
             modelSourceRecords: recentRecords,
@@ -43,8 +45,8 @@ final class DashboardStatsService {
         return DashboardStatsPayload(
             header: header,
             today: today,
-            trend7d: trend7d,
-            topApps7d: topApps7d,
+            trend30d: trend30d,
+            topApps30d: topApps30d,
             performance: performance,
             recent: recent
         )
@@ -87,7 +89,11 @@ final class DashboardStatsService {
         )
     }
 
-    private func makeTrendPoints(from records: [Transcription], startDay: Date) -> [DashboardTrendPoint] {
+    private func makeTrendPoints(
+        from records: [Transcription],
+        startDay: Date,
+        dayCount: Int
+    ) -> [DashboardTrendPoint] {
         var aggregatesByDay: [Date: DayAggregate] = [:]
 
         for record in records {
@@ -99,7 +105,7 @@ final class DashboardStatsService {
             aggregatesByDay[day] = aggregate
         }
 
-        return (0...6).compactMap { offset in
+        return (0..<dayCount).compactMap { offset in
             guard let day = calendar.date(byAdding: .day, value: offset, to: startDay) else {
                 return nil
             }
@@ -113,7 +119,7 @@ final class DashboardStatsService {
         }
     }
 
-    private func makeTopApps(from records: [Transcription]) -> [DashboardTopApp] {
+    private func makeTopApps(from records: [Transcription], limit: Int) -> [DashboardTopApp] {
         struct AppAggregate {
             var sessions: Int = 0
             var words: Int = 0
@@ -144,7 +150,7 @@ final class DashboardStatsService {
                 }
                 return $0.sessions > $1.sessions
             }
-            .prefix(5)
+            .prefix(limit)
             .map { $0 }
     }
 

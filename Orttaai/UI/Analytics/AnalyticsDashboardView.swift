@@ -8,17 +8,61 @@ import os
 
 // MARK: - View Model
 
+enum AnalyticsTimeRange: String, CaseIterable, Identifiable {
+    case thirtyDays = "30 Days"
+    case ninetyDays = "90 Days"
+    case allTime = "All Time"
+
+    var id: String { rawValue }
+
+    var dayCount: Int? {
+        switch self {
+        case .thirtyDays: return 30
+        case .ninetyDays: return 90
+        case .allTime: return nil
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .thirtyDays: return "30d"
+        case .ninetyDays: return "90d"
+        case .allTime: return "All time"
+        }
+    }
+
+    var trendTitle: String {
+        switch self {
+        case .thirtyDays: return "30-Day Trend"
+        case .ninetyDays: return "90-Day Trend"
+        case .allTime: return "All-Time Trend"
+        }
+    }
+
+    var axisTickCount: Int {
+        switch self {
+        case .thirtyDays: return 8
+        case .ninetyDays: return 10
+        case .allTime: return 8
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class AnalyticsDashboardViewModel {
     private let settings: AppSettings
+    var selectedRange: AnalyticsTimeRange = .thirtyDays
     private(set) var payload: DashboardStatsPayload = .empty
+    private(set) var trendPoints: [DashboardTrendPoint] = []
     private(set) var hourlyActivity: [HourlyActivityPoint] = []
     private(set) var durationBuckets: [DurationBucket] = []
     private(set) var wordsByApp: [AppWordCount] = []
     private(set) var totalSessions: Int = 0
     private(set) var totalWords: Int = 0
     private(set) var totalRecordingMinutes: Int = 0
+    private(set) var activeDays: Int = 0
+    private(set) var averageWPM: Int = 0
     private(set) var isLoading = false
     private(set) var hasLoaded = false
     var errorMessage: String?
@@ -43,10 +87,7 @@ final class AnalyticsDashboardViewModel {
         do {
             let db = try DatabaseManager()
             let service = DashboardStatsService(databaseManager: db)
-            payload = try service.load(currentModelId: currentModelID())
-
-            let records = try db.fetchRecent(limit: 500)
-            computeExtendedMetrics(from: records)
+            try refresh(using: db, service: service)
 
             observation = service.observeChanges { [weak self] in
                 Task { @MainActor in
@@ -65,14 +106,28 @@ final class AnalyticsDashboardViewModel {
         do {
             let db = try DatabaseManager()
             let service = DashboardStatsService(databaseManager: db)
-            payload = try service.load(currentModelId: currentModelID())
-
-            let records = try db.fetchRecent(limit: 500)
-            computeExtendedMetrics(from: records)
+            try refresh(using: db, service: service)
             errorMessage = nil
         } catch {
             errorMessage = "Failed to refresh analytics."
         }
+    }
+
+    func setSelectedRange(_ range: AnalyticsTimeRange) {
+        guard selectedRange != range else { return }
+        selectedRange = range
+        if hasLoaded {
+            refresh()
+        }
+    }
+
+    private func refresh(
+        using db: DatabaseManager,
+        service: DashboardStatsService
+    ) throws {
+        payload = try service.load(currentModelId: currentModelID())
+        let records = try fetchAnalyticsRecords(from: db)
+        computeExtendedMetrics(from: records)
     }
 
     private func currentModelID() -> String? {
@@ -80,15 +135,34 @@ final class AnalyticsDashboardViewModel {
         return activeModelId.isEmpty ? nil : activeModelId
     }
 
+    private func fetchAnalyticsRecords(from db: DatabaseManager) throws -> [Transcription] {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? Date()
+
+        guard let dayCount = selectedRange.dayCount else {
+            return try db.fetchRecent(limit: 500)
+        }
+
+        let start = calendar.date(
+            byAdding: .day,
+            value: -(dayCount - 1),
+            to: todayStart
+        ) ?? todayStart
+        return try db.fetchTranscriptions(from: start, to: tomorrowStart)
+    }
+
     private func computeExtendedMetrics(from records: [Transcription]) {
         totalSessions = records.count
         totalWords = records.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
-        totalRecordingMinutes = Int(
-            (Double(records.reduce(0) { $0 + max(0, $1.recordingDurationMs) }) / 60_000).rounded()
-        )
+        let totalRecordingMs = records.reduce(0) { $0 + max(0, $1.recordingDurationMs) }
+        totalRecordingMinutes = Int((Double(totalRecordingMs) / 60_000).rounded())
+        averageWPM = calculateWPM(words: totalWords, recordingMs: totalRecordingMs)
 
         // Hourly activity
         let calendar = Calendar.current
+        activeDays = Set(records.map { calendar.startOfDay(for: $0.createdAt) }).count
+        trendPoints = makeTrendPoints(from: records, calendar: calendar)
         var countByHour = [Int: Int]()
         for record in records {
             let hour = calendar.component(.hour, from: record.createdAt)
@@ -136,6 +210,62 @@ final class AnalyticsDashboardViewModel {
             .sorted { $0.words > $1.words }
             .prefix(6)
             .map { $0 }
+    }
+
+    private func makeTrendPoints(
+        from records: [Transcription],
+        calendar: Calendar
+    ) -> [DashboardTrendPoint] {
+        let todayStart = calendar.startOfDay(for: Date())
+        let startDay: Date
+
+        if let dayCount = selectedRange.dayCount {
+            startDay = calendar.date(
+                byAdding: .day,
+                value: -(dayCount - 1),
+                to: todayStart
+            ) ?? todayStart
+        } else if let oldestDate = records.map(\.createdAt).min() {
+            startDay = calendar.startOfDay(for: oldestDate)
+        } else {
+            return []
+        }
+
+        let daySpan = max(
+            0,
+            calendar.dateComponents([.day], from: startDay, to: todayStart).day ?? 0
+        )
+        var aggregatesByDay: [Date: (words: Int, sessions: Int, recordingMs: Int)] = [:]
+
+        for record in records {
+            let day = calendar.startOfDay(for: record.createdAt)
+            let wordCount = record.text.split(whereSeparator: \.isWhitespace).count
+            var aggregate = aggregatesByDay[day, default: (0, 0, 0)]
+            aggregate.words += wordCount
+            aggregate.sessions += 1
+            aggregate.recordingMs += max(0, record.recordingDurationMs)
+            aggregatesByDay[day] = aggregate
+        }
+
+        return (0...daySpan).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: startDay) else {
+                return nil
+            }
+            let aggregate = aggregatesByDay[day, default: (0, 0, 0)]
+            return DashboardTrendPoint(
+                dayStart: day,
+                words: aggregate.words,
+                sessions: aggregate.sessions,
+                averageWPM: calculateWPM(words: aggregate.words, recordingMs: aggregate.recordingMs)
+            )
+        }
+    }
+
+    private func calculateWPM(words: Int, recordingMs: Int) -> Int {
+        guard words > 0, recordingMs > 0 else { return 0 }
+        let minutes = Double(recordingMs) / 60_000
+        guard minutes > 0 else { return 0 }
+        return Int((Double(words) / minutes).rounded())
     }
 
     func cancelObservation() {
@@ -193,6 +323,8 @@ struct AnalyticsDashboardView: View {
                             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
                     }
 
+                    rangeControl
+
                     summaryCards(isCompact: isCompact)
 
                     trendChart
@@ -225,6 +357,47 @@ struct AnalyticsDashboardView: View {
         }
     }
 
+    private var rangeSelection: Binding<AnalyticsTimeRange> {
+        Binding(
+            get: { viewModel.selectedRange },
+            set: { viewModel.setSelectedRange($0) }
+        )
+    }
+
+    private var rangeControl: some View {
+        HStack(spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Trend Range")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                Text("Activity charts and totals use the selected window.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+
+            Spacer()
+
+            HStack(spacing: Spacing.md) {
+                Text("Trend Range")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Picker("", selection: rangeSelection) {
+                    ForEach(AnalyticsTimeRange.allCases) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 280)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
     // MARK: - Summary Cards
 
     private func summaryCards(isCompact: Bool) -> some View {
@@ -236,7 +409,7 @@ struct AnalyticsDashboardView: View {
             summaryMetric(
                 title: "Total Words",
                 value: viewModel.totalWords.formatted(),
-                subtitle: "\(viewModel.payload.header.words7d.formatted()) this week",
+                subtitle: "\(viewModel.selectedRange.shortLabel) total",
                 icon: "character.cursor.ibeam",
                 accentColor: Color.Orttaai.accent
             )
@@ -256,8 +429,8 @@ struct AnalyticsDashboardView: View {
             )
             summaryMetric(
                 title: "Avg WPM",
-                value: viewModel.payload.header.averageWPM7d.formatted(),
-                subtitle: "\(viewModel.payload.today.averageWPM) today",
+                value: viewModel.averageWPM.formatted(),
+                subtitle: "\(viewModel.activeDays) active days",
                 icon: "speedometer",
                 accentColor: Color(hex: "FF9F0A")
             )
@@ -303,7 +476,7 @@ struct AnalyticsDashboardView: View {
     private var trendChart: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack {
-                Text("7-Day Trend")
+                Text(viewModel.selectedRange.trendTitle)
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
@@ -315,10 +488,10 @@ struct AnalyticsDashboardView: View {
                 }
             }
 
-            if viewModel.payload.trend7d.allSatisfy({ $0.words == 0 && $0.sessions == 0 }) {
-                emptyChartPlaceholder("No activity yet. Start dictating to see trends.")
+            if viewModel.trendPoints.isEmpty || viewModel.trendPoints.allSatisfy({ $0.words == 0 && $0.sessions == 0 }) {
+                emptyChartPlaceholder("No activity in this range yet.")
             } else {
-                Chart(viewModel.payload.trend7d) { point in
+                Chart(viewModel.trendPoints) { point in
                     BarMark(
                         x: .value("Day", point.dayStart, unit: .day),
                         y: .value("Words", point.words)
@@ -348,10 +521,10 @@ struct AnalyticsDashboardView: View {
                     .symbolSize(30)
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) { value in
+                    AxisMarks(values: .automatic(desiredCount: viewModel.selectedRange.axisTickCount)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                             .foregroundStyle(Color.Orttaai.border.opacity(0.3))
-                        AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                             .foregroundStyle(Color.Orttaai.textTertiary)
                             .font(.Orttaai.caption)
                     }
@@ -385,10 +558,10 @@ struct AnalyticsDashboardView: View {
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            if viewModel.payload.trend7d.allSatisfy({ $0.sessions == 0 }) {
-                emptyChartPlaceholder("No sessions recorded yet.")
+            if viewModel.trendPoints.isEmpty || viewModel.trendPoints.allSatisfy({ $0.sessions == 0 }) {
+                emptyChartPlaceholder("No sessions recorded in this range.")
             } else {
-                Chart(viewModel.payload.trend7d) { point in
+                Chart(viewModel.trendPoints) { point in
                     BarMark(
                         x: .value("Day", point.dayStart, unit: .day),
                         y: .value("Sessions", point.sessions)
@@ -403,8 +576,8 @@ struct AnalyticsDashboardView: View {
                     .cornerRadius(4)
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) { _ in
-                        AxisValueLabel(format: .dateTime.weekday(.narrow))
+                    AxisMarks(values: .automatic(desiredCount: viewModel.selectedRange.axisTickCount)) { _ in
+                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                             .foregroundStyle(Color.Orttaai.textTertiary)
                             .font(.Orttaai.caption)
                     }

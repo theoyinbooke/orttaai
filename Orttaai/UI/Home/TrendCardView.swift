@@ -10,12 +10,12 @@ struct TrendCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("7-Day Trend")
+            Text("30-Day Trend")
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
             if hasNoTrendData {
-                Text("No activity yet. Your last 7 days will appear after you dictate.")
+                Text("No activity yet. Your last 30 days will appear after you dictate.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -42,12 +42,12 @@ struct TrendCardView: View {
                     .foregroundStyle(Color.Orttaai.accent)
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) { value in
+                    AxisMarks(values: .automatic(desiredCount: 8)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                             .foregroundStyle(Color.Orttaai.border.opacity(0.35))
                         AxisTick(stroke: StrokeStyle(lineWidth: 0.5))
                             .foregroundStyle(Color.Orttaai.border.opacity(0.5))
-                        AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                             .foregroundStyle(Color.Orttaai.textTertiary)
                             .font(.Orttaai.caption)
                     }
@@ -66,7 +66,7 @@ struct TrendCardView: View {
                     }
                 }
                 .frame(height: 210)
-                .accessibilityLabel("7-day trend chart")
+                .accessibilityLabel("30-day trend chart")
                 .accessibilityValue(trendAccessibilitySummary)
 
                 if showsLegend {

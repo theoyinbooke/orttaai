@@ -67,6 +67,13 @@ enum AppResetService {
     }
 
     static func resetAllLocalData(bundleIdentifier: String = "com.orttaai.Orttaai") {
+        do {
+            _ = try DatabaseManager.backupDefaultDatabase(reason: "full-reset")
+        } catch {
+            Logger.database.error("Failed to back up database before full reset: \(error.localizedDescription)")
+            return
+        }
+
         resetUserDefaults(bundleIdentifier: bundleIdentifier)
         removeAppSupportArtifacts()
     }

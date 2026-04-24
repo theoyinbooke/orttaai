@@ -108,6 +108,44 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(records.count, 0)
     }
 
+    func testDeleteAllCreatesRecoverableBackupForFileBackedDatabase() throws {
+        let fileManager = FileManager.default
+        let tempRoot = fileManager.temporaryDirectory
+            .appendingPathComponent("OrttaaiDatabaseManagerTests-\(UUID().uuidString)")
+        let dbDirectory = tempRoot.appendingPathComponent("Orttaai", isDirectory: true)
+        let backupDirectory = tempRoot.appendingPathComponent("Orttaai Backups", isDirectory: true)
+        try fileManager.createDirectory(at: dbDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempRoot) }
+
+        let dbURL = dbDirectory.appendingPathComponent("orttaai.db")
+        let fileBackedDB = try DatabaseManager(
+            dbQueue: DatabaseQueue(path: dbURL.path),
+            databaseURL: dbURL,
+            backupDirectoryURL: backupDirectory
+        )
+        try fileBackedDB.saveTranscription(
+            text: "Keep this in the backup",
+            appName: "TextEdit",
+            recordingMs: 1_000,
+            processingMs: 500,
+            modelId: "test"
+        )
+
+        try fileBackedDB.deleteAll()
+
+        let backupFiles = try fileManager.contentsOfDirectory(
+            at: backupDirectory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "db" }
+        XCTAssertEqual(backupFiles.count, 1)
+
+        let backupQueue = try DatabaseQueue(path: backupFiles[0].path)
+        let backedUpRecords = try backupQueue.read { db in
+            try Transcription.fetchAll(db)
+        }
+        XCTAssertEqual(backedUpRecords.map(\.text), ["Keep this in the backup"])
+    }
+
     func testDeleteTranscriptionById() throws {
         try db.saveTranscription(
             text: "Delete me",

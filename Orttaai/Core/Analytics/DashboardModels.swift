@@ -69,8 +69,8 @@ struct DashboardRecentDictation: Identifiable {
 struct DashboardStatsPayload {
     let header: DashboardHeaderStats
     let today: DashboardTodaySnapshot
-    let trend7d: [DashboardTrendPoint]
-    let topApps7d: [DashboardTopApp]
+    let trend30d: [DashboardTrendPoint]
+    let topApps30d: [DashboardTopApp]
     let performance: DashboardPerformanceHealth
     let recent: [DashboardRecentDictation]
 }
@@ -104,8 +104,8 @@ extension DashboardStatsPayload {
     static let empty = DashboardStatsPayload(
         header: .empty,
         today: .empty,
-        trend7d: [],
-        topApps7d: [],
+        trend30d: [],
+        topApps30d: [],
         performance: .empty,
         recent: []
     )

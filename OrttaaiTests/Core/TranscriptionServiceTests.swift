@@ -88,7 +88,7 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let relaxed = TranscriptionService.relaxedDecodingOptions(from: options)
 
-        XCTAssertEqual(relaxed.chunkingStrategy, .none)
+        XCTAssertEqual(relaxed.chunkingStrategy, ChunkingStrategy.none)
         XCTAssertNil(relaxed.noSpeechThreshold)
         XCTAssertNil(relaxed.logProbThreshold)
         XCTAssertNil(relaxed.compressionRatioThreshold)

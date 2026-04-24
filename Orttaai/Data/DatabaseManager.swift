@@ -16,29 +16,177 @@ struct DictationLatencyTelemetry: Sendable {
 
 final class DatabaseManager {
     private let dbQueue: DatabaseQueue
+    private let databaseURL: URL?
+    private let backupDirectoryURL: URL?
     private static let maxRecords = 500
     private static let maxInsightSnapshots = 60
+    private static let applicationSupportFolderName = "Orttaai"
+    private static let backupFolderName = "Orttaai Backups"
+    private static let databaseFileName = "orttaai.db"
 
-    init(dbQueue: DatabaseQueue) throws {
+    convenience init(dbQueue: DatabaseQueue) throws {
+        try self.init(dbQueue: dbQueue, databaseURL: nil, backupDirectoryURL: nil)
+    }
+
+    init(
+        dbQueue: DatabaseQueue,
+        databaseURL: URL?,
+        backupDirectoryURL: URL? = nil
+    ) throws {
         self.dbQueue = dbQueue
+        self.databaseURL = databaseURL
+        self.backupDirectoryURL = backupDirectoryURL
         try migrator.migrate(dbQueue)
-        Logger.database.info("Database initialized")
+        if let databaseURL {
+            Logger.database.info("Database initialized at \(databaseURL.path, privacy: .public)")
+        } else {
+            Logger.database.info("Database initialized")
+        }
     }
 
     convenience init() throws {
-        let appSupportURL = FileManager.default.urls(
+        let databaseURL = try Self.defaultDatabaseURL()
+        let dbQueue = try DatabaseQueue(path: databaseURL.path)
+        try self.init(dbQueue: dbQueue, databaseURL: databaseURL)
+    }
+
+    static func applicationSupportRootURL() throws -> URL {
+        guard let appSupportURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        ).first!.appendingPathComponent("Orttaai")
+        ).first else {
+            throw NSError(
+                domain: "com.orttaai.database",
+                code: 100,
+                userInfo: [NSLocalizedDescriptionKey: "Unable to locate Application Support."]
+            )
+        }
 
-        try FileManager.default.createDirectory(
-            at: appSupportURL,
+        return appSupportURL
+    }
+
+    static func defaultApplicationSupportURL(createDirectory: Bool = true) throws -> URL {
+        let appSupportURL = try applicationSupportRootURL()
+            .appendingPathComponent(applicationSupportFolderName, isDirectory: true)
+
+        if createDirectory {
+            try FileManager.default.createDirectory(
+                at: appSupportURL,
+                withIntermediateDirectories: true
+            )
+        }
+
+        return appSupportURL
+    }
+
+    static func defaultDatabaseURL(createDirectory: Bool = true) throws -> URL {
+        try defaultApplicationSupportURL(createDirectory: createDirectory)
+            .appendingPathComponent(databaseFileName)
+    }
+
+    static func defaultBackupDirectoryURL(createDirectory: Bool = true) throws -> URL {
+        let backupURL = try applicationSupportRootURL()
+            .appendingPathComponent(backupFolderName, isDirectory: true)
+
+        if createDirectory {
+            try FileManager.default.createDirectory(
+                at: backupURL,
+                withIntermediateDirectories: true
+            )
+        }
+
+        return backupURL
+    }
+
+    @discardableResult
+    static func backupDefaultDatabase(reason: String) throws -> URL? {
+        let databaseURL = try defaultDatabaseURL(createDirectory: false)
+        return try backupDatabase(at: databaseURL, reason: reason)
+    }
+
+    @discardableResult
+    static func backupDatabase(
+        at databaseURL: URL,
+        using source: (any DatabaseReader)? = nil,
+        backupDirectoryURL: URL? = nil,
+        reason: String
+    ) throws -> URL? {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: databaseURL.path) else {
+            Logger.database.info("Skipped database backup; no database exists at \(databaseURL.path, privacy: .public)")
+            return nil
+        }
+
+        let resolvedBackupDirectoryURL: URL
+        if let backupDirectoryURL {
+            resolvedBackupDirectoryURL = backupDirectoryURL
+        } else {
+            resolvedBackupDirectoryURL = try defaultBackupDirectoryURL()
+        }
+
+        try fileManager.createDirectory(
+            at: resolvedBackupDirectoryURL,
             withIntermediateDirectories: true
         )
 
-        let dbPath = appSupportURL.appendingPathComponent("orttaai.db").path
-        let dbQueue = try DatabaseQueue(path: dbPath)
-        try self.init(dbQueue: dbQueue)
+        let backupURL = resolvedBackupDirectoryURL.appendingPathComponent(
+            "\(databaseFileNameWithoutExtension)-\(backupTimestamp())-\(sanitizedBackupReason(reason)).db"
+        )
+        if fileManager.fileExists(atPath: backupURL.path) {
+            try fileManager.removeItem(at: backupURL)
+        }
+
+        let destinationQueue = try DatabaseQueue(path: backupURL.path)
+        if let source {
+            try source.backup(to: destinationQueue)
+        } else {
+            let sourceQueue = try DatabaseQueue(path: databaseURL.path)
+            try sourceQueue.backup(to: destinationQueue)
+        }
+
+        Logger.database.info("Database backup created at \(backupURL.path, privacy: .public)")
+        return backupURL
+    }
+
+    @discardableResult
+    func backupDatabase(reason: String) throws -> URL? {
+        guard let databaseURL else { return nil }
+        return try Self.backupDatabase(
+            at: databaseURL,
+            using: dbQueue,
+            backupDirectoryURL: backupDirectoryURL,
+            reason: reason
+        )
+    }
+
+    private static var databaseFileNameWithoutExtension: String {
+        (databaseFileName as NSString).deletingPathExtension
+    }
+
+    private static func backupTimestamp(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
+    }
+
+    private static func sanitizedBackupReason(_ reason: String) -> String {
+        let sanitized = reason
+            .lowercased()
+            .replacingOccurrences(
+                of: #"[^a-z0-9]+"#,
+                with: "-",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+
+        return sanitized.isEmpty ? "manual" : sanitized
+    }
+
+    private func createDestructiveOperationBackup(reason: String) throws {
+        guard databaseURL != nil else { return }
+        _ = try backupDatabase(reason: reason)
     }
 
     private var migrator: DatabaseMigrator {
@@ -336,6 +484,7 @@ final class DatabaseManager {
     }
 
     func deleteAll() throws {
+        try createDestructiveOperationBackup(reason: "clear-history")
         _ = try dbQueue.write { db in
             try Transcription.deleteAll(db)
         }
@@ -343,6 +492,7 @@ final class DatabaseManager {
     }
 
     func resetAllLocalData() throws {
+        try createDestructiveOperationBackup(reason: "reset-local-data")
         _ = try dbQueue.write { db in
             try Transcription.deleteAll(db)
             try db.execute(sql: "DELETE FROM dictionary_entry")

@@ -6,6 +6,7 @@ final class AppSettingsTests: XCTestCase {
         "dictationLanguage",
         "lowLatencyModeEnabled",
         "computeMode",
+        "spokenFormattingEnabled",
         "decodingPreset",
         "advancedDecodingEnabled",
         "decodingTemperature",

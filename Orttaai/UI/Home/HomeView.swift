@@ -124,10 +124,10 @@ struct HomeView: View {
                         right: PerformanceHealthCard(health: viewModel.payload.performance)
                     )
 
-                    TrendCardView(points: viewModel.payload.trend7d, showsLegend: !isCompact)
+                    TrendCardView(points: viewModel.payload.trend30d, showsLegend: !isCompact)
 
                     rowLayout(
-                        left: TopAppsCard(apps: viewModel.payload.topApps7d),
+                        left: TopAppsCard(apps: viewModel.payload.topApps30d),
                         right: QuickActionsCard(
                             onOpenSettings: onOpenSettings,
                             onOpenModelSettings: onOpenModelSettings,

@@ -30,6 +30,11 @@ struct PerformanceHealthCard: View {
                     .clipShape(Capsule())
             }
 
+            Text(statusDescription)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .lineLimit(1)
+
             LazyVGrid(
                 columns: [
                     GridItem(.flexible(), spacing: Spacing.md),
@@ -48,7 +53,7 @@ struct PerformanceHealthCard: View {
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "Performance health \(levelLabel). Pipeline \(averageLatencySummary(health.averageProcessingMs)). Transcription \(averageLatencySummary(health.averageTranscriptionMs)). Injection \(averageLatencySummary(health.averageInjectionMs)). Current model \(health.currentModelId)."
+            "Performance health \(levelLabel). \(statusDescription) Pipeline \(averageLatencySummary(health.averageProcessingMs)). Transcription \(averageLatencySummary(health.averageTranscriptionMs)). Injection \(averageLatencySummary(health.averageInjectionMs)). Current model \(health.currentModelId)."
         )
     }
 
@@ -75,6 +80,13 @@ struct PerformanceHealthCard: View {
         case .normal: return Color.Orttaai.warning
         case .slow: return Color.Orttaai.error
         }
+    }
+
+    private var statusDescription: String {
+        if health.sampleCount == 0 {
+            return "No performance samples yet."
+        }
+        return "Latency averages from recent dictations."
     }
 
     private func metricCell(

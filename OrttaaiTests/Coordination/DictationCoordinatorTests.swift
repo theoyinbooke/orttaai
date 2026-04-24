@@ -10,6 +10,7 @@ import CoreAudio
 
 final class MockAudioCaptureService: AudioCapturing {
     var audioLevel: Float = 0
+    var activeInputDeviceID: AudioDeviceID?
     var shouldFail = false
     var mockSamples: [Float] = Array(repeating: 0.1, count: 16000) // 1 second
     var lastStartCaptureDeviceID: AudioDeviceID?

@@ -12,11 +12,10 @@ struct TodaySnapshotCard: View {
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            if snapshot.sessions == 0 {
-                Text("No dictations today yet.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text(statusDescription)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .lineLimit(1)
 
             LazyVGrid(
                 columns: [
@@ -36,8 +35,16 @@ struct TodaySnapshotCard: View {
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "Today snapshot: \(snapshot.words) words, \(snapshot.sessions) sessions, \(snapshot.activeMinutes) active minutes, average \(snapshot.averageWPM) words per minute."
+            "Today snapshot: \(statusDescription) \(snapshot.words) words, \(snapshot.sessions) sessions, \(snapshot.activeMinutes) active minutes, average \(snapshot.averageWPM) words per minute."
         )
+    }
+
+    private var statusDescription: String {
+        if snapshot.sessions == 0 {
+            return "No dictations today yet."
+        }
+
+        return "\(snapshot.sessions.formatted()) dictations today."
     }
 
     private func metricCell(title: String, value: String) -> some View {

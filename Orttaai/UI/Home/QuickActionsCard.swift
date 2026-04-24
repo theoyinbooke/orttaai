@@ -43,7 +43,12 @@ struct QuickActionsCard: View {
             }
         }
         .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: TopAppsCard.preferredHeight,
+            maxHeight: TopAppsCard.preferredHeight,
+            alignment: .topLeading
+        )
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Quick actions")

@@ -10,6 +10,7 @@ import KeyboardShortcuts
 struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
+    @AppStorage("spokenFormattingEnabled") private var spokenFormattingEnabled = true
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 90
     @State private var showClearConfirmation = false
     @State private var showResetConfirmation = false
@@ -42,6 +43,14 @@ struct GeneralSettingsView: View {
                     title: "Show Processing Estimate",
                     subtitle: "Display ETA while transcriptions are being processed.",
                     isOn: $showProcessingEstimate
+                )
+
+                divider
+
+                toggleRow(
+                    title: "Spoken Formatting",
+                    subtitle: "Turns list cues like \"number one\" into formatted lines.",
+                    isOn: $spokenFormattingEnabled
                 )
             }
             .padding(Spacing.lg)

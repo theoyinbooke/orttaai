@@ -54,21 +54,24 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(payload.header.averageWPM7d, 0)
     }
 
-    func testTrendBucketingReturnsSevenDaysInOrder() throws {
+    func testTrendBucketingReturnsThirtyDaysInOrder() throws {
         try save(text: "one two", dayOffset: 0, recordingMs: 2_000)
         try save(text: "three four five", dayOffset: -2, recordingMs: 2_000)
+        try save(text: "older point", dayOffset: -29, recordingMs: 2_000)
+        try save(text: "excluded point", dayOffset: -30, recordingMs: 2_000)
 
         let payload = try service.load(currentModelId: "test-model")
-        let startDay = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now))!
+        let startDay = calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: now))!
 
-        XCTAssertEqual(payload.trend7d.count, 7)
-        XCTAssertEqual(payload.trend7d.first?.dayStart, startDay)
-        XCTAssertEqual(payload.trend7d.last?.dayStart, calendar.startOfDay(for: now))
+        XCTAssertEqual(payload.trend30d.count, 30)
+        XCTAssertEqual(payload.trend30d.first?.dayStart, startDay)
+        XCTAssertEqual(payload.trend30d.last?.dayStart, calendar.startOfDay(for: now))
+        XCTAssertEqual(payload.trend30d.first?.words, 2)
 
-        let todayBucket = payload.trend7d.last
+        let todayBucket = payload.trend30d.last
         XCTAssertEqual(todayBucket?.words, 2)
 
-        let thirdFromEnd = payload.trend7d[payload.trend7d.count - 3]
+        let thirdFromEnd = payload.trend30d[payload.trend30d.count - 3]
         XCTAssertEqual(thirdFromEnd.words, 3)
     }
 
@@ -80,6 +83,22 @@ final class DashboardStatsServiceTests: XCTestCase {
         let payload = try service.load(currentModelId: "test-model")
 
         XCTAssertEqual(payload.header.activeDays7d, 2)
+    }
+
+    func testTopAppsUseThirtyDaysAndLimitToThree() throws {
+        try save(text: "notes one", dayOffset: 0, recordingMs: 1_000, appName: "Notes")
+        try save(text: "notes two", dayOffset: -7, recordingMs: 1_000, appName: "Notes")
+        try save(text: "notes three", dayOffset: -29, recordingMs: 1_000, appName: "Notes")
+        try save(text: "safari one", dayOffset: -8, recordingMs: 1_000, appName: "Safari")
+        try save(text: "safari two", dayOffset: -20, recordingMs: 1_000, appName: "Safari")
+        try save(text: "mail has more words", dayOffset: -10, recordingMs: 1_000, appName: "Mail")
+        try save(text: "xcode", dayOffset: -11, recordingMs: 1_000, appName: "Xcode")
+        try save(text: "old app should be excluded", dayOffset: -30, recordingMs: 1_000, appName: "Old App")
+
+        let payload = try service.load(currentModelId: "test-model")
+
+        XCTAssertEqual(payload.topApps30d.map(\.name), ["Notes", "Safari", "Mail"])
+        XCTAssertEqual(payload.topApps30d.map(\.sessions), [3, 2, 1])
     }
 
     func testPerformanceLevelThresholds() throws {
