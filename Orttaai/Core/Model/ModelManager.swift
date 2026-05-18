@@ -102,8 +102,8 @@ final class ModelManager {
         self.settings = settings
         self.downloader = downloader
 
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        modelsDirectory = appSupport.appendingPathComponent("Orttaai/Models")
+        modelsDirectory = (try? AppStoragePaths.modelsDirectoryURL(createDirectory: true))
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("Orttaai/Models")
 
         setupHardcodedModels()
         checkExistingModels()
@@ -450,13 +450,15 @@ final class ModelManager {
 
     nonisolated private static func modelStorageRoots() -> [URL] {
         let fileManager = FileManager.default
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let appSupport = try? AppStoragePaths.applicationSupportRootURL()
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
         let home = URL.homeDirectory
 
         let env = ProcessInfo.processInfo.environment
         var roots: [URL] = [
-            appSupport?.appendingPathComponent("Orttaai/Models"),
+            appSupport?
+                .appendingPathComponent(AppStoragePaths.applicationSupportFolderName)
+                .appendingPathComponent("Models"),
             documents?.appendingPathComponent("huggingface"),
             home.appendingPathComponent(".cache/huggingface"),
             home.appendingPathComponent("Library/Caches/huggingface"),

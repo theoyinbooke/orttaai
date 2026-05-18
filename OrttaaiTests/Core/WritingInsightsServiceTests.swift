@@ -7,19 +7,27 @@ import GRDB
 
 final class WritingInsightsServiceTests: XCTestCase {
     private var db: DatabaseManager!
+    private var settings: AppSettings!
+    private var previousLocalInsightsEnabled = false
 
     override func setUpWithError() throws {
         let dbQueue = try DatabaseQueue(path: ":memory:")
         db = try DatabaseManager(dbQueue: dbQueue)
+        settings = AppSettings()
+        previousLocalInsightsEnabled = settings.localLLMInsightsEnabled
+        settings.localLLMInsightsEnabled = false
     }
 
     override func tearDownWithError() throws {
+        settings.localLLMInsightsEnabled = previousLocalInsightsEnabled
+        settings = nil
         db = nil
     }
 
     func testGenerateInsightsReturnsEmptyWhenNoHistory() async throws {
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: true, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: nil)
         )
@@ -37,6 +45,7 @@ final class WritingInsightsServiceTests: XCTestCase {
 
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple Foundation Models", available: true, payload: applePayload),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic Analyzer", available: true, payload: samplePayload(summary: "Heuristic"))
         )
@@ -50,12 +59,36 @@ final class WritingInsightsServiceTests: XCTestCase {
         XCTAssertNotNil(result.persistedSnapshotID)
     }
 
+    func testGenerateInsightsUsesOllamaWhenLocalInsightsEnabled() async throws {
+        try seedTranscription(text: "Here is a useful writing sample for local analysis.")
+        settings.localLLMInsightsEnabled = true
+        defer {
+            settings.localLLMInsightsEnabled = false
+        }
+
+        let ollamaPayload = samplePayload(summary: "Ollama summary")
+        let service = WritingInsightsService(
+            databaseManager: db,
+            settings: settings,
+            ollamaAnalyzer: MockWritingAnalyzer(name: "Ollama (Local)", available: true, payload: ollamaPayload),
+            appleAnalyzer: MockWritingAnalyzer(name: "Apple Foundation Models", available: true, payload: samplePayload(summary: "Apple")),
+            heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic Analyzer", available: true, payload: samplePayload(summary: "Heuristic"))
+        )
+
+        let result = await service.generateInsights()
+
+        XCTAssertEqual(result.analyzerName, "Ollama (Local)")
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.snapshot?.summary, "Ollama summary")
+    }
+
     func testGenerateInsightsFallsBackToHeuristicWhenAppleReturnsNil() async throws {
         try seedTranscription(text: "Another test sample for fallback.")
         let heuristicPayload = samplePayload(summary: "Fallback summary")
 
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple Foundation Models", available: true, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic Analyzer", available: true, payload: heuristicPayload)
         )
@@ -89,6 +122,7 @@ final class WritingInsightsServiceTests: XCTestCase {
 
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: samplePayload(summary: "Filtered"))
         )
@@ -110,6 +144,7 @@ final class WritingInsightsServiceTests: XCTestCase {
     func testApplyRecommendationCreatesDictionaryAndSnippet() throws {
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: nil)
         )
@@ -147,6 +182,7 @@ final class WritingInsightsServiceTests: XCTestCase {
 
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: nil)
         )
@@ -162,6 +198,7 @@ final class WritingInsightsServiceTests: XCTestCase {
 
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: nil)
         )
@@ -188,6 +225,7 @@ final class WritingInsightsServiceTests: XCTestCase {
 
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: nil)
         )
@@ -205,6 +243,7 @@ final class WritingInsightsServiceTests: XCTestCase {
 
         let service = WritingInsightsService(
             databaseManager: db,
+            settings: settings,
             appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
             heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: nil)
         )

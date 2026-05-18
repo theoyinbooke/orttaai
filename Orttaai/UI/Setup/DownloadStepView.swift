@@ -168,7 +168,7 @@ struct DownloadStepView: View {
                         .foregroundStyle(Color.Orttaai.textTertiary)
 
                     if let downloadingModelId {
-                        Text("Downloading: \(downloadingModelId)")
+                        Text("\(downloadStage.modelStatusPrefix): \(downloadingModelId)")
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
@@ -260,7 +260,7 @@ struct DownloadStepView: View {
             return "Ready"
         }
         if isDownloading && downloadingModelId == modelId {
-            return "Downloading..."
+            return downloadStage.actionTitle
         }
         if isDownloaded(modelId) {
             return "Use Downloaded"
@@ -286,21 +286,22 @@ struct DownloadStepView: View {
             return
         }
 
+        let modelAlreadyDownloaded = ModelManager
+            .detectDownloadedModelMetrics()
+            .downloadedModelIDs
+            .contains(ModelManager.normalizedModelID(modelId))
+
         isDownloading = true
         downloadingModelId = modelId
         errorMessage = nil
         isModelReady = false
-        downloadProgress = 0
-        downloadStage = .downloading
+        downloadProgress = modelAlreadyDownloaded ? 1 : 0
+        downloadStage = modelAlreadyDownloaded ? .loading : .downloading
 
         Task {
             do {
                 let settings = AppSettings()
                 await settings.syncTranscriptionSettings(to: transcriptionService)
-                let modelAlreadyDownloaded = ModelManager
-                    .detectDownloadedModelMetrics()
-                    .downloadedModelIDs
-                    .contains(ModelManager.normalizedModelID(modelId))
 
                 if modelAlreadyDownloaded {
                     await MainActor.run {
@@ -352,8 +353,10 @@ struct DownloadStepView: View {
                     isModelReady = false
                     downloadProgress = 0
                     downloadStage = .downloading
-                    errorMessage = "Couldn't download model. Check your connection and try again."
-                    Logger.model.error("Setup model download failed: \(error.localizedDescription)")
+                    errorMessage = modelAlreadyDownloaded
+                        ? "Couldn't load downloaded model. Try again or choose another model."
+                        : "Couldn't download model. Check your connection and try again."
+                    Logger.model.error("Setup model prepare failed: \(error.localizedDescription)")
                 }
             }
         }
@@ -389,6 +392,26 @@ struct DownloadStepView: View {
 
         if resolvedModelID != nil {
             errorMessage = nil
+        }
+    }
+}
+
+private extension SetupDownloadStage {
+    var actionTitle: String {
+        switch self {
+        case .downloading:
+            return "Downloading..."
+        case .loading, .warmingUp:
+            return "Loading..."
+        }
+    }
+
+    var modelStatusPrefix: String {
+        switch self {
+        case .downloading:
+            return "Downloading"
+        case .loading, .warmingUp:
+            return "Loading"
         }
     }
 }

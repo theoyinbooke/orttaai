@@ -168,6 +168,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureUpdater() {
+        #if DEBUG
+        updaterController = nil
+        #else
         guard !Bundle.main.isHomebrewInstall else {
             updaterController = nil
             return
@@ -178,6 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        #endif
     }
 
     private func checkForUpdates() {

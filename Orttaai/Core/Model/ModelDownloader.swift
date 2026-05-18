@@ -132,8 +132,8 @@ extension ModelDownloader: URLSessionDownloadDelegate {
     ) {
         // Move to permanent location
         let fileName = downloadTask.originalRequest?.url?.lastPathComponent ?? "model"
-        let destDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Orttaai/Models")
+        let destDir = (try? AppStoragePaths.modelsDirectoryURL(createDirectory: true))
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("Orttaai/Models")
         let destURL = destDir.appendingPathComponent(fileName)
 
         do {

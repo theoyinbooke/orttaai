@@ -413,7 +413,7 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         """
 
         let startedAt = Date()
-        let thinkEnabled = true
+        let thinkEnabled = false
         let requestedTimeoutMs = settings.clampedLocalLLMInsightsTimeoutMs
         let timeoutMs = effectiveInsightsTimeoutMs(
             requestedTimeoutMs: requestedTimeoutMs,
@@ -432,8 +432,9 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
                 prompt: prompt,
                 timeoutMs: timeoutMs,
                 think: thinkEnabled,
+                format: "json",
                 temperature: 0.15,
-                numPredict: 1_200
+                numPredict: 900
             )
 
             guard let jsonPayload = extractJSONObject(from: response) else {
@@ -516,7 +517,7 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
     }
 
     private func recommendedInsightsTimeoutMs(for model: String, thinkEnabled: Bool) -> Int {
-        guard thinkEnabled else { return 7_000 }
+        guard thinkEnabled else { return 12_000 }
         let lower = model.lowercased()
         if lower.hasPrefix("qwen") {
             return 12_000

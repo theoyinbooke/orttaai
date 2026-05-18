@@ -24,7 +24,7 @@ enum AppResetService {
         Logger.ui.info("Onboarding state reset")
     }
 
-    static func resetUserDefaults(bundleIdentifier: String = "com.orttaai.Orttaai") {
+    static func resetUserDefaults(bundleIdentifier: String = AppStoragePaths.currentBundleIdentifier) {
         UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
         UserDefaults.standard.synchronize()
         Logger.ui.info("User defaults reset for \(bundleIdentifier)")
@@ -37,7 +37,7 @@ enum AppResetService {
             return
         }
 
-        let appSupportFolder = appSupport.appendingPathComponent("Orttaai")
+        let appSupportFolder = appSupport.appendingPathComponent(AppStoragePaths.applicationSupportFolderName)
         if fileManager.fileExists(atPath: appSupportFolder.path) {
             do {
                 try fileManager.removeItem(at: appSupportFolder)
@@ -55,7 +55,9 @@ enum AppResetService {
             return
         }
 
-        let modelsFolder = appSupport.appendingPathComponent("Orttaai/Models")
+        let modelsFolder = appSupport
+            .appendingPathComponent(AppStoragePaths.applicationSupportFolderName)
+            .appendingPathComponent("Models")
         guard fileManager.fileExists(atPath: modelsFolder.path) else { return }
 
         do {
@@ -66,7 +68,7 @@ enum AppResetService {
         }
     }
 
-    static func resetAllLocalData(bundleIdentifier: String = "com.orttaai.Orttaai") {
+    static func resetAllLocalData(bundleIdentifier: String = AppStoragePaths.currentBundleIdentifier) {
         do {
             _ = try DatabaseManager.backupDefaultDatabase(reason: "full-reset")
         } catch {

@@ -115,6 +115,7 @@ actor OllamaClient {
         prompt: String,
         timeoutMs: Int,
         think: Bool? = nil,
+        format: String? = nil,
         temperature: Double = 0,
         numPredict: Int = 220,
         keepAlive: String = "20m"
@@ -157,6 +158,12 @@ actor OllamaClient {
         ]
         if let effectiveThink {
             payload["think"] = effectiveThink
+        }
+        if let format {
+            let normalizedFormat = format.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !normalizedFormat.isEmpty {
+                payload["format"] = normalizedFormat
+            }
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
 

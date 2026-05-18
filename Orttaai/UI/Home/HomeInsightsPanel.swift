@@ -77,19 +77,6 @@ struct HomeInsightsPanel: View {
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
 
-                    if isGenerating {
-                        HStack(spacing: Spacing.sm) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Generating writing insights...")
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                        }
-                        .padding(Spacing.md)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .dashboardCard()
-                    }
-
                     if let snapshot {
                         snapshotBody(snapshot)
                     } else if !isGenerating {
@@ -156,7 +143,7 @@ struct HomeInsightsPanel: View {
                 )
             } else {
                 Button(action: onGenerate) {
-                    Label(snapshot == nil ? "Generate" : "Regenerate", systemImage: "sparkles")
+                    Label(snapshot == nil ? "Generate" : "Regenerate", systemImage: "arrow.clockwise")
                         .font(.Orttaai.secondary)
                 }
                 .buttonStyle(OrttaaiButtonStyle(.primary))
@@ -548,21 +535,26 @@ struct HomeInsightsPanel: View {
                             Text(pattern.title)
                                 .font(.Orttaai.secondary)
                                 .foregroundStyle(Color.Orttaai.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Text(pattern.detail)
                                 .font(.Orttaai.secondary)
                                 .foregroundStyle(Color.Orttaai.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             if let evidence = pattern.evidence {
                                 Text(evidence)
                                     .font(.Orttaai.caption)
                                     .foregroundStyle(Color.Orttaai.textTertiary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                         .padding(.horizontal, Spacing.md)
                         .padding(.vertical, Spacing.sm)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.Orttaai.bgPrimary.opacity(0.4))
                         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Spacing.md)
                 .dashboardCard()
             }

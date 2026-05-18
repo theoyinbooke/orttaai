@@ -188,7 +188,7 @@ private struct ActivePersonalMemoryRules {
     let snippetEntries: [SnippetEntry]
 }
 
-private enum SpokenFormattingFormatter {
+enum SpokenFormattingFormatter {
     private struct OrderedMarker {
         let range: Range<String.Index>
         let number: Int
@@ -205,6 +205,10 @@ private enum SpokenFormattingFormatter {
 
     private static let orderedMarkerPattern = #"""
     (?<![\p{L}\p{N}_])(?:number|item)\s+(one|two|three|four|five|six|seven|eight|nine|ten|1|2|3|4|5|6|7|8|9|10)(?![\p{L}\p{N}_])
+    """#
+
+    private static let inlineOrderedMarkerPattern = #"""
+    (?<![\p{L}\p{N}_])([1-9]|10)[\.\)](?=\s+)
     """#
 
     private static let bulletMarkerPattern = #"""
@@ -311,22 +315,38 @@ private enum SpokenFormattingFormatter {
     }
 
     private static func orderedMarkers(in text: String) -> [OrderedMarker] {
-        guard let regex = try? NSRegularExpression(
+        var markers: [OrderedMarker] = []
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+
+        if let regex = try? NSRegularExpression(
             pattern: orderedMarkerPattern,
             options: [.caseInsensitive, .allowCommentsAndWhitespace]
-        ) else {
-            return []
+        ) {
+            markers.append(contentsOf: regex.matches(in: text, options: [], range: nsRange).compactMap { match in
+                guard let fullRange = Range(match.range, in: text),
+                      let numberRange = Range(match.range(at: 1), in: text),
+                      let number = numberValue(String(text[numberRange])) else {
+                    return nil
+                }
+                return OrderedMarker(range: fullRange, number: number)
+            })
         }
 
-        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
-        return regex.matches(in: text, options: [], range: nsRange).compactMap { match in
-            guard let fullRange = Range(match.range, in: text),
-                  let numberRange = Range(match.range(at: 1), in: text),
-                  let number = numberValue(String(text[numberRange])) else {
-                return nil
-            }
-            return OrderedMarker(range: fullRange, number: number)
+        if let inlineRegex = try? NSRegularExpression(
+            pattern: inlineOrderedMarkerPattern,
+            options: [.caseInsensitive, .allowCommentsAndWhitespace]
+        ) {
+            markers.append(contentsOf: inlineRegex.matches(in: text, options: [], range: nsRange).compactMap { match in
+                guard let fullRange = Range(match.range, in: text),
+                      let numberRange = Range(match.range(at: 1), in: text),
+                      let number = numberValue(String(text[numberRange])) else {
+                    return nil
+                }
+                return OrderedMarker(range: fullRange, number: number)
+            })
         }
+
+        return markers.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }
 
     private static func bulletMarkers(in text: String) -> [TextMarker] {

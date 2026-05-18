@@ -10,8 +10,19 @@ final class RuleBasedTextProcessorTests: XCTestCase {
     private var db: DatabaseManager!
     private var settings: AppSettings!
     private var processor: RuleBasedTextProcessor!
+    private var originalDefaults: [String: Any?] = [:]
+    private let defaultKeysToRestore = [
+        "dictionaryEnabled",
+        "snippetsEnabled",
+        "spokenFormattingEnabled"
+    ]
 
     override func setUpWithError() throws {
+        originalDefaults = Dictionary(
+            uniqueKeysWithValues: defaultKeysToRestore.map { key in
+                (key, UserDefaults.standard.object(forKey: key))
+            }
+        )
         let dbQueue = try DatabaseQueue(path: ":memory:")
         db = try DatabaseManager(dbQueue: dbQueue)
         settings = AppSettings()
@@ -25,6 +36,14 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         processor = nil
         settings = nil
         db = nil
+        for key in defaultKeysToRestore {
+            if let value = originalDefaults[key] ?? nil {
+                UserDefaults.standard.set(value, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        originalDefaults = [:]
     }
 
     func testDictionaryReplacement() async throws {
@@ -118,6 +137,45 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         )
 
         XCTAssertEqual(output.text, "1. It has to be this\n2. It has to be that")
+        XCTAssertTrue(output.changes.contains("Spoken formatting: numbered list"))
+    }
+
+    func testFormatsNumberedListWithWhisperPunctuation() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "Number one, open settings. Number two, choose audio.",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "1. Open settings.\n2. Choose audio.")
+        XCTAssertTrue(output.changes.contains("Spoken formatting: numbered list"))
+    }
+
+    func testFormatsInlineNumberedMarkersFromWhisper() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "1. Open Settings 2. Choose Audio",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "1. Open Settings\n2. Choose Audio")
+        XCTAssertTrue(output.changes.contains("Spoken formatting: numbered list"))
+    }
+
+    func testFormatsInlineNumberedMarkersWithIntro() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "Here are the steps 1. open settings 2. choose audio",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "Here are the steps\n1. Open settings\n2. Choose audio")
         XCTAssertTrue(output.changes.contains("Spoken formatting: numbered list"))
     }
 

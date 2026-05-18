@@ -11,6 +11,8 @@ struct HomeHeaderView: View {
     let onToggleInsights: () -> Void
 
     var body: some View {
+        let showsStatLabels = !isInsightsVisible || !isCompact
+
         HStack(alignment: .top, spacing: Spacing.lg) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Welcome back")
@@ -29,20 +31,22 @@ struct HomeHeaderView: View {
 
             VStack(alignment: .trailing, spacing: Spacing.sm) {
                 HStack(spacing: Spacing.sm) {
-                    StatChipView(label: "active days", value: "\(stats.activeDays7d)")
-                    StatChipView(label: "words", value: stats.words7d.formatted())
-                    if !isCompact {
-                        StatChipView(label: "avg WPM", value: "\(stats.averageWPM7d)")
-                    }
+                    StatChipView(label: "active days", value: "\(stats.activeDays7d)", showsLabel: showsStatLabels)
+                    StatChipView(label: "words", value: stats.words7d.formatted(), showsLabel: showsStatLabels)
+                    StatChipView(label: "avg WPM", value: "\(stats.averageWPM7d)", showsLabel: showsStatLabels)
 
-                    Button {
-                        onToggleInsights()
-                    } label: {
-                        Label(isInsightsVisible ? "Hide Insights" : "Insights", systemImage: "sparkles.rectangle.stack")
-                            .font(.Orttaai.secondary)
+                    if !isInsightsVisible {
+                        Button {
+                            onToggleInsights()
+                        } label: {
+                            Label("Insight", systemImage: "lightbulb")
+                                .font(.Orttaai.secondary)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary))
+                        .fixedSize(horizontal: true, vertical: false)
+                        .help("Open writing insights panel")
                     }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-                    .help(isInsightsVisible ? "Hide writing insights panel" : "Open writing insights panel")
                 }
 
                 if isRefreshing {

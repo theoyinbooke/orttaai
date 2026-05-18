@@ -96,10 +96,16 @@ final class LocalLLMTextProcessor: TextProcessor {
                 numPredict: max(24, min(120, (normalizedInput.count / 2) + 24))
             )
 
-            guard let polishedText = sanitizePolishOutput(rawResponse, original: normalizedInput) else {
+            guard var polishedText = sanitizePolishOutput(rawResponse, original: normalizedInput) else {
                 Logger.ai.debug("Skipping local polish (response rejected by sanitizer)")
                 await circuitBreaker.recordFailure()
                 return baseOutput
+            }
+            var localFormattingChanges: [String] = []
+            if settings.spokenFormattingEnabled {
+                let formattingResult = SpokenFormattingFormatter.format(polishedText)
+                polishedText = formattingResult.text
+                localFormattingChanges = formattingResult.changes
             }
 
             guard polishedText != normalizedInput else {
@@ -114,6 +120,9 @@ final class LocalLLMTextProcessor: TextProcessor {
             Logger.ai.debug("Local polish applied [model=\(model), elapsedMs=\(elapsedMs)]")
             var updatedChanges = baseOutput.changes
             updatedChanges.append("Local LLM polish applied (punctuation/spelling)")
+            for change in localFormattingChanges where !updatedChanges.contains(change) {
+                updatedChanges.append(change)
+            }
             return TextProcessorOutput(text: polishedText, changes: updatedChanges)
         } catch {
             if isTimeoutError(error) {

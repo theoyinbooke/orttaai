@@ -20,8 +20,6 @@ final class DatabaseManager {
     private let backupDirectoryURL: URL?
     private static let maxRecords = 500
     private static let maxInsightSnapshots = 60
-    private static let applicationSupportFolderName = "Orttaai"
-    private static let backupFolderName = "Orttaai Backups"
     private static let databaseFileName = "orttaai.db"
 
     convenience init(dbQueue: DatabaseQueue) throws {
@@ -51,32 +49,11 @@ final class DatabaseManager {
     }
 
     static func applicationSupportRootURL() throws -> URL {
-        guard let appSupportURL = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
-            throw NSError(
-                domain: "com.orttaai.database",
-                code: 100,
-                userInfo: [NSLocalizedDescriptionKey: "Unable to locate Application Support."]
-            )
-        }
-
-        return appSupportURL
+        try AppStoragePaths.applicationSupportRootURL()
     }
 
     static func defaultApplicationSupportURL(createDirectory: Bool = true) throws -> URL {
-        let appSupportURL = try applicationSupportRootURL()
-            .appendingPathComponent(applicationSupportFolderName, isDirectory: true)
-
-        if createDirectory {
-            try FileManager.default.createDirectory(
-                at: appSupportURL,
-                withIntermediateDirectories: true
-            )
-        }
-
-        return appSupportURL
+        try AppStoragePaths.applicationSupportURL(createDirectory: createDirectory)
     }
 
     static func defaultDatabaseURL(createDirectory: Bool = true) throws -> URL {
@@ -85,17 +62,7 @@ final class DatabaseManager {
     }
 
     static func defaultBackupDirectoryURL(createDirectory: Bool = true) throws -> URL {
-        let backupURL = try applicationSupportRootURL()
-            .appendingPathComponent(backupFolderName, isDirectory: true)
-
-        if createDirectory {
-            try FileManager.default.createDirectory(
-                at: backupURL,
-                withIntermediateDirectories: true
-            )
-        }
-
-        return backupURL
+        try AppStoragePaths.backupDirectoryURL(createDirectory: createDirectory)
     }
 
     @discardableResult

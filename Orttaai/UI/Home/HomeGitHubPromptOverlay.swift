@@ -34,7 +34,7 @@ struct HomeGitHubPromptOverlay: View {
                 buttonLayout
             }
             .padding(Spacing.xxl)
-            .frame(width: 420)
+            .frame(width: promptWidth)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                     .fill(
@@ -77,29 +77,35 @@ struct HomeGitHubPromptOverlay: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
         case .star:
-            VStack(spacing: Spacing.md) {
+            HStack(spacing: Spacing.md) {
+                Button("Maybe later") {
+                    onMaybeLater()
+                }
+                .frame(minWidth: 120)
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+
+                Button("No thanks") {
+                    onDismissPermanently()
+                }
+                .frame(minWidth: 112)
+                .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true))
+
                 Button("Star on GitHub") {
                     onStar()
                 }
-                .frame(minWidth: 192)
+                .frame(minWidth: 156)
                 .buttonStyle(OrttaaiButtonStyle(.primary))
-
-                HStack(spacing: Spacing.md) {
-                    Button("Maybe later") {
-                        onMaybeLater()
-                    }
-                    .frame(minWidth: 152)
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-
-                    Button("No thanks") {
-                        onDismissPermanently()
-                    }
-                    .frame(minWidth: 152)
-                    .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true))
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
             }
             .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private var promptWidth: CGFloat {
+        switch step {
+        case .enjoyment:
+            return 420
+        case .star:
+            return 500
         }
     }
 
