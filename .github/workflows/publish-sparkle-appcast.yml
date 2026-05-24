@@ -84,8 +84,8 @@ jobs:
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "theoyinbooke"
+          git config user.email "theoyinbooke@gmail.com"
           git add Orttaai/Resources/appcast.xml
           git commit -m "Update Sparkle appcast for v${{ steps.version.outputs.version }}"
           git push origin HEAD:main
