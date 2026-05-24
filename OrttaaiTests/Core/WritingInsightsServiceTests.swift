@@ -9,17 +9,21 @@ final class WritingInsightsServiceTests: XCTestCase {
     private var db: DatabaseManager!
     private var settings: AppSettings!
     private var previousLocalInsightsEnabled = false
+    private var previousLocalPolishEnabled = false
 
     override func setUpWithError() throws {
         let dbQueue = try DatabaseQueue(path: ":memory:")
         db = try DatabaseManager(dbQueue: dbQueue)
         settings = AppSettings()
         previousLocalInsightsEnabled = settings.localLLMInsightsEnabled
+        previousLocalPolishEnabled = settings.localLLMPolishEnabled
         settings.localLLMInsightsEnabled = false
+        settings.localLLMPolishEnabled = false
     }
 
     override func tearDownWithError() throws {
         settings.localLLMInsightsEnabled = previousLocalInsightsEnabled
+        settings.localLLMPolishEnabled = previousLocalPolishEnabled
         settings = nil
         db = nil
     }
@@ -64,6 +68,29 @@ final class WritingInsightsServiceTests: XCTestCase {
         settings.localLLMInsightsEnabled = true
         defer {
             settings.localLLMInsightsEnabled = false
+        }
+
+        let ollamaPayload = samplePayload(summary: "Ollama summary")
+        let service = WritingInsightsService(
+            databaseManager: db,
+            settings: settings,
+            ollamaAnalyzer: MockWritingAnalyzer(name: "Ollama (Local)", available: true, payload: ollamaPayload),
+            appleAnalyzer: MockWritingAnalyzer(name: "Apple Foundation Models", available: true, payload: samplePayload(summary: "Apple")),
+            heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic Analyzer", available: true, payload: samplePayload(summary: "Heuristic"))
+        )
+
+        let result = await service.generateInsights()
+
+        XCTAssertEqual(result.analyzerName, "Ollama (Local)")
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.snapshot?.summary, "Ollama summary")
+    }
+
+    func testGenerateInsightsUsesOllamaWhenOnlyLocalPolishEnabled() async throws {
+        try seedTranscription(text: "Here is a useful writing sample for local analysis.")
+        settings.localLLMPolishEnabled = true
+        defer {
+            settings.localLLMPolishEnabled = false
         }
 
         let ollamaPayload = samplePayload(summary: "Ollama summary")
@@ -139,6 +166,64 @@ final class WritingInsightsServiceTests: XCTestCase {
         XCTAssertEqual(result.sampleCount, 1)
         XCTAssertEqual(result.snapshot?.sampleCount, 1)
         XCTAssertEqual(result.snapshot?.summary, "Filtered")
+    }
+
+    func testBalancedModeAllowsLargerMonthlyHistory() async throws {
+        let now = Date()
+        for index in 0..<350 {
+            try seedTranscription(
+                text: "Monthly writing sample \(index)",
+                createdAt: now.addingTimeInterval(TimeInterval(-index))
+            )
+        }
+
+        let service = WritingInsightsService(
+            databaseManager: db,
+            settings: settings,
+            appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
+            heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: samplePayload(summary: "Expanded"))
+        )
+
+        let result = await service.generateInsights(
+            request: WritingInsightsRequest(
+                timeRange: .days30,
+                generationMode: .balanced,
+                appFilterMode: .allApps,
+                selectedApps: []
+            )
+        )
+
+        XCTAssertEqual(result.sampleCount, 350)
+        XCTAssertEqual(result.snapshot?.sampleCount, 350)
+    }
+
+    func testDeepModeAllowsVeryLargeMonthlyHistory() async throws {
+        let now = Date()
+        for index in 0..<620 {
+            try seedTranscription(
+                text: "Deep writing sample \(index)",
+                createdAt: now.addingTimeInterval(TimeInterval(-index))
+            )
+        }
+
+        let service = WritingInsightsService(
+            databaseManager: db,
+            settings: settings,
+            appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: false, payload: nil),
+            heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: samplePayload(summary: "Deep"))
+        )
+
+        let result = await service.generateInsights(
+            request: WritingInsightsRequest(
+                timeRange: .days30,
+                generationMode: .deep,
+                appFilterMode: .allApps,
+                selectedApps: []
+            )
+        )
+
+        XCTAssertEqual(result.sampleCount, 620)
+        XCTAssertEqual(result.snapshot?.sampleCount, 620)
     }
 
     func testApplyRecommendationCreatesDictionaryAndSnippet() throws {

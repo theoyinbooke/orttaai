@@ -4,9 +4,9 @@
 import Foundation
 
 struct DashboardHeaderStats {
-    let activeDays7d: Int
-    let words7d: Int
-    let averageWPM7d: Int
+    let activeDays: Int
+    let totalWords: Int
+    let averageWPM: Int
 }
 
 struct DashboardTodaySnapshot {
@@ -76,7 +76,7 @@ struct DashboardStatsPayload {
 }
 
 extension DashboardHeaderStats {
-    static let empty = DashboardHeaderStats(activeDays7d: 0, words7d: 0, averageWPM7d: 0)
+    static let empty = DashboardHeaderStats(activeDays: 0, totalWords: 0, averageWPM: 0)
 }
 
 extension DashboardTodaySnapshot {

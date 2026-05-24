@@ -147,8 +147,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
 
-        // Dock icon click should always surface Home for quick access.
-        openHomeWorkspace(section: .overview)
+        // Dock icon click should surface Home without resetting the current workspace section.
+        windowManager?.showHomeWindow()
         return true
     }
 

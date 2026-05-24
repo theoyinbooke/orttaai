@@ -174,7 +174,7 @@ struct HistoryView: View {
                         .font(.Orttaai.heading)
                         .foregroundStyle(Color.Orttaai.textPrimary)
 
-                    Text("Browse, copy, and manage your recent dictations.")
+                    Text("Browse, copy, and manage your dictation history.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                 }
@@ -438,7 +438,7 @@ struct HistoryView: View {
     private func loadEntries() {
         do {
             let db = try DatabaseManager()
-            let records = try db.fetchRecent(limit: 500)
+            let records = try db.fetchAllTranscriptions()
             entries = makeTableEntries(from: records)
             errorMessage = nil
         } catch {
@@ -450,7 +450,7 @@ struct HistoryView: View {
     private func startObservation() {
         do {
             let db = try DatabaseManager()
-            observation = db.observeTranscriptions(limit: 500) { [self] records in
+            observation = db.observeTranscriptions(limit: nil) { [self] records in
                 entries = makeTableEntries(from: records)
             }
         } catch {

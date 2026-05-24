@@ -45,6 +45,8 @@ struct HomeShellView: View {
                     onRunSetup: onRunSetup,
                     layoutMode: compactOverview ? .compact : .regular
                 )
+            case .chatAI:
+                ChatAIView()
             case .memory:
                 MemoryView()
             case .analytics:
@@ -83,7 +85,9 @@ struct HomeShellView: View {
                     }
                 }
 
-                Spacer(minLength: 0)
+                if !collapsed {
+                    Spacer(minLength: 0)
+                }
 
                 Button {
                     guard canExpand else { return }
@@ -109,6 +113,7 @@ struct HomeShellView: View {
                 .accessibilityLabel(collapsed ? "Expand sidebar" : "Collapse sidebar")
                 .disabled(!canExpand)
             }
+            .frame(maxWidth: .infinity, alignment: collapsed ? .leading : .center)
 
             VStack(spacing: Spacing.sm) {
                 ForEach(HomeSection.allCases) { section in

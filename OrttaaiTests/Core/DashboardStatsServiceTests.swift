@@ -42,7 +42,7 @@ final class DashboardStatsServiceTests: XCTestCase {
         let payload = try service.load(currentModelId: "test-model")
 
         XCTAssertEqual(payload.today.words, 5)
-        XCTAssertEqual(payload.header.words7d, 5)
+        XCTAssertEqual(payload.header.totalWords, 5)
     }
 
     func testAverageWPMIsSafeWhenRecordingDurationIsZero() throws {
@@ -51,7 +51,7 @@ final class DashboardStatsServiceTests: XCTestCase {
         let payload = try service.load(currentModelId: "test-model")
 
         XCTAssertEqual(payload.today.averageWPM, 0)
-        XCTAssertEqual(payload.header.averageWPM7d, 0)
+        XCTAssertEqual(payload.header.averageWPM, 0)
     }
 
     func testTrendBucketingReturnsThirtyDaysInOrder() throws {
@@ -75,14 +75,17 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(thirdFromEnd.words, 3)
     }
 
-    func testActiveDaysCountsDistinctDaysOnly() throws {
+    func testHeaderStatsUseLifetimeHistory() throws {
         try save(text: "alpha beta", dayOffset: 0, recordingMs: 1_000)
         try save(text: "gamma", dayOffset: 0, recordingMs: 1_000)
         try save(text: "delta epsilon", dayOffset: -3, recordingMs: 1_000)
+        try save(text: "old history still counts", dayOffset: -10, recordingMs: 2_000)
 
         let payload = try service.load(currentModelId: "test-model")
 
-        XCTAssertEqual(payload.header.activeDays7d, 2)
+        XCTAssertEqual(payload.header.activeDays, 3)
+        XCTAssertEqual(payload.header.totalWords, 9)
+        XCTAssertEqual(payload.header.averageWPM, 108)
     }
 
     func testTopAppsUseThirtyDaysAndLimitToThree() throws {

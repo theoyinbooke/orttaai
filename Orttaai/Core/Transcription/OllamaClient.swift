@@ -28,6 +28,17 @@ struct OllamaCatalogModel: Sendable, Identifiable {
     var id: String { name }
 }
 
+enum OllamaChatRole: String, Sendable {
+    case system
+    case user
+    case assistant
+}
+
+struct OllamaChatMessage: Sendable {
+    let role: OllamaChatRole
+    let content: String
+}
+
 enum OllamaClientError: LocalizedError {
     case invalidBaseURL
     case invalidResponse
@@ -113,11 +124,12 @@ actor OllamaClient {
         baseURLString: String,
         model: String,
         prompt: String,
-        timeoutMs: Int,
+        timeoutMs: Int?,
         think: Bool? = nil,
         format: String? = nil,
         temperature: Double = 0,
         numPredict: Int = 220,
+        numContext: Int? = nil,
         keepAlive: String = "20m"
     ) async throws -> String {
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -132,32 +144,30 @@ actor OllamaClient {
         let url = try endpointURL(baseURLString: baseURLString, path: "/api/generate")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = max(0.08, Double(timeoutMs) / 1_000.0)
+        if let timeoutMs {
+            request.timeoutInterval = max(0.08, Double(timeoutMs) / 1_000.0)
+        } else {
+            request.timeoutInterval = 24 * 60 * 60
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let effectiveThink: Bool? = {
-            if let think {
-                return think
-            }
-            if normalizedModel.lowercased().hasPrefix("qwen") {
-                // Keep polish fast by default for Qwen unless caller explicitly requests thinking.
-                return false
-            }
-            return nil
-        }()
+        var options: [String: Any] = [
+            "temperature": temperature,
+            "num_predict": max(32, min(16_000, numPredict)),
+        ]
+        if let numContext {
+            options["num_ctx"] = max(2_048, min(262_144, numContext))
+        }
 
         var payload: [String: Any] = [
             "model": normalizedModel,
             "prompt": normalizedPrompt,
             "stream": false,
-            "options": [
-                "temperature": temperature,
-                "num_predict": max(32, min(1_500, numPredict)),
-            ],
+            "options": options,
             "keep_alive": keepAlive,
         ]
-        if let effectiveThink {
-            payload["think"] = effectiveThink
+        if let think {
+            payload["think"] = think
         }
         if let format {
             let normalizedFormat = format.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -174,7 +184,107 @@ actor OllamaClient {
         let responseText = (json["response"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !responseText.isEmpty else {
-            throw OllamaClientError.invalidResponse
+            let fields = json.keys.sorted().joined(separator: ", ")
+            let doneReason = (json["done_reason"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let thinkingMessage = ((json["thinking"] as? String)?.isEmpty == false)
+                ? " Thinking content was present, but no final response was returned."
+                : ""
+            let reasonMessage = doneReason.map { " done_reason=\($0)." } ?? ""
+            throw OllamaClientError.requestFailed(
+                message: "Ollama returned an empty generation response. fields=\(fields).\(reasonMessage)\(thinkingMessage)"
+            )
+        }
+        return responseText
+    }
+
+    func chat(
+        baseURLString: String,
+        model: String,
+        messages: [OllamaChatMessage],
+        timeoutMs: Int? = nil,
+        think: Bool? = nil,
+        temperature: Double = 0.35,
+        numPredict: Int = 1_800,
+        numContext: Int? = nil,
+        keepAlive: String = "20m"
+    ) async throws -> String {
+        let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedMessages = messages
+            .map { message in
+                OllamaChatMessage(
+                    role: message.role,
+                    content: message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+            .filter { !$0.content.isEmpty }
+
+        guard !normalizedModel.isEmpty else {
+            throw OllamaClientError.requestFailed(message: "Missing Ollama model name.")
+        }
+        guard !normalizedMessages.isEmpty else {
+            throw OllamaClientError.requestFailed(message: "Missing chat messages for Ollama.")
+        }
+
+        let url = try endpointURL(baseURLString: baseURLString, path: "/api/chat")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        if let timeoutMs {
+            request.timeoutInterval = max(0.08, Double(timeoutMs) / 1_000.0)
+        } else {
+            request.timeoutInterval = 24 * 60 * 60
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var options: [String: Any] = [
+            "temperature": temperature,
+            "num_predict": max(32, min(16_000, numPredict)),
+        ]
+        if let numContext {
+            options["num_ctx"] = max(2_048, min(262_144, numContext))
+        }
+
+        var payload: [String: Any] = [
+            "model": normalizedModel,
+            "messages": normalizedMessages.map { message in
+                [
+                    "role": message.role.rawValue,
+                    "content": message.content,
+                ]
+            },
+            "stream": false,
+            "options": options,
+            "keep_alive": keepAlive,
+        ]
+        if let think {
+            payload["think"] = think
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let (data, response) = try await session.data(for: request)
+        try validateHTTPResponse(response, data: data)
+
+        let json = try parseJSONObject(data)
+        let responseText: String
+        if let message = json["message"] as? [String: Any] {
+            responseText = (message["content"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        } else {
+            responseText = (json["response"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
+
+        guard !responseText.isEmpty else {
+            let fields = json.keys.sorted().joined(separator: ", ")
+            let doneReason = (json["done_reason"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let thinkingMessage = ((json["thinking"] as? String)?.isEmpty == false)
+                ? " Thinking content was present, but no final response was returned."
+                : ""
+            let reasonMessage = doneReason.map { " done_reason=\($0)." } ?? ""
+            throw OllamaClientError.requestFailed(
+                message: "Ollama returned an empty chat response. fields=\(fields).\(reasonMessage)\(thinkingMessage)"
+            )
         }
         return responseText
     }

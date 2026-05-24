@@ -361,28 +361,15 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
     }
 
     func isAvailable() -> Bool {
-        settings.localLLMInsightsEnabled
+        !settings.localLLMInsightCandidateModels.isEmpty
     }
 
     func analyze(transcriptions: [Transcription]) async -> WritingInsightPayload? {
-        guard settings.localLLMInsightsEnabled else { return nil }
+        let models = settings.localLLMInsightCandidateModels
+        guard !models.isEmpty else { return nil }
 
-        let model = settings.normalizedLocalLLMInsightsModel
-        guard !model.isEmpty else { return nil }
-
-        let historyLines = transcriptions
-            .prefix(180)
-            .map { record -> String in
-                let text = record.text
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "\n", with: " ")
-                    .replacingOccurrences(of: "\r", with: " ")
-                guard !text.isEmpty else { return "" }
-                let clamped = text.count > 240 ? String(text.prefix(240)) + "..." : text
-                let app = normalizedAppName(record.targetAppName)
-                return "\(app): \(clamped)"
-            }
-            .filter { !$0.isEmpty }
+        let contextTokens = settings.clampedLocalLLMInsightsContextTokens
+        let historyLines = historyLines(from: transcriptions, contextTokens: contextTokens)
 
         guard !historyLines.isEmpty else { return nil }
 
@@ -412,46 +399,48 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         \(historyLines.enumerated().map { "[\($0.offset + 1)] \($0.element)" }.joined(separator: "\n"))
         """
 
-        let startedAt = Date()
-        let thinkEnabled = false
-        let requestedTimeoutMs = settings.clampedLocalLLMInsightsTimeoutMs
-        let timeoutMs = effectiveInsightsTimeoutMs(
-            requestedTimeoutMs: requestedTimeoutMs,
-            model: model,
-            thinkEnabled: thinkEnabled
-        )
-        if timeoutMs != requestedTimeoutMs {
-            Logger.ai.debug("Ollama insights timeout adjusted [model=\(model), requestedMs=\(requestedTimeoutMs), effectiveMs=\(timeoutMs)]")
-        }
-        Logger.ai.debug("Ollama insights request started [model=\(model), samples=\(historyLines.count), timeoutMs=\(timeoutMs), think=\(thinkEnabled)]")
-
-        do {
-            let response = try await ollamaClient.generate(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
-                model: model,
+        for model in models {
+            if let payload = await analyze(
                 prompt: prompt,
-                timeoutMs: timeoutMs,
-                think: thinkEnabled,
-                format: "json",
-                temperature: 0.15,
-                numPredict: 900
-            )
-
-            guard let jsonPayload = extractJSONObject(from: response) else {
-                Logger.ai.warning("Ollama insights response did not include JSON payload")
-                return nil
+                model: model,
+                sampleCount: historyLines.count,
+                contextTokens: contextTokens
+            ) {
+                return payload
             }
-            guard let data = jsonPayload.data(using: .utf8) else { return nil }
-            let parsed = try JSONDecoder().decode(AppleWritingInsightsResponse.self, from: data)
-            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
-            Logger.ai.debug("Ollama insights completed [model=\(model), elapsedMs=\(elapsedMs)]")
-            return sanitize(parsed)
-        } catch {
-            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
-            Logger.ai.error("Ollama insights failed [model=\(model), elapsedMs=\(elapsedMs)]: \(error.localizedDescription)")
-            Logger.ai.error("Ollama insights failed: \(error.localizedDescription)")
-            return nil
         }
+
+        return nil
+    }
+
+    private func historyLines(from transcriptions: [Transcription], contextTokens: Int) -> [String] {
+        let promptCharacterBudget = max(24_000, contextTokens * 3)
+        var remainingCharacters = promptCharacterBudget
+        var lines: [String] = []
+
+        for record in transcriptions {
+            let text = record.text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+            guard !text.isEmpty else { continue }
+
+            let app = normalizedAppName(record.targetAppName)
+            let linePrefix = "\(app): "
+            let minimumUsefulTextCharacters = 80
+            let availableForText = remainingCharacters - linePrefix.count - 12
+            guard availableForText >= minimumUsefulTextCharacters else { break }
+
+            let textBudget = min(text.count, availableForText)
+            let includedText = text.count > textBudget
+                ? String(text.prefix(max(0, textBudget - 3))) + "..."
+                : text
+            let line = "\(linePrefix)\(includedText)"
+            lines.append(line)
+            remainingCharacters -= line.count + 8
+        }
+
+        return lines
     }
 
     private func sanitize(_ parsed: AppleWritingInsightsResponse) -> WritingInsightPayload {
@@ -508,21 +497,92 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         return String(text[firstBrace...lastBrace])
     }
 
-    private func effectiveInsightsTimeoutMs(
-        requestedTimeoutMs: Int,
-        model: String,
-        thinkEnabled: Bool
-    ) -> Int {
-        max(requestedTimeoutMs, recommendedInsightsTimeoutMs(for: model, thinkEnabled: thinkEnabled))
+    private func analyze(prompt: String, model: String, sampleCount: Int, contextTokens: Int) async -> WritingInsightPayload? {
+        let startedAt = Date()
+        let thinkingEnabled = settings.localLLMInsightsThinkingEnabled
+        Logger.ai.debug("Ollama insights request started [model=\(model), samples=\(sampleCount), timeout=long-running, think=\(thinkingEnabled), num_ctx=\(contextTokens)]")
+
+        do {
+            let response = try await ollamaClient.generate(
+                baseURLString: settings.normalizedLocalLLMEndpoint,
+                model: model,
+                prompt: prompt,
+                timeoutMs: nil,
+                think: thinkingEnabled,
+                format: nil,
+                temperature: 0.15,
+                numPredict: 12_000,
+                numContext: contextTokens
+            )
+
+            guard let parsed = decodeInsightsResponse(from: response) else {
+                Logger.ai.warning("Ollama insights response did not include JSON payload [model=\(model)]")
+                return nil
+            }
+            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+            Logger.ai.debug("Ollama insights completed [model=\(model), elapsedMs=\(elapsedMs)]")
+            return sanitize(parsed)
+        } catch {
+            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+            Logger.ai.error("Ollama insights failed [model=\(model), elapsedMs=\(elapsedMs)]: \(error.localizedDescription)")
+            return nil
+        }
     }
 
-    private func recommendedInsightsTimeoutMs(for model: String, thinkEnabled: Bool) -> Int {
-        guard thinkEnabled else { return 12_000 }
-        let lower = model.lowercased()
-        if lower.hasPrefix("qwen") {
-            return 12_000
+    private func decodeInsightsResponse(from response: String) -> AppleWritingInsightsResponse? {
+        for candidate in extractJSONObjects(from: response) {
+            guard let data = candidate.data(using: .utf8),
+                  let parsed = try? JSONDecoder().decode(AppleWritingInsightsResponse.self, from: data) else {
+                continue
+            }
+            return parsed
         }
-        return 9_000
+        return nil
+    }
+
+    private func extractJSONObjects(from text: String) -> [String] {
+        let characters = Array(text)
+        var candidates: [String] = []
+        var depth = 0
+        var startIndex: Int?
+        var isEscaped = false
+        var isInsideString = false
+
+        for index in characters.indices {
+            let character = characters[index]
+
+            if isEscaped {
+                isEscaped = false
+                continue
+            }
+
+            if character == "\\" && isInsideString {
+                isEscaped = true
+                continue
+            }
+
+            if character == "\"" {
+                isInsideString.toggle()
+                continue
+            }
+
+            guard !isInsideString else { continue }
+
+            if character == "{" {
+                if depth == 0 {
+                    startIndex = index
+                }
+                depth += 1
+            } else if character == "}", depth > 0 {
+                depth -= 1
+                if depth == 0, let objectStartIndex = startIndex {
+                    candidates.append(String(characters[objectStartIndex...index]))
+                    startIndex = nil
+                }
+            }
+        }
+
+        return candidates
     }
 }
 
@@ -741,7 +801,7 @@ final class WritingInsightsService {
     }
 
     private func filteredHistory(request: WritingInsightsRequest) throws -> [Transcription] {
-        let allHistory = try databaseManager.fetchRecent(limit: 500)
+        let allHistory = try databaseManager.fetchAllTranscriptions()
         guard !allHistory.isEmpty else { return [] }
 
         let normalizedSelectedApps = Set(
@@ -783,7 +843,7 @@ final class WritingInsightsService {
     }
 
     private func resolveAnalyzerChain() -> (primary: WritingInsightAnalyzing, fallback: WritingInsightAnalyzing?) {
-        if settings.localLLMInsightsEnabled && ollamaAnalyzer.isAvailable() {
+        if ollamaAnalyzer.isAvailable() {
             if appleAnalyzer.isAvailable() {
                 return (primary: ollamaAnalyzer, fallback: appleAnalyzer)
             }

@@ -122,7 +122,7 @@ final class HomeViewModel {
         guard !settings.githubStarPromptCompleted else { return }
 
         let hasEnoughUsage = payload.today.sessions >= githubStarPromptMinimumSessions ||
-            payload.header.words7d >= githubStarPromptMinimumWords
+            payload.header.totalWords >= githubStarPromptMinimumWords
         guard hasEnoughUsage else { return }
 
         if settings.githubStarPromptShownCount >= githubStarPromptMaxShows {

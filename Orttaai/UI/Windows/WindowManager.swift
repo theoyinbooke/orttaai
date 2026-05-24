@@ -43,8 +43,10 @@ final class WindowManager {
         centerAndShow(window, recenter: true)
     }
 
-    func showHomeWindow(section: HomeSection = .overview) {
-        homeNavigation.selectedSection = section
+    func showHomeWindow(section: HomeSection? = nil) {
+        if let section {
+            homeNavigation.selectedSection = section
+        }
 
         if let existing = homeWindow {
             Logger.ui.info("Showing existing home window")

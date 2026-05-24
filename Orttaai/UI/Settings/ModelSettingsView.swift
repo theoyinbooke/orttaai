@@ -40,7 +40,8 @@ struct ModelSettingsView: View {
     @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 280
     @AppStorage("localLLMInsightsEnabled") private var localLLMInsightsEnabled = false
     @AppStorage("localLLMInsightsModel") private var localLLMInsightsModel = "qwen3.5:0.8b"
-    @AppStorage("localLLMInsightsTimeoutMs") private var localLLMInsightsTimeoutMs = 7000
+    @AppStorage("localLLMInsightsContextTokens") private var localLLMInsightsContextTokens = 65_536
+    @AppStorage("localLLMInsightsThinkingEnabled") private var localLLMInsightsThinkingEnabled = false
     @State private var diskUsage: String = "Checking downloaded models..."
     @State private var downloadedModelIDs: Set<String> = []
     @State private var models: [ModelInfo] = []
@@ -270,14 +271,6 @@ struct ModelSettingsView: View {
         return 600
     }
 
-    private var recommendedInsightsTimeoutMs: Int {
-        let lower = normalizedInsightsOllamaModel.lowercased()
-        if lower.hasPrefix("qwen") {
-            return 12_000
-        }
-        return 9_000
-    }
-
     private var polishRecommendationMessage: String {
         let lower = normalizedPolishOllamaModel.lowercased()
         if lower.contains(":4b") {
@@ -291,13 +284,20 @@ struct ModelSettingsView: View {
 
     private var insightsRecommendationMessage: String {
         let lower = normalizedInsightsOllamaModel.lowercased()
+        if localLLMInsightsThinkingEnabled {
+            return "Thinking is enabled for deeper analysis and can use more tokens."
+        }
         if lower.contains("qwen3.5:4b") {
-            return "This model is noticeably slower for on-device insights. `qwen3.5:0.8b` is the better default for responsiveness."
+            return "This model can take longer for deeper on-device insights."
         }
-        if localLLMInsightsTimeoutMs < recommendedInsightsTimeoutMs {
-            return "Increase timeout or warm the model if insights fall back too often on first use."
+        return "Thinking is off by default to keep insight runs lean."
+    }
+
+    private var formattedInsightsContextTokens: String {
+        if localLLMInsightsContextTokens >= 1_024 {
+            return "\(localLLMInsightsContextTokens / 1_024)K"
         }
-        return "Warm the model after launch for the best first-run insights latency."
+        return "\(localLLMInsightsContextTokens)"
     }
 
     private var decodingPreset: DecodingPreset {
@@ -946,10 +946,21 @@ struct ModelSettingsView: View {
                         }
                         OrttaaiTextField(placeholder: "qwen3.5:0.8b", text: $localLLMInsightsModel)
 
-                        Stepper(value: $localLLMInsightsTimeoutMs, in: 1_500...30_000, step: 500) {
-                            rowValueLabel("Insights Timeout", value: "\(localLLMInsightsTimeoutMs) ms")
+                        Stepper(value: $localLLMInsightsContextTokens, in: 8_192...262_144, step: 8_192) {
+                            rowValueLabel("Context Window", value: "\(formattedInsightsContextTokens) tokens")
                         }
-                        .help("Longer timeout is useful for deeper analysis batches.")
+
+                        Toggle(isOn: $localLLMInsightsThinkingEnabled) {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Enable Thinking")
+                                    .font(.Orttaai.bodyMedium)
+                                    .foregroundStyle(Color.Orttaai.textPrimary)
+                                Text("Allows thinking-model reasoning during insight runs.")
+                                    .font(.Orttaai.secondary)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                            }
+                        }
+                        .toggleStyle(OrttaaiToggleStyle())
 
                         Text(insightsRecommendationMessage)
                             .font(.Orttaai.caption)
@@ -1279,7 +1290,7 @@ struct ModelSettingsView: View {
         }
         localLLMPolishTimeoutMs = max(80, min(1_500, localLLMPolishTimeoutMs))
         localLLMPolishMaxChars = max(80, min(2_000, localLLMPolishMaxChars))
-        localLLMInsightsTimeoutMs = max(1_500, min(30_000, localLLMInsightsTimeoutMs))
+        localLLMInsightsContextTokens = max(8_192, min(262_144, localLLMInsightsContextTokens))
     }
 
     private func checkOllamaAvailability() async {

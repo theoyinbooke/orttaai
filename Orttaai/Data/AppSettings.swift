@@ -128,7 +128,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("localLLMPolishMaxChars") var localLLMPolishMaxChars: Int = 280
     @AppStorage("localLLMInsightsEnabled") var localLLMInsightsEnabled: Bool = false
     @AppStorage("localLLMInsightsModel") var localLLMInsightsModel: String = "qwen3.5:0.8b"
-    @AppStorage("localLLMInsightsTimeoutMs") var localLLMInsightsTimeoutMs: Int = 7000
+    @AppStorage("localLLMInsightsContextTokens") var localLLMInsightsContextTokens: Int = 65_536
+    @AppStorage("localLLMInsightsThinkingEnabled") var localLLMInsightsThinkingEnabled: Bool = false
 
     var selectedAudioDevice: String? {
         selectedAudioDeviceID.isEmpty ? nil : selectedAudioDeviceID
@@ -171,6 +172,23 @@ final class AppSettings: ObservableObject {
         sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
     }
 
+    var localLLMInsightCandidateModels: [String] {
+        var candidates: [String] = []
+        if localLLMInsightsEnabled {
+            candidates.append(normalizedLocalLLMInsightsModel)
+        }
+        if localLLMPolishEnabled {
+            candidates.append(normalizedLocalLLMPolishModel)
+        }
+        var seen = Set<String>()
+        return candidates.filter { model in
+            let key = model.lowercased()
+            guard !key.isEmpty, !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
+    }
+
     var clampedLocalLLMPolishTimeoutMs: Int {
         let clamped = max(80, min(1_500, localLLMPolishTimeoutMs))
         // Migrate from old default that is too low for real local generation latency.
@@ -184,8 +202,8 @@ final class AppSettings: ObservableObject {
         max(80, min(2_000, localLLMPolishMaxChars))
     }
 
-    var clampedLocalLLMInsightsTimeoutMs: Int {
-        max(1_500, min(30_000, localLLMInsightsTimeoutMs))
+    var clampedLocalLLMInsightsContextTokens: Int {
+        max(8_192, min(262_144, localLLMInsightsContextTokens))
     }
 
     private func sanitizeLocalLLMModel(_ value: String, fallback: String) -> String {

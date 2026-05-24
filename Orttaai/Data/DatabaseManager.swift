@@ -18,7 +18,6 @@ final class DatabaseManager {
     private let dbQueue: DatabaseQueue
     private let databaseURL: URL?
     private let backupDirectoryURL: URL?
-    private static let maxRecords = 500
     private static let maxInsightSnapshots = 60
     private static let databaseFileName = "orttaai.db"
 
@@ -377,21 +376,6 @@ final class DatabaseManager {
                 audioDevice: audioDevice
             )
             try record.insert(db)
-
-            // Auto-prune: keep latest maxRecords
-            let count = try Transcription.fetchCount(db)
-            if count > Self.maxRecords {
-                let toDelete = count - Self.maxRecords
-                try db.execute(
-                    sql: """
-                    DELETE FROM transcription WHERE id IN (
-                        SELECT id FROM transcription ORDER BY createdAt ASC LIMIT ?
-                    )
-                    """,
-                    arguments: [toDelete]
-                )
-                Logger.database.info("Pruned \(toDelete) old transcriptions")
-            }
         }
     }
 
@@ -410,6 +394,14 @@ final class DatabaseManager {
             }
 
             return try request.fetchAll(db)
+        }
+    }
+
+    func fetchAllTranscriptions() throws -> [Transcription] {
+        try dbQueue.read { db in
+            try Transcription
+                .order(Column("createdAt").desc)
+                .fetchAll(db)
         }
     }
 
@@ -1026,14 +1018,18 @@ final class DatabaseManager {
     // MARK: - Observation
 
     func observeTranscriptions(
-        limit: Int = 50,
+        limit: Int? = 50,
         onChange: @escaping ([Transcription]) -> Void
     ) -> DatabaseCancellable {
         let observation = ValueObservation.tracking { db in
-            try Transcription
+            var request = Transcription
                 .order(Column("createdAt").desc)
-                .limit(limit)
-                .fetchAll(db)
+
+            if let limit {
+                request = request.limit(limit)
+            }
+
+            return try request.fetchAll(db)
         }
         return observation.start(
             in: dbQueue,

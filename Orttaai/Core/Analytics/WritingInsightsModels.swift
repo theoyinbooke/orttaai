@@ -61,9 +61,9 @@ enum WritingInsightsGenerationMode: String, CaseIterable, Identifiable, Sendable
     var historyLimit: Int {
         switch self {
         case .balanced:
-            return 120
+            return 600
         case .deep:
-            return 300
+            return 2_000
         }
     }
 }

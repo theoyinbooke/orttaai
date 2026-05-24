@@ -56,7 +56,7 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(records.last?.text, "First")
     }
 
-    func testAutoPrune() throws {
+    func testDoesNotPruneSavedTranscriptions() throws {
         for i in 0..<510 {
             try db.saveTranscription(
                 text: "Entry \(i)",
@@ -68,7 +68,7 @@ final class DatabaseManagerTests: XCTestCase {
         }
 
         let records = try db.fetchRecent(limit: 600)
-        XCTAssertEqual(records.count, 500)
+        XCTAssertEqual(records.count, 510)
     }
 
     func testSearch() throws {

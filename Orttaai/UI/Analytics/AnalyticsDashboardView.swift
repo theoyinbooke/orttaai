@@ -141,7 +141,7 @@ final class AnalyticsDashboardViewModel {
         let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? Date()
 
         guard let dayCount = selectedRange.dayCount else {
-            return try db.fetchRecent(limit: 500)
+            return try db.fetchAllTranscriptions()
         }
 
         let start = calendar.date(
@@ -325,7 +325,7 @@ struct AnalyticsDashboardView: View {
 
                     rangeControl
 
-                    summaryCards(isCompact: isCompact)
+                    summaryCards()
 
                     trendChart
 
@@ -357,13 +357,6 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    private var rangeSelection: Binding<AnalyticsTimeRange> {
-        Binding(
-            get: { viewModel.selectedRange },
-            set: { viewModel.setSelectedRange($0) }
-        )
-    }
-
     private var rangeControl: some View {
         HStack(spacing: Spacing.lg) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -385,27 +378,44 @@ struct AnalyticsDashboardView: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
 
-                Picker("", selection: rangeSelection) {
-                    ForEach(AnalyticsTimeRange.allCases) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 280)
+                rangePicker
+                    .frame(width: 280)
             }
         }
         .accessibilityElement(children: .contain)
     }
 
+    private var rangePicker: some View {
+        HStack(spacing: 4) {
+            ForEach(AnalyticsTimeRange.allCases) { range in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        viewModel.setSelectedRange(range)
+                    }
+                } label: {
+                    Text(range.rawValue)
+                        .font(.Orttaai.bodyMedium)
+                        .lineLimit(1)
+                        .foregroundStyle(viewModel.selectedRange == range ? Color.Orttaai.bgPrimary : Color.Orttaai.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(viewModel.selectedRange == range ? Color.Orttaai.accent : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Color.Orttaai.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     // MARK: - Summary Cards
 
-    private func summaryCards(isCompact: Bool) -> some View {
-        let columns = isCompact
-            ? [GridItem(.flexible()), GridItem(.flexible())]
-            : [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
-
-        return LazyVGrid(columns: columns, spacing: Spacing.md) {
+    private func summaryCards() -> some View {
+        DashboardBalancedCardGrid(itemCount: 4, minimumColumnWidth: 280) {
             summaryMetric(
                 title: "Total Words",
                 value: viewModel.totalWords.formatted(),
@@ -967,5 +977,107 @@ struct AnalyticsDashboardView: View {
         case .normal: return Color.Orttaai.warning
         case .slow: return Color.Orttaai.error
         }
+    }
+}
+
+private struct DashboardBalancedCardGrid<Content: View>: View {
+    let itemCount: Int
+    let minimumColumnWidth: CGFloat
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    init(
+        itemCount: Int,
+        minimumColumnWidth: CGFloat,
+        spacing: CGFloat = Spacing.md,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.itemCount = itemCount
+        self.minimumColumnWidth = minimumColumnWidth
+        self.spacing = spacing
+        self.content = content
+    }
+
+    var body: some View {
+        DashboardBalancedGridLayout(
+            itemCount: itemCount,
+            minimumColumnWidth: minimumColumnWidth,
+            spacing: spacing
+        ) {
+            content()
+        }
+    }
+}
+
+private struct DashboardBalancedGridLayout: Layout {
+    let itemCount: Int
+    let minimumColumnWidth: CGFloat
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? requiredWidth(for: max(1, resolvedItemCount(subviews)))
+        let columnCount = columnCount(for: width, subviews: subviews)
+        let itemWidth = itemWidth(for: width, columns: columnCount)
+        let rowHeights = rowHeights(for: subviews, columns: columnCount, itemWidth: itemWidth)
+        let totalSpacing = spacing * CGFloat(max(0, rowHeights.count - 1))
+
+        return CGSize(width: width, height: rowHeights.reduce(0, +) + totalSpacing)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let columnCount = columnCount(for: bounds.width, subviews: subviews)
+        let itemWidth = itemWidth(for: bounds.width, columns: columnCount)
+        let rowHeights = rowHeights(for: subviews, columns: columnCount, itemWidth: itemWidth)
+        var y = bounds.minY
+
+        for row in 0..<rowHeights.count {
+            let rowStart = row * columnCount
+            let rowEnd = min(rowStart + columnCount, subviews.count)
+
+            for index in rowStart..<rowEnd {
+                let column = index - rowStart
+                let x = bounds.minX + CGFloat(column) * (itemWidth + spacing)
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(width: itemWidth, height: rowHeights[row])
+                )
+            }
+
+            y += rowHeights[row] + spacing
+        }
+    }
+
+    private func columnCount(for width: CGFloat, subviews: Subviews) -> Int {
+        let count = max(1, resolvedItemCount(subviews))
+        let options = (1...count).filter { count % $0 == 0 }.sorted(by: >)
+        return options.first { requiredWidth(for: $0) <= width } ?? 1
+    }
+
+    private func resolvedItemCount(_ subviews: Subviews) -> Int {
+        subviews.isEmpty ? itemCount : subviews.count
+    }
+
+    private func requiredWidth(for columns: Int) -> CGFloat {
+        CGFloat(columns) * minimumColumnWidth + CGFloat(max(0, columns - 1)) * spacing
+    }
+
+    private func itemWidth(for width: CGFloat, columns: Int) -> CGFloat {
+        let totalSpacing = spacing * CGFloat(max(0, columns - 1))
+        return max(1, (width - totalSpacing) / CGFloat(max(1, columns)))
+    }
+
+    private func rowHeights(for subviews: Subviews, columns: Int, itemWidth: CGFloat) -> [CGFloat] {
+        guard !subviews.isEmpty else { return [] }
+
+        let rowCount = Int(ceil(Double(subviews.count) / Double(max(1, columns))))
+        var heights = Array(repeating: CGFloat.zero, count: rowCount)
+
+        for index in subviews.indices {
+            let row = index / max(1, columns)
+            let size = subviews[index].sizeThatFits(ProposedViewSize(width: itemWidth, height: nil))
+            heights[row] = max(heights[row], size.height)
+        }
+
+        return heights
     }
 }

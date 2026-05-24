@@ -31,9 +31,9 @@ struct HomeHeaderView: View {
 
             VStack(alignment: .trailing, spacing: Spacing.sm) {
                 HStack(spacing: Spacing.sm) {
-                    StatChipView(label: "active days", value: "\(stats.activeDays7d)", showsLabel: showsStatLabels)
-                    StatChipView(label: "words", value: stats.words7d.formatted(), showsLabel: showsStatLabels)
-                    StatChipView(label: "avg WPM", value: "\(stats.averageWPM7d)", showsLabel: showsStatLabels)
+                    StatChipView(label: "active days", value: "\(stats.activeDays)", showsLabel: showsStatLabels)
+                    StatChipView(label: "words", value: stats.totalWords.formatted(), showsLabel: showsStatLabels)
+                    StatChipView(label: "avg WPM", value: "\(stats.averageWPM)", showsLabel: showsStatLabels)
 
                     if !isInsightsVisible {
                         Button {
@@ -63,7 +63,7 @@ struct HomeHeaderView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "Welcome back. Active days \(stats.activeDays7d), words \(stats.words7d), average W P M \(stats.averageWPM7d)."
+            "Welcome back. Active days \(stats.activeDays), words \(stats.totalWords), average W P M \(stats.averageWPM)."
         )
     }
 }

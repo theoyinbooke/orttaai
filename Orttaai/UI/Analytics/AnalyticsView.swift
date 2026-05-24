@@ -5,6 +5,7 @@ import SwiftUI
 
 enum AnalyticsTab: String, CaseIterable {
     case dashboard = "Dashboard"
+    case toneOfVoice = "Tone of Voice"
     case history = "History"
 }
 
@@ -21,6 +22,8 @@ struct AnalyticsView: View {
             switch selectedTab {
             case .dashboard:
                 AnalyticsDashboardView()
+            case .toneOfVoice:
+                ToneOfVoiceView()
             case .history:
                 HistoryView()
             }
@@ -43,13 +46,35 @@ struct AnalyticsView: View {
 
             Spacer()
 
-            Picker("", selection: $selectedTab) {
-                ForEach(AnalyticsTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 200)
+            tabPicker
+                .frame(width: 340)
         }
+    }
+
+    private var tabPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(AnalyticsTab.allCases, id: \.self) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.Orttaai.bodyMedium)
+                        .lineLimit(1)
+                        .foregroundStyle(selectedTab == tab ? Color.Orttaai.bgPrimary : Color.Orttaai.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(selectedTab == tab ? Color.Orttaai.accent : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Color.Orttaai.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

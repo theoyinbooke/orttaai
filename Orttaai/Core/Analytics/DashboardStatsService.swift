@@ -26,12 +26,13 @@ final class DashboardStatsService {
         let weekStart = calendar.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
         let thirtyDayStart = calendar.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
 
+        let allRecords = try databaseManager.fetchAllTranscriptions()
         let weekRecords = try databaseManager.fetchTranscriptions(from: weekStart, to: tomorrowStart)
         let thirtyDayRecords = try databaseManager.fetchTranscriptions(from: thirtyDayStart, to: tomorrowStart)
         let todayRecords = weekRecords.filter { $0.createdAt >= todayStart && $0.createdAt < tomorrowStart }
         let recentRecords = try databaseManager.fetchRecent(limit: 12)
 
-        let header = makeHeaderStats(from: weekRecords)
+        let header = makeHeaderStats(from: allRecords)
         let today = makeTodaySnapshot(from: todayRecords)
         let trend30d = makeTrendPoints(from: thirtyDayRecords, startDay: thirtyDayStart, dayCount: 30)
         let topApps30d = makeTopApps(from: thirtyDayRecords, limit: 3)
@@ -70,9 +71,9 @@ final class DashboardStatsService {
         let days = Set(records.map { calendar.startOfDay(for: $0.createdAt) }).count
 
         return DashboardHeaderStats(
-            activeDays7d: days,
-            words7d: words,
-            averageWPM7d: calculateWPM(words: words, recordingMs: recordingMs)
+            activeDays: days,
+            totalWords: words,
+            averageWPM: calculateWPM(words: words, recordingMs: recordingMs)
         )
     }
 
