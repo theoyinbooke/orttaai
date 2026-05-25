@@ -40,7 +40,7 @@ struct ModelSettingsView: View {
     @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 280
     @AppStorage("localLLMInsightsEnabled") private var localLLMInsightsEnabled = false
     @AppStorage("localLLMInsightsModel") private var localLLMInsightsModel = "qwen3.5:0.8b"
-    @AppStorage("localLLMInsightsContextTokens") private var localLLMInsightsContextTokens = 65_536
+    @AppStorage("localLLMInsightsContextTokens") private var localLLMInsightsContextTokens = 16_384
     @AppStorage("localLLMInsightsThinkingEnabled") private var localLLMInsightsThinkingEnabled = false
     @State private var diskUsage: String = "Checking downloaded models..."
     @State private var downloadedModelIDs: Set<String> = []
@@ -1290,7 +1290,11 @@ struct ModelSettingsView: View {
         }
         localLLMPolishTimeoutMs = max(80, min(1_500, localLLMPolishTimeoutMs))
         localLLMPolishMaxChars = max(80, min(2_000, localLLMPolishMaxChars))
-        localLLMInsightsContextTokens = max(8_192, min(262_144, localLLMInsightsContextTokens))
+        if localLLMInsightsContextTokens == 65_536 {
+            localLLMInsightsContextTokens = 16_384
+        } else {
+            localLLMInsightsContextTokens = max(8_192, min(262_144, localLLMInsightsContextTokens))
+        }
     }
 
     private func checkOllamaAvailability() async {

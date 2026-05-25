@@ -130,7 +130,7 @@ actor OllamaClient {
         temperature: Double = 0,
         numPredict: Int = 220,
         numContext: Int? = nil,
-        keepAlive: String = "20m"
+        keepAlive: String = "5m"
     ) async throws -> String {
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,7 +207,7 @@ actor OllamaClient {
         temperature: Double = 0.35,
         numPredict: Int = 1_800,
         numContext: Int? = nil,
-        keepAlive: String = "20m"
+        keepAlive: String = "5m"
     ) async throws -> String {
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedMessages = messages
@@ -382,7 +382,7 @@ actor OllamaClient {
         baseURLString: String,
         model: String,
         timeoutMs: Int = 35_000,
-        keepAlive: String = "30m"
+        keepAlive: String = "5m"
     ) async throws -> Int {
         let startedAt = Date()
         _ = try await generate(

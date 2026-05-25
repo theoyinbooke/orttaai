@@ -85,7 +85,7 @@ jobs:
           fi
 
           git config user.name "theoyinbooke"
-          git config user.email "theoyinbooke@gmail.com"
+          git config user.email "13628137+theoyinbooke@users.noreply.github.com"
           git add Orttaai/Resources/appcast.xml
           git commit -m "Update Sparkle appcast for v${{ steps.version.outputs.version }}"
           git push origin HEAD:main

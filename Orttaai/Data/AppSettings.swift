@@ -128,7 +128,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("localLLMPolishMaxChars") var localLLMPolishMaxChars: Int = 280
     @AppStorage("localLLMInsightsEnabled") var localLLMInsightsEnabled: Bool = false
     @AppStorage("localLLMInsightsModel") var localLLMInsightsModel: String = "qwen3.5:0.8b"
-    @AppStorage("localLLMInsightsContextTokens") var localLLMInsightsContextTokens: Int = 65_536
+    @AppStorage("localLLMInsightsContextTokens") var localLLMInsightsContextTokens: Int = 16_384
     @AppStorage("localLLMInsightsThinkingEnabled") var localLLMInsightsThinkingEnabled: Bool = false
 
     var selectedAudioDevice: String? {
@@ -203,7 +203,10 @@ final class AppSettings: ObservableObject {
     }
 
     var clampedLocalLLMInsightsContextTokens: Int {
-        max(8_192, min(262_144, localLLMInsightsContextTokens))
+        if localLLMInsightsContextTokens == 65_536 {
+            return 16_384
+        }
+        return max(8_192, min(262_144, localLLMInsightsContextTokens))
     }
 
     private func sanitizeLocalLLMModel(_ value: String, fallback: String) -> String {

@@ -511,7 +511,7 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
                 think: thinkingEnabled,
                 format: nil,
                 temperature: 0.15,
-                numPredict: 12_000,
+                numPredict: 6_000,
                 numContext: contextTokens
             )
 

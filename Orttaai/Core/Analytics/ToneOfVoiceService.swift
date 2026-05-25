@@ -35,7 +35,7 @@ final class ToneOfVoiceService {
                 think: settings.localLLMInsightsThinkingEnabled,
                 format: nil,
                 temperature: 0.12,
-                numPredict: 8_000,
+                numPredict: 4_000,
                 numContext: settings.clampedLocalLLMInsightsContextTokens
             )
 

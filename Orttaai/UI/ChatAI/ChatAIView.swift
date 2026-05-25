@@ -28,17 +28,17 @@ private enum ChatAIThinkingDepth: String, CaseIterable, Codable, Identifiable {
 
     var numPredict: Int {
         switch self {
-        case .low: return 900
-        case .medium: return 1_800
-        case .high: return 3_200
+        case .low: return 600
+        case .medium: return 1_200
+        case .high: return 2_000
         }
     }
 
     var numContext: Int {
         switch self {
-        case .low: return 16_384
-        case .medium: return 32_768
-        case .high: return 65_536
+        case .low: return 4_096
+        case .medium: return 8_192
+        case .high: return 16_384
         }
     }
 
@@ -711,7 +711,8 @@ private final class ChatAIViewModel: ObservableObject {
                 think: selectedModelSupportsThinking ? thinkingEnabled : nil,
                 temperature: 0.35,
                 numPredict: thinkingDepth.numPredict,
-                numContext: thinkingDepth.numContext
+                numContext: thinkingDepth.numContext,
+                keepAlive: "5m"
             )
             appendMessage(ChatAIMessage(role: .assistant, content: assistantVisibleContent(from: response)), to: selectedConversationID)
             statusMessage = "Generated with \(selectedModelDisplayName)."
