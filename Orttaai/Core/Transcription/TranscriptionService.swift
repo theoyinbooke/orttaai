@@ -9,6 +9,7 @@ import os
 protocol Transcribing: Actor {
     var isLoaded: Bool { get }
     func loadedModelID() -> String?
+    func loadModel(named modelName: String) async throws
     func transcribe(audioSamples: [Float]) async throws -> String
     func beginLiveTranscriptionSession()
     func processLiveAudioSnapshot(_ audioSamples: [Float])
@@ -85,7 +86,8 @@ actor TranscriptionService: Transcribing {
         let config = WhisperKitConfig(
             model: modelName,
             computeOptions: computeOptions(),
-            voiceActivityDetector: EnergyVAD()
+            voiceActivityDetector: EnergyVAD(),
+            load: true
         )
 
         let wk = try await WhisperKit(config)

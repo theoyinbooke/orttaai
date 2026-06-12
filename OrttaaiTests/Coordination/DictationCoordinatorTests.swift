@@ -35,7 +35,9 @@ actor MockTranscriptionService: Transcribing {
     var isLoaded: Bool = true
     var mockResult: String = "Hello world"
     var shouldFail = false
+    var shouldFailModelLoad = false
     var mockLoadedModelID: String? = "test-model"
+    var loadedModelNames: [String] = []
     var beginLiveSessionCallCount = 0
     var processedLiveSampleCounts: [Int] = []
     var finalizeLiveTranscriptionCallCount = 0
@@ -43,6 +45,15 @@ actor MockTranscriptionService: Transcribing {
 
     func loadedModelID() -> String? {
         mockLoadedModelID
+    }
+
+    func loadModel(named modelName: String) async throws {
+        loadedModelNames.append(modelName)
+        if shouldFailModelLoad {
+            throw OrttaaiError.modelNotLoaded
+        }
+        isLoaded = true
+        mockLoadedModelID = modelName
     }
 
     func transcribe(audioSamples: [Float]) async throws -> String {
@@ -288,5 +299,36 @@ final class DictationCoordinatorTests: XCTestCase {
 
         let liveSampleCounts = await transcriptionService.processedLiveSampleCounts
         XCTAssertFalse(liveSampleCounts.isEmpty)
+    }
+
+    @MainActor
+    func testStopRecordingLoadsModelOnDemandWhenWarmupDidNotFinish() async {
+        let selectedModelId = settings.selectedModelId
+        let previousActiveModelId = settings.activeModelId
+        defer { settings.activeModelId = previousActiveModelId }
+
+        await transcriptionService.resetLoadedModelsForTest(isLoaded: false)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        let loadedModelNames = await transcriptionService.loadedModelNames
+        XCTAssertEqual(loadedModelNames, [selectedModelId])
+        let finalizeCallCount = await transcriptionService.finalizeLiveTranscriptionCallCount
+        XCTAssertEqual(finalizeCallCount, 1)
+        XCTAssertEqual(injectionService.lastTranscript, "Hello world")
+        XCTAssertEqual(settings.activeModelId, selectedModelId)
+    }
+}
+
+private extension MockTranscriptionService {
+    func resetLoadedModelsForTest(isLoaded: Bool) {
+        self.isLoaded = isLoaded
+        loadedModelNames = []
+        mockLoadedModelID = nil
     }
 }

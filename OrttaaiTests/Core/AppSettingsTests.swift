@@ -96,6 +96,7 @@ private actor RecordingTranscriptionService: Transcribing {
     let isLoaded: Bool = false
 
     func loadedModelID() -> String? { nil }
+    func loadModel(named modelName: String) async throws {}
     func transcribe(audioSamples: [Float]) async throws -> String { "" }
     func beginLiveTranscriptionSession() {}
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {}

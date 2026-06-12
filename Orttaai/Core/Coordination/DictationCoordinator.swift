@@ -203,6 +203,8 @@ final class DictationCoordinator {
             await syncTranscriptionSettings()
             settingsSyncMs = Int((CFAbsoluteTimeGetCurrent() - settingsSyncStart) * 1000)
 
+            try await ensureTranscriptionModelLoaded()
+
             // Finalize using any speculative work started while recording.
             let transcriptionStart = CFAbsoluteTimeGetCurrent()
             let transcript = try await transcriptionService.finalizeLiveTranscription(audioSamples: samples)
@@ -290,6 +292,23 @@ final class DictationCoordinator {
             targetApp = nil
             autoDismissError()
         }
+    }
+
+    @MainActor
+    private func ensureTranscriptionModelLoaded() async throws {
+        let isLoaded = await transcriptionService.isLoaded
+        guard !isLoaded else { return }
+
+        let selectedModelID = settings.selectedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedModelID.isEmpty else {
+            throw OrttaaiError.modelNotLoaded
+        }
+
+        Logger.model.warning("Transcription model was not loaded at recording finalization; loading \(selectedModelID)")
+        try await transcriptionService.loadModel(named: selectedModelID)
+        let runtimeModelID = await transcriptionService.loadedModelID() ?? selectedModelID
+        settings.activeModelId = runtimeModelID
+        Logger.model.info("On-demand transcription model load complete: \(runtimeModelID)")
     }
 
     private func maybeStartFastFirstPrefetch(afterSuccessfulDictationWith activeModelId: String) {
