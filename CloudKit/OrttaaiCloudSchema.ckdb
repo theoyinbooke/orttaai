@@ -1,0 +1,145 @@
+DEFINE SCHEMA
+
+RECORD TYPE OrttaaiTranscription (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE OrttaaiDictionaryEntry (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE OrttaaiSnippetEntry (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE OrttaaiLearningSuggestion (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE OrttaaiWritingInsightSnapshot (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE OrttaaiDeletedRecord (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE OrttaaiProfile (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE OrttaaiSyncMetadata (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    syncID          STRING QUERYABLE,
+    modifiedAt      TIMESTAMP SORTABLE,
+    payloadData     BYTES,
+    schemaVersion   INT64,
+    sourceDeviceID  STRING QUERYABLE,
+    sourceDeviceName STRING,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
