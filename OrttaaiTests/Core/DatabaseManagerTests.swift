@@ -454,4 +454,108 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(history.count, 60)
         XCTAssertTrue(history.contains(where: { $0.id == pinnedID }))
     }
+
+    func testCloudSyncSnapshotExportsRowsAndDeleteTombstones() throws {
+        try db.saveTranscription(
+            text: "Sync me",
+            appName: "TextEdit",
+            recordingMs: 1_000,
+            processingMs: 500,
+            modelId: "test"
+        )
+        _ = try db.upsertDictionaryEntry(source: "ortai", target: "Orttaai")
+        _ = try db.upsertSnippetEntry(trigger: "sign off", expansion: "Best,\nMe")
+
+        var snapshot = try db.cloudSyncSnapshot()
+        XCTAssertEqual(snapshot.transcriptions.count, 1)
+        XCTAssertEqual(snapshot.dictionaryEntries.count, 1)
+        XCTAssertEqual(snapshot.snippetEntries.count, 1)
+        XCTAssertFalse(snapshot.transcriptions[0].syncID.isEmpty)
+
+        let transcriptionID = try XCTUnwrap(try db.fetchRecent().first?.id)
+        XCTAssertTrue(try db.deleteTranscription(id: transcriptionID))
+
+        snapshot = try db.cloudSyncSnapshot()
+        XCTAssertTrue(snapshot.transcriptions.isEmpty)
+        XCTAssertTrue(snapshot.tombstones.contains { $0.table == .transcription })
+    }
+
+    func testApplyCloudSnapshotImportsTranscriptions() throws {
+        let createdAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let modifiedAt = createdAt.addingTimeInterval(30)
+        let remoteRecord = CloudSyncTranscription(
+            localID: nil,
+            syncID: "remote-transcription-1",
+            modifiedAt: modifiedAt,
+            createdAt: createdAt,
+            text: "Imported from iCloud",
+            targetAppName: "Notes",
+            targetAppBundleID: "com.apple.Notes",
+            recordingDurationMs: 1_200,
+            processingDurationMs: 450,
+            settingsSyncDurationMs: nil,
+            transcriptionDurationMs: nil,
+            textProcessingDurationMs: nil,
+            injectionDurationMs: nil,
+            appActivationDurationMs: nil,
+            clipboardRestoreDelayMs: nil,
+            modelId: "test",
+            audioDevice: nil
+        )
+
+        try db.applyCloudSnapshot(
+            CloudDatabaseSnapshot(transcriptions: [remoteRecord]),
+            replacingLocalData: false
+        )
+
+        let records = try db.fetchRecent()
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.text, "Imported from iCloud")
+        XCTAssertEqual(records.first?.targetAppName, "Notes")
+    }
+
+    func testCloudProfileSnapshotExcludesPerDeviceSyncMetadata() throws {
+        let suiteName = "CloudProfileSnapshotTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("openai_whisper-large-v3_turbo", forKey: "selectedModelId")
+        defaults.set(true, forKey: CloudSyncService.syncEnabledKey)
+        defaults.set(1_800_000_000.0, forKey: CloudSyncService.lastCompletedAtKey)
+        defaults.set("device-a", forKey: CloudSyncService.deviceIDKey)
+        defaults.set(1_800_000_100.0, forKey: CloudProfileSnapshot.modifiedAtKey)
+
+        let snapshot = CloudProfileSnapshot.capture(defaults: defaults)
+
+        XCTAssertEqual(snapshot.values["selectedModelId"], .string("openai_whisper-large-v3_turbo"))
+        XCTAssertNil(snapshot.values[CloudSyncService.syncEnabledKey])
+        XCTAssertNil(snapshot.values[CloudSyncService.lastCompletedAtKey])
+        XCTAssertNil(snapshot.values[CloudSyncService.deviceIDKey])
+        XCTAssertNil(snapshot.values[CloudProfileSnapshot.modifiedAtKey])
+        XCTAssertEqual(snapshot.modifiedAt, Date(timeIntervalSince1970: 1_800_000_100.0))
+    }
+
+    func testApplyingCloudProfileRemovesMissingSyncedValuesButKeepsLocalSyncState() throws {
+        let suiteName = "CloudProfileApplyTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("local-model", forKey: "selectedModelId")
+        defaults.set("device-a", forKey: CloudSyncService.deviceIDKey)
+        defaults.set(true, forKey: CloudSyncService.syncEnabledKey)
+
+        let modifiedAt = Date(timeIntervalSince1970: 1_800_000_200.0)
+        let snapshot = CloudProfileSnapshot(
+            values: ["dictationLanguage": .string("en-GB")],
+            modifiedAt: modifiedAt
+        )
+
+        snapshot.apply(to: defaults)
+
+        XCTAssertNil(defaults.object(forKey: "selectedModelId"))
+        XCTAssertEqual(defaults.string(forKey: "dictationLanguage"), "en-GB")
+        XCTAssertEqual(defaults.string(forKey: CloudSyncService.deviceIDKey), "device-a")
+        XCTAssertTrue(defaults.bool(forKey: CloudSyncService.syncEnabledKey))
+        XCTAssertEqual(defaults.double(forKey: CloudProfileSnapshot.modifiedAtKey), modifiedAt.timeIntervalSince1970)
+    }
 }

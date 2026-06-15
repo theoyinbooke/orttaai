@@ -90,6 +90,8 @@ struct GeneralSettingsView: View {
             .padding(Spacing.lg)
             .dashboardCard()
 
+            CloudSyncSettingsView()
+
             VStack(alignment: .leading, spacing: Spacing.md) {
                 Text("Shortcuts")
                     .font(.Orttaai.subheading)

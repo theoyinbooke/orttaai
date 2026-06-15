@@ -296,7 +296,165 @@ final class DatabaseManager {
             try Self.removeLegacyInsightRecommendations(in: db)
         }
 
+        migrator.registerMigration("v7_cloud_sync_metadata") { db in
+            try Self.addCloudSyncMetadata(in: db)
+        }
+
         return migrator
+    }
+
+    nonisolated private static func addCloudSyncMetadata(in db: Database) throws {
+        let syncableTables: [(table: String, modifiedAtExpression: String)] = [
+            ("transcription", "createdAt"),
+            ("dictionary_entry", "updatedAt"),
+            ("snippet_entry", "updatedAt"),
+            ("learning_suggestion", "updatedAt"),
+            ("writing_insight_snapshot", "generatedAt")
+        ]
+
+        for item in syncableTables {
+            try db.alter(table: item.table) { t in
+                t.add(column: "syncID", .text)
+                t.add(column: "cloudChangeTag", .text)
+                t.add(column: "modifiedAt", .datetime)
+                t.add(column: "lastSyncedAt", .datetime)
+            }
+
+            try db.execute(
+                sql: """
+                UPDATE \(item.table)
+                SET syncID = lower(hex(randomblob(16)))
+                WHERE syncID IS NULL OR TRIM(syncID) = ''
+                """
+            )
+            try db.execute(
+                sql: """
+                UPDATE \(item.table)
+                SET modifiedAt = COALESCE(modifiedAt, \(item.modifiedAtExpression), CURRENT_TIMESTAMP)
+                WHERE modifiedAt IS NULL
+                """
+            )
+            try db.create(
+                index: "idx_\(item.table)_syncID_unique",
+                on: item.table,
+                columns: ["syncID"],
+                unique: true
+            )
+            try db.create(
+                index: "idx_\(item.table)_modifiedAt",
+                on: item.table,
+                columns: ["modifiedAt"]
+            )
+        }
+
+        try db.create(table: "cloud_sync_tombstone") { t in
+            t.autoIncrementedPrimaryKey("id")
+            t.column("tableName", .text).notNull()
+            t.column("syncID", .text).notNull()
+            t.column("deletedAt", .datetime).notNull()
+            t.column("needsCloudSync", .boolean).notNull().defaults(to: true)
+        }
+        try db.create(
+            index: "idx_cloud_sync_tombstone_unique",
+            on: "cloud_sync_tombstone",
+            columns: ["tableName", "syncID"],
+            unique: true
+        )
+
+        try db.create(table: "cloud_sync_state") { t in
+            t.column("key", .text).primaryKey()
+            t.column("value", .text)
+            t.column("updatedAt", .datetime).notNull()
+        }
+    }
+
+    private static func newSyncID() -> String {
+        UUID().uuidString.lowercased()
+    }
+
+    private static func touchSyncMetadata(
+        in db: Database,
+        table: String,
+        id: Int64,
+        modifiedAt: Date = Date()
+    ) throws {
+        try db.execute(
+            sql: """
+            UPDATE \(table)
+            SET syncID = COALESCE(NULLIF(syncID, ''), ?),
+                modifiedAt = ?,
+                lastSyncedAt = NULL
+            WHERE id = ?
+            """,
+            arguments: [newSyncID(), modifiedAt, id]
+        )
+    }
+
+    private static func recordTombstone(
+        in db: Database,
+        table: CloudSyncTable,
+        id: Int64,
+        deletedAt: Date = Date(),
+        needsCloudSync: Bool = true
+    ) throws {
+        guard let syncID = try String.fetchOne(
+            db,
+            sql: "SELECT syncID FROM \(table.rawValue) WHERE id = ?",
+            arguments: [id]
+        ) else {
+            return
+        }
+        try recordTombstone(
+            in: db,
+            table: table,
+            syncID: syncID,
+            deletedAt: deletedAt,
+            needsCloudSync: needsCloudSync
+        )
+    }
+
+    private static func recordTombstones(
+        in db: Database,
+        table: CloudSyncTable,
+        where condition: String? = nil,
+        deletedAt: Date = Date(),
+        needsCloudSync: Bool = true
+    ) throws {
+        let sql = """
+        SELECT syncID
+        FROM \(table.rawValue)
+        \(condition.map { "WHERE \($0)" } ?? "")
+        """
+        let syncIDs = try String.fetchAll(db, sql: sql)
+        for syncID in syncIDs {
+            try recordTombstone(
+                in: db,
+                table: table,
+                syncID: syncID,
+                deletedAt: deletedAt,
+                needsCloudSync: needsCloudSync
+            )
+        }
+    }
+
+    private static func recordTombstone(
+        in db: Database,
+        table: CloudSyncTable,
+        syncID: String,
+        deletedAt: Date,
+        needsCloudSync: Bool
+    ) throws {
+        guard !syncID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        try db.execute(
+            sql: """
+            INSERT INTO cloud_sync_tombstone (tableName, syncID, deletedAt, needsCloudSync)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(tableName, syncID) DO UPDATE SET
+                deletedAt = excluded.deletedAt,
+                needsCloudSync = excluded.needsCloudSync
+            """,
+            arguments: [table.rawValue, syncID, deletedAt, needsCloudSync]
+        )
     }
 
     nonisolated private static func removeLegacyInsightRecommendations(in db: Database) throws {
@@ -376,6 +534,12 @@ final class DatabaseManager {
                 audioDevice: audioDevice
             )
             try record.insert(db)
+            try Self.touchSyncMetadata(
+                in: db,
+                table: CloudSyncTable.transcription.rawValue,
+                id: db.lastInsertedRowID,
+                modifiedAt: createdAt
+            )
         }
     }
 
@@ -445,6 +609,7 @@ final class DatabaseManager {
     func deleteAll() throws {
         try createDestructiveOperationBackup(reason: "clear-history")
         _ = try dbQueue.write { db in
+            try Self.recordTombstones(in: db, table: .transcription)
             try Transcription.deleteAll(db)
         }
         Logger.database.info("All transcriptions deleted")
@@ -453,6 +618,11 @@ final class DatabaseManager {
     func resetAllLocalData() throws {
         try createDestructiveOperationBackup(reason: "reset-local-data")
         _ = try dbQueue.write { db in
+            try Self.recordTombstones(in: db, table: .transcription)
+            try Self.recordTombstones(in: db, table: .dictionaryEntry)
+            try Self.recordTombstones(in: db, table: .snippetEntry)
+            try Self.recordTombstones(in: db, table: .learningSuggestion)
+            try Self.recordTombstones(in: db, table: .writingInsightSnapshot)
             try Transcription.deleteAll(db)
             try db.execute(sql: "DELETE FROM dictionary_entry")
             try db.execute(sql: "DELETE FROM snippet_entry")
@@ -466,7 +636,8 @@ final class DatabaseManager {
     @discardableResult
     func deleteTranscription(id: Int64) throws -> Bool {
         return try dbQueue.write { db in
-            try Transcription.deleteOne(db, key: id)
+            try Self.recordTombstone(in: db, table: .transcription, id: id)
+            return try Transcription.deleteOne(db, key: id)
         }
     }
 
@@ -498,10 +669,29 @@ final class DatabaseManager {
                 snapshotJSON: snapshotJSONString
             )
             try record.insert(db)
+            let insertedID = record.id ?? db.lastInsertedRowID
+            try Self.touchSyncMetadata(
+                in: db,
+                table: CloudSyncTable.writingInsightSnapshot.rawValue,
+                id: insertedID,
+                modifiedAt: snapshot.generatedAt
+            )
 
             let count = try WritingInsightSnapshotRecord.fetchCount(db)
             if count > Self.maxInsightSnapshots {
                 let toDelete = count - Self.maxInsightSnapshots
+                try Self.recordTombstones(
+                    in: db,
+                    table: .writingInsightSnapshot,
+                    where: """
+                    id IN (
+                        SELECT id FROM writing_insight_snapshot
+                        WHERE isPinned = 0
+                        ORDER BY generatedAt ASC, id ASC
+                        LIMIT \(toDelete)
+                    )
+                    """
+                )
                 try db.execute(
                     sql: """
                     DELETE FROM writing_insight_snapshot WHERE id IN (
@@ -517,6 +707,17 @@ final class DatabaseManager {
                 let remainingCount = try WritingInsightSnapshotRecord.fetchCount(db)
                 if remainingCount > Self.maxInsightSnapshots {
                     let overflow = remainingCount - Self.maxInsightSnapshots
+                    try Self.recordTombstones(
+                        in: db,
+                        table: .writingInsightSnapshot,
+                        where: """
+                        id IN (
+                            SELECT id FROM writing_insight_snapshot
+                            ORDER BY generatedAt ASC, id ASC
+                            LIMIT \(overflow)
+                        )
+                        """
+                    )
                     try db.execute(
                         sql: """
                         DELETE FROM writing_insight_snapshot WHERE id IN (
@@ -530,7 +731,7 @@ final class DatabaseManager {
                 }
             }
 
-            return record.id ?? db.lastInsertedRowID
+            return insertedID
         }
     }
 
@@ -594,10 +795,12 @@ final class DatabaseManager {
             try db.execute(
                 sql: """
                 UPDATE writing_insight_snapshot
-                SET isPinned = ?
+                SET isPinned = ?,
+                    modifiedAt = ?,
+                    lastSyncedAt = NULL
                 WHERE id = ?
                 """,
-                arguments: [isPinned, id]
+                arguments: [isPinned, Date(), id]
             )
         }
     }
@@ -605,7 +808,8 @@ final class DatabaseManager {
     @discardableResult
     func deleteWritingInsightSnapshot(id: Int64) throws -> Bool {
         try dbQueue.write { db in
-            try WritingInsightSnapshotRecord.deleteOne(db, key: id)
+            try Self.recordTombstone(in: db, table: .writingInsightSnapshot, id: id)
+            return try WritingInsightSnapshotRecord.deleteOne(db, key: id)
         }
     }
 
@@ -680,6 +884,9 @@ final class DatabaseManager {
                 existing.isActive = isActive
                 existing.updatedAt = now
                 try existing.update(db)
+                if let id = existing.id {
+                    try Self.touchSyncMetadata(in: db, table: CloudSyncTable.dictionaryEntry.rawValue, id: id, modifiedAt: now)
+                }
                 return existing
             }
 
@@ -697,6 +904,9 @@ final class DatabaseManager {
             if entry.id == nil {
                 entry.id = db.lastInsertedRowID
             }
+            if let id = entry.id {
+                try Self.touchSyncMetadata(in: db, table: CloudSyncTable.dictionaryEntry.rawValue, id: id, modifiedAt: now)
+            }
             return entry
         }
         postPersonalMemoryDidChange()
@@ -705,7 +915,8 @@ final class DatabaseManager {
 
     func deleteDictionaryEntry(id: Int64) throws -> Bool {
         let deleted = try dbQueue.write { db in
-            try DictionaryEntry.deleteOne(db, key: id)
+            try Self.recordTombstone(in: db, table: .dictionaryEntry, id: id)
+            return try DictionaryEntry.deleteOne(db, key: id)
         }
         if deleted {
             postPersonalMemoryDidChange()
@@ -759,6 +970,9 @@ final class DatabaseManager {
             entry.isActive = isActive
             entry.updatedAt = Date()
             try entry.update(db)
+            if let id = entry.id {
+                try Self.touchSyncMetadata(in: db, table: CloudSyncTable.dictionaryEntry.rawValue, id: id, modifiedAt: entry.updatedAt)
+            }
             return entry
         }
         postPersonalMemoryDidChange()
@@ -771,10 +985,12 @@ final class DatabaseManager {
                 sql: """
                 UPDATE dictionary_entry
                 SET usageCount = usageCount + 1,
-                    updatedAt = ?
+                    updatedAt = ?,
+                    modifiedAt = ?,
+                    lastSyncedAt = NULL
                 WHERE id = ?
                 """,
-                arguments: [Date(), id]
+                arguments: [Date(), Date(), id]
             )
         }
     }
@@ -819,6 +1035,9 @@ final class DatabaseManager {
                 existing.isActive = isActive
                 existing.updatedAt = now
                 try existing.update(db)
+                if let id = existing.id {
+                    try Self.touchSyncMetadata(in: db, table: CloudSyncTable.snippetEntry.rawValue, id: id, modifiedAt: now)
+                }
                 return existing
             }
 
@@ -835,6 +1054,9 @@ final class DatabaseManager {
             if entry.id == nil {
                 entry.id = db.lastInsertedRowID
             }
+            if let id = entry.id {
+                try Self.touchSyncMetadata(in: db, table: CloudSyncTable.snippetEntry.rawValue, id: id, modifiedAt: now)
+            }
             return entry
         }
         postPersonalMemoryDidChange()
@@ -843,7 +1065,8 @@ final class DatabaseManager {
 
     func deleteSnippetEntry(id: Int64) throws -> Bool {
         let deleted = try dbQueue.write { db in
-            try SnippetEntry.deleteOne(db, key: id)
+            try Self.recordTombstone(in: db, table: .snippetEntry, id: id)
+            return try SnippetEntry.deleteOne(db, key: id)
         }
         if deleted {
             postPersonalMemoryDidChange()
@@ -895,6 +1118,9 @@ final class DatabaseManager {
             entry.isActive = isActive
             entry.updatedAt = Date()
             try entry.update(db)
+            if let id = entry.id {
+                try Self.touchSyncMetadata(in: db, table: CloudSyncTable.snippetEntry.rawValue, id: id, modifiedAt: entry.updatedAt)
+            }
             return entry
         }
         postPersonalMemoryDidChange()
@@ -907,10 +1133,12 @@ final class DatabaseManager {
                 sql: """
                 UPDATE snippet_entry
                 SET usageCount = usageCount + 1,
-                    updatedAt = ?
+                    updatedAt = ?,
+                    modifiedAt = ?,
+                    lastSyncedAt = NULL
                 WHERE id = ?
                 """,
-                arguments: [Date(), id]
+                arguments: [Date(), Date(), id]
             )
         }
     }
@@ -941,6 +1169,9 @@ final class DatabaseManager {
                     }
                     existing.updatedAt = now
                     try existing.update(db)
+                    if let id = existing.id {
+                        try Self.touchSyncMetadata(in: db, table: CloudSyncTable.learningSuggestion.rawValue, id: id, modifiedAt: now)
+                    }
                     changeCount += 1
                     continue
                 }
@@ -957,6 +1188,12 @@ final class DatabaseManager {
                     updatedAt: now
                 )
                 try suggestion.insert(db)
+                try Self.touchSyncMetadata(
+                    in: db,
+                    table: CloudSyncTable.learningSuggestion.rawValue,
+                    id: db.lastInsertedRowID,
+                    modifiedAt: now
+                )
                 changeCount += 1
             }
 
@@ -986,14 +1223,17 @@ final class DatabaseManager {
         status: LearningSuggestionStatus
     ) throws {
         try dbQueue.write { db in
+            let now = Date()
             try db.execute(
                 sql: """
                 UPDATE learning_suggestion
                 SET status = ?,
-                    updatedAt = ?
+                    updatedAt = ?,
+                    modifiedAt = ?,
+                    lastSyncedAt = NULL
                 WHERE id = ?
                 """,
-                arguments: [status.rawValue, Date(), id]
+                arguments: [status.rawValue, now, now, id]
             )
         }
     }
@@ -1001,11 +1241,17 @@ final class DatabaseManager {
     func clearLearningSuggestions(status: LearningSuggestionStatus? = nil) throws {
         try dbQueue.write { db in
             if let status {
+                try Self.recordTombstones(
+                    in: db,
+                    table: .learningSuggestion,
+                    where: "status = '\(status.rawValue)'"
+                )
                 try db.execute(
                     sql: "DELETE FROM learning_suggestion WHERE status = ?",
                     arguments: [status.rawValue]
                 )
             } else {
+                try Self.recordTombstones(in: db, table: .learningSuggestion)
                 try LearningSuggestion.deleteAll(db)
             }
         }
@@ -1037,6 +1283,594 @@ final class DatabaseManager {
                 Logger.database.error("Observation error: \(error.localizedDescription)")
             },
             onChange: onChange
+        )
+    }
+}
+
+// MARK: - Cloud Sync Export/Import
+
+extension DatabaseManager {
+    func cloudSyncSnapshot() throws -> CloudDatabaseSnapshot {
+        try dbQueue.write { db in
+            try Self.repairMissingCloudSyncMetadata(in: db)
+
+            return CloudDatabaseSnapshot(
+                transcriptions: try Self.fetchCloudTranscriptions(in: db),
+                dictionaryEntries: try Self.fetchCloudDictionaryEntries(in: db),
+                snippetEntries: try Self.fetchCloudSnippetEntries(in: db),
+                learningSuggestions: try Self.fetchCloudLearningSuggestions(in: db),
+                writingInsightSnapshots: try Self.fetchCloudWritingInsightSnapshots(in: db),
+                tombstones: try Self.fetchCloudTombstones(in: db)
+            )
+        }
+    }
+
+    func cloudSyncStats() throws -> CloudSyncStats {
+        try cloudSyncSnapshot().stats
+    }
+
+    func applyCloudSnapshot(_ snapshot: CloudDatabaseSnapshot, replacingLocalData: Bool) throws {
+        try dbQueue.write { db in
+            if replacingLocalData {
+                try Self.recordTombstones(in: db, table: .transcription)
+                try Self.recordTombstones(in: db, table: .dictionaryEntry)
+                try Self.recordTombstones(in: db, table: .snippetEntry)
+                try Self.recordTombstones(in: db, table: .learningSuggestion)
+                try Self.recordTombstones(in: db, table: .writingInsightSnapshot)
+                try db.execute(sql: "DELETE FROM transcription")
+                try db.execute(sql: "DELETE FROM dictionary_entry")
+                try db.execute(sql: "DELETE FROM snippet_entry")
+                try db.execute(sql: "DELETE FROM learning_suggestion")
+                try db.execute(sql: "DELETE FROM writing_insight_snapshot")
+            }
+
+            for record in snapshot.transcriptions {
+                try Self.upsertCloudTranscription(record, in: db)
+            }
+            for record in snapshot.dictionaryEntries {
+                try Self.upsertCloudDictionaryEntry(record, in: db)
+            }
+            for record in snapshot.snippetEntries {
+                try Self.upsertCloudSnippetEntry(record, in: db)
+            }
+            for record in snapshot.learningSuggestions {
+                try Self.upsertCloudLearningSuggestion(record, in: db)
+            }
+            for record in snapshot.writingInsightSnapshots {
+                try Self.upsertCloudWritingInsightSnapshot(record, in: db)
+            }
+            for tombstone in snapshot.tombstones {
+                try Self.applyCloudTombstone(tombstone, in: db)
+            }
+        }
+
+        NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+    }
+
+    func markCloudSyncCompleted(at date: Date = Date()) throws {
+        try dbQueue.write { db in
+            for table in CloudSyncTable.allCases {
+                try db.execute(
+                    sql: """
+                    UPDATE \(table.rawValue)
+                    SET lastSyncedAt = ?
+                    WHERE lastSyncedAt IS NULL OR lastSyncedAt < modifiedAt
+                    """,
+                    arguments: [date]
+                )
+            }
+            try db.execute(
+                sql: """
+                UPDATE cloud_sync_tombstone
+                SET needsCloudSync = 0
+                WHERE needsCloudSync = 1
+                """
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO cloud_sync_state (key, value, updatedAt)
+                VALUES ('lastCompletedAt', ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updatedAt = excluded.updatedAt
+                """,
+                arguments: [String(date.timeIntervalSince1970), date]
+            )
+        }
+    }
+
+    private static func repairMissingCloudSyncMetadata(in db: Database) throws {
+        let now = Date()
+        for table in CloudSyncTable.allCases {
+            try db.execute(
+                sql: """
+                UPDATE \(table.rawValue)
+                SET syncID = lower(hex(randomblob(16)))
+                WHERE syncID IS NULL OR TRIM(syncID) = ''
+                """
+            )
+            let fallbackColumn: String
+            switch table {
+            case .transcription:
+                fallbackColumn = "createdAt"
+            case .dictionaryEntry, .snippetEntry, .learningSuggestion:
+                fallbackColumn = "updatedAt"
+            case .writingInsightSnapshot:
+                fallbackColumn = "generatedAt"
+            }
+            try db.execute(
+                sql: """
+                UPDATE \(table.rawValue)
+                SET modifiedAt = COALESCE(modifiedAt, \(fallbackColumn), ?)
+                WHERE modifiedAt IS NULL
+                """,
+                arguments: [now]
+            )
+        }
+    }
+
+    private static func fetchCloudTranscriptions(in db: Database) throws -> [CloudSyncTranscription] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, syncID, modifiedAt, createdAt, text, targetAppName, targetAppBundleID,
+                   recordingDurationMs, processingDurationMs, settingsSyncDurationMs,
+                   transcriptionDurationMs, textProcessingDurationMs, injectionDurationMs,
+                   appActivationDurationMs, clipboardRestoreDelayMs, modelId, audioDevice
+            FROM transcription
+            WHERE syncID IS NOT NULL
+            """
+        )
+        return rows.compactMap { row in
+            guard let syncID: String = row["syncID"],
+                  let modifiedAt: Date = row["modifiedAt"],
+                  let createdAt: Date = row["createdAt"],
+                  let text: String = row["text"],
+                  let recordingDurationMs: Int = row["recordingDurationMs"],
+                  let processingDurationMs: Int = row["processingDurationMs"],
+                  let modelId: String = row["modelId"] else {
+                return nil
+            }
+            return CloudSyncTranscription(
+                localID: row["id"],
+                syncID: syncID,
+                modifiedAt: modifiedAt,
+                createdAt: createdAt,
+                text: text,
+                targetAppName: row["targetAppName"],
+                targetAppBundleID: row["targetAppBundleID"],
+                recordingDurationMs: recordingDurationMs,
+                processingDurationMs: processingDurationMs,
+                settingsSyncDurationMs: row["settingsSyncDurationMs"],
+                transcriptionDurationMs: row["transcriptionDurationMs"],
+                textProcessingDurationMs: row["textProcessingDurationMs"],
+                injectionDurationMs: row["injectionDurationMs"],
+                appActivationDurationMs: row["appActivationDurationMs"],
+                clipboardRestoreDelayMs: row["clipboardRestoreDelayMs"],
+                modelId: modelId,
+                audioDevice: row["audioDevice"]
+            )
+        }
+    }
+
+    private static func fetchCloudDictionaryEntries(in db: Database) throws -> [CloudSyncDictionaryEntry] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, syncID, modifiedAt, source, target, normalizedSource, isCaseSensitive,
+                   isActive, usageCount, createdAt, updatedAt
+            FROM dictionary_entry
+            WHERE syncID IS NOT NULL
+            """
+        )
+        return rows.compactMap { row in
+            guard let syncID: String = row["syncID"],
+                  let modifiedAt: Date = row["modifiedAt"],
+                  let source: String = row["source"],
+                  let target: String = row["target"],
+                  let normalizedSource: String = row["normalizedSource"],
+                  let isCaseSensitive: Bool = row["isCaseSensitive"],
+                  let isActive: Bool = row["isActive"],
+                  let usageCount: Int = row["usageCount"],
+                  let createdAt: Date = row["createdAt"],
+                  let updatedAt: Date = row["updatedAt"] else {
+                return nil
+            }
+            return CloudSyncDictionaryEntry(
+                localID: row["id"],
+                syncID: syncID,
+                modifiedAt: modifiedAt,
+                source: source,
+                target: target,
+                normalizedSource: normalizedSource,
+                isCaseSensitive: isCaseSensitive,
+                isActive: isActive,
+                usageCount: usageCount,
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            )
+        }
+    }
+
+    private static func fetchCloudSnippetEntries(in db: Database) throws -> [CloudSyncSnippetEntry] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, syncID, modifiedAt, trigger, expansion, normalizedTrigger, isActive,
+                   usageCount, createdAt, updatedAt
+            FROM snippet_entry
+            WHERE syncID IS NOT NULL
+            """
+        )
+        return rows.compactMap { row in
+            guard let syncID: String = row["syncID"],
+                  let modifiedAt: Date = row["modifiedAt"],
+                  let trigger: String = row["trigger"],
+                  let expansion: String = row["expansion"],
+                  let normalizedTrigger: String = row["normalizedTrigger"],
+                  let isActive: Bool = row["isActive"],
+                  let usageCount: Int = row["usageCount"],
+                  let createdAt: Date = row["createdAt"],
+                  let updatedAt: Date = row["updatedAt"] else {
+                return nil
+            }
+            return CloudSyncSnippetEntry(
+                localID: row["id"],
+                syncID: syncID,
+                modifiedAt: modifiedAt,
+                trigger: trigger,
+                expansion: expansion,
+                normalizedTrigger: normalizedTrigger,
+                isActive: isActive,
+                usageCount: usageCount,
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            )
+        }
+    }
+
+    private static func fetchCloudLearningSuggestions(in db: Database) throws -> [CloudSyncLearningSuggestion] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, syncID, modifiedAt, type, candidateSource, candidateTarget,
+                   normalizedSource, confidence, status, evidence, createdAt, updatedAt
+            FROM learning_suggestion
+            WHERE syncID IS NOT NULL
+            """
+        )
+        return rows.compactMap { row in
+            guard let syncID: String = row["syncID"],
+                  let modifiedAt: Date = row["modifiedAt"],
+                  let type: String = row["type"],
+                  let candidateSource: String = row["candidateSource"],
+                  let candidateTarget: String = row["candidateTarget"],
+                  let normalizedSource: String = row["normalizedSource"],
+                  let confidence: Double = row["confidence"],
+                  let status: String = row["status"],
+                  let createdAt: Date = row["createdAt"],
+                  let updatedAt: Date = row["updatedAt"] else {
+                return nil
+            }
+            return CloudSyncLearningSuggestion(
+                localID: row["id"],
+                syncID: syncID,
+                modifiedAt: modifiedAt,
+                type: type,
+                candidateSource: candidateSource,
+                candidateTarget: candidateTarget,
+                normalizedSource: normalizedSource,
+                confidence: confidence,
+                status: status,
+                evidence: row["evidence"],
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            )
+        }
+    }
+
+    private static func fetchCloudWritingInsightSnapshots(in db: Database) throws -> [CloudSyncWritingInsightSnapshot] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, syncID, modifiedAt, generatedAt, analyzerName, usedFallback,
+                   isPinned, sampleCount, requestJSON, snapshotJSON
+            FROM writing_insight_snapshot
+            WHERE syncID IS NOT NULL
+            """
+        )
+        return rows.compactMap { row in
+            guard let syncID: String = row["syncID"],
+                  let modifiedAt: Date = row["modifiedAt"],
+                  let generatedAt: Date = row["generatedAt"],
+                  let analyzerName: String = row["analyzerName"],
+                  let usedFallback: Bool = row["usedFallback"],
+                  let isPinned: Bool = row["isPinned"],
+                  let sampleCount: Int = row["sampleCount"],
+                  let requestJSON: String = row["requestJSON"],
+                  let snapshotJSON: String = row["snapshotJSON"] else {
+                return nil
+            }
+            return CloudSyncWritingInsightSnapshot(
+                localID: row["id"],
+                syncID: syncID,
+                modifiedAt: modifiedAt,
+                generatedAt: generatedAt,
+                analyzerName: analyzerName,
+                usedFallback: usedFallback,
+                isPinned: isPinned,
+                sampleCount: sampleCount,
+                requestJSON: requestJSON,
+                snapshotJSON: snapshotJSON
+            )
+        }
+    }
+
+    private static func fetchCloudTombstones(in db: Database) throws -> [CloudSyncTombstone] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT tableName, syncID, deletedAt
+            FROM cloud_sync_tombstone
+            """
+        )
+        return rows.compactMap { row in
+            guard let tableName: String = row["tableName"],
+                  let table = CloudSyncTable(rawValue: tableName),
+                  let syncID: String = row["syncID"],
+                  let deletedAt: Date = row["deletedAt"] else {
+                return nil
+            }
+            return CloudSyncTombstone(table: table, syncID: syncID, deletedAt: deletedAt)
+        }
+    }
+
+    private static func upsertCloudTranscription(_ record: CloudSyncTranscription, in db: Database) throws {
+        if let id = try localID(for: .transcription, syncID: record.syncID, in: db) {
+            try db.execute(
+                sql: """
+                UPDATE transcription
+                SET createdAt = ?, text = ?, targetAppName = ?, targetAppBundleID = ?,
+                    recordingDurationMs = ?, processingDurationMs = ?, settingsSyncDurationMs = ?,
+                    transcriptionDurationMs = ?, textProcessingDurationMs = ?, injectionDurationMs = ?,
+                    appActivationDurationMs = ?, clipboardRestoreDelayMs = ?, modelId = ?,
+                    audioDevice = ?, syncID = ?, modifiedAt = ?
+                WHERE id = ?
+                """,
+                arguments: transcriptionArguments(record) + [id]
+            )
+        } else {
+            try db.execute(
+                sql: """
+                INSERT INTO transcription (
+                    createdAt, text, targetAppName, targetAppBundleID, recordingDurationMs,
+                    processingDurationMs, settingsSyncDurationMs, transcriptionDurationMs,
+                    textProcessingDurationMs, injectionDurationMs, appActivationDurationMs,
+                    clipboardRestoreDelayMs, modelId, audioDevice, syncID, modifiedAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: transcriptionArguments(record)
+            )
+        }
+    }
+
+    private static func transcriptionArguments(_ record: CloudSyncTranscription) -> StatementArguments {
+        [
+            record.createdAt,
+            record.text,
+            record.targetAppName,
+            record.targetAppBundleID,
+            record.recordingDurationMs,
+            record.processingDurationMs,
+            record.settingsSyncDurationMs,
+            record.transcriptionDurationMs,
+            record.textProcessingDurationMs,
+            record.injectionDurationMs,
+            record.appActivationDurationMs,
+            record.clipboardRestoreDelayMs,
+            record.modelId,
+            record.audioDevice,
+            record.syncID,
+            record.modifiedAt
+        ]
+    }
+
+    private static func upsertCloudDictionaryEntry(_ record: CloudSyncDictionaryEntry, in db: Database) throws {
+        let id = try localID(for: .dictionaryEntry, syncID: record.syncID, in: db)
+            ?? Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM dictionary_entry WHERE normalizedSource = ?",
+                arguments: [record.normalizedSource]
+            )
+        if let id {
+            try db.execute(
+                sql: """
+                UPDATE dictionary_entry
+                SET source = ?, target = ?, normalizedSource = ?, isCaseSensitive = ?,
+                    isActive = ?, usageCount = ?, createdAt = ?, updatedAt = ?,
+                    syncID = ?, modifiedAt = ?
+                WHERE id = ?
+                """,
+                arguments: dictionaryArguments(record) + [id]
+            )
+        } else {
+            try db.execute(
+                sql: """
+                INSERT INTO dictionary_entry (
+                    source, target, normalizedSource, isCaseSensitive, isActive,
+                    usageCount, createdAt, updatedAt, syncID, modifiedAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: dictionaryArguments(record)
+            )
+        }
+    }
+
+    private static func dictionaryArguments(_ record: CloudSyncDictionaryEntry) -> StatementArguments {
+        [
+            record.source,
+            record.target,
+            record.normalizedSource,
+            record.isCaseSensitive,
+            record.isActive,
+            record.usageCount,
+            record.createdAt,
+            record.updatedAt,
+            record.syncID,
+            record.modifiedAt
+        ]
+    }
+
+    private static func upsertCloudSnippetEntry(_ record: CloudSyncSnippetEntry, in db: Database) throws {
+        let id = try localID(for: .snippetEntry, syncID: record.syncID, in: db)
+            ?? Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM snippet_entry WHERE normalizedTrigger = ?",
+                arguments: [record.normalizedTrigger]
+            )
+        if let id {
+            try db.execute(
+                sql: """
+                UPDATE snippet_entry
+                SET trigger = ?, expansion = ?, normalizedTrigger = ?, isActive = ?,
+                    usageCount = ?, createdAt = ?, updatedAt = ?, syncID = ?, modifiedAt = ?
+                WHERE id = ?
+                """,
+                arguments: snippetArguments(record) + [id]
+            )
+        } else {
+            try db.execute(
+                sql: """
+                INSERT INTO snippet_entry (
+                    trigger, expansion, normalizedTrigger, isActive, usageCount,
+                    createdAt, updatedAt, syncID, modifiedAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: snippetArguments(record)
+            )
+        }
+    }
+
+    private static func snippetArguments(_ record: CloudSyncSnippetEntry) -> StatementArguments {
+        [
+            record.trigger,
+            record.expansion,
+            record.normalizedTrigger,
+            record.isActive,
+            record.usageCount,
+            record.createdAt,
+            record.updatedAt,
+            record.syncID,
+            record.modifiedAt
+        ]
+    }
+
+    private static func upsertCloudLearningSuggestion(_ record: CloudSyncLearningSuggestion, in db: Database) throws {
+        if let id = try localID(for: .learningSuggestion, syncID: record.syncID, in: db) {
+            try db.execute(
+                sql: """
+                UPDATE learning_suggestion
+                SET type = ?, candidateSource = ?, candidateTarget = ?, normalizedSource = ?,
+                    confidence = ?, status = ?, evidence = ?, createdAt = ?, updatedAt = ?,
+                    syncID = ?, modifiedAt = ?
+                WHERE id = ?
+                """,
+                arguments: learningSuggestionArguments(record) + [id]
+            )
+        } else {
+            try db.execute(
+                sql: """
+                INSERT INTO learning_suggestion (
+                    type, candidateSource, candidateTarget, normalizedSource, confidence,
+                    status, evidence, createdAt, updatedAt, syncID, modifiedAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: learningSuggestionArguments(record)
+            )
+        }
+    }
+
+    private static func learningSuggestionArguments(_ record: CloudSyncLearningSuggestion) -> StatementArguments {
+        [
+            record.type,
+            record.candidateSource,
+            record.candidateTarget,
+            record.normalizedSource,
+            record.confidence,
+            record.status,
+            record.evidence,
+            record.createdAt,
+            record.updatedAt,
+            record.syncID,
+            record.modifiedAt
+        ]
+    }
+
+    private static func upsertCloudWritingInsightSnapshot(
+        _ record: CloudSyncWritingInsightSnapshot,
+        in db: Database
+    ) throws {
+        if let id = try localID(for: .writingInsightSnapshot, syncID: record.syncID, in: db) {
+            try db.execute(
+                sql: """
+                UPDATE writing_insight_snapshot
+                SET generatedAt = ?, analyzerName = ?, usedFallback = ?, isPinned = ?,
+                    sampleCount = ?, requestJSON = ?, snapshotJSON = ?, syncID = ?, modifiedAt = ?
+                WHERE id = ?
+                """,
+                arguments: writingInsightArguments(record) + [id]
+            )
+        } else {
+            try db.execute(
+                sql: """
+                INSERT INTO writing_insight_snapshot (
+                    generatedAt, analyzerName, usedFallback, isPinned, sampleCount,
+                    requestJSON, snapshotJSON, syncID, modifiedAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: writingInsightArguments(record)
+            )
+        }
+    }
+
+    private static func writingInsightArguments(_ record: CloudSyncWritingInsightSnapshot) -> StatementArguments {
+        [
+            record.generatedAt,
+            record.analyzerName,
+            record.usedFallback,
+            record.isPinned,
+            record.sampleCount,
+            record.requestJSON,
+            record.snapshotJSON,
+            record.syncID,
+            record.modifiedAt
+        ]
+    }
+
+    private static func applyCloudTombstone(_ tombstone: CloudSyncTombstone, in db: Database) throws {
+        try db.execute(
+            sql: "DELETE FROM \(tombstone.table.rawValue) WHERE syncID = ?",
+            arguments: [tombstone.syncID]
+        )
+        try recordTombstone(
+            in: db,
+            table: tombstone.table,
+            syncID: tombstone.syncID,
+            deletedAt: tombstone.deletedAt,
+            needsCloudSync: false
+        )
+    }
+
+    private static func localID(for table: CloudSyncTable, syncID: String, in db: Database) throws -> Int64? {
+        try Int64.fetchOne(
+            db,
+            sql: "SELECT id FROM \(table.rawValue) WHERE syncID = ?",
+            arguments: [syncID]
         )
     }
 }

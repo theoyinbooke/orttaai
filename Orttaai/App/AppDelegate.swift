@@ -109,6 +109,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Initialize core services
         setupCoreServices(settings: state.settings)
+        CloudProfileChangeTracker.shared.start()
+        startCloudSyncIfEnabled()
         observeSystemWake()
         ensureDefaultShortcuts()
 
@@ -132,6 +134,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let audioResetObserver {
             NotificationCenter.default.removeObserver(audioResetObserver)
         }
+        CloudProfileChangeTracker.shared.stop()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -224,6 +227,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Logger.ui.info("Core services initialized")
         } catch {
             Logger.ui.error("Failed to initialize database: \(error.localizedDescription)")
+        }
+    }
+
+    private func startCloudSyncIfEnabled() {
+        guard UserDefaults.standard.bool(forKey: CloudSyncService.syncEnabledKey) else { return }
+        Task {
+            await CloudSyncService.shared.syncIfEnabled()
         }
     }
 

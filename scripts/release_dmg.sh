@@ -177,10 +177,10 @@ fi
 ARTIFACT_ROOT="$OUTPUT_DIR/$VERSION"
 ARCHIVE_PATH="$ARTIFACT_ROOT/${APP_NAME}.xcarchive"
 EXPORT_PATH="$ARTIFACT_ROOT/export"
+EXPORT_OPTIONS_PLIST="$ARTIFACT_ROOT/ExportOptions.plist"
 DMG_PATH="$ARTIFACT_ROOT/${APP_NAME}-${VERSION}.dmg"
 APP_PATH="$EXPORT_PATH/${APP_NAME}.app"
 ARCHIVED_APP_PATH="$ARCHIVE_PATH/Products/Applications/${APP_NAME}.app"
-ENTITLEMENTS_PATH="Orttaai/Orttaai.entitlements"
 DMG_STAGING_PATH="$ARTIFACT_ROOT/dmg-root"
 DMG_RW_PATH="$ARTIFACT_ROOT/${APP_NAME}-${VERSION}-rw.dmg"
 DMG_BACKGROUND_SOURCE="$ARTIFACT_ROOT/dmg-background-source.png"
@@ -203,22 +203,36 @@ echo "==> Archiving app ($SCHEME, $CONFIGURATION)"
 xcodebuild archive \
   "${XCODEBUILD_COMMON_ARGS[@]}" \
   -configuration "$CONFIGURATION" \
+  -destination 'generic/platform=macOS' \
   -archivePath "$ARCHIVE_PATH" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
   CURRENT_PROJECT_VERSION="$VERSION" \
-  SKIP_INSTALL=NO
+  SKIP_INSTALL=NO \
+  -allowProvisioningUpdates
 
 if [[ ! -d "$ARCHIVED_APP_PATH" ]]; then
   echo "Archive failed: app bundle not found at $ARCHIVED_APP_PATH" >&2
   exit 1
 fi
 
-echo "==> Copying app from archive"
-mkdir -p "$EXPORT_PATH"
-ditto "$ARCHIVED_APP_PATH" "$APP_PATH"
+echo "==> Exporting app for Developer ID distribution"
+plutil -create xml1 "$EXPORT_OPTIONS_PLIST"
+/usr/libexec/PlistBuddy -c 'Add :method string developer-id' "$EXPORT_OPTIONS_PLIST"
+/usr/libexec/PlistBuddy -c "Add :teamID string $TEAM_ID" "$EXPORT_OPTIONS_PLIST"
+/usr/libexec/PlistBuddy -c 'Add :signingStyle string automatic' "$EXPORT_OPTIONS_PLIST"
+/usr/libexec/PlistBuddy -c 'Add :signingCertificate string Developer ID Application' "$EXPORT_OPTIONS_PLIST"
+/usr/libexec/PlistBuddy -c 'Add :destination string export' "$EXPORT_OPTIONS_PLIST"
+/usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$EXPORT_OPTIONS_PLIST"
+/usr/libexec/PlistBuddy -c 'Add :iCloudContainerEnvironment string Production' "$EXPORT_OPTIONS_PLIST"
+
+xcodebuild -exportArchive \
+  -archivePath "$ARCHIVE_PATH" \
+  -exportPath "$EXPORT_PATH" \
+  -exportOptionsPlist "$EXPORT_OPTIONS_PLIST" \
+  -allowProvisioningUpdates
 
 if [[ ! -d "$APP_PATH" ]]; then
-  echo "Copy failed: app bundle not found at $APP_PATH" >&2
+  echo "Export failed: app bundle not found at $APP_PATH" >&2
   exit 1
 fi
 
@@ -226,15 +240,6 @@ if [[ -f "Orttaai/Resources/dmg-volume-icon.icns" ]]; then
   DMG_VOLUME_ICON_SOURCE="Orttaai/Resources/dmg-volume-icon.icns"
 elif [[ -f "$APP_PATH/Contents/Resources/AppIcon.icns" ]]; then
   DMG_VOLUME_ICON_SOURCE="$APP_PATH/Contents/Resources/AppIcon.icns"
-fi
-
-echo "==> Re-signing app with Developer ID"
-if [[ -f "$ENTITLEMENTS_PATH" ]]; then
-  codesign --force --deep --options runtime --timestamp --sign "$DEVELOPER_ID_SHA" "$APP_PATH"
-  codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$DEVELOPER_ID_SHA" "$APP_PATH"
-else
-  echo "Warning: entitlements file not found at $ENTITLEMENTS_PATH, signing without explicit entitlements."
-  codesign --force --deep --options runtime --timestamp --sign "$DEVELOPER_ID_SHA" "$APP_PATH"
 fi
 
 echo "==> Verifying app signature"
