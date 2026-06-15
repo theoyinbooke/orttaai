@@ -480,6 +480,39 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertTrue(snapshot.tombstones.contains { $0.table == .transcription })
     }
 
+    func testCloudSyncSnapshotStopsExportingTombstonesAfterSyncCompletes() throws {
+        try db.saveTranscription(
+            text: "Delete once",
+            appName: "TextEdit",
+            recordingMs: 1_000,
+            processingMs: 500,
+            modelId: "test"
+        )
+
+        let transcriptionID = try XCTUnwrap(try db.fetchRecent().first?.id)
+        XCTAssertTrue(try db.deleteTranscription(id: transcriptionID))
+        XCTAssertEqual(try db.cloudSyncSnapshot().tombstones.count, 1)
+
+        try db.markCloudSyncCompleted()
+
+        XCTAssertTrue(try db.cloudSyncSnapshot().tombstones.isEmpty)
+    }
+
+    func testCloudSyncSnapshotDoesNotExportImportedTombstones() throws {
+        let tombstone = CloudSyncTombstone(
+            table: .transcription,
+            syncID: "remote-deleted-transcription",
+            deletedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+
+        try db.applyCloudSnapshot(
+            CloudDatabaseSnapshot(tombstones: [tombstone]),
+            replacingLocalData: false
+        )
+
+        XCTAssertTrue(try db.cloudSyncSnapshot().tombstones.isEmpty)
+    }
+
     func testApplyCloudSnapshotImportsTranscriptions() throws {
         let createdAt = Date(timeIntervalSince1970: 1_800_000_000)
         let modifiedAt = createdAt.addingTimeInterval(30)
@@ -512,6 +545,50 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.text, "Imported from iCloud")
         XCTAssertEqual(records.first?.targetAppName, "Notes")
+    }
+
+    func testReplacingFromCloudSnapshotDoesNotTombstoneImportedRows() throws {
+        try db.saveTranscription(
+            text: "Keep this after merge",
+            appName: "Notes",
+            recordingMs: 1_000,
+            processingMs: 300,
+            modelId: "test"
+        )
+        let snapshot = try db.cloudSyncSnapshot()
+        let syncID = try XCTUnwrap(snapshot.transcriptions.first?.syncID)
+
+        try db.applyCloudSnapshot(snapshot, replacingLocalData: true)
+
+        let result = try db.cloudSyncSnapshot()
+        XCTAssertEqual(result.transcriptions.count, 1)
+        XCTAssertEqual(result.transcriptions.first?.syncID, syncID)
+        XCTAssertFalse(result.tombstones.contains { $0.table == .transcription && $0.syncID == syncID })
+    }
+
+    func testApplyingLiveCloudRecordClearsStaleTombstone() throws {
+        try db.saveTranscription(
+            text: "Deleted locally, then restored from cloud",
+            appName: "Notes",
+            recordingMs: 1_000,
+            processingMs: 300,
+            modelId: "test"
+        )
+        let original = try XCTUnwrap(try db.cloudSyncSnapshot().transcriptions.first)
+        let localID = try XCTUnwrap(try db.fetchRecent().first?.id)
+        XCTAssertTrue(try db.deleteTranscription(id: localID))
+        XCTAssertTrue(try db.cloudSyncSnapshot().tombstones.contains {
+            $0.table == .transcription && $0.syncID == original.syncID
+        })
+
+        var restored = original
+        restored.modifiedAt = Date().addingTimeInterval(60)
+        try db.applyCloudSnapshot(CloudDatabaseSnapshot(transcriptions: [restored]), replacingLocalData: false)
+
+        let result = try db.cloudSyncSnapshot()
+        XCTAssertEqual(result.transcriptions.count, 1)
+        XCTAssertEqual(result.transcriptions.first?.syncID, original.syncID)
+        XCTAssertFalse(result.tombstones.contains { $0.table == .transcription && $0.syncID == original.syncID })
     }
 
     func testCloudProfileSnapshotExcludesPerDeviceSyncMetadata() throws {

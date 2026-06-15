@@ -1312,32 +1312,33 @@ extension DatabaseManager {
     func applyCloudSnapshot(_ snapshot: CloudDatabaseSnapshot, replacingLocalData: Bool) throws {
         try dbQueue.write { db in
             if replacingLocalData {
-                try Self.recordTombstones(in: db, table: .transcription)
-                try Self.recordTombstones(in: db, table: .dictionaryEntry)
-                try Self.recordTombstones(in: db, table: .snippetEntry)
-                try Self.recordTombstones(in: db, table: .learningSuggestion)
-                try Self.recordTombstones(in: db, table: .writingInsightSnapshot)
                 try db.execute(sql: "DELETE FROM transcription")
                 try db.execute(sql: "DELETE FROM dictionary_entry")
                 try db.execute(sql: "DELETE FROM snippet_entry")
                 try db.execute(sql: "DELETE FROM learning_suggestion")
                 try db.execute(sql: "DELETE FROM writing_insight_snapshot")
+                try db.execute(sql: "DELETE FROM cloud_sync_tombstone")
             }
 
             for record in snapshot.transcriptions {
                 try Self.upsertCloudTranscription(record, in: db)
+                try Self.clearTombstone(in: db, table: .transcription, syncID: record.syncID)
             }
             for record in snapshot.dictionaryEntries {
                 try Self.upsertCloudDictionaryEntry(record, in: db)
+                try Self.clearTombstone(in: db, table: .dictionaryEntry, syncID: record.syncID)
             }
             for record in snapshot.snippetEntries {
                 try Self.upsertCloudSnippetEntry(record, in: db)
+                try Self.clearTombstone(in: db, table: .snippetEntry, syncID: record.syncID)
             }
             for record in snapshot.learningSuggestions {
                 try Self.upsertCloudLearningSuggestion(record, in: db)
+                try Self.clearTombstone(in: db, table: .learningSuggestion, syncID: record.syncID)
             }
             for record in snapshot.writingInsightSnapshots {
                 try Self.upsertCloudWritingInsightSnapshot(record, in: db)
+                try Self.clearTombstone(in: db, table: .writingInsightSnapshot, syncID: record.syncID)
             }
             for tombstone in snapshot.tombstones {
                 try Self.applyCloudTombstone(tombstone, in: db)
@@ -1612,6 +1613,7 @@ extension DatabaseManager {
             sql: """
             SELECT tableName, syncID, deletedAt
             FROM cloud_sync_tombstone
+            WHERE needsCloudSync = 1
             """
         )
         return rows.compactMap { row in
@@ -1863,6 +1865,16 @@ extension DatabaseManager {
             syncID: tombstone.syncID,
             deletedAt: tombstone.deletedAt,
             needsCloudSync: false
+        )
+    }
+
+    private static func clearTombstone(in db: Database, table: CloudSyncTable, syncID: String) throws {
+        try db.execute(
+            sql: """
+            DELETE FROM cloud_sync_tombstone
+            WHERE tableName = ? AND syncID = ?
+            """,
+            arguments: [table.rawValue, syncID]
         )
     }
 

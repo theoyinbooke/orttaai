@@ -215,6 +215,30 @@ if [[ ! -d "$ARCHIVED_APP_PATH" ]]; then
   exit 1
 fi
 
+# Xcode 27 can archive SwiftPM object files under Products/Users, which makes
+# Developer ID export treat the archive as having multiple root items.
+rm -rf "$ARCHIVE_PATH/Products/Users"
+
+# Some Xcode 27 archive runs omit ApplicationProperties even when the app
+# bundle is present. Developer ID export uses this metadata to classify the
+# archive, so restore it from the archived app when needed.
+if ! /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties' "$ARCHIVE_PATH/Info.plist" >/dev/null 2>&1; then
+  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$ARCHIVED_APP_PATH/Contents/Info.plist")"
+  SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ARCHIVED_APP_PATH/Contents/Info.plist")"
+  BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ARCHIVED_APP_PATH/Contents/Info.plist")"
+  ARCHIVE_SIGNING_IDENTITY="$(codesign -dvvv "$ARCHIVED_APP_PATH" 2>&1 | awk -F= '/^Authority=/{print $2; exit}')"
+  /usr/libexec/PlistBuddy -c 'Add :ApplicationProperties dict' "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:ApplicationPath string Applications/$APP_NAME.app" "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :ApplicationProperties:Architectures array' "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :ApplicationProperties:Architectures:0 string x86_64' "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :ApplicationProperties:Architectures:1 string arm64' "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:CFBundleIdentifier string $BUNDLE_ID" "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:CFBundleShortVersionString string $SHORT_VERSION" "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:CFBundleVersion string $BUNDLE_VERSION" "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:SigningIdentity string $ARCHIVE_SIGNING_IDENTITY" "$ARCHIVE_PATH/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:Team string $TEAM_ID" "$ARCHIVE_PATH/Info.plist"
+fi
+
 echo "==> Exporting app for Developer ID distribution"
 plutil -create xml1 "$EXPORT_OPTIONS_PLIST"
 /usr/libexec/PlistBuddy -c 'Add :method string developer-id' "$EXPORT_OPTIONS_PLIST"

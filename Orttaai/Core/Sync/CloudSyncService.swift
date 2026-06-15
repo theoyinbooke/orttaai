@@ -32,6 +32,7 @@ enum CloudSyncServiceError: LocalizedError {
     case iCloudRestricted
     case noAccount
     case couldNotDecodeRecord(String)
+    case emptyMergeWouldEraseData
 
     var errorDescription: String? {
         switch self {
@@ -45,6 +46,8 @@ enum CloudSyncServiceError: LocalizedError {
             return "Sign in to iCloud in System Settings before enabling sync."
         case .couldNotDecodeRecord(let recordName):
             return "Could not read iCloud sync record \(recordName)."
+        case .emptyMergeWouldEraseData:
+            return "Sync stopped because the merge result was empty while existing data was detected."
         }
     }
 }
@@ -98,6 +101,8 @@ final class CloudSyncService {
         switch resolution {
         case .merge:
             let mergedDatabase = Self.mergedDatabaseSnapshot(local: local.database, remote: remote.database)
+            try Self.validateMergeResult(mergedDatabase, local: local.database, remote: remote.database)
+            _ = try DatabaseManager.backupDefaultDatabase(reason: "icloud-merge")
             try DatabaseManager().applyCloudSnapshot(mergedDatabase, replacingLocalData: true)
 
             let profile = Self.newerProfile(local.profile, remote.profile) ?? local.profile
@@ -131,6 +136,8 @@ final class CloudSyncService {
         let remote = try await fetchRemoteFullSnapshot()
 
         let mergedDatabase = Self.mergedDatabaseSnapshot(local: local.database, remote: remote.database)
+        try Self.validateMergeResult(mergedDatabase, local: local.database, remote: remote.database)
+        _ = try DatabaseManager.backupDefaultDatabase(reason: "icloud-sync")
         try DatabaseManager().applyCloudSnapshot(mergedDatabase, replacingLocalData: true)
 
         let profile = Self.newerProfile(local.profile, remote.profile) ?? local.profile
@@ -443,6 +450,17 @@ final class CloudSyncService {
             }
         }
         return Array(merged.values)
+    }
+
+    private static func validateMergeResult(
+        _ merged: CloudDatabaseSnapshot,
+        local: CloudDatabaseSnapshot,
+        remote: CloudDatabaseSnapshot
+    ) throws {
+        if merged.stats.databaseItemCount == 0
+            && (local.stats.databaseItemCount > 0 || remote.stats.databaseItemCount > 0) {
+            throw CloudSyncServiceError.emptyMergeWouldEraseData
+        }
     }
 
     private static func isDeleted(
