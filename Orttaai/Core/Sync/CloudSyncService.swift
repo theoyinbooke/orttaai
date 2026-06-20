@@ -53,12 +53,12 @@ enum CloudSyncServiceError: LocalizedError {
 }
 
 final class CloudSyncService {
-    static let shared = CloudSyncService()
+    nonisolated static let shared = CloudSyncService()
 
-    static let containerIdentifier = "iCloud.com.orttaai.Orttaai"
-    static let syncEnabledKey = "cloudSyncEnabled"
-    static let lastCompletedAtKey = "cloudSyncLastCompletedAt"
-    static let deviceIDKey = "cloudSyncDeviceID"
+    nonisolated static let containerIdentifier = "iCloud.com.orttaai.Orttaai"
+    nonisolated static let syncEnabledKey = "cloudSyncEnabled"
+    nonisolated static let lastCompletedAtKey = "cloudSyncLastCompletedAt"
+    nonisolated static let deviceIDKey = "cloudSyncDeviceID"
 
     private let containerProvider: () -> CKContainer
     private let requiresEntitlementCheck: Bool
@@ -117,7 +117,10 @@ final class CloudSyncService {
         }
 
         UserDefaults.standard.set(true, forKey: Self.syncEnabledKey)
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastCompletedAtKey)
+        let completedAt = Date()
+        try DatabaseManager().markCloudSyncCompleted(at: completedAt)
+        markUserDefaultsSyncCompleted(at: completedAt)
+        postSyncCompleted(at: completedAt)
         return preview
     }
 
@@ -137,17 +140,24 @@ final class CloudSyncService {
 
         let mergedDatabase = Self.mergedDatabaseSnapshot(local: local.database, remote: remote.database)
         try Self.validateMergeResult(mergedDatabase, local: local.database, remote: remote.database)
-        _ = try DatabaseManager.backupDefaultDatabase(reason: "icloud-sync")
-        try DatabaseManager().applyCloudSnapshot(mergedDatabase, replacingLocalData: true)
 
         let profile = Self.newerProfile(local.profile, remote.profile) ?? local.profile
-        profile.apply()
+        let databaseManager = try DatabaseManager()
+        if !Self.databaseContentMatches(local.database, mergedDatabase) {
+            _ = try DatabaseManager.backupDefaultDatabase(reason: "icloud-sync")
+            try databaseManager.applyCloudSnapshot(mergedDatabase, replacingLocalData: true)
+        }
+
+        if profile != local.profile {
+            profile.apply()
+        }
 
         try await pushLocalSnapshot()
         let completedAt = Date()
-        try DatabaseManager().markCloudSyncCompleted(at: completedAt)
+        try databaseManager.markCloudSyncCompleted(at: completedAt)
         UserDefaults.standard.set(true, forKey: Self.syncEnabledKey)
-        UserDefaults.standard.set(completedAt.timeIntervalSince1970, forKey: Self.lastCompletedAtKey)
+        markUserDefaultsSyncCompleted(at: completedAt)
+        postSyncCompleted(at: completedAt)
     }
 
     private func localFullSnapshot() throws -> CloudFullSnapshot {
@@ -337,6 +347,18 @@ final class CloudSyncService {
         return id
     }
 
+    private func markUserDefaultsSyncCompleted(at date: Date) {
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Self.lastCompletedAtKey)
+    }
+
+    private func postSyncCompleted(at date: Date) {
+        NotificationCenter.default.post(
+            name: .cloudSyncDidComplete,
+            object: self,
+            userInfo: [CloudSyncNotificationKey.completedAt: date]
+        )
+    }
+
     private func ensureAccountAvailable() async throws {
         let status = try await cloudContainer().accountStatus()
         switch status {
@@ -442,7 +464,7 @@ final class CloudSyncService {
         for row in local + remote {
             let key = row[keyPath: id]
             if let existing = merged[key] {
-                if row[keyPath: date] >= existing[keyPath: date] {
+                if row[keyPath: date] > existing[keyPath: date] {
                     merged[key] = row
                 }
             } else {
@@ -475,6 +497,69 @@ final class CloudSyncService {
                 && tombstone.deletedAt >= modifiedAt
         }
     }
+
+    private static func databaseContentMatches(
+        _ lhs: CloudDatabaseSnapshot,
+        _ rhs: CloudDatabaseSnapshot
+    ) -> Bool {
+        normalizedTranscriptions(lhs.transcriptions) == normalizedTranscriptions(rhs.transcriptions)
+            && normalizedDictionaryEntries(lhs.dictionaryEntries) == normalizedDictionaryEntries(rhs.dictionaryEntries)
+            && normalizedSnippetEntries(lhs.snippetEntries) == normalizedSnippetEntries(rhs.snippetEntries)
+            && normalizedLearningSuggestions(lhs.learningSuggestions) == normalizedLearningSuggestions(rhs.learningSuggestions)
+            && normalizedWritingInsightSnapshots(lhs.writingInsightSnapshots) == normalizedWritingInsightSnapshots(rhs.writingInsightSnapshots)
+            && lhs.tombstones.sorted { $0.id < $1.id } == rhs.tombstones.sorted { $0.id < $1.id }
+    }
+
+    private static func normalizedTranscriptions(_ rows: [CloudSyncTranscription]) -> [CloudSyncTranscription] {
+        rows.map { row in
+            var normalized = row
+            normalized.localID = nil
+            return normalized
+        }
+        .sorted { $0.syncID < $1.syncID }
+    }
+
+    private static func normalizedDictionaryEntries(_ rows: [CloudSyncDictionaryEntry]) -> [CloudSyncDictionaryEntry] {
+        rows.map { row in
+            var normalized = row
+            normalized.localID = nil
+            return normalized
+        }
+        .sorted { $0.syncID < $1.syncID }
+    }
+
+    private static func normalizedSnippetEntries(_ rows: [CloudSyncSnippetEntry]) -> [CloudSyncSnippetEntry] {
+        rows.map { row in
+            var normalized = row
+            normalized.localID = nil
+            return normalized
+        }
+        .sorted { $0.syncID < $1.syncID }
+    }
+
+    private static func normalizedLearningSuggestions(_ rows: [CloudSyncLearningSuggestion]) -> [CloudSyncLearningSuggestion] {
+        rows.map { row in
+            var normalized = row
+            normalized.localID = nil
+            return normalized
+        }
+        .sorted { $0.syncID < $1.syncID }
+    }
+
+    private static func normalizedWritingInsightSnapshots(
+        _ rows: [CloudSyncWritingInsightSnapshot]
+    ) -> [CloudSyncWritingInsightSnapshot] {
+        rows.map { row in
+            var normalized = row
+            normalized.localID = nil
+            return normalized
+        }
+        .sorted { $0.syncID < $1.syncID }
+    }
+}
+
+enum CloudSyncNotificationKey {
+    static let completedAt = "completedAt"
 }
 
 private extension Array {

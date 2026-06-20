@@ -58,7 +58,7 @@ struct CloudSyncStats: Codable, Equatable, Sendable {
     }
 }
 
-struct CloudDatabaseSnapshot: Codable, Sendable {
+struct CloudDatabaseSnapshot: Codable, Equatable, Sendable {
     var transcriptions: [CloudSyncTranscription] = []
     var dictionaryEntries: [CloudSyncDictionaryEntry] = []
     var snippetEntries: [CloudSyncSnippetEntry] = []
@@ -89,7 +89,7 @@ struct CloudDatabaseSnapshot: Codable, Sendable {
     }
 }
 
-struct CloudFullSnapshot: Codable, Sendable {
+struct CloudFullSnapshot: Codable, Equatable, Sendable {
     var database: CloudDatabaseSnapshot
     var profile: CloudProfileSnapshot
     var capturedAt: Date
@@ -105,7 +105,7 @@ struct CloudFullSnapshot: Codable, Sendable {
     }
 }
 
-struct CloudSyncTranscription: Codable, Sendable {
+struct CloudSyncTranscription: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -125,7 +125,7 @@ struct CloudSyncTranscription: Codable, Sendable {
     var audioDevice: String?
 }
 
-struct CloudSyncDictionaryEntry: Codable, Sendable {
+struct CloudSyncDictionaryEntry: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -139,7 +139,7 @@ struct CloudSyncDictionaryEntry: Codable, Sendable {
     var updatedAt: Date
 }
 
-struct CloudSyncSnippetEntry: Codable, Sendable {
+struct CloudSyncSnippetEntry: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -152,7 +152,7 @@ struct CloudSyncSnippetEntry: Codable, Sendable {
     var updatedAt: Date
 }
 
-struct CloudSyncLearningSuggestion: Codable, Sendable {
+struct CloudSyncLearningSuggestion: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -167,7 +167,7 @@ struct CloudSyncLearningSuggestion: Codable, Sendable {
     var updatedAt: Date
 }
 
-struct CloudSyncWritingInsightSnapshot: Codable, Sendable {
+struct CloudSyncWritingInsightSnapshot: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -180,7 +180,7 @@ struct CloudSyncWritingInsightSnapshot: Codable, Sendable {
     var snapshotJSON: String
 }
 
-struct CloudSyncTombstone: Codable, Identifiable, Sendable {
+struct CloudSyncTombstone: Codable, Equatable, Identifiable, Sendable {
     var id: String { "\(table.rawValue):\(syncID)" }
     var table: CloudSyncTable
     var syncID: String
@@ -222,7 +222,7 @@ enum UserDefaultsSyncValue: Codable, Equatable, Sendable {
     }
 }
 
-struct CloudProfileSnapshot: Codable, Sendable {
+struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     static let modifiedAtKey = "cloudSyncProfileModifiedAt"
 
     static let syncedUserDefaultsKeys: [String] = [
@@ -395,5 +395,6 @@ final class CloudProfileChangeTracker {
         lock.unlock()
 
         defaults.set(Date().timeIntervalSince1970, forKey: CloudProfileSnapshot.modifiedAtKey)
+        CloudSyncScheduler.requestSync(reason: .profileChange)
     }
 }

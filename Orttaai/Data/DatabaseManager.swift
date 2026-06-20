@@ -541,6 +541,7 @@ final class DatabaseManager {
                 modifiedAt: createdAt
             )
         }
+        requestCloudSyncIfEnabled()
     }
 
     func fetchTranscriptions(
@@ -612,6 +613,7 @@ final class DatabaseManager {
             try Self.recordTombstones(in: db, table: .transcription)
             try Transcription.deleteAll(db)
         }
+        requestCloudSyncIfEnabled()
         Logger.database.info("All transcriptions deleted")
     }
 
@@ -630,22 +632,27 @@ final class DatabaseManager {
             try db.execute(sql: "DELETE FROM writing_insight_snapshot")
         }
         NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+        requestCloudSyncIfEnabled()
         Logger.database.info("All local database content deleted")
     }
 
     @discardableResult
     func deleteTranscription(id: Int64) throws -> Bool {
-        return try dbQueue.write { db in
+        let deleted = try dbQueue.write { db in
             try Self.recordTombstone(in: db, table: .transcription, id: id)
             return try Transcription.deleteOne(db, key: id)
         }
+        if deleted {
+            requestCloudSyncIfEnabled()
+        }
+        return deleted
     }
 
     // MARK: - Writing Insights
 
     @discardableResult
     func saveWritingInsightSnapshot(_ snapshot: WritingInsightSnapshot) throws -> Int64 {
-        try dbQueue.write { db in
+        let insertedID = try dbQueue.write { db in
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let requestJSONData = try encoder.encode(snapshot.request)
@@ -733,6 +740,8 @@ final class DatabaseManager {
 
             return insertedID
         }
+        requestCloudSyncIfEnabled()
+        return insertedID
     }
 
     func fetchLatestWritingInsightSnapshot() throws -> WritingInsightSnapshot? {
@@ -803,14 +812,19 @@ final class DatabaseManager {
                 arguments: [isPinned, Date(), id]
             )
         }
+        requestCloudSyncIfEnabled()
     }
 
     @discardableResult
     func deleteWritingInsightSnapshot(id: Int64) throws -> Bool {
-        try dbQueue.write { db in
+        let deleted = try dbQueue.write { db in
             try Self.recordTombstone(in: db, table: .writingInsightSnapshot, id: id)
             return try WritingInsightSnapshotRecord.deleteOne(db, key: id)
         }
+        if deleted {
+            requestCloudSyncIfEnabled()
+        }
+        return deleted
     }
 
     func fetchDistinctTargetAppNames(limit: Int = 60) throws -> [String] {
@@ -840,6 +854,10 @@ final class DatabaseManager {
 
     private func postPersonalMemoryDidChange() {
         NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+    }
+
+    private func requestCloudSyncIfEnabled() {
+        CloudSyncScheduler.requestSync(reason: .localChange)
     }
 
     func fetchDictionaryEntries(includeInactive: Bool = true) throws -> [DictionaryEntry] {
@@ -910,6 +928,7 @@ final class DatabaseManager {
             return entry
         }
         postPersonalMemoryDidChange()
+        requestCloudSyncIfEnabled()
         return entry
     }
 
@@ -920,6 +939,7 @@ final class DatabaseManager {
         }
         if deleted {
             postPersonalMemoryDidChange()
+            requestCloudSyncIfEnabled()
         }
         return deleted
     }
@@ -976,6 +996,7 @@ final class DatabaseManager {
             return entry
         }
         postPersonalMemoryDidChange()
+        requestCloudSyncIfEnabled()
         return entry
     }
 
@@ -993,6 +1014,7 @@ final class DatabaseManager {
                 arguments: [Date(), Date(), id]
             )
         }
+        requestCloudSyncIfEnabled()
     }
 
     func fetchSnippetEntries(includeInactive: Bool = true) throws -> [SnippetEntry] {
@@ -1060,6 +1082,7 @@ final class DatabaseManager {
             return entry
         }
         postPersonalMemoryDidChange()
+        requestCloudSyncIfEnabled()
         return entry
     }
 
@@ -1070,6 +1093,7 @@ final class DatabaseManager {
         }
         if deleted {
             postPersonalMemoryDidChange()
+            requestCloudSyncIfEnabled()
         }
         return deleted
     }
@@ -1124,6 +1148,7 @@ final class DatabaseManager {
             return entry
         }
         postPersonalMemoryDidChange()
+        requestCloudSyncIfEnabled()
         return entry
     }
 
@@ -1141,11 +1166,12 @@ final class DatabaseManager {
                 arguments: [Date(), Date(), id]
             )
         }
+        requestCloudSyncIfEnabled()
     }
 
     @discardableResult
     func saveLearningSuggestions(_ drafts: [LearningSuggestionDraft]) throws -> Int {
-        try dbQueue.write { db in
+        let changeCount = try dbQueue.write { db in
             var changeCount = 0
             let now = Date()
 
@@ -1199,6 +1225,10 @@ final class DatabaseManager {
 
             return changeCount
         }
+        if changeCount > 0 {
+            requestCloudSyncIfEnabled()
+        }
+        return changeCount
     }
 
     func fetchLearningSuggestions(
@@ -1236,6 +1266,7 @@ final class DatabaseManager {
                 arguments: [status.rawValue, now, now, id]
             )
         }
+        requestCloudSyncIfEnabled()
     }
 
     func clearLearningSuggestions(status: LearningSuggestionStatus? = nil) throws {
@@ -1255,6 +1286,7 @@ final class DatabaseManager {
                 try LearningSuggestion.deleteAll(db)
             }
         }
+        requestCloudSyncIfEnabled()
     }
 
     func logSkippedRecording(duration: TimeInterval) {

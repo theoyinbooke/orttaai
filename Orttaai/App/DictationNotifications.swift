@@ -8,6 +8,7 @@ extension Notification.Name {
     static let fastFirstUpgradeAvailabilityDidChange = Notification.Name("Orttaai.fastFirstUpgradeAvailabilityDidChange")
     static let audioPipelineResetRequested = Notification.Name("Orttaai.audioPipelineResetRequested")
     static let audioPipelineResetDidComplete = Notification.Name("Orttaai.audioPipelineResetDidComplete")
+    static let cloudSyncDidComplete = Notification.Name("Orttaai.cloudSyncDidComplete")
 }
 
 enum DictationStateSignal: String {

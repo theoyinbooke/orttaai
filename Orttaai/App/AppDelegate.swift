@@ -135,6 +135,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(audioResetObserver)
         }
         CloudProfileChangeTracker.shared.stop()
+        CloudSyncScheduler.stop()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -231,10 +232,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startCloudSyncIfEnabled() {
-        guard UserDefaults.standard.bool(forKey: CloudSyncService.syncEnabledKey) else { return }
-        Task {
-            await CloudSyncService.shared.syncIfEnabled()
-        }
+        CloudSyncScheduler.startIfEnabled()
     }
 
     private func presentInitialWindow(hasCompletedSetup: Bool) {
@@ -292,6 +290,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Logger.audio.info("System wake detected — marking audio subsystem for revalidation")
             self?.audioService?.markAudioSystemStale()
+            CloudSyncScheduler.requestSync(reason: .systemWake, debounce: 1)
         }
     }
 

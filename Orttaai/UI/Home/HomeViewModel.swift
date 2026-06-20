@@ -42,6 +42,7 @@ final class HomeViewModel {
     private let insightsService: WritingInsightsService?
     private let settings: AppSettings
     private var observation: DatabaseCancellable?
+    private var cloudSyncObserver: NSObjectProtocol?
     private let githubStarPromptCooldown: TimeInterval = 7 * 24 * 60 * 60
     private let githubStarPromptMinimumSessions = 3
     private let githubStarPromptMinimumWords = 200
@@ -404,6 +405,30 @@ final class HomeViewModel {
                 self?.refresh()
             }
         }
+
+        if cloudSyncObserver == nil {
+            cloudSyncObserver = NotificationCenter.default.addObserver(
+                forName: .cloudSyncDidComplete,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleCloudSyncCompleted()
+                }
+            }
+        }
+    }
+
+    private func handleCloudSyncCompleted() {
+        refresh()
+        refreshFastFirstState()
+        guard hasLoadedInsightsContext, let insightsService else { return }
+        insightsAvailableApps = insightsService.loadAvailableApps()
+        refreshInsightsHistory(using: insightsService)
+        mergeSelectedAppsIntoAvailableList()
+        refreshInsightsFreshness(using: insightsService)
+        recomputeInsightsComparison()
+        maybeAutoRefreshInsights(using: insightsService)
     }
 
     private func generateInsights(force: Bool) {
