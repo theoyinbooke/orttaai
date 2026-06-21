@@ -16,7 +16,7 @@ Options:
   --configuration <name>    Build configuration (default: Release).
   --app-name <name>         App bundle name (default: Orttaai).
   --team-id <id>            Apple Team ID (default: from Xcode build settings).
-  --notary-profile <name>   notarytool keychain profile (default: ORTTAAI_NOTARY).
+  --notary-profile <name>   notarytool keychain profile (default: orttaai-notary).
   --output-dir <path>       Artifact directory root (default: dist).
   --dmg-theme <mode>        DMG background theme: auto|light|dark (default: auto).
   -h, --help                Show this help.
@@ -24,7 +24,7 @@ Options:
 Prerequisites:
   - Developer ID Application cert installed locally.
   - notarytool profile stored:
-      xcrun notarytool store-credentials "ORTTAAI_NOTARY" \
+      xcrun notarytool store-credentials "orttaai-notary" \
         --apple-id "<apple-id>" --team-id "<team-id>" --password "<app-specific-password>"
 EOF
 }
@@ -41,7 +41,7 @@ SCHEME="Orttaai"
 SPM_PACKAGES_DIR=".spm-local"
 CONFIGURATION="Release"
 APP_NAME="Orttaai"
-NOTARY_PROFILE="ORTTAAI_NOTARY"
+NOTARY_PROFILE="orttaai-notary"
 OUTPUT_DIR="dist"
 VERSION_OVERRIDE=""
 TEAM_ID_OVERRIDE=""
