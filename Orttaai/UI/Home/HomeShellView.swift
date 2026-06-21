@@ -5,202 +5,178 @@ import SwiftUI
 
 struct HomeShellView: View {
     @ObservedObject var navigation: HomeNavigationState
-    @AppStorage("homeSidebarCollapsed") private var homeSidebarCollapsed = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+
     let onRunSetup: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
-            let width = proxy.size.width
-            let canExpandSidebar = width >= 920
-            let collapsedSidebar = !canExpandSidebar || homeSidebarCollapsed
-            let iconOnlySidebar = width < 820 || homeSidebarCollapsed
-            let compactOverview = width < 1_180
+            let compactOverview = proxy.size.width < 1_180
 
-            HStack(spacing: 0) {
-                sidebar(
-                    collapsed: collapsedSidebar,
-                    iconOnly: iconOnlySidebar,
-                    canExpand: canExpandSidebar
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                HomeSidebarView(
+                    selection: sidebarSelection,
+                    onRunSetup: onRunSetup
                 )
-
-                Divider()
-                    .background(Color.Orttaai.border)
-
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
+            } detail: {
                 content(compactOverview: compactOverview)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.Orttaai.bgPrimary)
             }
+            .navigationSplitViewStyle(.balanced)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.Orttaai.bgPrimary)
+        .onAppear {
+            requestSyncIfShowingHome()
+        }
+        .onChange(of: navigation.selectedSection) { oldValue, newValue in
+            guard oldValue != newValue else { return }
+            if newValue == .overview {
+                requestSyncIfShowingHome()
+            }
+        }
+    }
+
+    private var sidebarSelection: Binding<HomeSection?> {
+        Binding(
+            get: { navigation.selectedSection },
+            set: { navigation.selectedSection = $0 ?? .overview }
+        )
+    }
+
+    @ViewBuilder
+    private func content(compactOverview: Bool) -> some View {
+        switch navigation.selectedSection {
+        case .overview:
+            HomeView(
+                onOpenSettings: { navigation.selectedSection = .settings },
+                onOpenModelSettings: { navigation.selectedSection = .model },
+                onOpenHistory: { navigation.selectedSection = .analytics },
+                onRunSetup: onRunSetup,
+                layoutMode: compactOverview ? .compact : .regular
+            )
+        case .chatAI:
+            ChatAIView()
+        case .memory:
+            MemoryView()
+        case .analytics:
+            AnalyticsView()
+        case .settings:
+            HomeSettingsWorkspaceView()
+        case .model:
+            ModelSettingsView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color.Orttaai.bgPrimary)
+        case .about:
+            ScrollView(showsIndicators: false) {
+                AboutView()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.Orttaai.bgPrimary)
         }
     }
 
-    private func content(compactOverview: Bool) -> some View {
-        Group {
-            switch navigation.selectedSection {
-            case .overview:
-                HomeView(
-                    onOpenSettings: { navigation.selectedSection = .settings },
-                    onOpenModelSettings: { navigation.selectedSection = .model },
-                    onOpenHistory: { navigation.selectedSection = .analytics },
-                    onRunSetup: onRunSetup,
-                    layoutMode: compactOverview ? .compact : .regular
-                )
-            case .chatAI:
-                ChatAIView()
-            case .memory:
-                MemoryView()
-            case .analytics:
-                AnalyticsView()
-            case .settings:
-                HomeSettingsWorkspaceView()
-            case .model:
-                ModelSettingsView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(Color.Orttaai.bgPrimary)
-            case .about:
-                ScrollView(showsIndicators: false) {
-                    AboutView()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.Orttaai.bgPrimary)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func requestSyncIfShowingHome() {
+        guard navigation.selectedSection == .overview else { return }
+        CloudSyncScheduler.requestSync(reason: .homeReturn, debounce: 0.5)
     }
+}
 
-    private func sidebar(collapsed: Bool, iconOnly: Bool, canExpand: Bool) -> some View {
-        let sidebarWidth: CGFloat = iconOnly ? 72 : (collapsed ? 88 : 240)
+private struct HomeSidebarView: View {
+    @Binding var selection: HomeSection?
+    let onRunSetup: () -> Void
 
-        return VStack(alignment: collapsed ? .center : .leading, spacing: Spacing.lg) {
-            HStack(alignment: .top, spacing: Spacing.sm) {
-                if !collapsed {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Orttaai Home")
-                            .font(.Orttaai.heading)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
+    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .memory, .analytics]
+    private let systemSections: [HomeSection] = [.model, .settings, .about]
 
-                        Text("Personal workspace")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
+    var body: some View {
+        VStack(spacing: 0) {
+            sidebarHeader
+
+            List(selection: $selection) {
+                Section("Workspace") {
+                    ForEach(workspaceSections) { section in
+                        HomeSidebarRow(section: section)
+                            .tag(section as HomeSection?)
                     }
                 }
 
-                if !collapsed {
-                    Spacer(minLength: 0)
-                }
-
-                Button {
-                    guard canExpand else { return }
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                        homeSidebarCollapsed.toggle()
+                Section("Manage") {
+                    ForEach(systemSections) { section in
+                        HomeSidebarRow(section: section)
+                            .tag(section as HomeSection?)
                     }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(canExpand ? Color.Orttaai.textSecondary : Color.Orttaai.textTertiary)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                        .fill(Color.Orttaai.bgSecondary.opacity(canExpand ? 0.65 : 0.35))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                        .stroke(Color.Orttaai.border.opacity(0.45), lineWidth: BorderWidth.standard)
-                )
-                .help(canExpand ? (collapsed ? "Expand sidebar" : "Collapse sidebar") : "Widen the window to expand the sidebar")
-                .accessibilityLabel(collapsed ? "Expand sidebar" : "Collapse sidebar")
-                .disabled(!canExpand)
-            }
-            .frame(maxWidth: .infinity, alignment: collapsed ? .leading : .center)
-
-            VStack(spacing: Spacing.sm) {
-                ForEach(HomeSection.allCases) { section in
-                    navItem(section: section, collapsed: collapsed)
                 }
             }
+            .listStyle(.sidebar)
 
-            Spacer()
+            Divider()
 
             Button {
                 onRunSetup()
             } label: {
-                Group {
-                    if collapsed {
-                        Image(systemName: "slider.horizontal.3")
-                    } else {
-                        Label("Run Setup", systemImage: "slider.horizontal.3")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
+                Label("Run Setup", systemImage: "slider.horizontal.3")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(OrttaaiButtonStyle(.secondary))
+            .buttonStyle(.borderless)
+            .controlSize(.large)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.md)
             .help("Run setup again")
         }
-        .padding(.horizontal, collapsed ? Spacing.sm : Spacing.lg)
-        .padding(.vertical, Spacing.lg)
-        .frame(width: sidebarWidth)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.Orttaai.bgSecondary.opacity(0.35))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func navItem(section: HomeSection, collapsed: Bool) -> some View {
-        Button {
-            navigation.selectedSection = section
-        } label: {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: section.icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 16)
+    private var sidebarHeader: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.accent)
+                .frame(width: 34, height: 34)
 
-                if !collapsed {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(section.title)
-                            .font(.Orttaai.bodyMedium)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Orttaai")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
 
-                        Text(section.subtitle)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(
-                                navigation.selectedSection == section
-                                    ? Color.Orttaai.textSecondary
-                                    : Color.Orttaai.textSecondary.opacity(0.92)
-                            )
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 0)
+                Text("Personal workspace")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
             }
-            .foregroundStyle(
-                navigation.selectedSection == section
-                    ? Color.Orttaai.textPrimary
-                    : Color.Orttaai.textPrimary.opacity(0.92)
-            )
-            .padding(.horizontal, collapsed ? Spacing.sm : Spacing.md)
-            .padding(.vertical, collapsed ? Spacing.sm : Spacing.md)
-            .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .fill(
-                        navigation.selectedSection == section
-                            ? Color.Orttaai.accentSubtle
-                            : Color.clear
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .stroke(
-                        navigation.selectedSection == section
-                            ? Color.Orttaai.accent.opacity(0.5)
-                            : Color.Orttaai.border.opacity(0.35),
-                        lineWidth: BorderWidth.standard
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .buttonStyle(.plain)
-        .help(section.title)
+        .padding(.top, 54)
+        .padding(.horizontal, Spacing.lg)
+        .padding(.bottom, Spacing.sm)
+    }
+}
+
+private struct HomeSidebarRow: View {
+    let section: HomeSection
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: section.icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(section.title)
+                    .font(.Orttaai.bodyMedium)
+                    .lineLimit(1)
+
+                Text(section.subtitle)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }

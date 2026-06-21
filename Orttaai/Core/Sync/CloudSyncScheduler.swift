@@ -8,6 +8,7 @@ enum CloudSyncTrigger: String, Sendable {
     case launch
     case localChange
     case profileChange
+    case homeReturn
     case periodic
     case systemWake
     case coalesced

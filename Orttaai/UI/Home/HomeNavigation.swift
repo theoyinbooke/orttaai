@@ -4,7 +4,7 @@
 import Foundation
 import Combine
 
-enum HomeSection: String, CaseIterable, Identifiable {
+enum HomeSection: String, CaseIterable, Identifiable, Hashable {
     case overview
     case chatAI
     case memory

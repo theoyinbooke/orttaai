@@ -151,43 +151,61 @@ struct MemoryView: View {
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
 
-            HStack(spacing: Spacing.sm) {
-                ForEach(MemorySubsection.allCases) { item in
-                    subsectionButton(item)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Spacing.lg) {
+                    subsectionPicker
+                    Spacer(minLength: Spacing.lg)
+                    searchField
+                        .frame(width: 360)
                 }
-                Spacer()
-            }
 
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-
-                TextField("Search entries", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.Orttaai.body)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                    }
-                    .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    subsectionPicker
+                    searchField
                 }
             }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-            .background(Color.Orttaai.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.input)
-                    .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
-            )
         }
+    }
+
+    private var subsectionPicker: some View {
+        HStack(spacing: Spacing.sm) {
+            ForEach(MemorySubsection.allCases) { item in
+                subsectionButton(item)
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.textTertiary)
+
+            TextField("Search entries", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.Orttaai.body)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.Orttaai.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.input)
+                .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
+        )
     }
 
     private var statusRow: some View {

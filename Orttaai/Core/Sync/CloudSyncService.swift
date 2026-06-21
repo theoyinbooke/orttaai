@@ -142,22 +142,34 @@ final class CloudSyncService {
         try Self.validateMergeResult(mergedDatabase, local: local.database, remote: remote.database)
 
         let profile = Self.newerProfile(local.profile, remote.profile) ?? local.profile
+        let localDatabaseNeedsUpdate = !Self.databaseContentMatches(local.database, mergedDatabase)
+        let remoteDatabaseNeedsUpdate = !Self.databaseContentMatches(remote.database, mergedDatabase)
+        let localProfileNeedsUpdate = profile != local.profile
+        let remoteProfileNeedsUpdate = profile != remote.profile
         let databaseManager = try DatabaseManager()
-        if !Self.databaseContentMatches(local.database, mergedDatabase) {
+
+        if localDatabaseNeedsUpdate {
             _ = try DatabaseManager.backupDefaultDatabase(reason: "icloud-sync")
             try databaseManager.applyCloudSnapshot(mergedDatabase, replacingLocalData: true)
         }
 
-        if profile != local.profile {
+        if localProfileNeedsUpdate {
             profile.apply()
         }
 
-        try await pushLocalSnapshot()
+        if remoteDatabaseNeedsUpdate || remoteProfileNeedsUpdate {
+            try await pushLocalSnapshot()
+        }
+
         let completedAt = Date()
         try databaseManager.markCloudSyncCompleted(at: completedAt)
         UserDefaults.standard.set(true, forKey: Self.syncEnabledKey)
         markUserDefaultsSyncCompleted(at: completedAt)
         postSyncCompleted(at: completedAt)
+
+        Logger.database.info(
+            "Cloud sync resolved changes [localDatabaseUpdated=\(localDatabaseNeedsUpdate), remoteDatabaseUpdated=\(remoteDatabaseNeedsUpdate), localProfileUpdated=\(localProfileNeedsUpdate), remoteProfileUpdated=\(remoteProfileNeedsUpdate)]"
+        )
     }
 
     private func localFullSnapshot() throws -> CloudFullSnapshot {

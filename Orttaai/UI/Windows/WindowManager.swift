@@ -36,6 +36,7 @@ final class WindowManager {
             title: "Orttaai Setup",
             size: WindowSize.setup,
             resizable: false,
+            integratedTitlebar: false,
             content: setupView
         )
         setupWindow = window
@@ -47,6 +48,7 @@ final class WindowManager {
         if let section {
             homeNavigation.selectedSection = section
         }
+        requestHomeSyncIfNeeded()
 
         if let existing = homeWindow {
             Logger.ui.info("Showing existing home window")
@@ -58,6 +60,7 @@ final class WindowManager {
             title: "Orttaai",
             size: WindowSize.home,
             resizable: true,
+            integratedTitlebar: true,
             content: HomeShellView(
                 navigation: homeNavigation,
                 onRunSetup: { [weak self] in
@@ -91,11 +94,15 @@ final class WindowManager {
         title: String,
         size: CGSize,
         resizable: Bool,
+        integratedTitlebar: Bool,
         content: Content
     ) -> NSWindow {
         var styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable]
         if resizable {
             styleMask.insert(.resizable)
+        }
+        if integratedTitlebar {
+            styleMask.insert(.fullSizeContentView)
         }
 
         let window = NSWindow(
@@ -107,6 +114,11 @@ final class WindowManager {
         window.title = title
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = NSColor.Orttaai.bgPrimary
+        if integratedTitlebar {
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.toolbarStyle = .unified
+        }
         // Keep interactive content draggable/selectable (sliders, text selection, etc.)
         // and restrict window move behavior to the title bar.
         window.isMovableByWindowBackground = false
@@ -115,6 +127,11 @@ final class WindowManager {
         window.collectionBehavior.insert(.moveToActiveSpace)
 
         return window
+    }
+
+    private func requestHomeSyncIfNeeded() {
+        guard homeNavigation.selectedSection == .overview else { return }
+        CloudSyncScheduler.requestSync(reason: .homeReturn, debounce: 0.5)
     }
 
     private func centerAndShow(_ window: NSWindow, recenter: Bool) {
