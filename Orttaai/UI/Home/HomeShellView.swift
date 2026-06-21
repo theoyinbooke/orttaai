@@ -99,14 +99,16 @@ private struct HomeSidebarView: View {
                 Section("Workspace") {
                     ForEach(workspaceSections) { section in
                         HomeSidebarRow(section: section)
-                            .tag(section as HomeSection?)
+                            .contentShape(Rectangle())
+                            .tag(section)
                     }
                 }
 
                 Section("Manage") {
                     ForEach(systemSections) { section in
                         HomeSidebarRow(section: section)
-                            .tag(section as HomeSection?)
+                            .contentShape(Rectangle())
+                            .tag(section)
                     }
                 }
             }
