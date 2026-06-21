@@ -59,6 +59,8 @@ struct HomeShellView: View {
             )
         case .chatAI:
             ChatAIView()
+        case .graph:
+            SemanticMemoryView()
         case .memory:
             MemoryView()
         case .analytics:
@@ -88,7 +90,7 @@ private struct HomeSidebarView: View {
     @Binding var selection: HomeSection?
     let onRunSetup: () -> Void
 
-    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .memory, .analytics]
+    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics]
     private let systemSections: [HomeSection] = [.model, .settings, .about]
 
     var body: some View {
@@ -152,7 +154,7 @@ private struct HomeSidebarView: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.top, 54)
+        .padding(.top, WorkspaceLayout.sidebarHeaderTopPadding)
         .padding(.horizontal, Spacing.lg)
         .padding(.bottom, Spacing.sm)
     }

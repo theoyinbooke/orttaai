@@ -130,6 +130,13 @@ final class AppSettings: ObservableObject {
     @AppStorage("localLLMInsightsModel") var localLLMInsightsModel: String = "qwen3.5:0.8b"
     @AppStorage("localLLMInsightsContextTokens") var localLLMInsightsContextTokens: Int = 16_384
     @AppStorage("localLLMInsightsThinkingEnabled") var localLLMInsightsThinkingEnabled: Bool = false
+    @AppStorage("semanticMemoryEnabled") var semanticMemoryEnabled: Bool = true
+    @AppStorage("semanticMemoryAutoIndexEnabled") var semanticMemoryAutoIndexEnabled: Bool = true
+    @AppStorage("semanticEmbeddingFallbackEnabled") var semanticEmbeddingFallbackEnabled: Bool = true
+    @AppStorage("semanticEmbeddingModel") var semanticEmbeddingModel: String = "all-minilm"
+    @AppStorage("semanticActiveIndexModelID") var semanticActiveIndexModelID: String = ""
+    @AppStorage("semanticInsightSummaryEnabled") var semanticInsightSummaryEnabled: Bool = true
+    @AppStorage("semanticInsightSummaryModel") var semanticInsightSummaryModel: String = "qwen3.5:0.8b"
 
     var selectedAudioDevice: String? {
         selectedAudioDeviceID.isEmpty ? nil : selectedAudioDeviceID
@@ -170,6 +177,14 @@ final class AppSettings: ObservableObject {
 
     var normalizedLocalLLMInsightsModel: String {
         sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+    }
+
+    var normalizedSemanticEmbeddingModel: String {
+        sanitizeSemanticEmbeddingModel(semanticEmbeddingModel, fallback: "all-minilm")
+    }
+
+    var normalizedSemanticInsightSummaryModel: String {
+        sanitizeLocalLLMModel(semanticInsightSummaryModel, fallback: "qwen3.5:0.8b")
     }
 
     var localLLMInsightCandidateModels: [String] {
@@ -218,6 +233,11 @@ final class AppSettings: ObservableObject {
             return fallback
         }
         return trimmed
+    }
+
+    private func sanitizeSemanticEmbeddingModel(_ value: String, fallback: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : trimmed
     }
 
     func syncTranscriptionSettings(to transcriptionService: any Transcribing) async {

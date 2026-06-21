@@ -15,8 +15,8 @@ struct AnalyticsView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding(.horizontal, Spacing.xxl)
-                .padding(.top, Spacing.xxl)
+                .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
+                .padding(.top, WorkspaceLayout.contentTopPadding)
                 .padding(.bottom, Spacing.lg)
 
             switch selectedTab {

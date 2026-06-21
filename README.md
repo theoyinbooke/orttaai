@@ -17,6 +17,7 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 - **Personal Memory (Dictionary + Snippets)** — Save your own term replacements and phrase expansions, then apply them automatically during dictation.
 - **AI Suggestions from History** — Generate suggested dictionary/snippet entries from your recent local history (Apple Foundation Models when available, with fallback).
 - **Writing Insights panel** — Generate on-demand insights about your dictation patterns from recent history (Apple Foundation Models when available, with fallback).
+- **Semantic Memory Graph** — Build a local embedding index from dictation history to explore topics, apps, named contexts, and related transcript chunks.
 - **Personal Home dashboard** — Sleek at-a-glance view for 7-day activity, speed trends, top apps, and quick actions.
 - **Model management** — Download and switch between Whisper models based on your hardware.
 - **Auto-updates** — Sparkle integration for direct downloads; Homebrew-managed updates when installed from the custom cask tap.

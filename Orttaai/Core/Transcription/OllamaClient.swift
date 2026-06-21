@@ -71,6 +71,13 @@ actor OllamaClient {
         OllamaCatalogModel(name: "granite4:3b", sizeBytes: nil),
     ]
 
+    nonisolated private static let curatedEmbeddingOllamaModels: [OllamaCatalogModel] = [
+        OllamaCatalogModel(name: "all-minilm", sizeBytes: 67_000_000),
+        OllamaCatalogModel(name: "nomic-embed-text", sizeBytes: 274_000_000),
+        OllamaCatalogModel(name: "embeddinggemma", sizeBytes: 622_000_000),
+        OllamaCatalogModel(name: "qwen3-embedding:0.6b", sizeBytes: 639_000_000),
+    ]
+
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -289,6 +296,81 @@ actor OllamaClient {
         return responseText
     }
 
+    func embed(
+        baseURLString: String,
+        model: String,
+        inputs: [String],
+        timeoutMs: Int? = nil,
+        keepAlive: String = "5m",
+        truncate: Bool = true
+    ) async throws -> [[Float]] {
+        let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedInputs = inputs
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !normalizedModel.isEmpty else {
+            throw OllamaClientError.requestFailed(message: "Missing Ollama embedding model name.")
+        }
+        guard !normalizedInputs.isEmpty else {
+            throw OllamaClientError.requestFailed(message: "Missing text for Ollama embeddings.")
+        }
+
+        let url = try endpointURL(baseURLString: baseURLString, path: "/api/embed")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        if let timeoutMs {
+            request.timeoutInterval = max(0.08, Double(timeoutMs) / 1_000.0)
+        } else {
+            request.timeoutInterval = 24 * 60 * 60
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload: [String: Any] = [
+            "model": normalizedModel,
+            "input": normalizedInputs,
+            "truncate": truncate,
+            "keep_alive": keepAlive,
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let (data, response) = try await session.data(for: request)
+        try validateHTTPResponse(response, data: data)
+
+        let json = try parseJSONObject(data)
+        let rawEmbeddings: [[Any]]
+        if let embeddings = json["embeddings"] as? [[Any]] {
+            rawEmbeddings = embeddings
+        } else if let embedding = json["embedding"] as? [Any] {
+            rawEmbeddings = [embedding]
+        } else {
+            throw OllamaClientError.invalidResponse
+        }
+
+        let embeddings = rawEmbeddings.compactMap { values -> [Float]? in
+            let vector = values.compactMap { value -> Float? in
+                if let number = value as? NSNumber {
+                    return number.floatValue
+                }
+                if let double = value as? Double {
+                    return Float(double)
+                }
+                if let string = value as? String, let double = Double(string) {
+                    return Float(double)
+                }
+                return nil
+            }
+            return vector.isEmpty ? nil : vector
+        }
+
+        guard embeddings.count == normalizedInputs.count else {
+            throw OllamaClientError.requestFailed(
+                message: "Ollama returned \(embeddings.count) embeddings for \(normalizedInputs.count) input(s)."
+            )
+        }
+        return embeddings
+    }
+
     func pullModel(
         baseURLString: String,
         model: String,
@@ -374,8 +456,15 @@ actor OllamaClient {
 
     func fetchLibraryModels(timeoutMs: Int = 3_200, limit: Int = 80) async throws -> [OllamaCatalogModel] {
         _ = timeoutMs
-        let boundedLimit = max(1, min(limit, Self.curatedLightweightOllamaModels.count))
-        return Array(Self.curatedLightweightOllamaModels.prefix(boundedLimit))
+        let catalog = Self.deduplicatedCatalog(Self.curatedLightweightOllamaModels + Self.curatedEmbeddingOllamaModels)
+        let boundedLimit = max(1, min(limit, catalog.count))
+        return Array(catalog.prefix(boundedLimit))
+    }
+
+    func fetchEmbeddingLibraryModels(timeoutMs: Int = 3_200, limit: Int = 20) async throws -> [OllamaCatalogModel] {
+        _ = timeoutMs
+        let boundedLimit = max(1, min(limit, Self.curatedEmbeddingOllamaModels.count))
+        return Array(Self.curatedEmbeddingOllamaModels.prefix(boundedLimit))
     }
 
     func warmModel(
@@ -444,6 +533,16 @@ actor OllamaClient {
             return Int64(string)
         }
         return nil
+    }
+
+    nonisolated private static func deduplicatedCatalog(_ models: [OllamaCatalogModel]) -> [OllamaCatalogModel] {
+        var seen = Set<String>()
+        return models.filter { model in
+            let key = model.name.lowercased()
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
     }
 
 }

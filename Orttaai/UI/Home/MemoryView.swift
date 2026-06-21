@@ -58,8 +58,8 @@ struct MemoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.horizontal, Spacing.xxl)
-                .padding(.top, Spacing.xxl)
+                .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
+                .padding(.top, WorkspaceLayout.contentTopPadding)
                 .padding(.bottom, Spacing.lg)
 
             Divider()
@@ -84,7 +84,9 @@ struct MemoryView: View {
                         }
                     }
                 }
-                .padding(Spacing.xxl)
+                .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
+                .padding(.top, Spacing.xxl)
+                .padding(.bottom, WorkspaceLayout.contentBottomPadding)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -560,7 +562,7 @@ struct MemoryView: View {
                     emptyState(
                         title: searchText.isEmpty ? subsection.emptyTitle : "No suggestion matches",
                         message: searchText.isEmpty ? subsection.emptyMessage : "Try a different search query.",
-                        systemImage: "sparkles.rectangle.stack"
+                        systemImage: "brain.head.profile"
                     )
                 } else {
                     LazyVStack(spacing: Spacing.sm) {

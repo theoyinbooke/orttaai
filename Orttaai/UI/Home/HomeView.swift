@@ -147,7 +147,7 @@ struct HomeView: View {
                         }
                     )
                 }
-                .padding(Spacing.xxl)
+                .padding(WorkspaceLayout.contentInsets)
             }
 
             if viewModel.isInsightsPanelVisible {

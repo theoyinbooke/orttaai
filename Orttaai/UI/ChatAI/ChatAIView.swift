@@ -490,6 +490,7 @@ private final class ChatAIViewModel: ObservableObject {
     private let storageKey = "chatAIConversations"
     private let client = OllamaClient()
     private let settings = AppSettings()
+    private let semanticMemory = SemanticMemoryService()
     private let voiceAudioService = AudioCaptureService()
     private let voiceTranscriptionService = TranscriptionService()
     private var didLoad = false
@@ -856,8 +857,9 @@ private final class ChatAIViewModel: ObservableObject {
             throw OllamaClientError.requestFailed(message: "Could not find the selected chat.")
         }
 
+        let systemContent = await systemPrompt(latestPrompt: latestPrompt)
         var messages: [OllamaChatMessage] = [
-            OllamaChatMessage(role: .system, content: systemPrompt(latestPrompt: latestPrompt))
+            OllamaChatMessage(role: .system, content: systemContent)
         ]
 
         for message in conversation.messages.suffix(14) {
@@ -868,7 +870,7 @@ private final class ChatAIViewModel: ObservableObject {
         return messages
     }
 
-    private func systemPrompt(latestPrompt: String) -> String {
+    private func systemPrompt(latestPrompt: String) async -> String {
         var sections: [String] = [
             """
             You are ChatAI inside Orttaai, a local writing assistant powered by Ollama.
@@ -901,6 +903,16 @@ private final class ChatAIViewModel: ObservableObject {
                 No saved Tone of Voice profile exists yet. Infer style only from recent writing samples when available, but avoid over-imitation and do not invent personal facts.
                 """)
             }
+        }
+
+        let semanticContext = await semanticMemory.contextBlock(for: latestPrompt, limit: 6)
+        if !semanticContext.isEmpty {
+            sections.append("""
+            Relevant semantic memory from Orttaai dictation history:
+            \(semanticContext)
+
+            Use this memory as evidence from the user's own prior context. Do not invent facts beyond these excerpts.
+            """)
         }
 
         let writingContext = recentWritingPatternContext()
@@ -1054,6 +1066,7 @@ struct ChatAIView: View {
     private let activeComposerMaxWidth: CGFloat = 760
     private let emptyComposerMaxWidth: CGFloat = 700
     private let starterPromptMaxWidth: CGFloat = 560
+    private let titlebarControlTopPadding: CGFloat = Spacing.lg
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -1090,12 +1103,13 @@ struct ChatAIView: View {
                 )
                 .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 4)
                 .padding(.leading, Spacing.lg)
-                .padding(.top, Spacing.lg)
+                .padding(.top, titlebarControlTopPadding)
                 .help("Show ChatAI history")
                 .accessibilityLabel("Show ChatAI history")
             }
         }
         .background(Color.Orttaai.bgPrimary)
+        .ignoresSafeArea(.container, edges: .top)
         .fileImporter(
             isPresented: $isImportingDocument,
             allowedContentTypes: [.item],
@@ -1177,7 +1191,7 @@ struct ChatAIView: View {
             }
         }
         .padding(.horizontal, Spacing.lg)
-        .padding(.top, 26)
+        .padding(.top, titlebarControlTopPadding)
         .padding(.bottom, Spacing.lg)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.Orttaai.bgSecondary.opacity(0.72))
@@ -1260,7 +1274,7 @@ struct ChatAIView: View {
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: Spacing.lg) {
                     Spacer()
-                        .frame(height: 58)
+                        .frame(height: Spacing.xxxl)
 
                     ForEach(viewModel.selectedConversation?.messages ?? []) { message in
                         messageBubble(message)

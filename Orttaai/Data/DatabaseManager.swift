@@ -300,6 +300,95 @@ final class DatabaseManager {
             try Self.addCloudSyncMetadata(in: db)
         }
 
+        migrator.registerMigration("v8_semantic_memory") { db in
+            try db.create(table: "semantic_chunk") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("transcriptionID", .integer).notNull()
+                t.column("chunkIndex", .integer).notNull()
+                t.column("text", .text).notNull()
+                t.column("textHash", .text).notNull()
+                t.column("sourceCreatedAt", .datetime).notNull()
+                t.column("targetAppName", .text)
+                t.column("targetAppBundleID", .text)
+                t.column("wordCount", .integer).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_semantic_chunk_transcription_chunk_unique",
+                on: "semantic_chunk",
+                columns: ["transcriptionID", "chunkIndex"],
+                unique: true
+            )
+            try db.create(
+                index: "idx_semantic_chunk_sourceCreatedAt",
+                on: "semantic_chunk",
+                columns: ["sourceCreatedAt"]
+            )
+            try db.create(
+                index: "idx_semantic_chunk_textHash",
+                on: "semantic_chunk",
+                columns: ["textHash"]
+            )
+
+            try db.create(table: "semantic_embedding") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("chunkID", .integer).notNull()
+                t.column("modelID", .text).notNull()
+                t.column("providerName", .text).notNull()
+                t.column("dimension", .integer).notNull()
+                t.column("vectorData", .blob).notNull()
+                t.column("generatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_semantic_embedding_chunk_model_unique",
+                on: "semantic_embedding",
+                columns: ["chunkID", "modelID"],
+                unique: true
+            )
+            try db.create(
+                index: "idx_semantic_embedding_model_generatedAt",
+                on: "semantic_embedding",
+                columns: ["modelID", "generatedAt"]
+            )
+
+            try db.create(table: "semantic_graph_node") { t in
+                t.column("nodeID", .text).primaryKey()
+                t.column("kind", .text).notNull()
+                t.column("title", .text).notNull()
+                t.column("subtitle", .text)
+                t.column("weight", .double).notNull()
+                t.column("lastSeenAt", .datetime)
+                t.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_semantic_graph_node_kind_weight",
+                on: "semantic_graph_node",
+                columns: ["kind", "weight"]
+            )
+
+            try db.create(table: "semantic_graph_edge") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("sourceNodeID", .text).notNull()
+                t.column("targetNodeID", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("weight", .double).notNull()
+                t.column("evidence", .text)
+                t.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_semantic_graph_edge_unique",
+                on: "semantic_graph_edge",
+                columns: ["sourceNodeID", "targetNodeID", "kind"],
+                unique: true
+            )
+            try db.create(
+                index: "idx_semantic_graph_edge_weight",
+                on: "semantic_graph_edge",
+                columns: ["weight"]
+            )
+        }
+
         return migrator
     }
 
@@ -611,6 +700,7 @@ final class DatabaseManager {
         try createDestructiveOperationBackup(reason: "clear-history")
         _ = try dbQueue.write { db in
             try Self.recordTombstones(in: db, table: .transcription)
+            try Self.deleteAllSemanticMemory(in: db)
             try Transcription.deleteAll(db)
         }
         requestCloudSyncIfEnabled()
@@ -625,6 +715,7 @@ final class DatabaseManager {
             try Self.recordTombstones(in: db, table: .snippetEntry)
             try Self.recordTombstones(in: db, table: .learningSuggestion)
             try Self.recordTombstones(in: db, table: .writingInsightSnapshot)
+            try Self.deleteAllSemanticMemory(in: db)
             try Transcription.deleteAll(db)
             try db.execute(sql: "DELETE FROM dictionary_entry")
             try db.execute(sql: "DELETE FROM snippet_entry")
@@ -640,12 +731,292 @@ final class DatabaseManager {
     func deleteTranscription(id: Int64) throws -> Bool {
         let deleted = try dbQueue.write { db in
             try Self.recordTombstone(in: db, table: .transcription, id: id)
+            try Self.deleteSemanticMemory(forTranscriptionID: id, in: db)
             return try Transcription.deleteOne(db, key: id)
         }
         if deleted {
             requestCloudSyncIfEnabled()
         }
         return deleted
+    }
+
+    // MARK: - Semantic Memory
+
+    private static func deleteAllSemanticMemory(in db: Database) throws {
+        try db.execute(sql: "DELETE FROM semantic_graph_edge")
+        try db.execute(sql: "DELETE FROM semantic_graph_node")
+        try db.execute(sql: "DELETE FROM semantic_embedding")
+        try db.execute(sql: "DELETE FROM semantic_chunk")
+    }
+
+    private static func deleteSemanticMemory(forTranscriptionID transcriptionID: Int64, in db: Database) throws {
+        let chunkIDs = try Int64.fetchAll(
+            db,
+            sql: "SELECT id FROM semantic_chunk WHERE transcriptionID = ?",
+            arguments: [transcriptionID]
+        )
+        if !chunkIDs.isEmpty {
+            try db.execute(
+                sql: "DELETE FROM semantic_embedding WHERE chunkID IN \(chunkIDs.sqlInList)",
+                arguments: StatementArguments(chunkIDs)
+            )
+        }
+        try db.execute(
+            sql: "DELETE FROM semantic_chunk WHERE transcriptionID = ?",
+            arguments: [transcriptionID]
+        )
+    }
+
+    func clearSemanticMemory() throws {
+        try dbQueue.write { db in
+            try Self.deleteAllSemanticMemory(in: db)
+        }
+        Logger.memory.info("Semantic memory index cleared")
+    }
+
+    func fetchSemanticIndexSourceTranscriptions(limit: Int = 1_000) throws -> [Transcription] {
+        try dbQueue.read { db in
+            try Transcription
+                .order(Column("createdAt").desc)
+                .limit(max(1, limit))
+                .fetchAll(db)
+        }
+    }
+
+    func fetchSemanticEmbeddingChunkIDs(modelID: String) throws -> Set<Int64> {
+        let normalizedModelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedModelID.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            let ids = try Int64.fetchAll(
+                db,
+                sql: """
+                SELECT chunkID
+                FROM semantic_embedding
+                WHERE modelID = ?
+                """,
+                arguments: [normalizedModelID]
+            )
+            return Set(ids)
+        }
+    }
+
+    func upsertSemanticChunks(for transcription: Transcription, drafts: [SemanticChunkDraft]) throws -> [SemanticChunk] {
+        guard let transcriptionID = transcription.id else { return [] }
+        return try dbQueue.write { db in
+            let existingRows = try SemanticChunk
+                .filter(Column("transcriptionID") == transcriptionID)
+                .fetchAll(db)
+            let draftIndexes = Set(drafts.map(\.chunkIndex))
+            let staleChunkIDs = existingRows
+                .filter { !draftIndexes.contains($0.chunkIndex) }
+                .compactMap(\.id)
+            if !staleChunkIDs.isEmpty {
+                try db.execute(
+                    sql: "DELETE FROM semantic_embedding WHERE chunkID IN \(staleChunkIDs.sqlInList)",
+                    arguments: StatementArguments(staleChunkIDs)
+                )
+                try db.execute(
+                    sql: "DELETE FROM semantic_chunk WHERE id IN \(staleChunkIDs.sqlInList)",
+                    arguments: StatementArguments(staleChunkIDs)
+                )
+            }
+
+            var chunks: [SemanticChunk] = []
+            for draft in drafts {
+                let now = Date()
+                if var existing = existingRows.first(where: { $0.chunkIndex == draft.chunkIndex }) {
+                    let textChanged = existing.textHash != draft.textHash
+                    existing.text = draft.text
+                    existing.textHash = draft.textHash
+                    existing.sourceCreatedAt = draft.sourceCreatedAt
+                    existing.targetAppName = draft.targetAppName
+                    existing.targetAppBundleID = draft.targetAppBundleID
+                    existing.wordCount = draft.wordCount
+                    existing.updatedAt = now
+                    try existing.update(db)
+                    if textChanged, let chunkID = existing.id {
+                        try db.execute(
+                            sql: "DELETE FROM semantic_embedding WHERE chunkID = ?",
+                            arguments: [chunkID]
+                        )
+                    }
+                    chunks.append(existing)
+                } else {
+                    var chunk = SemanticChunk(
+                        transcriptionID: draft.transcriptionID,
+                        chunkIndex: draft.chunkIndex,
+                        text: draft.text,
+                        textHash: draft.textHash,
+                        sourceCreatedAt: draft.sourceCreatedAt,
+                        targetAppName: draft.targetAppName,
+                        targetAppBundleID: draft.targetAppBundleID,
+                        wordCount: draft.wordCount,
+                        createdAt: now,
+                        updatedAt: now
+                    )
+                    try chunk.insert(db)
+                    if chunk.id == nil {
+                        chunk.id = db.lastInsertedRowID
+                    }
+                    chunks.append(chunk)
+                }
+            }
+
+            return chunks.sorted { $0.chunkIndex < $1.chunkIndex }
+        }
+    }
+
+    func saveSemanticEmbedding(
+        chunkID: Int64,
+        modelID: String,
+        providerName: String,
+        dimension: Int,
+        vectorData: Data,
+        generatedAt: Date = Date()
+    ) throws {
+        let normalizedModelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedProviderName = providerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedModelID.isEmpty, !normalizedProviderName.isEmpty, dimension > 0, !vectorData.isEmpty else {
+            return
+        }
+
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO semantic_embedding (chunkID, modelID, providerName, dimension, vectorData, generatedAt)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chunkID, modelID) DO UPDATE SET
+                    providerName = excluded.providerName,
+                    dimension = excluded.dimension,
+                    vectorData = excluded.vectorData,
+                    generatedAt = excluded.generatedAt
+                """,
+                arguments: [chunkID, normalizedModelID, normalizedProviderName, dimension, vectorData, generatedAt]
+            )
+        }
+    }
+
+    func fetchEmbeddedSemanticChunks(modelID: String, limit: Int = 1_500) throws -> [SemanticEmbeddedChunk] {
+        let normalizedModelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedModelID.isEmpty else { return [] }
+
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT
+                    c.id AS chunkID,
+                    c.transcriptionID,
+                    c.chunkIndex,
+                    c.text,
+                    c.textHash,
+                    c.sourceCreatedAt,
+                    c.targetAppName,
+                    c.targetAppBundleID,
+                    c.wordCount,
+                    e.modelID,
+                    e.providerName,
+                    e.dimension,
+                    e.vectorData
+                FROM semantic_chunk c
+                JOIN semantic_embedding e ON e.chunkID = c.id
+                WHERE e.modelID = ?
+                ORDER BY c.sourceCreatedAt DESC, c.chunkIndex ASC
+                LIMIT ?
+                """,
+                arguments: [normalizedModelID, max(1, limit)]
+            )
+
+            return rows.compactMap { row in
+                guard let chunkID: Int64 = row["chunkID"],
+                      let transcriptionID: Int64 = row["transcriptionID"],
+                      let chunkIndex: Int = row["chunkIndex"],
+                      let text: String = row["text"],
+                      let textHash: String = row["textHash"],
+                      let sourceCreatedAt: Date = row["sourceCreatedAt"],
+                      let wordCount: Int = row["wordCount"],
+                      let modelID: String = row["modelID"],
+                      let providerName: String = row["providerName"],
+                      let dimension: Int = row["dimension"],
+                      let vectorData: Data = row["vectorData"] else {
+                    return nil
+                }
+
+                return SemanticEmbeddedChunk(
+                    chunkID: chunkID,
+                    transcriptionID: transcriptionID,
+                    chunkIndex: chunkIndex,
+                    text: text,
+                    textHash: textHash,
+                    sourceCreatedAt: sourceCreatedAt,
+                    targetAppName: row["targetAppName"],
+                    targetAppBundleID: row["targetAppBundleID"],
+                    wordCount: wordCount,
+                    modelID: modelID,
+                    providerName: providerName,
+                    dimension: dimension,
+                    vectorData: vectorData
+                )
+            }
+        }
+    }
+
+    func replaceSemanticGraph(nodes: [SemanticGraphNode], edges: [SemanticGraphEdge]) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM semantic_graph_edge")
+            try db.execute(sql: "DELETE FROM semantic_graph_node")
+
+            for node in nodes {
+                try node.insert(db)
+            }
+            for edge in edges {
+                try edge.insert(db)
+            }
+        }
+    }
+
+    func fetchSemanticGraph(limitNodes: Int = 180, limitEdges: Int = 360) throws -> SemanticMemoryGraph {
+        try dbQueue.read { db in
+            let nodes = try SemanticGraphNode
+                .order(Column("weight").desc, Column("title").asc)
+                .limit(max(1, limitNodes))
+                .fetchAll(db)
+            let nodeIDs = Set(nodes.map(\.nodeID))
+            let edges = try SemanticGraphEdge
+                .order(Column("weight").desc)
+                .fetchAll(db)
+                .filter { nodeIDs.contains($0.sourceNodeID) && nodeIDs.contains($0.targetNodeID) }
+                .prefix(max(1, limitEdges))
+            return SemanticMemoryGraph(nodes: nodes, edges: Array(edges))
+        }
+    }
+
+    func fetchSemanticMemoryStats(modelID: String) throws -> SemanticMemoryStats {
+        let normalizedModelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try dbQueue.read { db in
+            let chunkCount = try SemanticChunk.fetchCount(db)
+            let embeddedChunkCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM semantic_embedding WHERE modelID = ?",
+                arguments: [normalizedModelID]
+            ) ?? 0
+            let nodeCount = try SemanticGraphNode.fetchCount(db)
+            let edgeCount = try SemanticGraphEdge.fetchCount(db)
+            let latestIndexedAt = try Date.fetchOne(
+                db,
+                sql: "SELECT MAX(generatedAt) FROM semantic_embedding WHERE modelID = ?",
+                arguments: [normalizedModelID]
+            )
+
+            return SemanticMemoryStats(
+                chunkCount: chunkCount,
+                embeddedChunkCount: embeddedChunkCount,
+                nodeCount: nodeCount,
+                edgeCount: edgeCount,
+                activeModelID: normalizedModelID,
+                latestIndexedAt: latestIndexedAt
+            )
+        }
     }
 
     // MARK: - Writing Insights
@@ -1344,6 +1715,7 @@ extension DatabaseManager {
     func applyCloudSnapshot(_ snapshot: CloudDatabaseSnapshot, replacingLocalData: Bool) throws {
         try dbQueue.write { db in
             if replacingLocalData {
+                try Self.deleteAllSemanticMemory(in: db)
                 try db.execute(sql: "DELETE FROM transcription")
                 try db.execute(sql: "DELETE FROM dictionary_entry")
                 try db.execute(sql: "DELETE FROM snippet_entry")
@@ -1887,10 +2259,20 @@ extension DatabaseManager {
     }
 
     private static func applyCloudTombstone(_ tombstone: CloudSyncTombstone, in db: Database) throws {
+        let deletedTranscriptionID: Int64?
+        if tombstone.table == .transcription {
+            deletedTranscriptionID = try localID(for: .transcription, syncID: tombstone.syncID, in: db)
+        } else {
+            deletedTranscriptionID = nil
+        }
+
         try db.execute(
             sql: "DELETE FROM \(tombstone.table.rawValue) WHERE syncID = ?",
             arguments: [tombstone.syncID]
         )
+        if let deletedTranscriptionID {
+            try deleteSemanticMemory(forTranscriptionID: deletedTranscriptionID, in: db)
+        }
         try recordTombstone(
             in: db,
             table: tombstone.table,
@@ -1916,5 +2298,12 @@ extension DatabaseManager {
             sql: "SELECT id FROM \(table.rawValue) WHERE syncID = ?",
             arguments: [syncID]
         )
+    }
+}
+
+private extension Array where Element == Int64 {
+    var sqlInList: String {
+        guard !isEmpty else { return "(NULL)" }
+        return "(" + [String](repeating: "?", count: count).joined(separator: ",") + ")"
     }
 }

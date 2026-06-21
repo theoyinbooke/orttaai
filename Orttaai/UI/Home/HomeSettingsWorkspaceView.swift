@@ -51,8 +51,8 @@ struct HomeSettingsWorkspaceView: View {
                     }
                 }
             }
-            .padding(.horizontal, Spacing.xxl)
-            .padding(.top, Spacing.xxl)
+            .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
+            .padding(.top, WorkspaceLayout.contentTopPadding)
             .padding(.bottom, Spacing.lg)
 
             Divider()

@@ -63,7 +63,7 @@ struct AboutView: View {
 
             acknowledgmentsCard
         }
-        .padding(Spacing.xxl)
+        .padding(WorkspaceLayout.contentInsets)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

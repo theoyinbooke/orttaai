@@ -13,6 +13,20 @@ enum Spacing {
     static let xxxl: CGFloat = 32
 }
 
+enum WorkspaceLayout {
+    static let contentTopPadding: CGFloat = 0
+    static let contentHorizontalPadding: CGFloat = Spacing.xxl
+    static let contentBottomPadding: CGFloat = Spacing.xxl
+    static let sidebarHeaderTopPadding: CGFloat = Spacing.xl
+
+    static let contentInsets = EdgeInsets(
+        top: contentTopPadding,
+        leading: contentHorizontalPadding,
+        bottom: contentBottomPadding,
+        trailing: contentHorizontalPadding
+    )
+}
+
 enum CornerRadius {
     static let card: CGFloat = 8
     static let input: CGFloat = 6

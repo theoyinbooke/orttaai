@@ -42,6 +42,11 @@ struct ModelSettingsView: View {
     @AppStorage("localLLMInsightsModel") private var localLLMInsightsModel = "qwen3.5:0.8b"
     @AppStorage("localLLMInsightsContextTokens") private var localLLMInsightsContextTokens = 16_384
     @AppStorage("localLLMInsightsThinkingEnabled") private var localLLMInsightsThinkingEnabled = false
+    @AppStorage("semanticMemoryEnabled") private var semanticMemoryEnabled = true
+    @AppStorage("semanticMemoryAutoIndexEnabled") private var semanticMemoryAutoIndexEnabled = true
+    @AppStorage("semanticEmbeddingFallbackEnabled") private var semanticEmbeddingFallbackEnabled = true
+    @AppStorage("semanticEmbeddingModel") private var semanticEmbeddingModel = "all-minilm"
+    @AppStorage("semanticActiveIndexModelID") private var semanticActiveIndexModelID = ""
     @State private var diskUsage: String = "Checking downloaded models..."
     @State private var downloadedModelIDs: Set<String> = []
     @State private var models: [ModelInfo] = []
@@ -72,6 +77,7 @@ struct ModelSettingsView: View {
     @State private var ollamaCatalogMessage: String = "Check endpoint to load download options."
     @State private var selectedPolishDownloadModel: String = ""
     @State private var selectedInsightsDownloadModel: String = ""
+    @State private var selectedSemanticDownloadModel: String = ""
 
     private let supportedLanguages: [(code: String, name: String)] = [
         ("en", "English"),
@@ -142,7 +148,7 @@ struct ModelSettingsView: View {
                         .padding(Spacing.lg)
                 }
             }
-            .padding(Spacing.xxl)
+            .padding(WorkspaceLayout.contentInsets)
         }
         .onAppear {
             loadInitialModels()
@@ -243,6 +249,10 @@ struct ModelSettingsView: View {
         localLLMInsightsModel.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var normalizedSemanticEmbeddingModel: String {
+        semanticEmbeddingModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var normalizedSelectedPolishDownloadModel: String {
         selectedPolishDownloadModel.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -251,12 +261,20 @@ struct ModelSettingsView: View {
         selectedInsightsDownloadModel.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var normalizedSelectedSemanticDownloadModel: String {
+        selectedSemanticDownloadModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var canInstallPolishModel: Bool {
         !normalizedSelectedPolishDownloadModel.isEmpty
     }
 
     private var canInstallInsightsModel: Bool {
         !normalizedSelectedInsightsDownloadModel.isEmpty
+    }
+
+    private var canInstallSemanticModel: Bool {
+        !normalizedSelectedSemanticDownloadModel.isEmpty
     }
 
     private var modelSortMode: ModelSortMode {
@@ -390,214 +408,368 @@ struct ModelSettingsView: View {
 
     private var modelParametersCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Model Parameters")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Compute & Decoding")
+                        .font(.Orttaai.subheading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
 
-                Text("Tune speed and recognition behavior for your current model.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    Text("Choose how transcription balances latency, hardware, and accuracy.")
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
 
-                Text("Changes apply to the next dictation.")
+                Spacer(minLength: Spacing.md)
+
+                Label("Next dictation", systemImage: "arrow.forward.circle")
                     .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Color.Orttaai.bgTertiary.opacity(0.62))
+                    .clipShape(Capsule())
             }
 
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
                 Toggle(isOn: $lowLatencyModeEnabled) {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text("Low Latency Mode")
                             .font(.Orttaai.bodyMedium)
                             .foregroundStyle(Color.Orttaai.textPrimary)
 
-                        Text("Prioritizes faster response with lighter decode behavior.")
+                        Text("Keeps startup and decode behavior lean for quick capture.")
                             .font(.Orttaai.secondary)
                             .foregroundStyle(Color.Orttaai.textSecondary)
                     }
                 }
                 .toggleStyle(OrttaaiToggleStyle())
+                .padding(Spacing.md)
+                .background(Color.Orttaai.bgPrimary.opacity(0.42))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                        .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+                )
                 .help("Optimize for lower latency. Accuracy may be slightly reduced in difficult audio.")
 
-                divider
-
-                HStack(alignment: .center, spacing: Spacing.md) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Dictation Language")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-
-                        Text("Picking a language is usually faster than Auto-detect.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-
-                    Spacer(minLength: Spacing.lg)
-
-                    Picker("", selection: $dictationLanguage) {
-                        ForEach(supportedLanguages, id: \.code) { language in
-                            Text(language.name).tag(language.code)
+                LazyVGrid(columns: computeControlColumns, spacing: Spacing.md) {
+                    computeControlPanel(
+                        title: "Dictation Language",
+                        subtitle: "Avoid Auto-detect when speed matters.",
+                        systemImage: "textformat"
+                    ) {
+                        Picker("", selection: $dictationLanguage) {
+                            ForEach(supportedLanguages, id: \.code) { language in
+                                Text(language.name).tag(language.code)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .frame(width: 180)
+                        .help("Sets decode language. Auto-detect can be slower.")
                     }
-                    .pickerStyle(.menu)
-                    .frame(width: 180)
-                    .help("Sets decode language. Auto-detect can be slower.")
+
+                    computeControlPanel(
+                        title: "Compute Mode",
+                        subtitle: computeModeSubtitle,
+                        systemImage: "cpu"
+                    ) {
+                        Picker("", selection: $computeMode) {
+                            Text("CPU + Neural Engine").tag("cpuAndNeuralEngine")
+                            Text("CPU + GPU").tag("cpuAndGPU")
+                            Text("CPU Only").tag("cpuOnly")
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 220)
+                        .help("Changes take effect after model reload.")
+                    }
                 }
-
-                divider
-
-                HStack(alignment: .center, spacing: Spacing.md) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Compute Mode")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-
-                        Text("CPU + Neural Engine is usually fastest on Apple Silicon.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-
-                        Text("Applied when the model reloads.")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                    }
-
-                    Spacer(minLength: Spacing.lg)
-
-                    Picker("", selection: $computeMode) {
-                        Text("CPU + Neural Engine").tag("cpuAndNeuralEngine")
-                        Text("CPU + GPU").tag("cpuAndGPU")
-                        Text("CPU Only").tag("cpuOnly")
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 220)
-                    .help("Changes take effect after model reload (switch model or restart app).")
-                }
-
-                divider
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Decoding Profile")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Picker(
-                        "Decoding Profile",
-                        selection: Binding(
-                            get: { decodingPresetRaw },
-                            set: { decodingPresetRaw = $0 }
-                        )
-                    ) {
-                        ForEach(DecodingPreset.allCases, id: \.rawValue) { preset in
-                            Text(preset.title).tag(preset.rawValue)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .tint(Color.Orttaai.accent)
-                    .help("Choose a default speed/quality profile.")
-
-                    Text(decodingPreset.summary)
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
-
-                divider
-
-                Toggle(isOn: $advancedDecodingEnabled) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Expert Overrides")
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                        Label("Decoding Profile", systemImage: "dial.low")
                             .font(.Orttaai.bodyMedium)
                             .foregroundStyle(Color.Orttaai.textPrimary)
 
-                        Text("Manually override profile defaults for A/B tests.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-                }
-                .toggleStyle(OrttaaiToggleStyle())
-                .help("Advanced controls for power users. Defaults are safer for stable performance.")
+                        Spacer()
 
-                if advancedDecodingEnabled {
-                    divider
-
-                    VStack(alignment: .leading, spacing: Spacing.md) {
-                        HStack {
-                            Text("Temperature")
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                            Spacer()
-                            Text(String(format: "%.2f", decodingTemperature))
-                                .font(.Orttaai.mono)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        Slider(value: $decodingTemperature, in: 0...1, step: 0.05)
-                            .tint(Color.Orttaai.accent)
-                            .help("Higher values increase randomness. Lower is more deterministic.")
-
-                        Stepper(value: $decodingTopK, in: 1...20) {
-                            rowValueLabel("Top-K", value: "\(decodingTopK)")
-                        }
-                        .help("Limits candidate tokens considered at each decode step.")
-
-                        Stepper(value: $decodingFallbackCount, in: 0...10) {
-                            rowValueLabel("Fallback Count", value: "\(decodingFallbackCount)")
-                        }
-                        .help("Number of retry attempts if decode confidence is low.")
-
-                        HStack {
-                            Text("No-Speech Threshold")
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                            Spacer()
-                            Text(String(format: "%.2f", decodingNoSpeechThreshold))
-                                .font(.Orttaai.mono)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        Slider(value: $decodingNoSpeechThreshold, in: 0...1, step: 0.05)
-                            .tint(Color.Orttaai.accent)
-                            .help("Higher values make silence detection stricter.")
-
-                        HStack {
-                            Text("Log-Prob Threshold")
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                            Spacer()
-                            Text(String(format: "%.1f", decodingLogProbThreshold))
-                                .font(.Orttaai.mono)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        Slider(value: $decodingLogProbThreshold, in: -3.0...0.0, step: 0.1)
-                            .tint(Color.Orttaai.accent)
-                            .help("Minimum token confidence before fallback triggers.")
-
-                        HStack {
-                            Text("Compression Threshold")
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                            Spacer()
-                            Text(String(format: "%.1f", decodingCompressionRatioThreshold))
-                                .font(.Orttaai.mono)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        Slider(value: $decodingCompressionRatioThreshold, in: 1.5...4.0, step: 0.1)
-                            .tint(Color.Orttaai.accent)
-                            .help("Detects repetitive output. Lower values can trigger more fallbacks.")
-
-                        Stepper(value: $decodingWorkerCount, in: 0...8) {
-                            rowValueLabel(
-                                "Worker Count",
-                                value: decodingWorkerCount == 0 ? "Auto" : "\(decodingWorkerCount)"
-                            )
-                        }
-                        .help("Parallel decode workers. Auto uses model-aware defaults.")
-
-                        Text("Use expert overrides only for A/B testing. Default profile is safer for stable speed.")
+                        Text(decodingPreset.summary)
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
+                            .lineLimit(1)
+                    }
+
+                    LazyVGrid(columns: decodingProfileColumns, spacing: Spacing.sm) {
+                        ForEach(DecodingPreset.allCases, id: \.rawValue) { preset in
+                            decodingProfileTile(preset)
+                        }
                     }
                 }
+
+                expertOverridesSection
             }
             .padding(Spacing.lg)
             .dashboardCard()
+        }
+    }
+
+    private var computeControlColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 420), spacing: Spacing.md)]
+    }
+
+    private var decodingProfileColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 190), spacing: Spacing.sm)]
+    }
+
+    private var computeModeSubtitle: String {
+        switch computeMode {
+        case "cpuAndGPU":
+            return "GPU acceleration can help on some Mac configurations."
+        case "cpuOnly":
+            return "CPU only is most predictable, but usually slower."
+        default:
+            return "Fastest default for Apple Silicon."
+        }
+    }
+
+    private func computeControlPanel<Control: View>(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.accent)
+                .frame(width: 34, height: 34)
+                .background(Color.Orttaai.accentSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(title)
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                Text(subtitle)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Spacing.md)
+
+            control()
+                .labelsHidden()
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .center)
+        .background(Color.Orttaai.bgPrimary.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+        )
+    }
+
+    private func decodingProfileTile(_ preset: DecodingPreset) -> some View {
+        let isSelected = decodingPreset == preset
+
+        return Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                decodingPresetRaw = preset.rawValue
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(alignment: .center, spacing: Spacing.sm) {
+                    Image(systemName: decodingProfileIcon(for: preset))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(isSelected ? Color.Orttaai.bgPrimary : Color.Orttaai.accent)
+                        .frame(width: 32, height: 32)
+                        .background(isSelected ? Color.Orttaai.accent : Color.Orttaai.accentSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+
+                    Spacer()
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.Orttaai.accent)
+                    }
+                }
+
+                Text(preset.title)
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+
+                Text(preset.summary)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Spacing.xs) {
+                    ForEach(decodingProfileTraits(for: preset), id: \.self) { trait in
+                        Text(trait)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(isSelected ? Color.Orttaai.accent : Color.Orttaai.textTertiary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, 3)
+                            .background(
+                                (isSelected ? Color.Orttaai.accentSubtle : Color.Orttaai.bgTertiary.opacity(0.56))
+                                    .clipShape(Capsule())
+                            )
+                    }
+                }
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 146, alignment: .topLeading)
+            .background(isSelected ? Color.Orttaai.accentSubtle : Color.Orttaai.bgPrimary.opacity(0.42))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                    .stroke(
+                        isSelected ? Color.Orttaai.accent.opacity(0.48) : Color.Orttaai.border.opacity(0.72),
+                        lineWidth: BorderWidth.standard
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .help(preset.summary)
+    }
+
+    private var expertOverridesSection: some View {
+        VStack(alignment: .leading, spacing: advancedDecodingEnabled ? Spacing.md : 0) {
+            Toggle(isOn: $advancedDecodingEnabled) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Expert Overrides")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+
+                    Text("Manual decode values for testing only.")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
+            }
+            .toggleStyle(OrttaaiToggleStyle())
+            .padding(Spacing.md)
+            .background(Color.Orttaai.bgPrimary.opacity(0.42))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                    .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+            )
+            .help("Advanced controls for power users. Defaults are safer for stable performance.")
+
+            if advancedDecodingEnabled {
+                advancedDecodingControls
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: advancedDecodingEnabled)
+    }
+
+    private var advancedDecodingControls: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                Text("Temperature")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                Spacer()
+                Text(String(format: "%.2f", decodingTemperature))
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+            }
+            Slider(value: $decodingTemperature, in: 0...1, step: 0.05)
+                .tint(Color.Orttaai.accent)
+                .help("Higher values increase randomness. Lower is more deterministic.")
+
+            Stepper(value: $decodingTopK, in: 1...20) {
+                rowValueLabel("Top-K", value: "\(decodingTopK)")
+            }
+            .help("Limits candidate tokens considered at each decode step.")
+
+            Stepper(value: $decodingFallbackCount, in: 0...10) {
+                rowValueLabel("Fallback Count", value: "\(decodingFallbackCount)")
+            }
+            .help("Number of retry attempts if decode confidence is low.")
+
+            HStack {
+                Text("No-Speech Threshold")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                Spacer()
+                Text(String(format: "%.2f", decodingNoSpeechThreshold))
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+            }
+            Slider(value: $decodingNoSpeechThreshold, in: 0...1, step: 0.05)
+                .tint(Color.Orttaai.accent)
+                .help("Higher values make silence detection stricter.")
+
+            HStack {
+                Text("Log-Prob Threshold")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                Spacer()
+                Text(String(format: "%.1f", decodingLogProbThreshold))
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+            }
+            Slider(value: $decodingLogProbThreshold, in: -3.0...0.0, step: 0.1)
+                .tint(Color.Orttaai.accent)
+                .help("Minimum token confidence before fallback triggers.")
+
+            HStack {
+                Text("Compression Threshold")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                Spacer()
+                Text(String(format: "%.1f", decodingCompressionRatioThreshold))
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+            }
+            Slider(value: $decodingCompressionRatioThreshold, in: 1.5...4.0, step: 0.1)
+                .tint(Color.Orttaai.accent)
+                .help("Detects repetitive output. Lower values can trigger more fallbacks.")
+
+            Stepper(value: $decodingWorkerCount, in: 0...8) {
+                rowValueLabel(
+                    "Worker Count",
+                    value: decodingWorkerCount == 0 ? "Auto" : "\(decodingWorkerCount)"
+                )
+            }
+            .help("Parallel decode workers. Auto uses model-aware defaults.")
+        }
+        .padding(Spacing.md)
+        .background(Color.Orttaai.bgPrimary.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+        )
+    }
+
+    private func decodingProfileIcon(for preset: DecodingPreset) -> String {
+        switch preset {
+        case .fast:
+            return "bolt.fill"
+        case .balanced:
+            return "slider.horizontal.3"
+        case .accuracy:
+            return "scope"
+        }
+    }
+
+    private func decodingProfileTraits(for preset: DecodingPreset) -> [String] {
+        switch preset {
+        case .fast:
+            return ["Lowest delay", "Lean"]
+        case .balanced:
+            return ["Steady", "Default"]
+        case .accuracy:
+            return ["Difficult audio", "Resilient"]
         }
     }
 
@@ -777,7 +949,44 @@ struct ModelSettingsView: View {
                                     isCheckingOllama ||
                                         isLoadingOllamaCatalog ||
                                         isInstallingOllamaModel ||
-                                        isOllamaModelInstalled(normalizedSelectedInsightsDownloadModel)
+                                    isOllamaModelInstalled(normalizedSelectedInsightsDownloadModel)
+                                )
+                            }
+
+                            HStack(spacing: Spacing.sm) {
+                                Picker("Semantic Download", selection: $selectedSemanticDownloadModel) {
+                                    ForEach(downloadableOllamaModels) { model in
+                                        Text(ollamaCatalogLabel(for: model)).tag(model.name)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .frame(width: 320)
+
+                                Button {
+                                    let model = normalizedSelectedSemanticDownloadModel
+                                    Task {
+                                        await installOllamaModel(named: model)
+                                        await MainActor.run {
+                                            semanticEmbeddingModel = model
+                                            semanticActiveIndexModelID = ""
+                                        }
+                                    }
+                                } label: {
+                                    if isInstallingOllamaModel && installingOllamaModelName == normalizedSelectedSemanticDownloadModel {
+                                        Label("Installing Semantic...", systemImage: "arrow.down.circle")
+                                    } else if isOllamaModelInstalled(normalizedSelectedSemanticDownloadModel) {
+                                        Label("Semantic Installed", systemImage: "checkmark.circle")
+                                    } else {
+                                        Label("Install Semantic", systemImage: "arrow.down.circle")
+                                    }
+                                }
+                                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                                .disabled(
+                                    !canInstallSemanticModel ||
+                                    isCheckingOllama ||
+                                    isLoadingOllamaCatalog ||
+                                    isInstallingOllamaModel ||
+                                    isOllamaModelInstalled(normalizedSelectedSemanticDownloadModel)
                                 )
                             }
                         } else {
@@ -963,6 +1172,79 @@ struct ModelSettingsView: View {
                         .toggleStyle(OrttaaiToggleStyle())
 
                         Text(insightsRecommendationMessage)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                    }
+                }
+
+                divider
+
+                Toggle(isOn: $semanticMemoryEnabled) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Enable Semantic Memory")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                        Text("Indexes dictation history locally for graph view and semantic ChatAI context.")
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
+                }
+                .toggleStyle(OrttaaiToggleStyle())
+
+                if semanticMemoryEnabled {
+                    divider
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Semantic Embedding Model")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                        if !installedOllamaModels.isEmpty {
+                            Picker(
+                                "Use Installed Model",
+                                selection: Binding(
+                                    get: { installedPickerSelection(for: normalizedSemanticEmbeddingModel) },
+                                    set: { newValue in
+                                        guard newValue != "__custom__" else { return }
+                                        semanticEmbeddingModel = newValue
+                                        semanticActiveIndexModelID = ""
+                                    }
+                                )
+                            ) {
+                                Text("Custom").tag("__custom__")
+                                ForEach(installedOllamaModels, id: \.self) { name in
+                                    Text(name).tag(name)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 280)
+                        }
+                        OrttaaiTextField(placeholder: "all-minilm", text: $semanticEmbeddingModel)
+
+                        Toggle(isOn: $semanticMemoryAutoIndexEnabled) {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Auto-index for ChatAI")
+                                    .font(.Orttaai.bodyMedium)
+                                    .foregroundStyle(Color.Orttaai.textPrimary)
+                                Text("Refreshes the local semantic index before semantic retrieval.")
+                                    .font(.Orttaai.secondary)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                            }
+                        }
+                        .toggleStyle(OrttaaiToggleStyle())
+
+                        Toggle(isOn: $semanticEmbeddingFallbackEnabled) {
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                Text("Use Lexical Fallback")
+                                    .font(.Orttaai.bodyMedium)
+                                    .foregroundStyle(Color.Orttaai.textPrimary)
+                                Text("Builds a basic private graph if the selected embedding model is unavailable.")
+                                    .font(.Orttaai.secondary)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                            }
+                        }
+                        .toggleStyle(OrttaaiToggleStyle())
+
+                        Text("Recommended: install `all-minilm` for a tiny indexer, or `embeddinggemma` for stronger local semantic retrieval.")
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
@@ -1283,6 +1565,11 @@ struct ModelSettingsView: View {
 
         localLLMPolishModel = sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma3:1b")
         localLLMInsightsModel = sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+        semanticEmbeddingModel = semanticEmbeddingModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if semanticEmbeddingModel.isEmpty {
+            semanticEmbeddingModel = "all-minilm"
+        }
+        semanticActiveIndexModelID = semanticActiveIndexModelID.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Migrate old default (220ms) which is usually too short for local polish.
         if localLLMPolishTimeoutMs == 220 {
@@ -1362,6 +1649,11 @@ struct ModelSettingsView: View {
             selectedInsightsDownloadModel = names.first(where: {
                 canonicalOllamaModelName($0) == canonicalOllamaModelName(localLLMInsightsModel)
             }) ?? names.first ?? ""
+        }
+        if !names.contains(selectedSemanticDownloadModel) {
+            selectedSemanticDownloadModel = names.first(where: {
+                canonicalOllamaModelName($0) == canonicalOllamaModelName(semanticEmbeddingModel)
+            }) ?? names.first(where: { $0.lowercased().contains("embed") || $0.lowercased().contains("minilm") }) ?? names.first ?? ""
         }
     }
 
