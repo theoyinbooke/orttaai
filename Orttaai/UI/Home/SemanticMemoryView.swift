@@ -17,16 +17,20 @@ final class SemanticMemoryViewModel: ObservableObject {
     @Published var isGeneratingInsights = false
     @Published var statusMessage: String?
     @Published var errorMessage: String?
+    @Published var insightFreshness: SemanticInsightFreshness?
 
-    private let service = SemanticMemoryService()
+    private let service: any SemanticMemoryServiceProviding
+
+    init(service: (any SemanticMemoryServiceProviding)? = nil) {
+        self.service = service ?? SemanticMemoryService()
+    }
 
     func load() {
         stats = service.stats()
-        let loadedGraph = service.graph()
+        let loadedGraph = service.graph(limitNodes: 180, limitEdges: 360)
         graph = loadedGraph
-        if insightReport?.graphSignature != semanticGraphSignature(for: loadedGraph) {
-            insightReport = nil
-        }
+        insightReport = service.loadLatestInsightReport()
+        refreshInsightFreshness()
     }
 
     func buildIndex() async {
@@ -83,21 +87,29 @@ final class SemanticMemoryViewModel: ObservableObject {
         guard !isGeneratingInsights else { return }
         isGeneratingInsights = true
         errorMessage = nil
-        let report = await service.generateInsights()
+        let report = await service.generateInsights(limitCards: 8)
+        stats = service.stats()
+        graph = service.graph(limitNodes: 180, limitEdges: 360)
         insightReport = report
+        refreshInsightFreshness()
         if report.cards.isEmpty {
             statusMessage = "Build more semantic memory before insights can be generated."
         } else if let modelName = report.summaryModelName {
-            statusMessage = "Generated \(report.cards.count) graph insight\(report.cards.count == 1 ? "" : "s") with \(modelName) TLDR."
+            statusMessage = "Generated \(report.cards.count) graph insight\(report.cards.count == 1 ? "" : "s") with \(modelName)."
+        } else if report.usedFallback {
+            statusMessage = "Generated \(report.cards.count) heuristic graph insight\(report.cards.count == 1 ? "" : "s")."
         } else {
             statusMessage = "Generated \(report.cards.count) graph insight\(report.cards.count == 1 ? "" : "s")."
         }
         isGeneratingInsights = false
     }
 
-    func generateInsightsIfNeeded() async {
-        guard insightReport == nil || insightReport?.graphSignature != semanticGraphSignature(for: graph) else { return }
-        await generateInsights()
+    private func refreshInsightFreshness() {
+        guard let insightReport else {
+            insightFreshness = nil
+            return
+        }
+        insightFreshness = service.freshness(for: insightReport, currentGraph: graph)
     }
 }
 
@@ -179,10 +191,6 @@ struct SemanticMemoryView: View {
         }
         .onAppear {
             viewModel.load()
-        }
-        .onChange(of: selectedTab) { _, newValue in
-            guard newValue == .insights else { return }
-            Task { await viewModel.generateInsightsIfNeeded() }
         }
     }
 
@@ -816,6 +824,8 @@ struct SemanticMemoryView: View {
                 } label: {
                     if viewModel.isGeneratingInsights {
                         Label("Generating", systemImage: "arrow.triangle.2.circlepath")
+                    } else if viewModel.insightReport != nil {
+                        Label("Regenerate", systemImage: "arrow.triangle.2.circlepath")
                     } else {
                         Label("Generate Insights", systemImage: "brain.head.profile")
                     }
@@ -871,7 +881,7 @@ struct SemanticMemoryView: View {
             Text("Ready to synthesize insights.")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-            Text("Generate insight cards and a TLDR summary from the current semantic graph. The TLDR uses the selected Ollama model when available.")
+            Text("Generate a local snapshot with evidence-backed clusters, comparisons, open loops, and graph insight cards. The selected Ollama model is used when available.")
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
             Button {
@@ -889,6 +899,22 @@ struct SemanticMemoryView: View {
     private func insightReportView(_ report: SemanticInsightReport) -> some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             insightSummaryCard(report)
+
+            if let freshness = viewModel.insightFreshness, freshness.isStale {
+                insightFreshnessBanner(freshness)
+            }
+
+            if !report.clusters.isEmpty {
+                insightClusterSection(report.clusters)
+            }
+
+            if !report.comparisons.isEmpty {
+                insightComparisonSection(report.comparisons)
+            }
+
+            if !report.coverageNotes.isEmpty {
+                insightCoverageSection(report.coverageNotes)
+            }
 
             if report.cards.isEmpty {
                 Text("The graph exists, but there is not enough connected evidence yet for meaningful insight cards.")
@@ -975,6 +1001,123 @@ struct SemanticMemoryView: View {
                 insightMetric("\(report.sourceNodeCount)", "nodes")
                 insightMetric("\(report.sourceEdgeCount)", "links")
                 insightMetric("\(report.sourceChunkCount)", "chunks")
+                insightMetric(report.analyzerName, report.usedFallback ? "fallback" : "analyzer")
+            }
+        }
+        .padding(Spacing.lg)
+        .dashboardCard()
+    }
+
+    private func insightFreshnessBanner(_ freshness: SemanticInsightFreshness) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.accent)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Snapshot is older than the current graph")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("The saved insights are still shown, but the graph structure has changed. Click Regenerate for a fresh local snapshot.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(Spacing.lg)
+        .dashboardCard()
+    }
+
+    private func insightClusterSection(_ clusters: [SemanticInsightCluster]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Life & Work Areas")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+            HStack(alignment: .top, spacing: Spacing.md) {
+                ForEach(clusters.prefix(3)) { cluster in
+                    insightClusterCard(cluster)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+            }
+        }
+    }
+
+    private func insightClusterCard(_ cluster: SemanticInsightCluster) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(cluster.title)
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(cluster.summary)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let evidence = cluster.evidence.first {
+                insightEvidenceRow(evidence)
+            }
+        }
+        .padding(Spacing.lg)
+        .dashboardCard()
+    }
+
+    private func insightComparisonSection(_ comparisons: [SemanticInsightComparison]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Comparative Signals")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+            VStack(spacing: Spacing.md) {
+                ForEach(comparisons.prefix(3)) { comparison in
+                    insightComparisonRow(comparison)
+                }
+            }
+        }
+    }
+
+    private func insightComparisonRow(_ comparison: SemanticInsightComparison) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(comparison.title)
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Spacer()
+                Text(comparison.trend.capitalized)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.accent)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(Color.Orttaai.accent.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+            Text(comparison.detail)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !comparison.evidence.isEmpty {
+                ForEach(comparison.evidence.prefix(2)) { evidence in
+                    insightEvidenceRow(evidence)
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .dashboardCard()
+    }
+
+    private func insightCoverageSection(_ notes: [String]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Coverage Notes")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+            ForEach(notes, id: \.self) { note in
+                HStack(alignment: .top, spacing: Spacing.xs) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .padding(.top, 3)
+                    Text(note)
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(Spacing.lg)

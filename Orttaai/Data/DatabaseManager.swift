@@ -389,6 +389,26 @@ final class DatabaseManager {
             )
         }
 
+        migrator.registerMigration("v9_semantic_insight_snapshots") { db in
+            try db.create(table: "semantic_insight_snapshot") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("generatedAt", .datetime).notNull()
+                t.column("graphSignature", .text).notNull()
+                t.column("analyzerName", .text).notNull()
+                t.column("summaryModelName", .text)
+                t.column("sourceNodeCount", .integer).notNull()
+                t.column("sourceEdgeCount", .integer).notNull()
+                t.column("sourceChunkCount", .integer).notNull()
+                t.column("reportJSON", .text).notNull()
+            }
+
+            try db.create(
+                index: "idx_semantic_insight_snapshot_generatedAt",
+                on: "semantic_insight_snapshot",
+                columns: ["generatedAt"]
+            )
+        }
+
         return migrator
     }
 
@@ -743,6 +763,7 @@ final class DatabaseManager {
     // MARK: - Semantic Memory
 
     private static func deleteAllSemanticMemory(in db: Database) throws {
+        try db.execute(sql: "DELETE FROM semantic_insight_snapshot")
         try db.execute(sql: "DELETE FROM semantic_graph_edge")
         try db.execute(sql: "DELETE FROM semantic_graph_node")
         try db.execute(sql: "DELETE FROM semantic_embedding")
@@ -988,6 +1009,81 @@ final class DatabaseManager {
                 .filter { nodeIDs.contains($0.sourceNodeID) && nodeIDs.contains($0.targetNodeID) }
                 .prefix(max(1, limitEdges))
             return SemanticMemoryGraph(nodes: nodes, edges: Array(edges))
+        }
+    }
+
+    @discardableResult
+    func saveSemanticInsightSnapshot(_ report: SemanticInsightReport) throws -> Int64 {
+        try dbQueue.write { db in
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let reportData = try encoder.encode(report)
+            guard let reportJSONString = String(data: reportData, encoding: .utf8) else {
+                throw NSError(
+                    domain: "com.orttaai.database",
+                    code: 23,
+                    userInfo: [NSLocalizedDescriptionKey: "Unable to encode semantic insight snapshot."]
+                )
+            }
+
+            let record = SemanticInsightSnapshotRecord(
+                generatedAt: report.generatedAt,
+                graphSignature: report.graphSignature,
+                analyzerName: report.analyzerName,
+                summaryModelName: report.summaryModelName,
+                sourceNodeCount: report.sourceNodeCount,
+                sourceEdgeCount: report.sourceEdgeCount,
+                sourceChunkCount: report.sourceChunkCount,
+                reportJSON: reportJSONString
+            )
+            try record.insert(db)
+            let insertedID = record.id ?? db.lastInsertedRowID
+
+            let count = try SemanticInsightSnapshotRecord.fetchCount(db)
+            if count > Self.maxInsightSnapshots {
+                let overflow = count - Self.maxInsightSnapshots
+                try db.execute(
+                    sql: """
+                    DELETE FROM semantic_insight_snapshot WHERE id IN (
+                        SELECT id FROM semantic_insight_snapshot
+                        ORDER BY generatedAt ASC, id ASC
+                        LIMIT ?
+                    )
+                    """,
+                    arguments: [overflow]
+                )
+            }
+
+            return insertedID
+        }
+    }
+
+    func fetchLatestSemanticInsightSnapshot() throws -> SemanticInsightReport? {
+        try dbQueue.read { db in
+            guard let record = try SemanticInsightSnapshotRecord
+                .order(Column("generatedAt").desc, Column("id").desc)
+                .fetchOne(db) else {
+                return nil
+            }
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(SemanticInsightReport.self, from: Data(record.reportJSON.utf8))
+        }
+    }
+
+    func fetchSemanticInsightSnapshots(limit: Int = 30) throws -> [SemanticInsightReport] {
+        try dbQueue.read { db in
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let records = try SemanticInsightSnapshotRecord
+                .order(Column("generatedAt").desc, Column("id").desc)
+                .limit(max(1, limit))
+                .fetchAll(db)
+
+            return try records.map { record in
+                try decoder.decode(SemanticInsightReport.self, from: Data(record.reportJSON.utf8))
+            }
         }
     }
 

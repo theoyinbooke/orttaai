@@ -48,6 +48,7 @@ actor TranscriptionService: Transcribing {
     private static let transcriptionSampleRate = 16_000
     private static let mergedTranscriptSeparator = " "
     private static let liveTranscriptionReuseMaxAudioSeconds = 15.0
+    private static let finalDecodeClipSeconds: Float = 15.0
 
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
@@ -287,7 +288,13 @@ actor TranscriptionService: Transcribing {
         let callback: TranscriptionCallback = allowCancellation ? { _ in
             Task.isCancelled ? false : nil
         } : nil
-        let primaryOptions = makeDecodingOptions()
+        var primaryOptions = makeDecodingOptions()
+        if !allowCancellation {
+            primaryOptions = Self.finalTranscriptionOptions(
+                from: primaryOptions,
+                sampleCount: audioSamples.count
+            )
+        }
 
         let results = try await wk.transcribe(
             audioArray: audioSamples,
@@ -357,6 +364,36 @@ actor TranscriptionService: Transcribing {
         relaxed.temperatureFallbackCount = max(options.temperatureFallbackCount, 3)
         relaxed.topK = max(options.topK, 5)
         return relaxed
+    }
+
+    nonisolated static func finalTranscriptionOptions(
+        from options: DecodingOptions,
+        sampleCount: Int
+    ) -> DecodingOptions {
+        var finalOptions = options
+        finalOptions.chunkingStrategy = ChunkingStrategy.none
+        finalOptions.clipTimestamps = fixedDecodeClipTimestamps(sampleCount: sampleCount)
+        return finalOptions
+    }
+
+    nonisolated static func fixedDecodeClipTimestamps(
+        sampleCount: Int,
+        clipSeconds: Float = finalDecodeClipSeconds
+    ) -> [Float] {
+        guard sampleCount > 0, clipSeconds > 0 else { return [] }
+
+        let audioSeconds = Float(sampleCount) / Float(transcriptionSampleRate)
+        guard audioSeconds > clipSeconds else { return [] }
+
+        var timestamps: [Float] = []
+        var start: Float = 0
+        while start < audioSeconds {
+            let end = min(start + clipSeconds, audioSeconds)
+            timestamps.append(start)
+            timestamps.append(end)
+            start = end
+        }
+        return timestamps
     }
 
     nonisolated static func noTranscriptionResultError() -> OrttaaiError {

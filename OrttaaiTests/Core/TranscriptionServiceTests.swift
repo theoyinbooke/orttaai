@@ -97,6 +97,40 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(relaxed.topK, 5)
     }
 
+    func testFinalTranscriptionOptionsUseFixedDecodeClips() {
+        let options = DecodingOptions(
+            temperature: 0.0,
+            temperatureFallbackCount: 1,
+            topK: 3,
+            chunkingStrategy: .vad
+        )
+
+        let finalOptions = TranscriptionService.finalTranscriptionOptions(
+            from: options,
+            sampleCount: 16_000 * 32
+        )
+
+        XCTAssertEqual(finalOptions.chunkingStrategy, ChunkingStrategy.none)
+        XCTAssertEqual(finalOptions.clipTimestamps, [0, 15, 15, 30, 30, 32])
+    }
+
+    func testShortFinalTranscriptionDoesNotForceClips() {
+        let options = DecodingOptions(
+            temperature: 0.0,
+            temperatureFallbackCount: 1,
+            topK: 3,
+            chunkingStrategy: .vad
+        )
+
+        let finalOptions = TranscriptionService.finalTranscriptionOptions(
+            from: options,
+            sampleCount: 16_000 * 12
+        )
+
+        XCTAssertEqual(finalOptions.chunkingStrategy, ChunkingStrategy.none)
+        XCTAssertTrue(finalOptions.clipTimestamps.isEmpty)
+    }
+
     func testNoTranscriptionResultErrorUsesExpectedDescription() {
         let error = TranscriptionService.noTranscriptionResultError()
 

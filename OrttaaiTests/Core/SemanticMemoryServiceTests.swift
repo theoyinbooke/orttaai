@@ -140,6 +140,109 @@ final class SemanticMemoryServiceTests: XCTestCase {
         XCTAssertTrue(report.cards.contains { !$0.evidence.isEmpty })
     }
 
+    func testGenerateInsightsPersistsLatestSnapshot() async throws {
+        try seedTranscription(
+            text: "Project Atlas onboarding needs a customer research plan and migration notes. I need to follow up with the launch owner.",
+            appName: "Cursor"
+        )
+        try seedTranscription(
+            text: "Project Atlas pricing work connects to customer onboarding and support follow ups across launch planning.",
+            appName: "Slack"
+        )
+
+        let service = makeService()
+        _ = await service.indexPendingTranscriptions(limit: 50)
+
+        let report = await service.generateInsights()
+        let loaded = service.loadLatestInsightReport()
+
+        XCTAssertNotNil(loaded)
+        XCTAssertEqual(loaded?.graphSignature, report.graphSignature)
+        XCTAssertEqual(loaded?.cards.count, report.cards.count)
+        XCTAssertEqual(loaded?.analyzerName, report.analyzerName)
+    }
+
+    func testSemanticInsightSnapshotFreshnessPreservesStaleReport() throws {
+        let originalGraph = sampleGraph(weight: 1.0)
+        let changedGraph = sampleGraph(weight: 2.0)
+        let report = SemanticMemoryService.makeInsightReport(
+            graph: originalGraph,
+            chunks: [],
+            generatedAt: Date(),
+            limitCards: 4
+        )
+
+        try db.saveSemanticInsightSnapshot(report)
+        let service = makeService()
+        let loaded = try XCTUnwrap(service.loadLatestInsightReport())
+        let freshness = service.freshness(for: loaded, currentGraph: changedGraph)
+
+        XCTAssertEqual(loaded.graphSignature, report.graphSignature)
+        XCTAssertEqual(freshness.status, .stale)
+        XCTAssertTrue(freshness.isStale)
+    }
+
+    func testGenerateInsightsProducesDeepComparativeSections() async throws {
+        let now = Date()
+        try seedTranscription(
+            text: "Project Atlas pricing review and customer onboarding plan needs a follow up with launch owner.",
+            appName: "Cursor",
+            createdAt: now
+        )
+        try seedTranscription(
+            text: "Design review for Project Atlas should become a reusable checklist for onboarding decisions.",
+            appName: "Figma",
+            createdAt: now.addingTimeInterval(-2_000)
+        )
+        try seedTranscription(
+            text: "Older finance planning focused on budget reconciliation and vendor invoice cleanup.",
+            appName: "Numbers",
+            createdAt: now.addingTimeInterval(-35 * 24 * 60 * 60)
+        )
+        try seedTranscription(
+            text: "Previous operations work involved vendor support follow ups and invoice documentation.",
+            appName: "Mail",
+            createdAt: now.addingTimeInterval(-32 * 24 * 60 * 60)
+        )
+
+        let service = makeService()
+        _ = await service.indexPendingTranscriptions(limit: 50)
+
+        let report = await service.generateInsights()
+
+        XCTAssertFalse(report.clusters.isEmpty)
+        XCTAssertFalse(report.comparisons.isEmpty)
+        XCTAssertFalse(report.coverageNotes.isEmpty)
+        XCTAssertTrue(report.cards.contains { $0.kind == "Temporal Comparison" || $0.kind == "Recurring vs Fading" })
+        XCTAssertTrue(report.clusters.allSatisfy { !$0.evidence.isEmpty })
+        XCTAssertTrue(report.comparisons.allSatisfy { !$0.evidence.isEmpty })
+    }
+
+    func testModelInsightJSONDecoderRejectsMalformedPayload() {
+        XCTAssertFalse(SemanticMemoryService.canDecodeModelInsightPayload(from: "not json"))
+        XCTAssertFalse(SemanticMemoryService.canDecodeModelInsightPayload(from: #"{"summary":[],"cards":[]}"#))
+        XCTAssertTrue(SemanticMemoryService.canDecodeModelInsightPayload(from: #"{"summary":["Specific backed claim"],"cards":[]}"#))
+    }
+
+    func testViewModelLoadDoesNotGenerateInsights() {
+        let graph = sampleGraph(weight: 1.0)
+        let report = SemanticMemoryService.makeInsightReport(
+            graph: graph,
+            chunks: [],
+            generatedAt: Date(),
+            limitCards: 4
+        )
+        let fakeService = FakeSemanticMemoryService(graph: graph, report: report)
+        let viewModel = SemanticMemoryViewModel(service: fakeService)
+
+        viewModel.load()
+
+        XCTAssertEqual(fakeService.generateCallCount, 0)
+        XCTAssertEqual(fakeService.latestReportCallCount, 1)
+        XCTAssertEqual(viewModel.insightReport?.graphSignature, report.graphSignature)
+        XCTAssertEqual(viewModel.insightFreshness?.status, .fresh)
+    }
+
     func testGenerateInsightsHandlesEmptyGraph() async {
         let service = makeService()
         let report = await service.generateInsights()
@@ -187,5 +290,108 @@ final class SemanticMemoryServiceTests: XCTestCase {
             modelId: "test",
             createdAt: createdAt
         )
+    }
+
+    private func sampleGraph(weight: Double) -> SemanticMemoryGraph {
+        let now = Date()
+        let projectNode = SemanticGraphNode(
+            nodeID: "entity:project-atlas",
+            kind: "entity",
+            title: "Project Atlas",
+            subtitle: "Named context",
+            weight: weight,
+            lastSeenAt: now,
+            updatedAt: now
+        )
+        let appNode = SemanticGraphNode(
+            nodeID: "app:cursor",
+            kind: "app",
+            title: "Cursor",
+            subtitle: "App context",
+            weight: 1.0,
+            lastSeenAt: now,
+            updatedAt: now
+        )
+        let edge = SemanticGraphEdge(
+            sourceNodeID: projectNode.nodeID,
+            targetNodeID: appNode.nodeID,
+            kind: "app-context",
+            weight: 0.6,
+            evidence: "Test graph",
+            updatedAt: now
+        )
+        return SemanticMemoryGraph(nodes: [projectNode, appNode], edges: [edge])
+    }
+}
+
+@MainActor
+private final class FakeSemanticMemoryService: SemanticMemoryServiceProviding {
+    private let storedGraph: SemanticMemoryGraph
+    private let storedReport: SemanticInsightReport?
+    private(set) var generateCallCount = 0
+    private(set) var latestReportCallCount = 0
+
+    init(graph: SemanticMemoryGraph, report: SemanticInsightReport?) {
+        self.storedGraph = graph
+        self.storedReport = report
+    }
+
+    func stats() -> SemanticMemoryStats {
+        SemanticMemoryStats(
+            chunkCount: 0,
+            embeddedChunkCount: 0,
+            nodeCount: storedGraph.nodes.count,
+            edgeCount: storedGraph.edges.count,
+            activeModelID: "test",
+            latestIndexedAt: nil
+        )
+    }
+
+    func graph(limitNodes: Int, limitEdges: Int) -> SemanticMemoryGraph {
+        storedGraph
+    }
+
+    func loadLatestInsightReport() -> SemanticInsightReport? {
+        latestReportCallCount += 1
+        return storedReport
+    }
+
+    func freshness(for report: SemanticInsightReport, currentGraph: SemanticMemoryGraph) -> SemanticInsightFreshness {
+        SemanticInsightFreshness(
+            reportGraphSignature: report.graphSignature,
+            currentGraphSignature: report.graphSignature,
+            status: .fresh
+        )
+    }
+
+    func generateInsights(limitCards: Int) async -> SemanticInsightReport {
+        generateCallCount += 1
+        return storedReport ?? SemanticMemoryService.makeInsightReport(
+            graph: storedGraph,
+            chunks: [],
+            generatedAt: Date(),
+            limitCards: limitCards
+        )
+    }
+
+    func clearIndex() throws {}
+
+    func indexPendingTranscriptions(limit: Int) async -> SemanticIndexRunResult {
+        SemanticIndexRunResult(
+            sourceCount: 0,
+            chunkCount: 0,
+            embeddedCount: 0,
+            skippedCount: 0,
+            graphNodeCount: storedGraph.nodes.count,
+            graphEdgeCount: storedGraph.edges.count,
+            providerName: "Fake",
+            modelID: "test",
+            usedFallback: false,
+            errorMessage: nil
+        )
+    }
+
+    func retrieveContext(for query: String, limit: Int, minimumScore: Double) async -> [SemanticRetrievedContext] {
+        []
     }
 }

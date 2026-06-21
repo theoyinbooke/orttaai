@@ -29,6 +29,17 @@ struct SemanticRetrievedContext: Identifiable, Sendable {
     var id: Int64 { chunkID }
 }
 
+protocol SemanticMemoryServiceProviding {
+    func stats() -> SemanticMemoryStats
+    func graph(limitNodes: Int, limitEdges: Int) -> SemanticMemoryGraph
+    func loadLatestInsightReport() -> SemanticInsightReport?
+    func freshness(for report: SemanticInsightReport, currentGraph: SemanticMemoryGraph) -> SemanticInsightFreshness
+    func generateInsights(limitCards: Int) async -> SemanticInsightReport
+    func clearIndex() throws
+    func indexPendingTranscriptions(limit: Int) async -> SemanticIndexRunResult
+    func retrieveContext(for query: String, limit: Int, minimumScore: Double) async -> [SemanticRetrievedContext]
+}
+
 protocol SemanticEmbeddingProviding {
     var providerName: String { get }
     var modelID: String { get }
@@ -148,7 +159,7 @@ enum SemanticVectorMath {
     }
 }
 
-final class SemanticMemoryService {
+final class SemanticMemoryService: SemanticMemoryServiceProviding {
     private let databaseManager: DatabaseManager?
     private let settings: AppSettings
     private let ollamaClient: OllamaClient
@@ -204,25 +215,60 @@ final class SemanticMemoryService {
         }
     }
 
+    func loadLatestInsightReport() -> SemanticInsightReport? {
+        do {
+            let databaseManager = try requireDatabaseManager()
+            return try databaseManager.fetchLatestSemanticInsightSnapshot()
+        } catch {
+            Logger.memory.error("Failed to load semantic insight snapshot: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func freshness(for report: SemanticInsightReport, currentGraph: SemanticMemoryGraph) -> SemanticInsightFreshness {
+        let currentSignature = Self.graphSignature(for: currentGraph)
+        return SemanticInsightFreshness(
+            reportGraphSignature: report.graphSignature,
+            currentGraphSignature: currentSignature,
+            status: report.graphSignature == currentSignature ? .fresh : .stale
+        )
+    }
+
     func generateInsights(limitCards: Int = 8) async -> SemanticInsightReport {
         do {
             let databaseManager = try requireDatabaseManager()
             let graph = try databaseManager.fetchSemanticGraph(limitNodes: 220, limitEdges: 480)
             let chunks = try databaseManager.fetchEmbeddedSemanticChunks(modelID: activeModelID, limit: 900)
-            let report = Self.makeInsightReport(
+            let deterministicReport = Self.makeInsightReport(
                 graph: graph,
                 chunks: chunks,
                 generatedAt: Date(),
                 limitCards: limitCards
             )
-            return await reportWithModelSummaryIfAvailable(report)
+            let report = await reportWithModelInsightsIfAvailable(
+                deterministicReport,
+                graph: graph,
+                chunks: chunks,
+                limitCards: limitCards
+            )
+            do {
+                try databaseManager.saveSemanticInsightSnapshot(report)
+            } catch {
+                Logger.memory.error("Failed to persist semantic insight snapshot: \(error.localizedDescription)")
+            }
+            return report
         } catch {
             Logger.memory.error("Failed to generate semantic insights: \(error.localizedDescription)")
             return SemanticInsightReport(
                 generatedAt: Date(),
                 graphSignature: "error",
+                analyzerName: "Semantic Memory",
+                usedFallback: true,
                 summary: ["Build or refresh the semantic index before generating graph insights."],
                 summaryModelName: nil,
+                clusters: [],
+                comparisons: [],
+                coverageNotes: ["Semantic graph or embedded transcript chunks were unavailable."],
                 cards: [],
                 sourceNodeCount: 0,
                 sourceEdgeCount: 0,
@@ -429,8 +475,13 @@ final class SemanticMemoryService {
             return SemanticInsightReport(
                 generatedAt: generatedAt,
                 graphSignature: signature,
+                analyzerName: "Heuristic Graph Signals",
+                usedFallback: true,
                 summary: ["Build the semantic index to generate insight cards from your writing graph."],
                 summaryModelName: nil,
+                clusters: [],
+                comparisons: [],
+                coverageNotes: ["No semantic graph nodes or links are available yet."],
                 cards: [],
                 sourceNodeCount: graph.nodes.count,
                 sourceEdgeCount: graph.edges.count,
@@ -461,11 +512,18 @@ final class SemanticMemoryService {
         appendCard(contextShiftCard(from: chunks), to: &cards)
         appendCard(recentMomentumCard(from: contexts), to: &cards)
         appendCard(underdevelopedThreadCard(from: contexts), to: &cards)
+        appendCard(temporalComparisonCard(from: chunks, generatedAt: generatedAt), to: &cards)
+        appendCard(recurringAndFadingCard(from: chunks, generatedAt: generatedAt), to: &cards)
 
         let boundedCards = Array(cards.prefix(max(1, limitCards)))
+        let clusters = insightClusters(from: contexts, chunks: chunks)
+        let comparisons = insightComparisons(from: chunks, generatedAt: generatedAt)
+        let coverageNotes = coverageNotes(graph: graph, chunks: chunks, contexts: contexts)
         return SemanticInsightReport(
             generatedAt: generatedAt,
             graphSignature: signature,
+            analyzerName: "Heuristic Graph Signals",
+            usedFallback: true,
             summary: summaryLines(
                 graph: graph,
                 chunks: chunks,
@@ -473,6 +531,9 @@ final class SemanticMemoryService {
                 cards: boundedCards
             ),
             summaryModelName: nil,
+            clusters: clusters,
+            comparisons: comparisons,
+            coverageNotes: coverageNotes,
             cards: boundedCards,
             sourceNodeCount: graph.nodes.count,
             sourceEdgeCount: graph.edges.count,
@@ -480,7 +541,42 @@ final class SemanticMemoryService {
         )
     }
 
-    private func reportWithModelSummaryIfAvailable(_ report: SemanticInsightReport) async -> SemanticInsightReport {
+    private struct ModelInsightPayload: Decodable {
+        struct Card: Decodable {
+            let kind: String?
+            let title: String?
+            let body: String?
+            let actionText: String?
+            let confidence: Double?
+            let evidenceChunkIDs: [Int64]?
+        }
+
+        struct Cluster: Decodable {
+            let title: String?
+            let summary: String?
+            let evidenceChunkIDs: [Int64]?
+        }
+
+        struct Comparison: Decodable {
+            let title: String?
+            let detail: String?
+            let trend: String?
+            let evidenceChunkIDs: [Int64]?
+        }
+
+        let summary: [String]?
+        let cards: [Card]?
+        let clusters: [Cluster]?
+        let comparisons: [Comparison]?
+        let coverageNotes: [String]?
+    }
+
+    private func reportWithModelInsightsIfAvailable(
+        _ report: SemanticInsightReport,
+        graph: SemanticMemoryGraph,
+        chunks: [SemanticEmbeddedChunk],
+        limitCards: Int
+    ) async -> SemanticInsightReport {
         guard settings.semanticInsightSummaryEnabled, !report.cards.isEmpty else {
             return report
         }
@@ -498,94 +594,341 @@ final class SemanticMemoryService {
                 return report
             }
 
-            let response = try await ollamaClient.chat(
+            let response = try await ollamaClient.generate(
                 baseURLString: settings.normalizedLocalLLMEndpoint,
                 model: modelName,
-                messages: [
-                    OllamaChatMessage(
-                        role: .system,
-                        content: """
-                        You are a private local knowledge-graph analyst inside a macOS dictation app.
-                        Write a sharp TLDR from the provided graph insights only.
-                        Do not invent facts. Do not mention raw node/link counts unless they explain a decision.
-                        Focus on what the user is working on, what may be unresolved, and the next useful action.
-                        """
-                    ),
-                    OllamaChatMessage(
-                        role: .user,
-                        content: Self.modelSummaryPrompt(for: report)
-                    ),
-                ],
+                prompt: Self.modelInsightPrompt(for: report, graph: graph, chunks: chunks),
                 timeoutMs: 45_000,
                 think: settings.localLLMInsightsThinkingEnabled ? true : nil,
+                format: "json",
                 temperature: 0.2,
-                numPredict: 420,
+                numPredict: 4_800,
                 numContext: settings.clampedLocalLLMInsightsContextTokens,
                 keepAlive: "10m"
             )
-            let summary = Self.parseModelSummaryLines(response)
-            guard !summary.isEmpty else { return report }
-            return Self.replacingSummary(on: report, with: summary, modelName: modelName)
+            guard let payload = Self.decodeModelInsightPayload(from: response) else {
+                Logger.memory.warning("Model semantic insights response did not contain valid JSON.")
+                return report
+            }
+            return Self.replacingModelInsights(
+                on: report,
+                with: payload,
+                chunks: chunks,
+                modelName: modelName,
+                limitCards: limitCards
+            )
         } catch {
-            Logger.memory.warning("Could not generate model semantic TLDR: \(error.localizedDescription)")
+            Logger.memory.warning("Could not generate model semantic insights: \(error.localizedDescription)")
             return report
         }
     }
 
-    nonisolated private static func replacingSummary(
+    private static func replacingModelInsights(
         on report: SemanticInsightReport,
-        with summary: [String],
-        modelName: String?
+        with payload: ModelInsightPayload,
+        chunks: [SemanticEmbeddedChunk],
+        modelName: String,
+        limitCards: Int
     ) -> SemanticInsightReport {
-        SemanticInsightReport(
+        let chunkByID = Dictionary(uniqueKeysWithValues: chunks.map { ($0.chunkID, $0) })
+        let summary = sanitizeLines(payload.summary, fallback: report.summary, limit: 4)
+        let cards = modelCards(payload.cards, chunkByID: chunkByID, fallback: report.cards, limitCards: limitCards)
+        let clusters = modelClusters(payload.clusters, chunkByID: chunkByID, fallback: report.clusters)
+        let comparisons = modelComparisons(payload.comparisons, chunkByID: chunkByID, fallback: report.comparisons)
+        let coverageNotes = sanitizeLines(payload.coverageNotes, fallback: report.coverageNotes, limit: 4)
+
+        return SemanticInsightReport(
             generatedAt: report.generatedAt,
             graphSignature: report.graphSignature,
+            analyzerName: "Local Ollama Graph Analyst",
+            usedFallback: false,
             summary: summary,
             summaryModelName: modelName,
-            cards: report.cards,
+            clusters: clusters,
+            comparisons: comparisons,
+            coverageNotes: coverageNotes,
+            cards: cards,
             sourceNodeCount: report.sourceNodeCount,
             sourceEdgeCount: report.sourceEdgeCount,
             sourceChunkCount: report.sourceChunkCount
         )
     }
 
-    nonisolated private static func modelSummaryPrompt(for report: SemanticInsightReport) -> String {
-        let cards = report.cards
-            .prefix(6)
-            .enumerated()
-            .map { index, card in
-                let evidence = card.evidence
-                    .prefix(2)
-                    .map { item in
-                        let appName = item.sourceAppName?.isEmpty == false ? item.sourceAppName! : "Dictation"
-                        return "- \(appName): \(item.excerpt)"
-                    }
-                    .joined(separator: "\n")
+    private static func modelInsightPrompt(
+        for report: SemanticInsightReport,
+        graph: SemanticMemoryGraph,
+        chunks: [SemanticEmbeddedChunk]
+    ) -> String {
+        return """
+        You are a private local analyst inside a macOS dictation app. Analyze only the provided transcript evidence and graph metadata.
 
+        Rules:
+        - Return one JSON object only. No markdown and no prose wrapper.
+        - Do not diagnose the user, infer protected traits, or make unsupported personality claims.
+        - Every card, cluster, and comparison must cite evidenceChunkIDs from the provided chunks.
+        - Prefer deep comparative insights: recent vs older work, cross-app fragmentation, recurring vs fading themes, open loops, and bridges between life/work areas.
+        - If evidence is thin, say so in coverageNotes instead of inventing certainty.
+
+        Required JSON shape:
+        {
+          "summary": ["3-4 concise bullets"],
+          "cards": [
+            {
+              "kind": "string",
+              "title": "string",
+              "body": "specific evidence-bounded finding",
+              "actionText": "concrete next action",
+              "confidence": 0.25,
+              "evidenceChunkIDs": [123]
+            }
+          ],
+          "clusters": [
+            {
+              "title": "life/work area name",
+              "summary": "what this area appears to contain and why it matters",
+              "evidenceChunkIDs": [123]
+            }
+          ],
+          "comparisons": [
+            {
+              "title": "recent vs older comparison",
+              "detail": "what increased, faded, or crossed app boundaries",
+              "trend": "rising|fading|stable|mixed",
+              "evidenceChunkIDs": [123]
+            }
+          ],
+          "coverageNotes": ["limitations in the evidence"]
+        }
+
+        Evidence pack:
+        \(insightEvidencePack(report: report, graph: graph, chunks: chunks))
+        """
+    }
+
+    static func canDecodeModelInsightPayload(from response: String) -> Bool {
+        decodeModelInsightPayload(from: response) != nil
+    }
+
+    private static func decodeModelInsightPayload(from response: String) -> ModelInsightPayload? {
+        for candidate in extractJSONObjects(from: response) {
+            guard let data = candidate.data(using: .utf8),
+                  let payload = try? JSONDecoder().decode(ModelInsightPayload.self, from: data) else {
+                continue
+            }
+            if payload.summary?.isEmpty == false ||
+                payload.cards?.isEmpty == false ||
+                payload.clusters?.isEmpty == false ||
+                payload.comparisons?.isEmpty == false {
+                return payload
+            }
+        }
+        return nil
+    }
+
+    private static func modelCards(
+        _ cards: [ModelInsightPayload.Card]?,
+        chunkByID: [Int64: SemanticEmbeddedChunk],
+        fallback: [SemanticInsightCard],
+        limitCards: Int
+    ) -> [SemanticInsightCard] {
+        let mapped = (cards ?? []).enumerated().compactMap { index, card -> SemanticInsightCard? in
+            guard let title = cleanInsightLine(card.title, maxLength: 96),
+                  let body = cleanInsightLine(card.body, maxLength: 420),
+                  let action = cleanInsightLine(card.actionText, maxLength: 220) else {
+                return nil
+            }
+            let chunkIDs = uniqueChunkIDs(card.evidenceChunkIDs ?? [])
+            let evidence = evidenceItems(for: chunkIDs, chunkByID: chunkByID, focus: title, limit: 4)
+            guard !evidence.isEmpty else { return nil }
+            return SemanticInsightCard(
+                id: "model-card-\(index)-\(nodeKey(title))",
+                kind: cleanInsightLine(card.kind, maxLength: 40) ?? "Deep Insight",
+                title: title,
+                body: body,
+                confidence: min(0.95, max(0.25, card.confidence ?? 0.64)),
+                actionText: action,
+                relatedNodeIDs: chunkIDs.map { "chunk:\($0)" },
+                evidence: evidence
+            )
+        }
+        return mapped.isEmpty ? fallback : Array(mapped.prefix(max(1, limitCards)))
+    }
+
+    private static func modelClusters(
+        _ clusters: [ModelInsightPayload.Cluster]?,
+        chunkByID: [Int64: SemanticEmbeddedChunk],
+        fallback: [SemanticInsightCluster]
+    ) -> [SemanticInsightCluster] {
+        let mapped = (clusters ?? []).enumerated().compactMap { index, cluster -> SemanticInsightCluster? in
+            guard let title = cleanInsightLine(cluster.title, maxLength: 96),
+                  let summary = cleanInsightLine(cluster.summary, maxLength: 360) else {
+                return nil
+            }
+            let chunkIDs = uniqueChunkIDs(cluster.evidenceChunkIDs ?? [])
+            let evidence = evidenceItems(for: chunkIDs, chunkByID: chunkByID, focus: title, limit: 3)
+            guard !evidence.isEmpty else { return nil }
+            return SemanticInsightCluster(
+                id: "model-cluster-\(index)-\(nodeKey(title))",
+                title: title,
+                summary: summary,
+                relatedNodeIDs: chunkIDs.map { "chunk:\($0)" },
+                evidence: evidence
+            )
+        }
+        return mapped.isEmpty ? fallback : mapped
+    }
+
+    private static func modelComparisons(
+        _ comparisons: [ModelInsightPayload.Comparison]?,
+        chunkByID: [Int64: SemanticEmbeddedChunk],
+        fallback: [SemanticInsightComparison]
+    ) -> [SemanticInsightComparison] {
+        let mapped = (comparisons ?? []).enumerated().compactMap { index, comparison -> SemanticInsightComparison? in
+            guard let title = cleanInsightLine(comparison.title, maxLength: 96),
+                  let detail = cleanInsightLine(comparison.detail, maxLength: 360) else {
+                return nil
+            }
+            let chunkIDs = uniqueChunkIDs(comparison.evidenceChunkIDs ?? [])
+            let evidence = evidenceItems(for: chunkIDs, chunkByID: chunkByID, focus: title, limit: 3)
+            guard !evidence.isEmpty else { return nil }
+            return SemanticInsightComparison(
+                id: "model-comparison-\(index)-\(nodeKey(title))",
+                title: title,
+                detail: detail,
+                trend: cleanInsightLine(comparison.trend, maxLength: 24) ?? "mixed",
+                evidence: evidence
+            )
+        }
+        return mapped.isEmpty ? fallback : mapped
+    }
+
+    private static func sanitizeLines(_ lines: [String]?, fallback: [String], limit: Int) -> [String] {
+        let cleaned = (lines ?? []).compactMap { cleanInsightLine($0, maxLength: 240) }
+        return cleaned.isEmpty ? fallback : Array(cleaned.prefix(max(1, limit)))
+    }
+
+    private static func uniqueChunkIDs(_ chunkIDs: [Int64]) -> [Int64] {
+        var seen = Set<Int64>()
+        var result: [Int64] = []
+        for chunkID in chunkIDs where !seen.contains(chunkID) {
+            seen.insert(chunkID)
+            result.append(chunkID)
+        }
+        return result
+    }
+
+    private static func cleanInsightLine(_ value: String?, maxLength: Int) -> String? {
+        guard var cleaned = value?
+            .replacingOccurrences(of: #"(?s)<think>.*?</think>"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^\s*[-*•]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^\s*\d+[\.)]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !cleaned.isEmpty else {
+            return nil
+        }
+        if cleaned.count > maxLength {
+            cleaned = String(cleaned.prefix(max(0, maxLength - 3))).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+        }
+        return cleaned
+    }
+
+    private static func extractJSONObjects(from text: String) -> [String] {
+        let characters = Array(text)
+        var candidates: [String] = []
+        var depth = 0
+        var startIndex: Int?
+        var isEscaped = false
+        var isInsideString = false
+
+        for index in characters.indices {
+            let character = characters[index]
+            if isEscaped {
+                isEscaped = false
+                continue
+            }
+            if character == "\\" && isInsideString {
+                isEscaped = true
+                continue
+            }
+            if character == "\"" {
+                isInsideString.toggle()
+                continue
+            }
+            guard !isInsideString else { continue }
+            if character == "{" {
+                if depth == 0 {
+                    startIndex = index
+                }
+                depth += 1
+            } else if character == "}", depth > 0 {
+                depth -= 1
+                if depth == 0, let objectStartIndex = startIndex {
+                    candidates.append(String(characters[objectStartIndex...index]))
+                    startIndex = nil
+                }
+            }
+        }
+
+        return candidates
+    }
+
+    private static func insightEvidencePack(
+        report: SemanticInsightReport,
+        graph: SemanticMemoryGraph,
+        chunks: [SemanticEmbeddedChunk]
+    ) -> String {
+        let topNodes = graph.nodes
+            .filter { $0.kind != "chunk" }
+            .prefix(36)
+            .map { "- \($0.kind): \($0.title) weight \(String(format: "%.2f", $0.weight))" }
+            .joined(separator: "\n")
+
+        let chunkLines = chunks
+            .prefix(80)
+            .map { chunk in
+                let app = chunk.targetAppName?.isEmpty == false ? chunk.targetAppName! : "Dictation"
+                let date = contextDateFormatter.string(from: chunk.sourceCreatedAt)
                 return """
-                \(index + 1). \(card.kind): \(card.title)
-                Signal: \(card.body)
-                Recommended action: \(card.actionText)
-                Evidence:
-                \(evidence.isEmpty ? "- No excerpt available." : evidence)
+                [chunkID=\(chunk.chunkID)] \(app), \(date)
+                \(excerpt(chunk.text, limit: 360))
                 """
             }
             .joined(separator: "\n\n")
 
+        let fallbackCards = report.cards.prefix(8).map { card in
+            "- \(card.kind): \(card.title). \(card.body)"
+        }.joined(separator: "\n")
+
         return """
-        Create a TLDR insight summary for this personal knowledge graph.
+        Graph counts: \(graph.nodes.count) nodes, \(graph.edges.count) edges, \(chunks.count) embedded transcript chunks.
 
-        Required output:
-        - Exactly 3 bullets.
-        - Each bullet should be useful and specific, not generic.
-        - Bullet 1: the main workstream or theme.
-        - Bullet 2: the hidden risk, open loop, or scattered context.
-        - Bullet 3: the best next action.
-        - No heading. No markdown table.
+        Top graph nodes:
+        \(topNodes.isEmpty ? "- None" : topNodes)
 
-        Graph insight cards and evidence:
-        \(cards)
+        Deterministic pre-analysis:
+        \(fallbackCards.isEmpty ? "- None" : fallbackCards)
+
+        Transcript chunks:
+        \(chunkLines.isEmpty ? "- None" : chunkLines)
         """
+    }
+
+    private static func evidenceItems(
+        for chunkIDs: [Int64],
+        chunkByID: [Int64: SemanticEmbeddedChunk],
+        focus: String,
+        limit: Int
+    ) -> [SemanticInsightEvidence] {
+        var seen = Set<Int64>()
+        let chunks = chunkIDs.compactMap { chunkID -> SemanticEmbeddedChunk? in
+            guard !seen.contains(chunkID), let chunk = chunkByID[chunkID] else { return nil }
+            seen.insert(chunkID)
+            return chunk
+        }
+        return evidenceItems(from: chunks, focus: focus, limit: limit)
     }
 
     nonisolated private static func parseModelSummaryLines(_ response: String) -> [String] {
@@ -747,7 +1090,7 @@ final class SemanticMemoryService {
             }
         guard rankedApps.count >= 2 else { return nil }
 
-        let topApps = rankedApps.prefix(3).map(\.name)
+        let topApps = rankedApps.prefix(3).map { $0.name }
         let evidence = rankedApps
             .prefix(3)
             .flatMap { $0.chunks.prefix(1) }
@@ -815,6 +1158,256 @@ final class SemanticMemoryService {
             relatedNodeIDs: [context.node.nodeID],
             evidence: evidenceItems(from: context.chunks, focus: context.node.title)
         )
+    }
+
+    private static func temporalComparisonCard(
+        from chunks: [SemanticEmbeddedChunk],
+        generatedAt: Date
+    ) -> SemanticInsightCard? {
+        let windows = comparisonWindows(from: chunks, generatedAt: generatedAt)
+        guard !windows.recent.isEmpty, !windows.previous.isEmpty else { return nil }
+
+        let recentApps = topCounts(windows.recent.map { normalizedAppName($0.targetAppName) }, limit: 3)
+        let previousApps = topCounts(windows.previous.map { normalizedAppName($0.targetAppName) }, limit: 3)
+        let recentNames = recentApps.map { $0.value }
+        let previousNames = previousApps.map { $0.value }
+        let changedApps = recentNames.filter { !previousNames.contains($0) }
+        let evidence = (Array(windows.recent.prefix(2)) + Array(windows.previous.prefix(2)))
+            .sorted { $0.sourceCreatedAt > $1.sourceCreatedAt }
+
+        let body: String
+        if changedApps.isEmpty {
+            body = "Recent dictation is still concentrated in \(recentNames.prefix(2).joined(separator: ", ")), which suggests continuity rather than a major context change."
+        } else {
+            body = "Recent dictation has shifted toward \(changedApps.prefix(2).joined(separator: ", ")), while older evidence leaned more toward \(previousNames.prefix(2).joined(separator: ", "))."
+        }
+
+        return SemanticInsightCard(
+            id: "temporal-comparison",
+            kind: "Temporal Comparison",
+            title: "Recent work is not identical to older graph evidence",
+            body: body,
+            confidence: confidence(base: 0.45, evidenceCount: evidence.count, degree: recentNames.count + previousNames.count),
+            actionText: "Compare the recent thread against older commitments before choosing the next priority.",
+            relatedNodeIDs: evidence.map { "chunk:\($0.chunkID)" },
+            evidence: evidenceItems(from: evidence, focus: "recent vs older", limit: 4)
+        )
+    }
+
+    private static func recurringAndFadingCard(
+        from chunks: [SemanticEmbeddedChunk],
+        generatedAt: Date
+    ) -> SemanticInsightCard? {
+        let windows = comparisonWindows(from: chunks, generatedAt: generatedAt)
+        guard !windows.recent.isEmpty, !windows.previous.isEmpty else { return nil }
+
+        let recentTerms = termCounts(in: windows.recent)
+        let previousTerms = termCounts(in: windows.previous)
+        let risingCandidates: [(term: String, delta: Int)] = recentTerms.map { term, count in
+            (term: term, delta: count - (previousTerms[term] ?? 0))
+        }
+        let rising = risingCandidates
+            .filter { $0.delta > 0 }
+            .sorted { lhs, rhs in lhs.delta == rhs.delta ? lhs.term < rhs.term : lhs.delta > rhs.delta }
+            .prefix(3)
+            .map { $0.term }
+        let fadingCandidates: [(term: String, delta: Int)] = previousTerms.map { term, count in
+            (term: term, delta: count - (recentTerms[term] ?? 0))
+        }
+        let fading = fadingCandidates
+            .filter { $0.delta > 0 }
+            .sorted { lhs, rhs in lhs.delta == rhs.delta ? lhs.term < rhs.term : lhs.delta > rhs.delta }
+            .prefix(3)
+            .map { $0.term }
+
+        guard !rising.isEmpty || !fading.isEmpty else { return nil }
+        let evidence = (Array(windows.recent.prefix(2)) + Array(windows.previous.prefix(2)))
+            .sorted { $0.sourceCreatedAt > $1.sourceCreatedAt }
+        let risingText = rising.isEmpty ? "no clear rising term" : rising.joined(separator: ", ")
+        let fadingText = fading.isEmpty ? "no clear fading term" : fading.joined(separator: ", ")
+
+        return SemanticInsightCard(
+            id: "recurring-fading",
+            kind: "Recurring vs Fading",
+            title: "Themes are changing over time",
+            body: "Recent language is leaning toward \(risingText), while older evidence carried more \(fadingText). This is a useful signal for what is live now versus what may be slipping.",
+            confidence: confidence(base: 0.42, evidenceCount: evidence.count, degree: rising.count + fading.count),
+            actionText: "Promote rising themes into active tasks and review fading themes for unfinished commitments.",
+            relatedNodeIDs: Array(rising + fading).map { "topic:\(nodeKey($0))" },
+            evidence: evidenceItems(from: evidence, focus: "theme movement", limit: 4)
+        )
+    }
+
+    private static func insightClusters(
+        from contexts: [InsightNodeContext],
+        chunks: [SemanticEmbeddedChunk]
+    ) -> [SemanticInsightCluster] {
+        var clusters: [SemanticInsightCluster] = []
+
+        let appGroups = Dictionary(grouping: chunks) { normalizedAppName($0.targetAppName) }
+        let rankedAppGroups = appGroups
+            .map { (appName: $0.key, chunks: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.chunks.count == rhs.chunks.count {
+                    return lhs.appName < rhs.appName
+                }
+                return lhs.chunks.count > rhs.chunks.count
+            }
+        for group in rankedAppGroups.prefix(3) {
+            let termPairs = Self.termCounts(in: group.chunks).map { (value: $0.key, count: $0.value) }
+            let terms = topCounts(termPairs, limit: 3).map { $0.value }
+            let summary = terms.isEmpty
+                ? "\(group.appName) contains \(group.chunks.count) indexed transcript segment\(group.chunks.count == 1 ? "" : "s")."
+                : "\(group.appName) is carrying \(terms.joined(separator: ", ")), based on \(group.chunks.count) indexed segment\(group.chunks.count == 1 ? "" : "s")."
+            clusters.append(
+                SemanticInsightCluster(
+                    id: "app-cluster-\(nodeKey(group.appName))",
+                    title: "\(group.appName) work area",
+                    summary: summary,
+                    relatedNodeIDs: ["app:\(nodeKey(group.appName))"],
+                    evidence: evidenceItems(from: group.chunks, focus: group.appName, limit: 3)
+                )
+            )
+        }
+
+        for context in contexts
+            .filter({ ["topic", "entity"].contains($0.node.kind) && $0.evidenceCount >= 2 })
+            .sorted(by: { $0.importanceScore > $1.importanceScore })
+            .prefix(2) {
+            clusters.append(
+                SemanticInsightCluster(
+                    id: "theme-cluster-\(context.node.nodeID)",
+                    title: "\(context.node.title) thread",
+                    summary: "\(context.node.title) links \(context.evidenceCount) evidence segment\(context.evidenceCount == 1 ? "" : "s") across \(max(1, context.appNames.count)) app context\(context.appNames.count == 1 ? "" : "s"), making it a candidate life/work area rather than a one-off mention.",
+                    relatedNodeIDs: [context.node.nodeID],
+                    evidence: evidenceItems(from: context.chunks, focus: context.node.title, limit: 3)
+                )
+            )
+        }
+
+        var seen = Set<String>()
+        return clusters.filter { cluster in
+            guard !seen.contains(cluster.id), !cluster.evidence.isEmpty else { return false }
+            seen.insert(cluster.id)
+            return true
+        }
+    }
+
+    private static func insightComparisons(
+        from chunks: [SemanticEmbeddedChunk],
+        generatedAt: Date
+    ) -> [SemanticInsightComparison] {
+        let windows = comparisonWindows(from: chunks, generatedAt: generatedAt)
+        guard !windows.recent.isEmpty, !windows.previous.isEmpty else { return [] }
+
+        var comparisons: [SemanticInsightComparison] = []
+        let recentTerms = topCounts(termCounts(in: windows.recent).map { (value: $0.key, count: $0.value) }, limit: 3).map { $0.value }
+        let previousTerms = topCounts(termCounts(in: windows.previous).map { (value: $0.key, count: $0.value) }, limit: 3).map { $0.value }
+        let evidence = (Array(windows.recent.prefix(2)) + Array(windows.previous.prefix(2)))
+            .sorted { $0.sourceCreatedAt > $1.sourceCreatedAt }
+
+        if !recentTerms.isEmpty || !previousTerms.isEmpty {
+            comparisons.append(
+                SemanticInsightComparison(
+                    id: "comparison-theme-drift",
+                    title: "Recent vs older theme mix",
+                    detail: "Recent evidence emphasizes \(recentTerms.isEmpty ? "no dominant terms" : recentTerms.joined(separator: ", ")); older evidence emphasized \(previousTerms.isEmpty ? "no dominant terms" : previousTerms.joined(separator: ", ")).",
+                    trend: "mixed",
+                    evidence: evidenceItems(from: evidence, focus: "theme drift", limit: 4)
+                )
+            )
+        }
+
+        let recentApps = Set(windows.recent.map { normalizedAppName($0.targetAppName) })
+        let previousApps = Set(windows.previous.map { normalizedAppName($0.targetAppName) })
+        let newApps = recentApps.subtracting(previousApps).sorted()
+        if !newApps.isEmpty {
+            comparisons.append(
+                SemanticInsightComparison(
+                    id: "comparison-app-shift",
+                    title: "App-context shift",
+                    detail: "Recent dictation added \(newApps.prefix(3).joined(separator: ", ")) compared with the older window, which can indicate a newer work surface or scattered follow-up context.",
+                    trend: "rising",
+                    evidence: evidenceItems(from: windows.recent, focus: "app shift", limit: 3)
+                )
+            )
+        }
+
+        return comparisons
+    }
+
+    private static func coverageNotes(
+        graph: SemanticMemoryGraph,
+        chunks: [SemanticEmbeddedChunk],
+        contexts: [InsightNodeContext]
+    ) -> [String] {
+        var notes: [String] = []
+        if chunks.count < 20 {
+            notes.append("Evidence is still thin: only \(chunks.count) embedded transcript chunk\(chunks.count == 1 ? "" : "s") were available.")
+        }
+        let appCount = Set(chunks.compactMap { normalizedAppName($0.targetAppName) }).count
+        if appCount < 2 {
+            notes.append("Cross-app comparison is limited because evidence currently spans \(appCount) app context\(appCount == 1 ? "" : "s").")
+        }
+        if contexts.filter({ $0.evidenceCount >= 2 }).count < 2 {
+            notes.append("Life/work area clustering will improve after more repeated themes are indexed.")
+        }
+        if graph.edges.count < graph.nodes.count / 2 {
+            notes.append("The graph has relatively few links, so bridge insights should be treated as directional rather than definitive.")
+        }
+        return notes
+    }
+
+    private static func comparisonWindows(
+        from chunks: [SemanticEmbeddedChunk],
+        generatedAt: Date
+    ) -> (recent: [SemanticEmbeddedChunk], previous: [SemanticEmbeddedChunk]) {
+        let sorted = chunks.sorted { $0.sourceCreatedAt > $1.sourceCreatedAt }
+        guard sorted.count >= 2 else { return (sorted, []) }
+        let cutoff = generatedAt.addingTimeInterval(-14 * 24 * 60 * 60)
+        let recentByDate = sorted.filter { $0.sourceCreatedAt >= cutoff }
+        let previousByDate = sorted.filter { $0.sourceCreatedAt < cutoff }
+        if !recentByDate.isEmpty, !previousByDate.isEmpty {
+            return (recentByDate, previousByDate)
+        }
+        let splitIndex = max(1, sorted.count / 2)
+        return (Array(sorted.prefix(splitIndex)), Array(sorted.dropFirst(splitIndex)))
+    }
+
+    private static func termCounts(in chunks: [SemanticEmbeddedChunk]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for chunk in chunks {
+            for token in LexicalSemanticEmbeddingProvider.tokens(in: chunk.text) where token.count >= 4 {
+                counts[token, default: 0] += 1
+            }
+        }
+        return counts
+    }
+
+    private static func topCounts<T: Hashable & Comparable>(
+        _ values: [T],
+        limit: Int
+    ) -> [(value: T, count: Int)] {
+        topCounts(values.map { (value: $0, count: 1) }, limit: limit)
+    }
+
+    private static func topCounts<T: Hashable & Comparable>(
+        _ values: [(value: T, count: Int)],
+        limit: Int
+    ) -> [(value: T, count: Int)] {
+        var counts: [T: Int] = [:]
+        for item in values {
+            counts[item.value, default: 0] += item.count
+        }
+        return counts
+            .sorted { lhs, rhs in lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value }
+            .prefix(max(1, limit))
+            .map { (value: $0.key, count: $0.value) }
+    }
+
+    private static func normalizedAppName(_ appName: String?) -> String {
+        let trimmed = appName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Dictation" : trimmed
     }
 
     private static func nodeContext(

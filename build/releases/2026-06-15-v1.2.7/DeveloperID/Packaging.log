@@ -1,0 +1,502 @@
+2026-06-15 05:47:08 +0000 [MT] Initial pipeline context: <IDEDistributionProcessingPipelineContext: 0x7c9dfa9500; archive(resolved)="<IDEArchive: 0x7c9dcb8310>", distributionTask(resolved)="2", distributionDestination(resolved)="1", distributionMethod(resolved)="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team(resolved)="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	Chain (12, self inclusive):
+	<IDEDistributionProcessingPipelineContext: 0x7c9dfa9500; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionProcessingPipelineContext: 0x7c9dfa9200; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e7480; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e7200; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e6f80; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e6d00; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e5680; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e5400; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e4f00; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="<IDEProvisioningBasicTeam: 0x7c9dfb8720; teamID='3AL8T9L8FY', teamName='(null)'>">
+	<IDEDistributionContext: 0x7c9b4e4c80; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="(null)">
+	<IDEDistributionContext: 0x7c9b4e4280; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="<IDEDistributionMethodDeveloperID: 0x7c9b5da2f0>", team="(null)">
+	<IDEDistributionContext: 0x100761d90; archive = "<IDEArchive: 0x7c9dcb8310>", distributionMethod="(null)", team="(null)">
+</IDEDistributionProcessingPipelineContext: 0x7c9dfa9500>
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionCreateDestRootStep
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionCopyItemStep
+2026-06-15 05:47:08 +0000 [MT] Running /usr/bin/ditto '-V' '/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app' '/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app'
+2026-06-15 05:47:08 +0000  >>> Copying /Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app 
+2026-06-15 05:47:08 +0000  copying file ./Contents/_CodeSignature/CodeResources ... 
+2026-06-15 05:47:08 +0000  13329 bytes for ./Contents/_CodeSignature/CodeResources
+2026-06-15 05:47:08 +0000  copying file ./Contents/MacOS/Orttaai ... 
+2026-06-15 05:47:08 +0000  17555456 bytes for ./Contents/MacOS/Orttaai
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/swift-transformers_Hub.bundle/Contents/Resources/gpt2_tokenizer_config.json ... 
+2026-06-15 05:47:08 +0000  234 bytes for ./Contents/Resources/swift-transformers_Hub.bundle/Contents/Resources/gpt2_tokenizer_config.json
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/swift-transformers_Hub.bundle/Contents/Resources/t5_tokenizer_config.json ... 
+2026-06-15 05:47:08 +0000  20746 bytes for ./Contents/Resources/swift-transformers_Hub.bundle/Contents/Resources/t5_tokenizer_config.json
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/swift-transformers_Hub.bundle/Contents/Info.plist ... 
+2026-06-15 05:47:08 +0000  1147 bytes for ./Contents/Resources/swift-transformers_Hub.bundle/Contents/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/AppIcon.icns ... 
+2026-06-15 05:47:08 +0000  117862 bytes for ./Contents/Resources/AppIcon.icns
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/de.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  752 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/de.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ar.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  930 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ar.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/zh-Hans.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  620 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/zh-Hans.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ja.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  787 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ja.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/zh-TW.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  599 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/zh-TW.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/en.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  657 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/en.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/es.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  751 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/es.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/it.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  749 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/it.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/sk.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  727 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/sk.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/cs.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  656 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/cs.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ko.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  758 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ko.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/hu.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  769 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/hu.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/pt-BR.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  663 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/pt-BR.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ru.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  973 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/ru.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/fr.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  752 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/fr.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/nl.lproj/Localizable.strings ... 
+2026-06-15 05:47:08 +0000  722 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Resources/nl.lproj/Localizable.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Info.plist ... 
+2026-06-15 05:47:08 +0000  1173 bytes for ./Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle/Contents/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/Assets.car ... 
+2026-06-15 05:47:08 +0000  2536632 bytes for ./Contents/Resources/Assets.car
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/appcast.xml ... 
+2026-06-15 05:47:08 +0000  2403 bytes for ./Contents/Resources/appcast.xml
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/GRDB_GRDB.bundle/Contents/Resources/PrivacyInfo.xcprivacy ... 
+2026-06-15 05:47:08 +0000  397 bytes for ./Contents/Resources/GRDB_GRDB.bundle/Contents/Resources/PrivacyInfo.xcprivacy
+2026-06-15 05:47:08 +0000  copying file ./Contents/Resources/GRDB_GRDB.bundle/Contents/Info.plist ... 
+2026-06-15 05:47:08 +0000  1127 bytes for ./Contents/Resources/GRDB_GRDB.bundle/Contents/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/embedded.provisionprofile ... 
+2026-06-15 05:47:08 +0000  16067 bytes for ./Contents/embedded.provisionprofile
+2026-06-15 05:47:08 +0000  copying symlink ./Contents/Frameworks/Sparkle.framework/Resources ... 
+2026-06-15 05:47:08 +0000  linked ./Contents/Frameworks/Sparkle.framework/Resources
+2026-06-15 05:47:08 +0000  copying symlink ./Contents/Frameworks/Sparkle.framework/Versions/Current ... 
+2026-06-15 05:47:08 +0000  linked ./Contents/Frameworks/Sparkle.framework/Versions/Current
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/_CodeSignature/CodeResources ... 
+2026-06-15 05:47:08 +0000  17887 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/_CodeSignature/CodeResources
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/de.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  11559 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/de.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/he.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  9657 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/he.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ar.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  3554 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ar.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/el.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5934 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/el.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ja.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  8697 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ja.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/fa.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5716 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/fa.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/uk.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5842 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/uk.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/zh_CN.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  7475 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/zh_CN.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/nb.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5539 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/nb.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/es.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  7040 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/es.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/is.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  3954 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/is.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/sl.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5646 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/sl.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/da.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  4882 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/da.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/it.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  10956 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/it.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/sk.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5675 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/sk.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/sv.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5160 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/sv.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ReleaseNotesColorStyle.css ... 
+2026-06-15 05:47:08 +0000  231 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ReleaseNotesColorStyle.css
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/cs.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  10774 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/cs.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ko.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  7797 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ko.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/Base.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  6249 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/Base.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/hu.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  4449 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/hu.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/zh_HK.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  6469 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/zh_HK.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/tr.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  6183 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/tr.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/pl.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5453 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/pl.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/zh_TW.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  7625 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/zh_TW.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/pt-BR.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  9976 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/pt-BR.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/vi.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  12418 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/vi.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ru.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5784 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ru.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUUpdatePermissionPrompt.nib/keyedobjects-110000.nib ... 
+2026-06-15 05:47:08 +0000  25396 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUUpdatePermissionPrompt.nib/keyedobjects-110000.nib
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUUpdatePermissionPrompt.nib/keyedobjects-101300.nib ... 
+2026-06-15 05:47:08 +0000  25430 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUUpdatePermissionPrompt.nib/keyedobjects-101300.nib
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUStatus.nib ... 
+2026-06-15 05:47:08 +0000  13104 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUStatus.nib
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUUpdateAlert.nib ... 
+2026-06-15 05:47:08 +0000  18490 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/SUUpdateAlert.nib
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/fr.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  7855 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/fr.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/fi.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  3252 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/fi.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/nl.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  9574 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/nl.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/th.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5339 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/th.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/nn.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5671 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/nn.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/pt-PT.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  5984 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/pt-PT.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ro.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  6115 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ro.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/Info.plist ... 
+2026-06-15 05:47:08 +0000  1341 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/hr.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  6367 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/hr.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ca.lproj/Sparkle.strings ... 
+2026-06-15 05:47:08 +0000  3501 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Resources/ca.lproj/Sparkle.strings
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate ... 
+2026-06-15 05:47:08 +0000  709584 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/_CodeSignature/CodeResources ... 
+2026-06-15 05:47:08 +0000  2446 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/_CodeSignature/CodeResources
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater ... 
+2026-06-15 05:47:08 +0000  290560 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/Resources/SUStatus.nib ... 
+2026-06-15 05:47:08 +0000  13104 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/Resources/SUStatus.nib
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/Info.plist ... 
+2026-06-15 05:47:08 +0000  2400 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/PkgInfo ... 
+2026-06-15 05:47:08 +0000  8 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/PkgInfo
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/_CodeSignature/CodeResources ... 
+2026-06-15 05:47:08 +0000  2200 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/_CodeSignature/CodeResources
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader ... 
+2026-06-15 05:47:08 +0000  172240 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/Info.plist ... 
+2026-06-15 05:47:08 +0000  1717 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/_CodeSignature/CodeResources ... 
+2026-06-15 05:47:08 +0000  2200 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/_CodeSignature/CodeResources
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer ... 
+2026-06-15 05:47:08 +0000  223472 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/Info.plist ... 
+2026-06-15 05:47:08 +0000  1605 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle ... 
+2026-06-15 05:47:08 +0000  977808 bytes for ./Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle
+2026-06-15 05:47:08 +0000  copying symlink ./Contents/Frameworks/Sparkle.framework/Autoupdate ... 
+2026-06-15 05:47:08 +0000  linked ./Contents/Frameworks/Sparkle.framework/Autoupdate
+2026-06-15 05:47:08 +0000  copying symlink ./Contents/Frameworks/Sparkle.framework/Updater.app ... 
+2026-06-15 05:47:08 +0000  linked ./Contents/Frameworks/Sparkle.framework/Updater.app
+2026-06-15 05:47:08 +0000  copying symlink ./Contents/Frameworks/Sparkle.framework/XPCServices ... 
+2026-06-15 05:47:08 +0000  linked ./Contents/Frameworks/Sparkle.framework/XPCServices
+2026-06-15 05:47:08 +0000  copying symlink ./Contents/Frameworks/Sparkle.framework/Sparkle ... 
+2026-06-15 05:47:08 +0000  linked ./Contents/Frameworks/Sparkle.framework/Sparkle
+2026-06-15 05:47:08 +0000  copying file ./Contents/Info.plist ... 
+2026-06-15 05:47:08 +0000  2017 bytes for ./Contents/Info.plist
+2026-06-15 05:47:08 +0000  copying file ./Contents/PkgInfo ... 
+2026-06-15 05:47:08 +0000  8 bytes for ./Contents/PkgInfo
+2026-06-15 05:47:08 +0000 [MT] /usr/bin/ditto exited with 0
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionEmbedProfileStep
+2026-06-15 05:47:08 +0000 [MT] Skipping profile for item: <IDEDistributionItem: 0x7c9b6726a0; bundleID='org.sparkle-project.DownloaderService', path='<DVTFilePath:0x7c9b670e40:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672640; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.DownloaderService', executablePath='<DVTFilePath:0x7c9b671260:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader'>', hardenedRuntime='1'>'>
+2026-06-15 05:47:08 +0000 [MT] Skipping profile for item: <IDEDistributionItem: 0x7c9b672760; bundleID='org.sparkle-project.InstallerLauncher', path='<DVTFilePath:0x7c9b671500:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672700; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.InstallerLauncher', executablePath='<DVTFilePath:0x7c9b671920:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer'>', hardenedRuntime='1'>'>
+2026-06-15 05:47:08 +0000 [MT] Skipping profile for item: <IDEDistributionItem: 0x7c9b6725e0; bundleID='(null)', path='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672580; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+    "com.apple.application-identifier" = "org.sparkle-project.Sparkle.Autoupdate";
+}', teamID='(null)', identifier='Autoupdate-55554944c885cecb77e63656933767b4dcfffd2f', executablePath='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', hardenedRuntime='1'>'>
+2026-06-15 05:47:08 +0000 [MT] Skipping profile for item: <IDEDistributionItem: 0x7c9b672520; bundleID='org.sparkle-project.Sparkle.Updater', path='<DVTFilePath:0x7c9b617f60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6724c0; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.Sparkle.Updater', executablePath='<DVTFilePath:0x7c9b6703c0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater'>', hardenedRuntime='1'>'>
+2026-06-15 05:47:08 +0000 [MT] Skipping profile for item: <IDEDistributionItem: 0x7c9b672a60; bundleID='org.sparkle-project.Sparkle', path='<DVTFilePath:0x7c9b45bf60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6727c0; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0x7c9d4d25a0; name='Apple Development: Olanrewaju Oyinbooke (88VDHSFK77)', hash='FDC8C25B06C100F9CF2221856639A180E9C36A41', serialNumber='27CE9D7906845431DC698D18B3D561E9', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2025-08-14 02:43:15 +0000''>', entitlements='(null)', teamID='3AL8T9L8FY', identifier='org.sparkle-project.Sparkle', executablePath='<DVTFilePath:0x7c9b671c20:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle'>', hardenedRuntime='1'>'>
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionInfoPlistStep
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionInfoPlistStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionInfoPlistStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionInfoPlistStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionInfoPlistStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionInfoPlistStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionInfoPlistStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionAppThinningPlistStep
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionSymbolsStep
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionSymbolsStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionAppThinningStep
+2026-06-15 05:47:08 +0000 [MT] Skipping step: IDEDistributionAppThinningStep because it said so
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionArchThinningStep
+2026-06-15 05:47:08 +0000 [MT] Archs to thin for item /Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc are []
+2026-06-15 05:47:08 +0000 [MT] Archs to thin for item /Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc are []
+2026-06-15 05:47:08 +0000 [MT] Archs to thin for item /Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate are []
+2026-06-15 05:47:08 +0000 [MT] Archs to thin for item /Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app are []
+2026-06-15 05:47:08 +0000 [MT] Archs to thin for item /Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B are []
+2026-06-15 05:47:08 +0000 [MT] Archs to thin for item /Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app are []
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionODRStep
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionStripXattrsStep
+2026-06-15 05:47:08 +0000 [MT] Skipping stripping extended attributes because the codesign step will strip them.
+2026-06-15 05:47:08 +0000 [MT] Skipping stripping extended attributes because the codesign step will strip them.
+2026-06-15 05:47:08 +0000 [MT] Skipping stripping extended attributes because the codesign step will strip them.
+2026-06-15 05:47:08 +0000 [MT] Skipping stripping extended attributes because the codesign step will strip them.
+2026-06-15 05:47:08 +0000 [MT] Skipping stripping extended attributes because the codesign step will strip them.
+2026-06-15 05:47:08 +0000 [MT] Skipping stripping extended attributes because the codesign step will strip them.
+2026-06-15 05:47:08 +0000 [MT] Processing step: IDEDistributionCodesignStep
+2026-06-15 05:47:08 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b6726a0; bundleID='org.sparkle-project.DownloaderService', path='<DVTFilePath:0x7c9b670e40:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672640; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.DownloaderService', executablePath='<DVTFilePath:0x7c9b671260:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader'>', hardenedRuntime='1'>'>: {
+}
+2026-06-15 05:47:08 +0000 [MT] Associated App Clip Identifiers Filter: Skipping because "com.apple.developer.associated-appclip-app-identifiers" is not present
+2026-06-15 05:47:08 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b6726a0; bundleID='org.sparkle-project.DownloaderService', path='<DVTFilePath:0x7c9b670e40:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672640; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.DownloaderService', executablePath='<DVTFilePath:0x7c9b671260:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader'>', hardenedRuntime='1'>'> are: {
+}
+2026-06-15 05:47:08 +0000 [MT] Writing entitlements for <IDEDistributionItem: 0x7c9b6726a0; bundleID='org.sparkle-project.DownloaderService', path='<DVTFilePath:0x7c9b670e40:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672640; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.DownloaderService', executablePath='<DVTFilePath:0x7c9b671260:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/MacOS/Downloader'>', hardenedRuntime='1'>'> to: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~Ahoi2m
+2026-06-15 05:47:08 +0000 [MT] invoking codesign: <NSConcreteTask: 0x7c9aac88c0; launchPath='/usr/bin/codesign', arguments='(
+    "-f",
+    "-s",
+    5DE9108B5406A74A3E46161D9C9609FBB47DD256,
+    "--entitlements",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~Ahoi2m",
+    "--requirements",
+    "=designated => anchor apple generic  and identifier \"$self.identifier\" and ((cert leaf[field.1.2.840.113635.100.6.1.9] exists) or ( certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists  and certificate leaf[subject.OU] = \"3AL8T9L8FY\" ))",
+    "--preserve-metadata=identifier,flags,runtime,launch-constraints,library-constraints",
+    "--generate-entitlement-der",
+    "--strip-disallowed-xattrs",
+    "-vvv",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc"
+)'>
+2026-06-15 05:47:08 +0000 [MT] codesign output: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc: replacing existing signature
+/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc: signed bundle with Mach-O universal (x86_64 arm64) [org.sparkle-project.DownloaderService]
+2026-06-15 05:47:08 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672760; bundleID='org.sparkle-project.InstallerLauncher', path='<DVTFilePath:0x7c9b671500:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672700; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.InstallerLauncher', executablePath='<DVTFilePath:0x7c9b671920:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer'>', hardenedRuntime='1'>'>: {
+}
+2026-06-15 05:47:08 +0000 [MT] Associated App Clip Identifiers Filter: Skipping because "com.apple.developer.associated-appclip-app-identifiers" is not present
+2026-06-15 05:47:08 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672760; bundleID='org.sparkle-project.InstallerLauncher', path='<DVTFilePath:0x7c9b671500:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672700; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.InstallerLauncher', executablePath='<DVTFilePath:0x7c9b671920:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer'>', hardenedRuntime='1'>'> are: {
+}
+2026-06-15 05:47:08 +0000 [MT] Writing entitlements for <IDEDistributionItem: 0x7c9b672760; bundleID='org.sparkle-project.InstallerLauncher', path='<DVTFilePath:0x7c9b671500:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672700; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.InstallerLauncher', executablePath='<DVTFilePath:0x7c9b671920:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/MacOS/Installer'>', hardenedRuntime='1'>'> to: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~xaklcg
+2026-06-15 05:47:08 +0000 [MT] invoking codesign: <NSConcreteTask: 0x7c9c826030; launchPath='/usr/bin/codesign', arguments='(
+    "-f",
+    "-s",
+    5DE9108B5406A74A3E46161D9C9609FBB47DD256,
+    "--entitlements",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~xaklcg",
+    "--requirements",
+    "=designated => anchor apple generic  and identifier \"$self.identifier\" and ((cert leaf[field.1.2.840.113635.100.6.1.9] exists) or ( certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists  and certificate leaf[subject.OU] = \"3AL8T9L8FY\" ))",
+    "--preserve-metadata=identifier,flags,runtime,launch-constraints,library-constraints",
+    "--generate-entitlement-der",
+    "--strip-disallowed-xattrs",
+    "-vvv",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"
+)'>
+2026-06-15 05:47:09 +0000 [MT] codesign output: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc: replacing existing signature
+/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc: signed bundle with Mach-O universal (x86_64 arm64) [org.sparkle-project.InstallerLauncher]
+2026-06-15 05:47:09 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b6725e0; bundleID='(null)', path='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672580; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+    "com.apple.application-identifier" = "org.sparkle-project.Sparkle.Autoupdate";
+}', teamID='(null)', identifier='Autoupdate-55554944c885cecb77e63656933767b4dcfffd2f', executablePath='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', hardenedRuntime='1'>'>: {
+    "com.apple.application-identifier" = "org.sparkle-project.Sparkle.Autoupdate";
+}
+2026-06-15 05:47:09 +0000 [MT] Associated App Clip Identifiers Filter: Skipping because "com.apple.developer.associated-appclip-app-identifiers" is not present
+2026-06-15 05:47:09 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b6725e0; bundleID='(null)', path='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672580; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+    "com.apple.application-identifier" = "org.sparkle-project.Sparkle.Autoupdate";
+}', teamID='(null)', identifier='Autoupdate-55554944c885cecb77e63656933767b4dcfffd2f', executablePath='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', hardenedRuntime='1'>'> are: {
+    "com.apple.application-identifier" = "org.sparkle-project.Sparkle.Autoupdate";
+}
+2026-06-15 05:47:09 +0000 [MT] Writing entitlements for <IDEDistributionItem: 0x7c9b6725e0; bundleID='(null)', path='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b672580; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+    "com.apple.application-identifier" = "org.sparkle-project.Sparkle.Autoupdate";
+}', teamID='(null)', identifier='Autoupdate-55554944c885cecb77e63656933767b4dcfffd2f', executablePath='<DVTFilePath:0x7c9b617ea0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>', hardenedRuntime='1'>'> to: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~UbP8a8
+2026-06-15 05:47:09 +0000 [MT] invoking codesign: <NSConcreteTask: 0x7c9c826080; launchPath='/usr/bin/codesign', arguments='(
+    "-f",
+    "-s",
+    5DE9108B5406A74A3E46161D9C9609FBB47DD256,
+    "--entitlements",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~UbP8a8",
+    "--requirements",
+    "=designated => anchor apple generic  and identifier \"$self.identifier\" and ((cert leaf[field.1.2.840.113635.100.6.1.9] exists) or ( certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists  and certificate leaf[subject.OU] = \"3AL8T9L8FY\" ))",
+    "--preserve-metadata=identifier,flags,runtime,launch-constraints,library-constraints",
+    "--generate-entitlement-der",
+    "--strip-disallowed-xattrs",
+    "-vvv",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+)'>
+2026-06-15 05:47:09 +0000 [MT] codesign output: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate: replacing existing signature
+/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate: signed Mach-O universal (x86_64 arm64) [Autoupdate-55554944c885cecb77e63656933767b4dcfffd2f]
+2026-06-15 05:47:09 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672520; bundleID='org.sparkle-project.Sparkle.Updater', path='<DVTFilePath:0x7c9b617f60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6724c0; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.Sparkle.Updater', executablePath='<DVTFilePath:0x7c9b6703c0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater'>', hardenedRuntime='1'>'>: {
+}
+2026-06-15 05:47:09 +0000 [MT] Associated App Clip Identifiers Filter: Skipping because "com.apple.developer.associated-appclip-app-identifiers" is not present
+2026-06-15 05:47:09 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672520; bundleID='org.sparkle-project.Sparkle.Updater', path='<DVTFilePath:0x7c9b617f60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6724c0; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.Sparkle.Updater', executablePath='<DVTFilePath:0x7c9b6703c0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater'>', hardenedRuntime='1'>'> are: {
+}
+2026-06-15 05:47:09 +0000 [MT] Writing entitlements for <IDEDistributionItem: 0x7c9b672520; bundleID='org.sparkle-project.Sparkle.Updater', path='<DVTFilePath:0x7c9b617f60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6724c0; isSigned='1', isAdHocSigned='1', signingCertificate='(null)', entitlements='{
+}', teamID='(null)', identifier='org.sparkle-project.Sparkle.Updater', executablePath='<DVTFilePath:0x7c9b6703c0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/MacOS/Updater'>', hardenedRuntime='1'>'> to: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~6i70i3
+2026-06-15 05:47:09 +0000 [MT] invoking codesign: <NSConcreteTask: 0x7c9c825c20; launchPath='/usr/bin/codesign', arguments='(
+    "-f",
+    "-s",
+    5DE9108B5406A74A3E46161D9C9609FBB47DD256,
+    "--entitlements",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~6i70i3",
+    "--requirements",
+    "=designated => anchor apple generic  and identifier \"$self.identifier\" and ((cert leaf[field.1.2.840.113635.100.6.1.9] exists) or ( certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists  and certificate leaf[subject.OU] = \"3AL8T9L8FY\" ))",
+    "--preserve-metadata=identifier,flags,runtime,launch-constraints,library-constraints",
+    "--generate-entitlement-der",
+    "--strip-disallowed-xattrs",
+    "-vvv",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+)'>
+2026-06-15 05:47:09 +0000 [MT] codesign output: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app: replacing existing signature
+/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app: signed app bundle with Mach-O universal (x86_64 arm64) [org.sparkle-project.Sparkle.Updater]
+2026-06-15 05:47:09 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672a60; bundleID='org.sparkle-project.Sparkle', path='<DVTFilePath:0x7c9b45bf60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6727c0; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0x7c9de096c0; name='Apple Development: Olanrewaju Oyinbooke (88VDHSFK77)', hash='FDC8C25B06C100F9CF2221856639A180E9C36A41', serialNumber='27CE9D7906845431DC698D18B3D561E9', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2025-08-14 02:43:15 +0000''>', entitlements='(null)', teamID='3AL8T9L8FY', identifier='org.sparkle-project.Sparkle', executablePath='<DVTFilePath:0x7c9b671c20:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle'>', hardenedRuntime='1'>'>: {
+}
+2026-06-15 05:47:09 +0000 [MT] Associated App Clip Identifiers Filter: Skipping because "com.apple.developer.associated-appclip-app-identifiers" is not present
+2026-06-15 05:47:09 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672a60; bundleID='org.sparkle-project.Sparkle', path='<DVTFilePath:0x7c9b45bf60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6727c0; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0x7c9de096c0; name='Apple Development: Olanrewaju Oyinbooke (88VDHSFK77)', hash='FDC8C25B06C100F9CF2221856639A180E9C36A41', serialNumber='27CE9D7906845431DC698D18B3D561E9', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2025-08-14 02:43:15 +0000''>', entitlements='(null)', teamID='3AL8T9L8FY', identifier='org.sparkle-project.Sparkle', executablePath='<DVTFilePath:0x7c9b671c20:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle'>', hardenedRuntime='1'>'> are: {
+}
+2026-06-15 05:47:09 +0000 [MT] Writing entitlements for <IDEDistributionItem: 0x7c9b672a60; bundleID='org.sparkle-project.Sparkle', path='<DVTFilePath:0x7c9b45bf60:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6727c0; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0x7c9de096c0; name='Apple Development: Olanrewaju Oyinbooke (88VDHSFK77)', hash='FDC8C25B06C100F9CF2221856639A180E9C36A41', serialNumber='27CE9D7906845431DC698D18B3D561E9', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2025-08-14 02:43:15 +0000''>', entitlements='(null)', teamID='3AL8T9L8FY', identifier='org.sparkle-project.Sparkle', executablePath='<DVTFilePath:0x7c9b671c20:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle'>', hardenedRuntime='1'>'> to: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~edy41P
+2026-06-15 05:47:09 +0000 [MT] invoking codesign: <NSConcreteTask: 0x7c9c826030; launchPath='/usr/bin/codesign', arguments='(
+    "-f",
+    "-s",
+    5DE9108B5406A74A3E46161D9C9609FBB47DD256,
+    "--entitlements",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~edy41P",
+    "--requirements",
+    "=designated => anchor apple generic  and identifier \"$self.identifier\" and ((cert leaf[field.1.2.840.113635.100.6.1.9] exists) or ( certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists  and certificate leaf[subject.OU] = \"3AL8T9L8FY\" ))",
+    "--preserve-metadata=identifier,flags,runtime,launch-constraints,library-constraints",
+    "--generate-entitlement-der",
+    "--strip-disallowed-xattrs",
+    "-vvv",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B"
+)'>
+2026-06-15 05:47:10 +0000 [MT] codesign output: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B: replacing existing signature
+/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B: signed bundle with Mach-O universal (x86_64 arm64) [org.sparkle-project.Sparkle]
+2026-06-15 05:47:10 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672a00; bundleID='com.orttaai.Orttaai', path='<DVTFilePath:0x7c9bbf7de0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6729a0; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0x7c9dec25a0; name='Apple Development: Olanrewaju Oyinbooke (88VDHSFK77)', hash='FDC8C25B06C100F9CF2221856639A180E9C36A41', serialNumber='27CE9D7906845431DC698D18B3D561E9', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2025-08-14 02:43:15 +0000''>', entitlements='{
+    "com.apple.application-identifier" = "3AL8T9L8FY.com.orttaai.Orttaai";
+    "com.apple.developer.icloud-container-identifiers" =     (
+        "iCloud.com.orttaai.Orttaai"
+    );
+    "com.apple.developer.icloud-services" =     (
+        CloudKit
+    );
+    "com.apple.developer.team-identifier" = 3AL8T9L8FY;
+    "com.apple.security.app-sandbox" = 0;
+    "com.apple.security.automation.apple-events" = 1;
+    "com.apple.security.device.audio-input" = 1;
+    "com.apple.security.hardened-runtime" = 1;
+}', teamID='3AL8T9L8FY', identifier='com.orttaai.Orttaai', executablePath='<DVTFilePath:0x7c9b4593e0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/MacOS/Orttaai'>', hardenedRuntime='1'>'>: {
+    "com.apple.application-identifier" = "3AL8T9L8FY.com.orttaai.Orttaai";
+    "com.apple.developer.icloud-container-environment" = Production;
+    "com.apple.developer.icloud-container-identifiers" =     (
+        "iCloud.com.orttaai.Orttaai"
+    );
+    "com.apple.developer.icloud-services" =     (
+        CloudKit
+    );
+    "com.apple.developer.team-identifier" = 3AL8T9L8FY;
+    "com.apple.security.app-sandbox" = 0;
+    "com.apple.security.automation.apple-events" = 1;
+    "com.apple.security.device.audio-input" = 1;
+    "com.apple.security.hardened-runtime" = 1;
+}
+2026-06-15 05:47:10 +0000 [MT] Associated App Clip Identifiers Filter: Skipping because "com.apple.developer.associated-appclip-app-identifiers" is not present
+2026-06-15 05:47:10 +0000 [MT] Entitlements for <IDEDistributionItem: 0x7c9b672a00; bundleID='com.orttaai.Orttaai', path='<DVTFilePath:0x7c9bbf7de0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6729a0; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0x7c9dec25a0; name='Apple Development: Olanrewaju Oyinbooke (88VDHSFK77)', hash='FDC8C25B06C100F9CF2221856639A180E9C36A41', serialNumber='27CE9D7906845431DC698D18B3D561E9', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2025-08-14 02:43:15 +0000''>', entitlements='{
+    "com.apple.application-identifier" = "3AL8T9L8FY.com.orttaai.Orttaai";
+    "com.apple.developer.icloud-container-identifiers" =     (
+        "iCloud.com.orttaai.Orttaai"
+    );
+    "com.apple.developer.icloud-services" =     (
+        CloudKit
+    );
+    "com.apple.developer.team-identifier" = 3AL8T9L8FY;
+    "com.apple.security.app-sandbox" = 0;
+    "com.apple.security.automation.apple-events" = 1;
+    "com.apple.security.device.audio-input" = 1;
+    "com.apple.security.hardened-runtime" = 1;
+}', teamID='3AL8T9L8FY', identifier='com.orttaai.Orttaai', executablePath='<DVTFilePath:0x7c9b4593e0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/MacOS/Orttaai'>', hardenedRuntime='1'>'> are: {
+    "com.apple.application-identifier" = "3AL8T9L8FY.com.orttaai.Orttaai";
+    "com.apple.developer.icloud-container-environment" = Production;
+    "com.apple.developer.icloud-container-identifiers" =     (
+        "iCloud.com.orttaai.Orttaai"
+    );
+    "com.apple.developer.icloud-services" =     (
+        CloudKit
+    );
+    "com.apple.developer.team-identifier" = 3AL8T9L8FY;
+    "com.apple.security.app-sandbox" = 0;
+    "com.apple.security.automation.apple-events" = 1;
+    "com.apple.security.device.audio-input" = 1;
+    "com.apple.security.hardened-runtime" = 1;
+}
+2026-06-15 05:47:10 +0000 [MT] Writing entitlements for <IDEDistributionItem: 0x7c9b672a00; bundleID='com.orttaai.Orttaai', path='<DVTFilePath:0x7c9bbf7de0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app'>', codeSigningInfo='<_DVTCodeSigningInformation_Path: 0x7c9b6729a0; isSigned='1', isAdHocSigned='0', signingCertificate='<DVTSigningCertificate: 0x7c9dec25a0; name='Apple Development: Olanrewaju Oyinbooke (88VDHSFK77)', hash='FDC8C25B06C100F9CF2221856639A180E9C36A41', serialNumber='27CE9D7906845431DC698D18B3D561E9', certificateKinds='(
+    "1.2.840.113635.100.6.1.12",
+    "1.2.840.113635.100.6.1.2"
+), issueDate='2025-08-14 02:43:15 +0000''>', entitlements='{
+    "com.apple.application-identifier" = "3AL8T9L8FY.com.orttaai.Orttaai";
+    "com.apple.developer.icloud-container-identifiers" =     (
+        "iCloud.com.orttaai.Orttaai"
+    );
+    "com.apple.developer.icloud-services" =     (
+        CloudKit
+    );
+    "com.apple.developer.team-identifier" = 3AL8T9L8FY;
+    "com.apple.security.app-sandbox" = 0;
+    "com.apple.security.automation.apple-events" = 1;
+    "com.apple.security.device.audio-input" = 1;
+    "com.apple.security.hardened-runtime" = 1;
+}', teamID='3AL8T9L8FY', identifier='com.orttaai.Orttaai', executablePath='<DVTFilePath:0x7c9b4593e0:'/Users/theoyinbooke/orttaai/build/releases/2026-06-15-v1.2.7/Orttaai.xcarchive/Products/Applications/Orttaai.app/Contents/MacOS/Orttaai'>', hardenedRuntime='1'>'> to: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~tWoPng
+2026-06-15 05:47:10 +0000 [MT] invoking codesign: <NSConcreteTask: 0x7c9c826080; launchPath='/usr/bin/codesign', arguments='(
+    "-f",
+    "-s",
+    5DE9108B5406A74A3E46161D9C9609FBB47DD256,
+    "--entitlements",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/entitlements~~~tWoPng",
+    "--requirements",
+    "=designated => anchor apple generic  and identifier \"$self.identifier\" and ((cert leaf[field.1.2.840.113635.100.6.1.9] exists) or ( certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists  and certificate leaf[subject.OU] = \"3AL8T9L8FY\" ))",
+    "--preserve-metadata=identifier,flags,runtime,launch-constraints,library-constraints",
+    "--generate-entitlement-der",
+    "--strip-disallowed-xattrs",
+    "-vvv",
+    "/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app"
+)'>
+2026-06-15 05:47:10 +0000 [MT] codesign output: /var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app: replacing existing signature
+/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app: signed app bundle with Mach-O universal (x86_64 arm64) [com.orttaai.Orttaai]
+2026-06-15 05:47:10 +0000 [MT] Processing step: IDEDistributionZipODRItemStep
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionZipODRItemStep because it said so
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionZipODRItemStep because it said so
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionZipODRItemStep because it said so
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionZipODRItemStep because it said so
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionZipODRItemStep because it said so
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionZipODRItemStep because it said so
+2026-06-15 05:47:10 +0000 [MT] Processing step: IDEDistributionSkipPackagingStep
+2026-06-15 05:47:10 +0000 [MT] Processing step: IDEDistributionAppStoreInformationStep
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionAppStoreInformationStep because it said so
+2026-06-15 05:47:10 +0000 [MT] Processing step: IDEDistributionGenerateProcessedDistributionItems
+2026-06-15 05:47:10 +0000 [MT] IDEDistributionItem init <DVTFilePath:0x7c9a826580:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc'>
+2026-06-15 05:47:10 +0000 [MT] [OPTIONAL] Didn't find embedded provisioning profile for <DVTFilePath:0x7c9a826580:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc'>: Error Domain=NSCocoaErrorDomain Code=4 "No file at <DVTFilePath:0x7c9e0a9180:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/embedded.provisionprofile'>" UserInfo={NSLocalizedDescription=No file at <DVTFilePath:0x7c9e0a9180:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/Contents/embedded.provisionprofile'>}
+2026-06-15 05:47:10 +0000 [MT] IDEDistributionItem init <DVTFilePath:0x7c9a827480:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>
+2026-06-15 05:47:10 +0000 [MT] [OPTIONAL] Didn't find info dictionary for <DVTFilePath:0x7c9a827480:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>: Error Domain=DVTFoundationNSBundleAdditionsErrorDomain Code=1 "Couldn't load Info dictionary for <DVTFilePath:0x7c9a827480:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>" UserInfo={NSLocalizedDescription=Couldn't load Info dictionary for <DVTFilePath:0x7c9a827480:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>}
+2026-06-15 05:47:10 +0000 [MT] [OPTIONAL] Can't have a profile, not a bundle at <DVTFilePath:0x7c9a827480:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate'>
+2026-06-15 05:47:10 +0000 [MT] IDEDistributionItem init <DVTFilePath:0x7c9a826220:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app'>
+2026-06-15 05:47:10 +0000 [MT] [OPTIONAL] Didn't find embedded provisioning profile for <DVTFilePath:0x7c9a826220:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app'>: Error Domain=NSCocoaErrorDomain Code=4 "No file at <DVTFilePath:0x7c9e0a9110:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/embedded.provisionprofile'>" UserInfo={NSLocalizedDescription=No file at <DVTFilePath:0x7c9e0a9110:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app/Contents/embedded.provisionprofile'>}
+2026-06-15 05:47:10 +0000 [MT] IDEDistributionItem init <DVTFilePath:0x7c9a825140:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc'>
+2026-06-15 05:47:10 +0000 [MT] [OPTIONAL] Didn't find embedded provisioning profile for <DVTFilePath:0x7c9a825140:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc'>: Error Domain=NSCocoaErrorDomain Code=4 "No file at <DVTFilePath:0x7c9e0a8230:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/embedded.provisionprofile'>" UserInfo={NSLocalizedDescription=No file at <DVTFilePath:0x7c9e0a8230:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc/Contents/embedded.provisionprofile'>}
+2026-06-15 05:47:10 +0000 [MT] IDEDistributionItem init <DVTFilePath:0x7c9a8263a0:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app/Contents/Frameworks/Sparkle.framework/Versions/B'>
+2026-06-15 05:47:10 +0000 [MT] IDEDistributionItem init <DVTFilePath:0x7c9a826520:'/var/folders/44/23fq7yw56yx0xb5prrqyqzsw0000gn/T/XcodeDistPipeline.~~~mx2KKj/Root/Applications/Orttaai.app'>
+2026-06-15 05:47:10 +0000 [MT] Processing step: IDEDistributionCreateManifestStep
+2026-06-15 05:47:10 +0000 [MT] Skipping step: IDEDistributionCreateManifestStep because it said so

@@ -100,18 +100,66 @@ struct SemanticMemoryStats: Sendable {
     let latestIndexedAt: Date?
 }
 
-struct SemanticInsightReport: Sendable {
+struct SemanticInsightSnapshotRecord: Codable, Identifiable, FetchableRecord, PersistableRecord {
+    var id: Int64?
+    var generatedAt: Date
+    var graphSignature: String
+    var analyzerName: String
+    var summaryModelName: String?
+    var sourceNodeCount: Int
+    var sourceEdgeCount: Int
+    var sourceChunkCount: Int
+    var reportJSON: String
+
+    static let databaseTableName = "semantic_insight_snapshot"
+}
+
+struct SemanticInsightFreshness: Sendable, Equatable {
+    let reportGraphSignature: String
+    let currentGraphSignature: String
+    let status: SemanticInsightFreshnessStatus
+
+    var isStale: Bool { status == .stale }
+}
+
+enum SemanticInsightFreshnessStatus: String, Sendable, Codable {
+    case fresh
+    case stale
+}
+
+struct SemanticInsightReport: Sendable, Codable {
     let generatedAt: Date
     let graphSignature: String
+    let analyzerName: String
+    let usedFallback: Bool
     let summary: [String]
     let summaryModelName: String?
+    let clusters: [SemanticInsightCluster]
+    let comparisons: [SemanticInsightComparison]
+    let coverageNotes: [String]
     let cards: [SemanticInsightCard]
     let sourceNodeCount: Int
     let sourceEdgeCount: Int
     let sourceChunkCount: Int
 }
 
-struct SemanticInsightCard: Identifiable, Sendable, Hashable {
+struct SemanticInsightCluster: Identifiable, Sendable, Codable, Hashable {
+    let id: String
+    let title: String
+    let summary: String
+    let relatedNodeIDs: [String]
+    let evidence: [SemanticInsightEvidence]
+}
+
+struct SemanticInsightComparison: Identifiable, Sendable, Codable, Hashable {
+    let id: String
+    let title: String
+    let detail: String
+    let trend: String
+    let evidence: [SemanticInsightEvidence]
+}
+
+struct SemanticInsightCard: Identifiable, Sendable, Codable, Hashable {
     let id: String
     let kind: String
     let title: String
@@ -122,7 +170,7 @@ struct SemanticInsightCard: Identifiable, Sendable, Hashable {
     let evidence: [SemanticInsightEvidence]
 }
 
-struct SemanticInsightEvidence: Identifiable, Sendable, Hashable {
+struct SemanticInsightEvidence: Identifiable, Sendable, Codable, Hashable {
     let id: String
     let title: String
     let excerpt: String
@@ -144,6 +192,12 @@ extension SemanticEmbedding {
 }
 
 extension SemanticGraphEdge {
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
+extension SemanticInsightSnapshotRecord {
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID
     }
