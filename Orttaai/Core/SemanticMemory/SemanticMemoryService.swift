@@ -518,6 +518,7 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         let boundedCards = Array(cards.prefix(max(1, limitCards)))
         let clusters = insightClusters(from: contexts, chunks: chunks)
         let comparisons = insightComparisons(from: chunks, generatedAt: generatedAt)
+        let charts = insightCharts(from: contexts, chunks: chunks, generatedAt: generatedAt)
         let coverageNotes = coverageNotes(graph: graph, chunks: chunks, contexts: contexts)
         return SemanticInsightReport(
             generatedAt: generatedAt,
@@ -534,6 +535,7 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             clusters: clusters,
             comparisons: comparisons,
             coverageNotes: coverageNotes,
+            charts: charts,
             cards: boundedCards,
             sourceNodeCount: graph.nodes.count,
             sourceEdgeCount: graph.edges.count,
@@ -549,12 +551,38 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             let actionText: String?
             let confidence: Double?
             let evidenceChunkIDs: [Int64]?
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+                kind = ModelInsightPayload.decodeString(from: container, keys: ["kind", "type", "category"])
+                title = ModelInsightPayload.decodeString(from: container, keys: ["title", "heading", "name"])
+                body = ModelInsightPayload.decodeString(from: container, keys: ["body", "detail", "description", "insight"])
+                actionText = ModelInsightPayload.decodeString(
+                    from: container,
+                    keys: ["actionText", "action_text", "action", "nextAction", "next_action"]
+                )
+                confidence = ModelInsightPayload.decodeDouble(from: container, keys: ["confidence", "score"])
+                evidenceChunkIDs = ModelInsightPayload.decodeInt64List(
+                    from: container,
+                    keys: ["evidenceChunkIDs", "evidenceChunkIds", "evidence_chunk_ids", "chunkIDs", "chunk_ids"]
+                )
+            }
         }
 
         struct Cluster: Decodable {
             let title: String?
             let summary: String?
             let evidenceChunkIDs: [Int64]?
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+                title = ModelInsightPayload.decodeString(from: container, keys: ["title", "name", "area"])
+                summary = ModelInsightPayload.decodeString(from: container, keys: ["summary", "body", "description"])
+                evidenceChunkIDs = ModelInsightPayload.decodeInt64List(
+                    from: container,
+                    keys: ["evidenceChunkIDs", "evidenceChunkIds", "evidence_chunk_ids", "chunkIDs", "chunk_ids"]
+                )
+            }
         }
 
         struct Comparison: Decodable {
@@ -562,13 +590,238 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             let detail: String?
             let trend: String?
             let evidenceChunkIDs: [Int64]?
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+                title = ModelInsightPayload.decodeString(from: container, keys: ["title", "name"])
+                detail = ModelInsightPayload.decodeString(from: container, keys: ["detail", "body", "summary", "description"])
+                trend = ModelInsightPayload.decodeString(from: container, keys: ["trend", "direction"])
+                evidenceChunkIDs = ModelInsightPayload.decodeInt64List(
+                    from: container,
+                    keys: ["evidenceChunkIDs", "evidenceChunkIds", "evidence_chunk_ids", "chunkIDs", "chunk_ids"]
+                )
+            }
+        }
+
+        struct ChartPoint: Decodable {
+            let label: String?
+            let value: Double?
+            let detail: String?
+            let evidenceChunkIDs: [Int64]?
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+                label = ModelInsightPayload.decodeString(from: container, keys: ["label", "name", "area", "category", "x"])
+                value = ModelInsightPayload.decodeDouble(from: container, keys: ["value", "count", "score", "y"])
+                detail = ModelInsightPayload.decodeString(from: container, keys: ["detail", "summary", "description", "reason"])
+                evidenceChunkIDs = ModelInsightPayload.decodeInt64List(
+                    from: container,
+                    keys: ["evidenceChunkIDs", "evidenceChunkIds", "evidence_chunk_ids", "chunkIDs", "chunk_ids"]
+                )
+            }
+        }
+
+        struct Chart: Decodable {
+            let title: String?
+            let subtitle: String?
+            let kind: String?
+            let unit: String?
+            let points: [ChartPoint]?
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+                title = ModelInsightPayload.decodeString(from: container, keys: ["title", "name"])
+                subtitle = ModelInsightPayload.decodeString(from: container, keys: ["subtitle", "summary", "description"])
+                kind = ModelInsightPayload.decodeString(from: container, keys: ["kind", "type", "chartType", "chart_type"])
+                unit = ModelInsightPayload.decodeString(from: container, keys: ["unit", "units", "metric"])
+                points = ModelInsightPayload.decodeArray(
+                    ChartPoint.self,
+                    from: container,
+                    keys: ["points", "data", "values", "series"]
+                )
+            }
         }
 
         let summary: [String]?
         let cards: [Card]?
         let clusters: [Cluster]?
         let comparisons: [Comparison]?
+        let charts: [Chart]?
         let coverageNotes: [String]?
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+            summary = Self.decodeStringList(from: container, keys: ["summary", "tldr", "tlDr", "tl_dr"])
+            cards = Self.decodeArray(Card.self, from: container, keys: ["cards", "insights", "findings"])
+            clusters = Self.decodeArray(Cluster.self, from: container, keys: ["clusters", "areas", "lifeWorkAreas", "life_work_areas"])
+            comparisons = Self.decodeArray(Comparison.self, from: container, keys: ["comparisons", "signals", "comparativeSignals", "comparative_signals"])
+            charts = Self.decodeArray(Chart.self, from: container, keys: ["charts", "visualizations", "visualisations"])
+            coverageNotes = Self.decodeStringList(from: container, keys: ["coverageNotes", "coverage_notes", "limitations"])
+        }
+
+        private struct FlexibleCodingKey: CodingKey {
+            let stringValue: String
+            let intValue: Int?
+
+            init?(stringValue: String) {
+                self.stringValue = stringValue
+                self.intValue = nil
+            }
+
+            init?(intValue: Int) {
+                self.stringValue = "\(intValue)"
+                self.intValue = intValue
+            }
+        }
+
+        private struct LossyArray<Element: Decodable>: Decodable {
+            let values: [Element]
+
+            init(from decoder: Decoder) throws {
+                var container = try decoder.unkeyedContainer()
+                var values: [Element] = []
+                while !container.isAtEnd {
+                    if let value = try? container.decode(Element.self) {
+                        values.append(value)
+                    } else {
+                        _ = try? container.decode(DiscardedValue.self)
+                    }
+                }
+                self.values = values
+            }
+        }
+
+        private struct DiscardedValue: Decodable {
+            init(from decoder: Decoder) throws {}
+        }
+
+        private static func decodeArray<Element: Decodable>(
+            _ type: Element.Type,
+            from container: KeyedDecodingContainer<FlexibleCodingKey>,
+            keys: [String]
+        ) -> [Element]? {
+            for keyName in keys {
+                guard let key = FlexibleCodingKey(stringValue: keyName), container.contains(key) else { continue }
+                if let values = try? container.decode(LossyArray<Element>.self, forKey: key).values {
+                    return values
+                }
+                if let value = try? container.decode(Element.self, forKey: key) {
+                    return [value]
+                }
+            }
+            return nil
+        }
+
+        private static func decodeString(
+            from container: KeyedDecodingContainer<FlexibleCodingKey>,
+            keys: [String]
+        ) -> String? {
+            for keyName in keys {
+                guard let key = FlexibleCodingKey(stringValue: keyName), container.contains(key) else { continue }
+                if let value = try? container.decode(String.self, forKey: key) {
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { return trimmed }
+                }
+                if let value = try? container.decode(Int.self, forKey: key) {
+                    return "\(value)"
+                }
+                if let value = try? container.decode(Double.self, forKey: key) {
+                    return String(format: "%.2f", value)
+                }
+                if let value = try? container.decode(Bool.self, forKey: key) {
+                    return value ? "true" : "false"
+                }
+            }
+            return nil
+        }
+
+        private static func decodeStringList(
+            from container: KeyedDecodingContainer<FlexibleCodingKey>,
+            keys: [String]
+        ) -> [String]? {
+            for keyName in keys {
+                guard let key = FlexibleCodingKey(stringValue: keyName), container.contains(key) else { continue }
+                if let values = try? container.decode([String].self, forKey: key) {
+                    let cleaned = values
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                    if !cleaned.isEmpty { return cleaned }
+                }
+                if let value = decodeString(from: container, keys: [keyName]) {
+                    let lines = value
+                        .components(separatedBy: .newlines)
+                        .map {
+                            $0.replacingOccurrences(of: #"^\s*[-*•]\s*"#, with: "", options: .regularExpression)
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                        .filter { !$0.isEmpty }
+                    return lines.isEmpty ? [value] : lines
+                }
+            }
+            return nil
+        }
+
+        private static func decodeDouble(
+            from container: KeyedDecodingContainer<FlexibleCodingKey>,
+            keys: [String]
+        ) -> Double? {
+            for keyName in keys {
+                guard let key = FlexibleCodingKey(stringValue: keyName), container.contains(key) else { continue }
+                if let value = try? container.decode(Double.self, forKey: key) {
+                    return value
+                }
+                if let value = try? container.decode(Int.self, forKey: key) {
+                    return Double(value)
+                }
+                if let value = try? container.decode(String.self, forKey: key),
+                   let parsed = Double(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    return parsed
+                }
+            }
+            return nil
+        }
+
+        private static func decodeInt64List(
+            from container: KeyedDecodingContainer<FlexibleCodingKey>,
+            keys: [String]
+        ) -> [Int64]? {
+            for keyName in keys {
+                guard let key = FlexibleCodingKey(stringValue: keyName), container.contains(key) else { continue }
+                if let values = try? container.decode([Int64].self, forKey: key), !values.isEmpty {
+                    return values
+                }
+                if let values = try? container.decode([Int].self, forKey: key), !values.isEmpty {
+                    return values.map(Int64.init)
+                }
+                if let values = try? container.decode([Double].self, forKey: key), !values.isEmpty {
+                    return values.map { Int64($0) }
+                }
+                if let values = try? container.decode([String].self, forKey: key) {
+                    let parsed = values.flatMap(Self.int64Values(in:))
+                    if !parsed.isEmpty { return parsed }
+                }
+                if let value = try? container.decode(Int64.self, forKey: key) {
+                    return [value]
+                }
+                if let value = try? container.decode(Int.self, forKey: key) {
+                    return [Int64(value)]
+                }
+                if let value = try? container.decode(Double.self, forKey: key) {
+                    return [Int64(value)]
+                }
+                if let value = try? container.decode(String.self, forKey: key) {
+                    let parsed = Self.int64Values(in: value)
+                    if !parsed.isEmpty { return parsed }
+                }
+            }
+            return nil
+        }
+
+        nonisolated private static func int64Values(in value: String) -> [Int64] {
+            value
+                .split { !$0.isNumber }
+                .compactMap { Int64($0) }
+        }
     }
 
     private func reportWithModelInsightsIfAvailable(
@@ -577,30 +830,42 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         chunks: [SemanticEmbeddedChunk],
         limitCards: Int
     ) async -> SemanticInsightReport {
-        guard settings.semanticInsightSummaryEnabled, !report.cards.isEmpty else {
+        guard !report.cards.isEmpty else {
+            return report
+        }
+
+        guard settings.semanticInsightSummaryEnabled else {
             return report
         }
 
         let modelName = settings.normalizedSemanticInsightSummaryModel
-        guard !modelName.isEmpty else { return report }
+        guard !modelName.isEmpty else {
+            return Self.reportByAppendingModelFallbackReason(
+                to: report,
+                reason: "Local Ollama fallback: no graph insight model is selected."
+            )
+        }
 
         do {
             let installedModels = try await ollamaClient.fetchModelNames(
                 baseURLString: settings.normalizedLocalLLMEndpoint,
-                timeoutMs: 1_500
+                timeoutMs: 4_000
             )
             let canonicalSelection = Self.canonicalOllamaModelName(modelName)
             guard installedModels.contains(where: { Self.canonicalOllamaModelName($0) == canonicalSelection }) else {
-                return report
+                return Self.reportByAppendingModelFallbackReason(
+                    to: report,
+                    reason: "Local Ollama fallback: \(modelName) is not installed in Ollama."
+                )
             }
 
             let response = try await ollamaClient.generate(
                 baseURLString: settings.normalizedLocalLLMEndpoint,
                 model: modelName,
                 prompt: Self.modelInsightPrompt(for: report, graph: graph, chunks: chunks),
-                timeoutMs: 45_000,
-                think: settings.localLLMInsightsThinkingEnabled ? true : nil,
-                format: "json",
+                timeoutMs: 120_000,
+                think: settings.localLLMInsightsThinkingEnabled,
+                formatJSONSchema: Self.modelInsightSchemaJSON,
                 temperature: 0.2,
                 numPredict: 4_800,
                 numContext: settings.clampedLocalLLMInsightsContextTokens,
@@ -608,7 +873,10 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             )
             guard let payload = Self.decodeModelInsightPayload(from: response) else {
                 Logger.memory.warning("Model semantic insights response did not contain valid JSON.")
-                return report
+                return Self.reportByAppendingModelFallbackReason(
+                    to: report,
+                    reason: "Local Ollama fallback: \(modelName) did not return usable structured JSON."
+                )
             }
             return Self.replacingModelInsights(
                 on: report,
@@ -619,8 +887,35 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             )
         } catch {
             Logger.memory.warning("Could not generate model semantic insights: \(error.localizedDescription)")
-            return report
+            return Self.reportByAppendingModelFallbackReason(
+                to: report,
+                reason: "Local Ollama fallback: \(error.localizedDescription)"
+            )
         }
+    }
+
+    private static func reportByAppendingModelFallbackReason(
+        to report: SemanticInsightReport,
+        reason: String
+    ) -> SemanticInsightReport {
+        let existingNotes = report.coverageNotes.filter { !$0.hasPrefix("Local Ollama fallback:") }
+        let coverageNotes = Array(([reason] + existingNotes).prefix(5))
+        return SemanticInsightReport(
+            generatedAt: report.generatedAt,
+            graphSignature: report.graphSignature,
+            analyzerName: report.analyzerName,
+            usedFallback: report.usedFallback,
+            summary: report.summary,
+            summaryModelName: report.summaryModelName,
+            clusters: report.clusters,
+            comparisons: report.comparisons,
+            coverageNotes: coverageNotes,
+            charts: report.charts,
+            cards: report.cards,
+            sourceNodeCount: report.sourceNodeCount,
+            sourceEdgeCount: report.sourceEdgeCount,
+            sourceChunkCount: report.sourceChunkCount
+        )
     }
 
     private static func replacingModelInsights(
@@ -635,6 +930,7 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         let cards = modelCards(payload.cards, chunkByID: chunkByID, fallback: report.cards, limitCards: limitCards)
         let clusters = modelClusters(payload.clusters, chunkByID: chunkByID, fallback: report.clusters)
         let comparisons = modelComparisons(payload.comparisons, chunkByID: chunkByID, fallback: report.comparisons)
+        let charts = modelCharts(payload.charts, chunkByID: chunkByID, fallback: report.charts)
         let coverageNotes = sanitizeLines(payload.coverageNotes, fallback: report.coverageNotes, limit: 4)
 
         return SemanticInsightReport(
@@ -647,6 +943,7 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             clusters: clusters,
             comparisons: comparisons,
             coverageNotes: coverageNotes,
+            charts: charts,
             cards: cards,
             sourceNodeCount: report.sourceNodeCount,
             sourceEdgeCount: report.sourceEdgeCount,
@@ -660,21 +957,32 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         chunks: [SemanticEmbeddedChunk]
     ) -> String {
         return """
-        You are a private local analyst inside a macOS dictation app. Analyze only the provided transcript evidence and graph metadata.
+        You are a private local life/work graph analyst inside a macOS dictation app. Analyze only the provided transcript evidence, graph structure, app context, and timestamps.
+
+        Your job is to go deeper than restating nodes and edges. Infer evidence-bounded patterns about:
+        - what the user appears to be actively working on;
+        - which life/work areas are recurring, rising, fading, or fragmented across apps;
+        - explicit frustration, blockage, ambiguity, or open-loop signals when the transcript language supports them;
+        - bridges between areas that may reveal duplicated effort, dependencies, or unresolved commitments;
+        - chartable distributions that help the user see where attention, friction, and recurring themes are concentrated.
 
         Rules:
         - Return one JSON object only. No markdown and no prose wrapper.
-        - Do not diagnose the user, infer protected traits, or make unsupported personality claims.
-        - Every card, cluster, and comparison must cite evidenceChunkIDs from the provided chunks.
-        - Prefer deep comparative insights: recent vs older work, cross-app fragmentation, recurring vs fading themes, open loops, and bridges between life/work areas.
+        - Do not diagnose the user, infer protected traits, guess demographics, or make unsupported personality claims.
+        - Treat "frustration" as a work-signal only when transcript wording supports it, such as stuck, blocked, confusing, annoying, issue, bug, failed, need to, should, follow up, unresolved, or similar language.
+        - Every card, cluster, comparison, and chart point must cite evidenceChunkIDs from the provided chunks.
+        - Use graph edges as weak evidence for relationships, not as the insight itself. Do not write "A is connected to B" unless you explain the deeper inferred implication for the user's work, friction, commitments, or attention.
+        - Synthesize across at least two evidence types when possible: graph links, transcript wording, app context, time recency, repeated terms, and deterministic pre-analysis.
+        - Prefer specific, comparative insights over generic productivity advice: recent vs older work, cross-app fragmentation, recurring vs fading themes, open loops, blockers, and bridges between life/work areas.
+        - Charts should expose distributions or comparisons, not decoration. Good charts include attention by life/work area, app-context fragmentation, rising/fading theme counts, open-loop/friction counts, or recent-vs-older work mix.
         - If evidence is thin, say so in coverageNotes instead of inventing certainty.
 
         Required JSON shape:
         {
-          "summary": ["3-4 concise bullets"],
+          "summary": ["3-4 concise, evidence-bounded bullets"],
           "cards": [
             {
-              "kind": "string",
+              "kind": "Active Work|Friction Signal|Open Loop|Bridge|Attention Shift|Deep Insight",
               "title": "string",
               "body": "specific evidence-bounded finding",
               "actionText": "concrete next action",
@@ -697,6 +1005,22 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
               "evidenceChunkIDs": [123]
             }
           ],
+          "charts": [
+            {
+              "title": "chart title",
+              "subtitle": "what the chart reveals",
+              "kind": "bar|comparison",
+              "unit": "segments|mentions|signals|score",
+              "points": [
+                {
+                  "label": "area or signal label",
+                  "value": 3,
+                  "detail": "why this point matters",
+                  "evidenceChunkIDs": [123]
+                }
+              ]
+            }
+          ],
           "coverageNotes": ["limitations in the evidence"]
         }
 
@@ -704,6 +1028,107 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         \(insightEvidencePack(report: report, graph: graph, chunks: chunks))
         """
     }
+
+    private static let modelInsightSchemaJSON = """
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string" },
+              "title": { "type": "string" },
+              "body": { "type": "string" },
+              "actionText": { "type": "string" },
+              "confidence": { "type": "number" },
+              "evidenceChunkIDs": {
+                "type": "array",
+                "items": { "type": "integer" }
+              }
+            },
+            "required": ["kind", "title", "body", "actionText", "confidence", "evidenceChunkIDs"]
+          }
+        },
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": { "type": "string" },
+              "summary": { "type": "string" },
+              "evidenceChunkIDs": {
+                "type": "array",
+                "items": { "type": "integer" }
+              }
+            },
+            "required": ["title", "summary", "evidenceChunkIDs"]
+          }
+        },
+        "comparisons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": { "type": "string" },
+              "detail": { "type": "string" },
+              "trend": { "type": "string" },
+              "evidenceChunkIDs": {
+                "type": "array",
+                "items": { "type": "integer" }
+              }
+            },
+            "required": ["title", "detail", "trend", "evidenceChunkIDs"]
+          }
+        },
+        "charts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": { "type": "string" },
+              "subtitle": { "type": "string" },
+              "kind": { "type": "string" },
+              "unit": { "type": "string" },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "label": { "type": "string" },
+                    "value": { "type": "number" },
+                    "detail": { "type": "string" },
+                    "evidenceChunkIDs": {
+                      "type": "array",
+                      "items": { "type": "integer" }
+                    }
+                  },
+                  "required": ["label", "value", "detail", "evidenceChunkIDs"]
+                }
+              }
+            },
+            "required": ["title", "subtitle", "kind", "unit", "points"]
+          }
+        },
+        "coverageNotes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["summary", "cards", "clusters", "comparisons", "charts", "coverageNotes"]
+    }
+    """
 
     static func canDecodeModelInsightPayload(from response: String) -> Bool {
         decodeModelInsightPayload(from: response) != nil
@@ -718,7 +1143,8 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             if payload.summary?.isEmpty == false ||
                 payload.cards?.isEmpty == false ||
                 payload.clusters?.isEmpty == false ||
-                payload.comparisons?.isEmpty == false {
+                payload.comparisons?.isEmpty == false ||
+                payload.charts?.isEmpty == false {
                 return payload
             }
         }
@@ -802,6 +1228,51 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         return mapped.isEmpty ? fallback : mapped
     }
 
+    private static func modelCharts(
+        _ charts: [ModelInsightPayload.Chart]?,
+        chunkByID: [Int64: SemanticEmbeddedChunk],
+        fallback: [SemanticInsightChart]
+    ) -> [SemanticInsightChart] {
+        let mapped = (charts ?? []).enumerated().compactMap { chartIndex, chart -> SemanticInsightChart? in
+            guard let title = cleanInsightLine(chart.title, maxLength: 96),
+                  let subtitle = cleanInsightLine(chart.subtitle, maxLength: 220) else {
+                return nil
+            }
+
+            let points = (chart.points ?? []).enumerated().compactMap { pointIndex, point -> SemanticInsightChartPoint? in
+                guard let label = cleanInsightLine(point.label, maxLength: 64),
+                      let value = point.value,
+                      value.isFinite else {
+                    return nil
+                }
+
+                let chunkIDs = uniqueChunkIDs(point.evidenceChunkIDs ?? [])
+                let evidence = evidenceItems(for: chunkIDs, chunkByID: chunkByID, focus: label, limit: 2)
+                guard !evidence.isEmpty else { return nil }
+
+                return SemanticInsightChartPoint(
+                    id: "model-chart-\(chartIndex)-point-\(pointIndex)-\(nodeKey(label))",
+                    label: label,
+                    value: max(0, value),
+                    detail: cleanInsightLine(point.detail, maxLength: 160),
+                    evidence: evidence
+                )
+            }
+
+            guard points.count >= 2 else { return nil }
+            return SemanticInsightChart(
+                id: "model-chart-\(chartIndex)-\(nodeKey(title))",
+                title: title,
+                subtitle: subtitle,
+                kind: cleanInsightLine(chart.kind, maxLength: 24) ?? "bar",
+                unit: cleanInsightLine(chart.unit, maxLength: 32) ?? "segments",
+                points: Array(points.prefix(8))
+            )
+        }
+
+        return mapped.isEmpty ? fallback : Array(mapped.prefix(3))
+    }
+
     private static func sanitizeLines(_ lines: [String]?, fallback: [String], limit: Int) -> [String] {
         let cleaned = (lines ?? []).compactMap { cleanInsightLine($0, maxLength: 240) }
         return cleaned.isEmpty ? fallback : Array(cleaned.prefix(max(1, limit)))
@@ -880,11 +1351,37 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         graph: SemanticMemoryGraph,
         chunks: [SemanticEmbeddedChunk]
     ) -> String {
+        let nodeByID = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.nodeID, $0) })
         let topNodes = graph.nodes
             .filter { $0.kind != "chunk" }
             .prefix(36)
             .map { "- \($0.kind): \($0.title) weight \(String(format: "%.2f", $0.weight))" }
             .joined(separator: "\n")
+
+        let topEdges = graph.edges
+            .sorted { $0.weight > $1.weight }
+            .prefix(28)
+            .map { edge in
+                let source = nodeByID[edge.sourceNodeID]?.title ?? edge.sourceNodeID
+                let target = nodeByID[edge.targetNodeID]?.title ?? edge.targetNodeID
+                let evidence = edge.evidence?.isEmpty == false ? " evidence: \(edge.evidence!)" : ""
+                return "- \(source) -- \(edge.kind) \(String(format: "%.2f", edge.weight)) -- \(target)\(evidence)"
+            }
+            .joined(separator: "\n")
+
+        let appDistribution = topCounts(chunks.map { normalizedAppName($0.targetAppName) }, limit: 8)
+            .map { "- \($0.value): \($0.count) segment\($0.count == 1 ? "" : "s")" }
+            .joined(separator: "\n")
+
+        let windows = comparisonWindows(from: chunks, generatedAt: report.generatedAt)
+        let recentOpenLoopCount = windows.recent.filter { containsOpenLoopCue($0.text) }.count
+        let previousOpenLoopCount = windows.previous.filter { containsOpenLoopCue($0.text) }.count
+        let recentFrictionCount = windows.recent.filter { containsFrictionCue($0.text) }.count
+        let previousFrictionCount = windows.previous.filter { containsFrictionCue($0.text) }.count
+        let signalLines = [
+            "- Recent window: \(windows.recent.count) segment\(windows.recent.count == 1 ? "" : "s"), \(recentOpenLoopCount) open-loop cue\(recentOpenLoopCount == 1 ? "" : "s"), \(recentFrictionCount) friction cue\(recentFrictionCount == 1 ? "" : "s")",
+            "- Older window: \(windows.previous.count) segment\(windows.previous.count == 1 ? "" : "s"), \(previousOpenLoopCount) open-loop cue\(previousOpenLoopCount == 1 ? "" : "s"), \(previousFrictionCount) friction cue\(previousFrictionCount == 1 ? "" : "s")"
+        ].joined(separator: "\n")
 
         let chunkLines = chunks
             .prefix(80)
@@ -902,14 +1399,33 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             "- \(card.kind): \(card.title). \(card.body)"
         }.joined(separator: "\n")
 
+        let chartCandidates = report.charts.prefix(3).map { chart in
+            let points = chart.points.prefix(8).map { point in
+                "\(point.label)=\(String(format: "%.1f", point.value))"
+            }.joined(separator: "; ")
+            return "- \(chart.title) (\(chart.unit)): \(points)"
+        }.joined(separator: "\n")
+
         return """
         Graph counts: \(graph.nodes.count) nodes, \(graph.edges.count) edges, \(chunks.count) embedded transcript chunks.
 
         Top graph nodes:
         \(topNodes.isEmpty ? "- None" : topNodes)
 
+        Top graph links:
+        \(topEdges.isEmpty ? "- None" : topEdges)
+
+        App distribution:
+        \(appDistribution.isEmpty ? "- None" : appDistribution)
+
+        Temporal/open-loop/friction counts:
+        \(signalLines)
+
         Deterministic pre-analysis:
         \(fallbackCards.isEmpty ? "- None" : fallbackCards)
+
+        Deterministic chart candidates:
+        \(chartCandidates.isEmpty ? "- None" : chartCandidates)
 
         Transcript chunks:
         \(chunkLines.isEmpty ? "- None" : chunkLines)
@@ -1336,6 +1852,144 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         return comparisons
     }
 
+    private static func insightCharts(
+        from contexts: [InsightNodeContext],
+        chunks: [SemanticEmbeddedChunk],
+        generatedAt: Date
+    ) -> [SemanticInsightChart] {
+        [
+            lifeAreaAttentionChart(from: contexts),
+            appContextChart(from: chunks),
+            openLoopAndFrictionChart(from: chunks, generatedAt: generatedAt)
+        ]
+        .compactMap { $0 }
+    }
+
+    private static func lifeAreaAttentionChart(from contexts: [InsightNodeContext]) -> SemanticInsightChart? {
+        let rankedContexts = contexts
+            .filter { ["topic", "entity"].contains($0.node.kind) && $0.evidenceCount > 0 }
+            .sorted { lhs, rhs in
+                if lhs.evidenceCount == rhs.evidenceCount {
+                    return lhs.importanceScore > rhs.importanceScore
+                }
+                return lhs.evidenceCount > rhs.evidenceCount
+            }
+            .prefix(6)
+
+        let points = rankedContexts.map { context in
+            let apps = context.appNames.sorted().prefix(3).joined(separator: ", ")
+            let detail = apps.isEmpty
+                ? "\(context.evidenceCount) transcript segment\(context.evidenceCount == 1 ? "" : "s") connect to this area."
+                : "\(context.evidenceCount) segment\(context.evidenceCount == 1 ? "" : "s") across \(apps)."
+            return SemanticInsightChartPoint(
+                id: "life-area-\(context.node.nodeID)",
+                label: context.node.title,
+                value: Double(context.evidenceCount),
+                detail: detail,
+                evidence: evidenceItems(from: context.chunks, focus: context.node.title, limit: 2)
+            )
+        }
+        .filter { !$0.evidence.isEmpty }
+
+        guard points.count >= 2 else { return nil }
+        return SemanticInsightChart(
+            id: "chart-life-area-attention",
+            title: "Attention by Life/Work Area",
+            subtitle: "Areas are inferred from recurring topics and named contexts connected to transcript evidence.",
+            kind: "bar",
+            unit: "segments",
+            points: points
+        )
+    }
+
+    private static func appContextChart(from chunks: [SemanticEmbeddedChunk]) -> SemanticInsightChart? {
+        let appGroups = Dictionary(grouping: chunks) { normalizedAppName($0.targetAppName) }
+        let points = appGroups
+            .map { (appName: $0.key, chunks: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.chunks.count == rhs.chunks.count {
+                    return lhs.appName < rhs.appName
+                }
+                return lhs.chunks.count > rhs.chunks.count
+            }
+            .prefix(6)
+            .map { group in
+                let terms = topCounts(termCounts(in: group.chunks).map { (value: $0.key, count: $0.value) }, limit: 3)
+                    .map(\.value)
+                let detail = terms.isEmpty
+                    ? "\(group.chunks.count) transcript segment\(group.chunks.count == 1 ? "" : "s") in this app context."
+                    : "Carrying \(terms.joined(separator: ", ")) across \(group.chunks.count) segment\(group.chunks.count == 1 ? "" : "s")."
+                return SemanticInsightChartPoint(
+                    id: "app-context-\(nodeKey(group.appName))",
+                    label: group.appName,
+                    value: Double(group.chunks.count),
+                    detail: detail,
+                    evidence: evidenceItems(from: group.chunks, focus: group.appName, limit: 2)
+                )
+            }
+            .filter { !$0.evidence.isEmpty }
+
+        guard points.count >= 2 else { return nil }
+        return SemanticInsightChart(
+            id: "chart-app-context-distribution",
+            title: "App Context Distribution",
+            subtitle: "This shows where graph evidence is being created, which can reveal cross-tool focus or fragmentation.",
+            kind: "bar",
+            unit: "segments",
+            points: points
+        )
+    }
+
+    private static func openLoopAndFrictionChart(
+        from chunks: [SemanticEmbeddedChunk],
+        generatedAt: Date
+    ) -> SemanticInsightChart? {
+        let windows = comparisonWindows(from: chunks, generatedAt: generatedAt)
+        let signalGroups: [(label: String, chunks: [SemanticEmbeddedChunk], detail: String)] = [
+            (
+                "Recent open loops",
+                windows.recent.filter { containsOpenLoopCue($0.text) },
+                "Recent evidence uses need-to, should, follow-up, or unresolved commitment language."
+            ),
+            (
+                "Older open loops",
+                windows.previous.filter { containsOpenLoopCue($0.text) },
+                "Older evidence also carried commitment or follow-up language."
+            ),
+            (
+                "Recent friction cues",
+                windows.recent.filter { containsFrictionCue($0.text) },
+                "Recent evidence includes explicit stuck, blocked, bug, issue, failed, confusing, or not-working language."
+            ),
+            (
+                "Older friction cues",
+                windows.previous.filter { containsFrictionCue($0.text) },
+                "Older evidence included explicit blocker or friction language."
+            )
+        ]
+
+        let points = signalGroups.compactMap { group -> SemanticInsightChartPoint? in
+            guard !group.chunks.isEmpty else { return nil }
+            return SemanticInsightChartPoint(
+                id: "signal-\(nodeKey(group.label))",
+                label: group.label,
+                value: Double(group.chunks.count),
+                detail: group.detail,
+                evidence: evidenceItems(from: group.chunks, focus: group.label, limit: 2)
+            )
+        }
+
+        guard points.count >= 2 else { return nil }
+        return SemanticInsightChart(
+            id: "chart-open-loop-friction",
+            title: "Open Loops and Friction Cues",
+            subtitle: "Counts come from explicit language in the transcript evidence, not inferred mood or diagnosis.",
+            kind: "comparison",
+            unit: "signals",
+            points: points
+        )
+    }
+
     private static func coverageNotes(
         graph: SemanticMemoryGraph,
         chunks: [SemanticEmbeddedChunk],
@@ -1546,6 +2200,17 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             " follow up", " following up", " reminder", " remind ", " todo", " to-do",
             " action item", " next step", " make sure", " don't forget", " unresolved",
             " still need", " need this", " need that"
+        ]
+        return cues.contains { normalized.contains($0) }
+    }
+
+    private static func containsFrictionCue(_ text: String) -> Bool {
+        let normalized = " \(text.lowercased()) "
+        let cues = [
+            " stuck ", " blocked ", " blocker ", " frustrating ", " frustrated ",
+            " annoying ", " broken ", " bug ", " issue ", " problem ", " confusing ",
+            " can't ", " cannot ", " failed ", " failure ", " error ", " not working ",
+            " unresolved ", " hard to ", " difficult to "
         ]
         return cues.contains { normalized.contains($0) }
     }

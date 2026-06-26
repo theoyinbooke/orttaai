@@ -213,15 +213,98 @@ final class SemanticMemoryServiceTests: XCTestCase {
         XCTAssertFalse(report.clusters.isEmpty)
         XCTAssertFalse(report.comparisons.isEmpty)
         XCTAssertFalse(report.coverageNotes.isEmpty)
+        XCTAssertFalse(report.charts.isEmpty)
         XCTAssertTrue(report.cards.contains { $0.kind == "Temporal Comparison" || $0.kind == "Recurring vs Fading" })
         XCTAssertTrue(report.clusters.allSatisfy { !$0.evidence.isEmpty })
         XCTAssertTrue(report.comparisons.allSatisfy { !$0.evidence.isEmpty })
+        XCTAssertTrue(report.charts.allSatisfy { !$0.points.isEmpty })
+        XCTAssertTrue(report.charts.flatMap(\.points).allSatisfy { !$0.evidence.isEmpty })
     }
 
     func testModelInsightJSONDecoderRejectsMalformedPayload() {
         XCTAssertFalse(SemanticMemoryService.canDecodeModelInsightPayload(from: "not json"))
         XCTAssertFalse(SemanticMemoryService.canDecodeModelInsightPayload(from: #"{"summary":[],"cards":[]}"#))
         XCTAssertTrue(SemanticMemoryService.canDecodeModelInsightPayload(from: #"{"summary":["Specific backed claim"],"cards":[]}"#))
+    }
+
+    func testModelInsightJSONDecoderAcceptsFlexibleLocalModelPayload() {
+        let response = """
+        {
+          "summary": "Recent work is concentrated in app debugging.\\nOpen loops are present.",
+          "cards": {
+            "kind": "Comparative Signal",
+            "title": "Recent app debugging is dominating",
+            "body": "The recent evidence is mostly implementation and testing work.",
+            "action": "Review the newest debugging commitments.",
+            "confidence": "0.72",
+            "evidence_chunk_ids": ["chunk:42", "43"]
+          },
+          "clusters": [
+            {
+              "name": "Implementation work",
+              "description": "Code and Codex evidence are clustered together.",
+              "chunkIDs": [42]
+            }
+          ],
+          "comparative_signals": [
+            {
+              "name": "Recent vs older work",
+              "summary": "Recent work increased around debugging.",
+              "direction": "rising",
+              "evidenceChunkIds": ["43"]
+            }
+          ],
+          "charts": {
+            "name": "Attention by work area",
+            "description": "Debugging and open loops are the largest visible areas.",
+            "type": "bar",
+            "metric": "segments",
+            "data": [
+              {
+                "area": "Debugging",
+                "count": "3",
+                "reason": "Implementation evidence clusters around app debugging.",
+                "chunk_ids": ["42"]
+              },
+              {
+                "area": "Open loops",
+                "count": 2,
+                "reason": "Recent evidence includes unresolved follow-up language.",
+                "chunkIDs": [43]
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(SemanticMemoryService.canDecodeModelInsightPayload(from: response))
+    }
+
+    func testSemanticInsightReportDecodesLegacySnapshotWithoutCharts() throws {
+        let response = """
+        {
+          "generatedAt": "2026-06-20T12:00:00Z",
+          "graphSignature": "legacy-signature",
+          "analyzerName": "Heuristic Graph Signals",
+          "usedFallback": true,
+          "summary": ["Legacy snapshot"],
+          "summaryModelName": null,
+          "clusters": [],
+          "comparisons": [],
+          "coverageNotes": [],
+          "cards": [],
+          "sourceNodeCount": 1,
+          "sourceEdgeCount": 1,
+          "sourceChunkCount": 1
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let report = try decoder.decode(SemanticInsightReport.self, from: Data(response.utf8))
+
+        XCTAssertTrue(report.charts.isEmpty)
+        XCTAssertEqual(report.graphSignature, "legacy-signature")
     }
 
     func testViewModelLoadDoesNotGenerateInsights() {

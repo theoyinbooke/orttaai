@@ -134,6 +134,7 @@ actor OllamaClient {
         timeoutMs: Int?,
         think: Bool? = nil,
         format: String? = nil,
+        formatJSONSchema: String? = nil,
         temperature: Double = 0,
         numPredict: Int = 220,
         numContext: Int? = nil,
@@ -176,7 +177,13 @@ actor OllamaClient {
         if let think {
             payload["think"] = think
         }
-        if let format {
+        if let formatJSONSchema {
+            let trimmedSchema = formatJSONSchema.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedSchema.isEmpty {
+                let schemaData = Data(trimmedSchema.utf8)
+                payload["format"] = try JSONSerialization.jsonObject(with: schemaData, options: [])
+            }
+        } else if let format {
             let normalizedFormat = format.trimmingCharacters(in: .whitespacesAndNewlines)
             if !normalizedFormat.isEmpty {
                 payload["format"] = normalizedFormat

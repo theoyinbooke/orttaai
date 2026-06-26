@@ -137,10 +137,78 @@ struct SemanticInsightReport: Sendable, Codable {
     let clusters: [SemanticInsightCluster]
     let comparisons: [SemanticInsightComparison]
     let coverageNotes: [String]
+    let charts: [SemanticInsightChart]
     let cards: [SemanticInsightCard]
     let sourceNodeCount: Int
     let sourceEdgeCount: Int
     let sourceChunkCount: Int
+
+    init(
+        generatedAt: Date,
+        graphSignature: String,
+        analyzerName: String,
+        usedFallback: Bool,
+        summary: [String],
+        summaryModelName: String?,
+        clusters: [SemanticInsightCluster],
+        comparisons: [SemanticInsightComparison],
+        coverageNotes: [String],
+        charts: [SemanticInsightChart] = [],
+        cards: [SemanticInsightCard],
+        sourceNodeCount: Int,
+        sourceEdgeCount: Int,
+        sourceChunkCount: Int
+    ) {
+        self.generatedAt = generatedAt
+        self.graphSignature = graphSignature
+        self.analyzerName = analyzerName
+        self.usedFallback = usedFallback
+        self.summary = summary
+        self.summaryModelName = summaryModelName
+        self.clusters = clusters
+        self.comparisons = comparisons
+        self.coverageNotes = coverageNotes
+        self.charts = charts
+        self.cards = cards
+        self.sourceNodeCount = sourceNodeCount
+        self.sourceEdgeCount = sourceEdgeCount
+        self.sourceChunkCount = sourceChunkCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case generatedAt
+        case graphSignature
+        case analyzerName
+        case usedFallback
+        case summary
+        case summaryModelName
+        case clusters
+        case comparisons
+        case coverageNotes
+        case charts
+        case cards
+        case sourceNodeCount
+        case sourceEdgeCount
+        case sourceChunkCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        graphSignature = try container.decode(String.self, forKey: .graphSignature)
+        analyzerName = try container.decode(String.self, forKey: .analyzerName)
+        usedFallback = try container.decode(Bool.self, forKey: .usedFallback)
+        summary = try container.decode([String].self, forKey: .summary)
+        summaryModelName = try container.decodeIfPresent(String.self, forKey: .summaryModelName)
+        clusters = try container.decode([SemanticInsightCluster].self, forKey: .clusters)
+        comparisons = try container.decode([SemanticInsightComparison].self, forKey: .comparisons)
+        coverageNotes = try container.decode([String].self, forKey: .coverageNotes)
+        charts = try container.decodeIfPresent([SemanticInsightChart].self, forKey: .charts) ?? []
+        cards = try container.decode([SemanticInsightCard].self, forKey: .cards)
+        sourceNodeCount = try container.decode(Int.self, forKey: .sourceNodeCount)
+        sourceEdgeCount = try container.decode(Int.self, forKey: .sourceEdgeCount)
+        sourceChunkCount = try container.decode(Int.self, forKey: .sourceChunkCount)
+    }
 }
 
 struct SemanticInsightCluster: Identifiable, Sendable, Codable, Hashable {
@@ -156,6 +224,23 @@ struct SemanticInsightComparison: Identifiable, Sendable, Codable, Hashable {
     let title: String
     let detail: String
     let trend: String
+    let evidence: [SemanticInsightEvidence]
+}
+
+struct SemanticInsightChart: Identifiable, Sendable, Codable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let kind: String
+    let unit: String
+    let points: [SemanticInsightChartPoint]
+}
+
+struct SemanticInsightChartPoint: Identifiable, Sendable, Codable, Hashable {
+    let id: String
+    let label: String
+    let value: Double
+    let detail: String?
     let evidence: [SemanticInsightEvidence]
 }
 

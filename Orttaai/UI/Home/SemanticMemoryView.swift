@@ -97,7 +97,11 @@ final class SemanticMemoryViewModel: ObservableObject {
         } else if let modelName = report.summaryModelName {
             statusMessage = "Generated \(report.cards.count) graph insight\(report.cards.count == 1 ? "" : "s") with \(modelName)."
         } else if report.usedFallback {
-            statusMessage = "Generated \(report.cards.count) heuristic graph insight\(report.cards.count == 1 ? "" : "s")."
+            if let fallbackReason = report.coverageNotes.first(where: { $0.hasPrefix("Local Ollama fallback:") }) {
+                statusMessage = fallbackReason
+            } else {
+                statusMessage = "Generated \(report.cards.count) heuristic graph insight\(report.cards.count == 1 ? "" : "s")."
+            }
         } else {
             statusMessage = "Generated \(report.cards.count) graph insight\(report.cards.count == 1 ? "" : "s")."
         }
@@ -578,13 +582,13 @@ struct SemanticMemoryView: View {
     private var insightSummaryModelPickerSection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(alignment: .center, spacing: Spacing.sm) {
-                Text("TLDR Summary Model")
+                Text("Graph Insight Model")
                     .font(.Orttaai.bodyMedium)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Spacer()
 
-                Toggle("Model TLDR", isOn: $semanticInsightSummaryEnabled)
+                Toggle("Model Insights", isOn: $semanticInsightSummaryEnabled)
                     .toggleStyle(OrttaaiToggleStyle())
 
                 Button {
@@ -601,7 +605,7 @@ struct SemanticMemoryView: View {
             }
 
             HStack(spacing: Spacing.sm) {
-                Picker("TLDR Summary Model", selection: $selectedInsightCatalogModel) {
+                Picker("Graph Insight Model", selection: $selectedInsightCatalogModel) {
                     if insightModelOptions.isEmpty {
                         let fallbackModel = normalizedSemanticInsightSummaryModel.isEmpty ? "qwen3.5:0.8b" : normalizedSemanticInsightSummaryModel
                         Text(fallbackModel)
@@ -867,7 +871,7 @@ struct SemanticMemoryView: View {
         HStack(spacing: Spacing.sm) {
             ProgressView()
                 .controlSize(.small)
-            Text("Synthesizing graph TLDR, cards, and transcript evidence...")
+            Text("Synthesizing graph insights, charts, and transcript evidence...")
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
         }
@@ -902,6 +906,10 @@ struct SemanticMemoryView: View {
 
             if let freshness = viewModel.insightFreshness, freshness.isStale {
                 insightFreshnessBanner(freshness)
+            }
+
+            if !report.charts.isEmpty {
+                insightChartSection(report.charts)
             }
 
             if !report.clusters.isEmpty {
@@ -962,7 +970,7 @@ struct SemanticMemoryView: View {
     private func insightSummaryCard(_ report: SemanticInsightReport) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .firstTextBaseline) {
-                Text("TLDR Insight Summary")
+                Text("Graph Insight Summary")
                     .font(.Orttaai.bodyMedium)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
@@ -1026,6 +1034,127 @@ struct SemanticMemoryView: View {
         }
         .padding(Spacing.lg)
         .dashboardCard()
+    }
+
+    private func insightChartSection(_ charts: [SemanticInsightChart]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("Life Graph Charts")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 280), spacing: Spacing.md)],
+                spacing: Spacing.md
+            ) {
+                ForEach(charts.prefix(3)) { chart in
+                    insightChartCard(chart)
+                }
+            }
+        }
+    }
+
+    private func insightChartCard(_ chart: SemanticInsightChart) -> some View {
+        let points = Array(chart.points.prefix(8))
+        let maxValue = max(points.map(\.value).max() ?? 0, 1)
+
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text(chart.title)
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer()
+
+                Text(chart.unit)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(Color.Orttaai.bgTertiary.opacity(0.55))
+                    .clipShape(Capsule())
+            }
+
+            Text(chart.subtitle)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                    insightChartBarRow(point, maxValue: maxValue, color: insightChartColor(index))
+                }
+            }
+
+            if let evidence = points.first(where: { !$0.evidence.isEmpty })?.evidence.first {
+                Divider()
+                    .background(Color.Orttaai.border.opacity(0.7))
+                insightEvidenceRow(evidence)
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dashboardCard()
+    }
+
+    private func insightChartBarRow(
+        _ point: SemanticInsightChartPoint,
+        maxValue: Double,
+        color: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text(point.label)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+                Spacer()
+                Text(formattedChartValue(point.value))
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+
+            GeometryReader { proxy in
+                let ratio = max(0, min(1, point.value / maxValue))
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.Orttaai.bgTertiary.opacity(0.7))
+                        .frame(height: 8)
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(6, proxy.size.width * CGFloat(ratio)), height: 8)
+                }
+            }
+            .frame(height: 8)
+
+            if let detail = point.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Spacing.sm)
+        .background(Color.Orttaai.bgTertiary.opacity(0.28))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+    }
+
+    private func insightChartColor(_ index: Int) -> Color {
+        switch index % 5 {
+        case 0: return Color.Orttaai.accent
+        case 1: return Color.Orttaai.success
+        case 2: return Color.Orttaai.warning
+        case 3: return .blue
+        default: return .purple
+        }
+    }
+
+    private func formattedChartValue(_ value: Double) -> String {
+        if value.rounded() == value {
+            return "\(Int(value))"
+        }
+        return String(format: "%.1f", value)
     }
 
     private func insightClusterSection(_ clusters: [SemanticInsightCluster]) -> some View {
@@ -1459,7 +1588,7 @@ struct SemanticMemoryView: View {
         guard !normalized.isEmpty, isOllamaModelInstalled(normalized) else { return }
         guard canonicalOllamaModelName(normalized) != canonicalOllamaModelName(normalizedSemanticInsightSummaryModel) else { return }
         semanticInsightSummaryModel = normalized
-        insightInstallSuccessMessage = "Selected \(normalized) for TLDR summaries."
+        insightInstallSuccessMessage = "Selected \(normalized) for graph insights."
         insightInstallError = nil
     }
 
@@ -1490,7 +1619,7 @@ struct SemanticMemoryView: View {
         let normalized = normalizedSelectedInsightModel
         guard !normalized.isEmpty else {
             await MainActor.run {
-                insightInstallError = "Choose a TLDR model first."
+                insightInstallError = "Choose a graph insight model first."
                 insightInstallSuccessMessage = nil
             }
             return
@@ -1499,7 +1628,7 @@ struct SemanticMemoryView: View {
         if isOllamaModelInstalled(normalized) {
             await MainActor.run {
                 semanticInsightSummaryModel = normalized
-                insightInstallSuccessMessage = "Selected \(normalized) for TLDR summaries."
+                insightInstallSuccessMessage = "Selected \(normalized) for graph insights."
                 insightInstallError = nil
             }
             return
@@ -1575,7 +1704,7 @@ struct SemanticMemoryView: View {
                 semanticInsightSummaryModel = modelName
                 insightInstallStatusMessage = nil
                 insightInstallProgress = nil
-                insightInstallSuccessMessage = "Installed and selected \(modelName) for TLDR summaries."
+                insightInstallSuccessMessage = "Installed and selected \(modelName) for graph insights."
             }
 
             await loadEmbeddingModelCatalog()
