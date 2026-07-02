@@ -488,11 +488,20 @@ private final class ChatAIViewModel: ObservableObject {
     @Published var searchText: String = ""
 
     private let storageKey = "chatAIConversations"
-    private let client = OllamaClient()
     private let settings = AppSettings()
+
+    /// Resolved per use so provider switches take effect without a restart.
+    private var client: any LocalLLMServing { settings.activeLocalLLMClient }
     private let semanticMemory = SemanticMemoryService()
     private let voiceAudioService = AudioCaptureService()
-    private let voiceTranscriptionService = TranscriptionService()
+    /// Only used when the app-wide service isn't available (e.g. previews).
+    private lazy var fallbackVoiceTranscriptionService = TranscriptionService()
+    /// The shared warm transcription model — same instance the dictation
+    /// hotkey uses, so chat voice pays no model load and no extra memory.
+    private var voiceTranscriptionService: TranscriptionService {
+        ModelManager.shared?.runtimeTranscriptionService ?? fallbackVoiceTranscriptionService
+    }
+    private var voiceLiveDecodeTask: Task<Void, Never>?
     private var didLoad = false
     private var voiceRecordingStartedAt: Date?
 
@@ -524,7 +533,7 @@ private final class ChatAIViewModel: ObservableObject {
     }
 
     var selectedModelSupportsThinking: Bool {
-        Self.modelSupportsThinking(selectedModel)
+        settings.localLLMProvider.supportsThinkFlag && Self.modelSupportsThinking(selectedModel)
     }
 
     var hasMessages: Bool {
@@ -592,9 +601,10 @@ private final class ChatAIViewModel: ObservableObject {
         isLoadingModels = true
         defer { isLoadingModels = false }
 
+        let providerName = settings.localLLMProvider.displayName
         do {
             let models = try await client.fetchModelNames(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+                baseURLString: settings.activeLocalLLMEndpoint,
                 timeoutMs: 2_400
             )
             availableModels = models.sorted()
@@ -607,8 +617,8 @@ private final class ChatAIViewModel: ObservableObject {
                 thinkingEnabled = false
             }
             statusMessage = availableModels.isEmpty
-                ? "Ollama is reachable, but no local models were found."
-                : "\(availableModels.count) Ollama model\(availableModels.count == 1 ? "" : "s") ready."
+                ? "\(providerName) is reachable, but no local models were found."
+                : "\(availableModels.count) \(providerName) model\(availableModels.count == 1 ? "" : "s") ready."
             errorMessage = nil
         } catch {
             availableModels = []
@@ -616,7 +626,7 @@ private final class ChatAIViewModel: ObservableObject {
                 selectedModel = settings.normalizedLocalLLMInsightsModel
             }
             statusMessage = nil
-            errorMessage = "Ollama is not reachable at \(settings.normalizedLocalLLMEndpoint). Start Ollama, then refresh models."
+            errorMessage = "\(providerName) is not reachable at \(settings.activeLocalLLMEndpoint). Start \(providerName), then refresh models."
         }
     }
 
@@ -705,7 +715,7 @@ private final class ChatAIViewModel: ObservableObject {
         do {
             let messages = try await ollamaMessages(for: selectedConversationID, latestPrompt: prompt)
             let response = try await client.chat(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+                baseURLString: settings.activeLocalLLMEndpoint,
                 model: selectedModel,
                 messages: messages,
                 timeoutMs: nil,
@@ -721,7 +731,7 @@ private final class ChatAIViewModel: ObservableObject {
             appendMessage(
                 ChatAIMessage(
                     role: .assistant,
-                    content: "I could not reach Ollama or the selected model. \(error.localizedDescription)"
+                    content: "I could not reach \(settings.localLLMProvider.displayName) or the selected model. \(error.localizedDescription)"
                 ),
                 to: selectedConversationID
             )
@@ -746,6 +756,7 @@ private final class ChatAIViewModel: ObservableObject {
             isVoiceRecording = true
             errorMessage = nil
             statusMessage = "Listening..."
+            startVoiceLiveDecode()
         } catch {
             isVoiceRecording = false
             voiceRecordingStartedAt = nil
@@ -753,9 +764,36 @@ private final class ChatAIViewModel: ObservableObject {
         }
     }
 
+    /// Mirrors the main dictation pipeline: the model warms and 15s clips are
+    /// transcribed WHILE the user speaks, so stopping only decodes the short
+    /// tail instead of the whole recording.
+    private func startVoiceLiveDecode() {
+        voiceLiveDecodeTask?.cancel()
+        voiceLiveDecodeTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let service = self.voiceTranscriptionService
+
+            await self.settings.syncTranscriptionSettings(to: service)
+            if await !service.isLoaded {
+                // Overlapped with recording instead of paid after stop.
+                try? await service.loadModel(named: self.settings.selectedModelId)
+            }
+            guard !Task.isCancelled else { return }
+            await service.beginLiveTranscriptionSession()
+
+            while !Task.isCancelled {
+                let snapshot = self.voiceAudioService.currentSamplesSnapshot()
+                await service.processLiveAudioSnapshot(snapshot)
+                try? await Task.sleep(nanoseconds: 750_000_000)
+            }
+        }
+    }
+
     private func stopVoiceInput() {
         guard isVoiceRecording else { return }
         isVoiceRecording = false
+        voiceLiveDecodeTask?.cancel()
+        voiceLiveDecodeTask = nil
         let samples = voiceAudioService.stopCapture()
         let duration = voiceRecordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         voiceRecordingStartedAt = nil
@@ -763,6 +801,7 @@ private final class ChatAIViewModel: ObservableObject {
         guard duration >= 0.5, !samples.isEmpty else {
             statusMessage = nil
             errorMessage = "Recording was too short."
+            Task { await voiceTranscriptionService.cancelLiveTranscriptionSession() }
             return
         }
 
@@ -770,12 +809,12 @@ private final class ChatAIViewModel: ObservableObject {
         statusMessage = "Transcribing..."
         Task {
             do {
-                await settings.syncTranscriptionSettings(to: voiceTranscriptionService)
-                let isLoaded = await voiceTranscriptionService.isLoaded
-                if !isLoaded {
-                    try await voiceTranscriptionService.loadModel(named: settings.selectedModelId)
+                let service = voiceTranscriptionService
+                if await !service.isLoaded {
+                    await settings.syncTranscriptionSettings(to: service)
+                    try await service.loadModel(named: settings.selectedModelId)
                 }
-                let transcript = try await voiceTranscriptionService.transcribe(audioSamples: samples)
+                let transcript = try await service.finalizeLiveTranscription(audioSamples: samples)
                 await MainActor.run {
                     isVoiceProcessing = false
                     insertVoiceTranscript(transcript)
@@ -889,14 +928,7 @@ private final class ChatAIViewModel: ObservableObject {
             """)
         case .myTone:
             if let toneProfile = ToneOfVoiceProfileStore.load() {
-                sections.append("""
-                My Tone mode:
-                Respond as a writing assistant that drafts and rewrites in the user's tone of voice.
-                Use this tone profile:
-                \(toneProfile.compactPromptGuide)
-                Tone summary: \(toneProfile.summary)
-                Confidence: \(toneProfile.confidencePercent)% from \(toneProfile.wordCount) words.
-                """)
+                sections.append(Self.toneFidelitySection(for: toneProfile))
             } else {
                 sections.append("""
                 My Tone mode:
@@ -932,6 +964,50 @@ private final class ChatAIViewModel: ObservableObject {
         }
 
         return sections.joined(separator: "\n\n")
+    }
+
+    /// Full-fidelity voice injection: everything the tone analysis captured —
+    /// descriptors, signature phrases, structural approaches, avoidances, and
+    /// authentic excerpts — not just the summary line.
+    private static func toneFidelitySection(for profile: ToneOfVoiceProfile) -> String {
+        var lines: [String] = [
+            "My Tone mode: you write AS the user. Every draft, rewrite, and reply must sound like them — their rhythm, their vocabulary, their warmth — never like a generic assistant.",
+            "",
+            "Voice guide:",
+            profile.compactPromptGuide,
+            "",
+            "Tone summary: \(profile.summary)"
+        ]
+
+        if !profile.descriptors.isEmpty {
+            lines.append("Voice descriptors: \(profile.descriptors.joined(separator: ", ")).")
+        }
+        if !profile.signaturePhrases.isEmpty {
+            lines.append("Signature phrases — weave these in where they fit naturally, never force them: \(profile.signaturePhrases.joined(separator: " · "))")
+        }
+        if !profile.signatureApproaches.isEmpty {
+            lines.append("How the user structures ideas — mirror these moves:")
+            lines.append(contentsOf: profile.signatureApproaches.map { "- \($0)" })
+        }
+        if !profile.avoidances.isEmpty {
+            lines.append("The user avoids these — never use them:")
+            lines.append(contentsOf: profile.avoidances.map { "- \($0)" })
+        }
+        if !profile.sampleExcerpts.isEmpty {
+            lines.append("Authentic excerpts of the user's own voice — match this register and cadence:")
+            lines.append(contentsOf: profile.sampleExcerpts.prefix(3).map { "«\($0.trimmingCharacters(in: .whitespacesAndNewlines))»" })
+        }
+
+        lines.append("")
+        lines.append("Fidelity rules: match sentence length and rhythm to the excerpts; keep the user's level of directness and formality even when the content changes; reuse their characteristic transitions and phrasing; do not invent personal facts or experiences.")
+
+        if profile.confidencePercent < 50 {
+            lines.append("This profile has low confidence (\(profile.confidencePercent)% from \(profile.wordCount) words) — imitate the broad strokes, not fine details.")
+        } else {
+            lines.append("Profile confidence: \(profile.confidencePercent)% from \(profile.wordCount) words across \(profile.sampleCount) samples.")
+        }
+
+        return lines.joined(separator: "\n")
     }
 
     private func recentWritingPatternContext() -> String {

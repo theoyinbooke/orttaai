@@ -33,16 +33,11 @@ struct AudioSettingsView: View {
                         .font(.Orttaai.subheading)
                         .foregroundStyle(Color.Orttaai.textPrimary)
 
-                    Picker("", selection: $selectedDeviceID) {
-                        Text("System Default")
-                            .tag("")
-
-                        ForEach(audioDeviceManager.devices) { device in
-                            Text(device.name)
-                                .tag(String(device.id))
-                        }
-                    }
-                    .pickerStyle(.menu)
+                    OrttaaiDropdown(
+                        selection: $selectedDeviceID,
+                        options: [.init("", "System Default")]
+                            + audioDeviceManager.devices.map { .init(String($0.id), $0.name) }
+                    )
                 }
 
                 Divider()

@@ -38,6 +38,8 @@ protocol SemanticMemoryServiceProviding {
     func clearIndex() throws
     func indexPendingTranscriptions(limit: Int) async -> SemanticIndexRunResult
     func retrieveContext(for query: String, limit: Int, minimumScore: Double) async -> [SemanticRetrievedContext]
+    func insightFindings(kinds: [InsightFindingKind]?, limit: Int) -> [InsightFinding]
+    func setFindingStatus(id: Int64, status: InsightFindingStatus)
 }
 
 protocol SemanticEmbeddingProviding {
@@ -47,17 +49,17 @@ protocol SemanticEmbeddingProviding {
 }
 
 struct OllamaSemanticEmbeddingProvider: SemanticEmbeddingProviding {
-    let providerName = "Ollama Embeddings"
+    var providerName: String { "\(client.providerKind.displayName) Embeddings" }
     let modelID: String
     let baseURLString: String
     let timeoutMs: Int?
-    let client: OllamaClient
+    let client: any LocalLLMServing
 
     init(
         modelID: String,
         baseURLString: String,
         timeoutMs: Int? = nil,
-        client: OllamaClient = OllamaClient()
+        client: any LocalLLMServing = LocalLLM.ollamaClient
     ) {
         self.modelID = modelID
         self.baseURLString = baseURLString
@@ -71,7 +73,8 @@ struct OllamaSemanticEmbeddingProvider: SemanticEmbeddingProviding {
             model: modelID,
             inputs: texts,
             timeoutMs: timeoutMs,
-            keepAlive: "15m"
+            keepAlive: "15m",
+            truncate: true
         )
     }
 }
@@ -162,7 +165,7 @@ enum SemanticVectorMath {
 final class SemanticMemoryService: SemanticMemoryServiceProviding {
     private let databaseManager: DatabaseManager?
     private let settings: AppSettings
-    private let ollamaClient: OllamaClient
+    private let injectedClient: (any LocalLLMServing)?
     private let primaryProviderOverride: (any SemanticEmbeddingProviding)?
     private let fallbackProvider = LexicalSemanticEmbeddingProvider()
     private let chunkWordLimit = 140
@@ -171,13 +174,18 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
     init(
         databaseManager: DatabaseManager? = nil,
         settings: AppSettings = AppSettings(),
-        ollamaClient: OllamaClient = OllamaClient(),
+        ollamaClient: (any LocalLLMServing)? = nil,
         primaryProvider: (any SemanticEmbeddingProviding)? = nil
     ) {
         self.databaseManager = databaseManager ?? (try? DatabaseManager())
         self.settings = settings
-        self.ollamaClient = ollamaClient
+        self.injectedClient = ollamaClient
         self.primaryProviderOverride = primaryProvider
+    }
+
+    /// Resolved per use so provider switches take effect without a restart.
+    private var llmClient: any LocalLLMServing {
+        injectedClient ?? settings.activeLocalLLMClient
     }
 
     var activeModelID: String {
@@ -239,14 +247,24 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             let databaseManager = try requireDatabaseManager()
             let graph = try databaseManager.fetchSemanticGraph(limitNodes: 220, limitEdges: 480)
             let chunks = try databaseManager.fetchEmbeddedSemanticChunks(modelID: activeModelID, limit: 900)
+            let findings = computeAndStorePatternFindings(
+                graph: graph,
+                chunks: chunks,
+                databaseManager: databaseManager
+            )
             let deterministicReport = Self.makeInsightReport(
                 graph: graph,
                 chunks: chunks,
                 generatedAt: Date(),
                 limitCards: limitCards
             )
-            let report = await reportWithModelInsightsIfAvailable(
+            let enrichedReport = Self.reportByMergingFindings(
                 deterministicReport,
+                findings: findings,
+                chunks: chunks
+            )
+            let report = await reportWithModelInsightsIfAvailable(
+                enrichedReport,
                 graph: graph,
                 chunks: chunks,
                 limitCards: limitCards
@@ -281,6 +299,167 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         let databaseManager = try requireDatabaseManager()
         try databaseManager.clearSemanticMemory()
         settings.semanticActiveIndexModelID = ""
+    }
+
+    /// Active pattern findings for the Insights UI (ledgers, rhythms, areas).
+    func insightFindings(kinds: [InsightFindingKind]? = nil, limit: Int = 60) -> [InsightFinding] {
+        do {
+            let databaseManager = try requireDatabaseManager()
+            return try databaseManager.fetchInsightFindings(kinds: kinds, limit: limit)
+        } catch {
+            Logger.memory.error("Failed to fetch insight findings: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    /// User feedback on a finding (resolve/dismiss). Never resurrected by
+    /// recomputation.
+    func setFindingStatus(id: Int64, status: InsightFindingStatus) {
+        do {
+            let databaseManager = try requireDatabaseManager()
+            try databaseManager.updateInsightFindingStatus(id: id, status: status)
+        } catch {
+            Logger.memory.error("Failed to update finding status: \(error.localizedDescription)")
+        }
+    }
+
+    /// Runs the deterministic pattern engine and reconciles results with the
+    /// persisted findings ledger. Failures degrade to an empty list — the rest
+    /// of insight generation proceeds unaffected.
+    private func computeAndStorePatternFindings(
+        graph: SemanticMemoryGraph,
+        chunks: [SemanticEmbeddedChunk],
+        databaseManager: DatabaseManager
+    ) -> [InsightFinding] {
+        do {
+            let now = Date()
+            let since = now.addingTimeInterval(-60 * 86_400)
+            let activity = try databaseManager
+                .fetchTranscriptions(from: since, to: now.addingTimeInterval(86_400))
+                .map { record in
+                    InsightPatternEngine.ActivitySample(
+                        createdAt: record.createdAt,
+                        wordCount: record.text.split(whereSeparator: \.isWhitespace).count,
+                        recordingMs: record.recordingDurationMs,
+                        appName: record.targetAppName
+                    )
+                }
+            let signals = try databaseManager.fetchSemanticSignals(
+                families: [
+                    SemanticSignalFamily.commitment.rawValue,
+                    SemanticSignalFamily.question.rawValue
+                ],
+                limit: 2_000
+            )
+            let chunkDates = Dictionary(chunks.map { ($0.chunkID, $0.sourceCreatedAt) }) { first, _ in first }
+
+            let drafts = InsightPatternEngine.computeFindings(InsightPatternEngine.Input(
+                activity: activity,
+                graph: graph,
+                chunkDates: chunkDates,
+                signals: signals,
+                now: now
+            ))
+            try databaseManager.reconcileInsightFindings(
+                drafts,
+                computedKinds: InsightPatternEngine.computedKinds(),
+                now: now
+            )
+            return try databaseManager.fetchInsightFindings(limit: 60)
+        } catch {
+            Logger.memory.error("Pattern finding computation failed: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    /// Folds top findings into the report so the LLM overlay receives them as
+    /// pre-analysis and the UI renders them even with Ollama offline.
+    nonisolated private static func reportByMergingFindings(
+        _ report: SemanticInsightReport,
+        findings: [InsightFinding],
+        chunks: [SemanticEmbeddedChunk]
+    ) -> SemanticInsightReport {
+        guard !findings.isEmpty else { return report }
+        let chunksByID = Dictionary(chunks.map { ($0.chunkID, $0) }) { first, _ in first }
+
+        func evidence(for finding: InsightFinding) -> [SemanticInsightEvidence] {
+            finding.evidenceIDs.prefix(3).compactMap { chunkID in
+                guard let chunk = chunksByID[chunkID] else { return nil }
+                return SemanticInsightEvidence(
+                    id: "finding-\(finding.kind)-\(chunkID)",
+                    title: chunk.targetAppName ?? "Dictation",
+                    excerpt: String(chunk.text.prefix(220)),
+                    sourceAppName: chunk.targetAppName,
+                    sourceCreatedAt: chunk.sourceCreatedAt,
+                    score: finding.confidence
+                )
+            }
+        }
+
+        let cardLabels: [String: String] = [
+            InsightFindingKind.lifeArea.rawValue: "Life Area",
+            InsightFindingKind.rhythm.rawValue: "Rhythm",
+            InsightFindingKind.emergingTheme.rawValue: "Emerging",
+            InsightFindingKind.fadingTheme.rawValue: "Fading",
+            InsightFindingKind.resurfacingTheme.rawValue: "Back Again",
+            InsightFindingKind.openCommitment.rawValue: "Open Commitment",
+            InsightFindingKind.openQuestion.rawValue: "Open Question",
+            InsightFindingKind.anomaly.rawValue: "Today"
+        ]
+
+        let cardActions: [String: String] = [
+            InsightFindingKind.lifeArea.rawValue: "Review what this area needs next.",
+            InsightFindingKind.rhythm.rawValue: "Protect this window for your hardest thinking.",
+            InsightFindingKind.emergingTheme.rawValue: "Give the new thread a decision or a deadline.",
+            InsightFindingKind.fadingTheme.rawValue: "Confirm it's finished — or revive it on purpose.",
+            InsightFindingKind.resurfacingTheme.rawValue: "Recurring loops usually hide an unmade decision.",
+            InsightFindingKind.openCommitment.rawValue: "Close the loop or consciously let it go.",
+            InsightFindingKind.openQuestion.rawValue: "Answer it or capture it as a task.",
+            InsightFindingKind.anomaly.rawValue: "Check what's different about today."
+        ]
+
+        // Up to two cards per kind so one noisy family can't flood the board.
+        var perKind: [String: Int] = [:]
+        var findingCards: [SemanticInsightCard] = []
+        let ranked = findings.sorted { ($0.magnitude * $0.confidence) > ($1.magnitude * $1.confidence) }
+        for finding in ranked {
+            guard perKind[finding.kind, default: 0] < 2 else { continue }
+            perKind[finding.kind, default: 0] += 1
+            findingCards.append(SemanticInsightCard(
+                id: "finding-\(finding.kind)-\(finding.subjectKey)",
+                kind: cardLabels[finding.kind] ?? finding.kind,
+                title: finding.title,
+                body: finding.detail,
+                confidence: finding.confidence,
+                actionText: cardActions[finding.kind] ?? "Tap the evidence to revisit the source.",
+                relatedNodeIDs: [],
+                evidence: evidence(for: finding)
+            ))
+            if findingCards.count >= 6 { break }
+        }
+
+        var summary = report.summary
+        if let headline = findings.first(where: { $0.kind == InsightFindingKind.anomaly.rawValue })
+            ?? findings.first(where: { $0.kind == InsightFindingKind.rhythm.rawValue }) {
+            summary = ["\(headline.title): \(headline.detail)"] + summary
+        }
+
+        return SemanticInsightReport(
+            generatedAt: report.generatedAt,
+            graphSignature: report.graphSignature,
+            analyzerName: report.analyzerName,
+            usedFallback: report.usedFallback,
+            summary: summary,
+            summaryModelName: report.summaryModelName,
+            clusters: report.clusters,
+            comparisons: report.comparisons,
+            coverageNotes: report.coverageNotes,
+            charts: report.charts,
+            cards: findingCards + report.cards,
+            sourceNodeCount: report.sourceNodeCount,
+            sourceEdgeCount: report.sourceEdgeCount,
+            sourceChunkCount: report.sourceChunkCount
+        )
     }
 
     func indexPendingTranscriptions(limit: Int = 500) async -> SemanticIndexRunResult {
@@ -318,6 +497,8 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
                 let chunks = try databaseManager.upsertSemanticChunks(for: record, drafts: drafts)
                 allChunks.append(contentsOf: chunks)
             }
+
+            try extractSignalsForNewChunks(allChunks, databaseManager: databaseManager)
 
             var embeddedChunkIDs = try databaseManager.fetchSemanticEmbeddingChunkIDs(modelID: provider.modelID)
             var chunksToEmbed = allChunks.filter { chunk in
@@ -372,6 +553,38 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
                 usedFallback: false,
                 errorMessage: error.localizedDescription
             )
+        }
+    }
+
+    /// Deterministic per-chunk signal extraction (commitments, questions,
+    /// decisions, tone, intent). Runs once per chunk, cached by extractor ID.
+    private func extractSignalsForNewChunks(
+        _ chunks: [SemanticChunk],
+        databaseManager: DatabaseManager
+    ) throws {
+        let processedChunkIDs = try databaseManager.fetchSemanticSignalChunkIDs(
+            modelID: SemanticSignalExtractor.heuristicModelID
+        )
+        let now = Date()
+        var pending: [SemanticSignal] = []
+
+        for chunk in chunks {
+            guard let chunkID = chunk.id, !processedChunkIDs.contains(chunkID) else { continue }
+            for extracted in SemanticSignalExtractor.signals(in: chunk.text) {
+                pending.append(SemanticSignal(
+                    chunkID: chunkID,
+                    family: extracted.family.rawValue,
+                    value: extracted.value,
+                    confidence: extracted.confidence,
+                    modelID: SemanticSignalExtractor.heuristicModelID,
+                    extractedAt: now
+                ))
+            }
+        }
+
+        try databaseManager.insertSemanticSignals(pending)
+        if !pending.isEmpty {
+            Logger.memory.info("Extracted \(pending.count) semantic signals from new chunks")
         }
     }
 
@@ -847,24 +1060,27 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         }
 
         do {
-            let installedModels = try await ollamaClient.fetchModelNames(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+            let client = llmClient
+            let providerName = client.providerKind.displayName
+            let installedModels = try await client.fetchModelNames(
+                baseURLString: settings.activeLocalLLMEndpoint,
                 timeoutMs: 4_000
             )
             let canonicalSelection = Self.canonicalOllamaModelName(modelName)
             guard installedModels.contains(where: { Self.canonicalOllamaModelName($0) == canonicalSelection }) else {
                 return Self.reportByAppendingModelFallbackReason(
                     to: report,
-                    reason: "Local Ollama fallback: \(modelName) is not installed in Ollama."
+                    reason: "Local \(providerName) fallback: \(modelName) is not installed in \(providerName)."
                 )
             }
 
-            let response = try await ollamaClient.generate(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+            let response = try await client.generate(
+                baseURLString: settings.activeLocalLLMEndpoint,
                 model: modelName,
                 prompt: Self.modelInsightPrompt(for: report, graph: graph, chunks: chunks),
                 timeoutMs: 120_000,
                 think: settings.localLLMInsightsThinkingEnabled,
+                format: nil,
                 formatJSONSchema: Self.modelInsightSchemaJSON,
                 temperature: 0.2,
                 numPredict: 4_800,
@@ -973,6 +1189,7 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         - Every card, cluster, comparison, and chart point must cite evidenceChunkIDs from the provided chunks.
         - Use graph edges as weak evidence for relationships, not as the insight itself. Do not write "A is connected to B" unless you explain the deeper inferred implication for the user's work, friction, commitments, or attention.
         - Synthesize across at least two evidence types when possible: graph links, transcript wording, app context, time recency, repeated terms, and deterministic pre-analysis.
+        - The deterministic pre-analysis entries (life areas, rhythms, open commitments/questions, emerging/fading themes, anomalies) are computed facts: keep their substance, rephrase them in a sharper voice if you like, build deeper synthesis on top of them, and never contradict them.
         - Prefer specific, comparative insights over generic productivity advice: recent vs older work, cross-app fragmentation, recurring vs fading themes, open loops, blockers, and bridges between life/work areas.
         - Charts should expose distributions or comparisons, not decoration. Good charts include attention by life/work area, app-context fragmentation, rising/fading theme counts, open-loop/friction counts, or recent-vs-older work mix.
         - If evidence is thin, say so in coverageNotes instead of inventing certainty.
@@ -2267,9 +2484,9 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         }
         return OllamaSemanticEmbeddingProvider(
             modelID: settings.normalizedSemanticEmbeddingModel,
-            baseURLString: settings.normalizedLocalLLMEndpoint,
+            baseURLString: settings.activeLocalLLMEndpoint,
             timeoutMs: nil,
-            client: ollamaClient
+            client: llmClient
         )
     }
 
@@ -2369,6 +2586,16 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         var nodesByID: [String: SemanticGraphNode] = [:]
         var edgesByKey: [String: SemanticGraphEdge] = [:]
         var vectorsByChunkID: [Int64: [Float]] = [:]
+        var mentionCounts: [String: Int] = [:]
+        var mentionDays: [String: Set<Date>] = [:]
+        let dayCalendar = Calendar.current
+
+        func trackMention(nodeID: String, date: Date?) {
+            mentionCounts[nodeID, default: 0] += 1
+            if let date {
+                mentionDays[nodeID, default: []].insert(dayCalendar.startOfDay(for: date))
+            }
+        }
 
         func upsertNode(id: String, kind: String, title: String, subtitle: String?, weight: Double, lastSeenAt: Date?) {
             guard !id.isEmpty, !title.isEmpty else { return }
@@ -2435,30 +2662,32 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
                 upsertEdge(source: appNodeID, target: chunkNodeID, kind: "app-context", weight: 0.62, evidence: "Dictated in \(appName)")
             }
 
-            for phrase in Self.topicPhrases(in: chunk.text, limit: 3) {
-                let topicNodeID = "topic:\(Self.nodeKey(phrase))"
+            for concept in SemanticTextAnalyzer.topicConcepts(in: chunk.text, limit: 3) {
+                let topicNodeID = "topic:\(Self.nodeKey(concept.key))"
                 upsertNode(
                     id: topicNodeID,
                     kind: "topic",
-                    title: phrase.capitalized,
-                    subtitle: "Recurring theme",
+                    title: concept.title,
+                    subtitle: nil,
                     weight: 1.2,
                     lastSeenAt: chunk.sourceCreatedAt
                 )
-                upsertEdge(source: topicNodeID, target: chunkNodeID, kind: "mentions", weight: 0.56, evidence: phrase)
+                trackMention(nodeID: topicNodeID, date: chunk.sourceCreatedAt)
+                upsertEdge(source: topicNodeID, target: chunkNodeID, kind: "mentions", weight: 0.56, evidence: concept.title)
             }
 
-            for entity in Self.entityPhrases(in: chunk.text, limit: 3) {
-                let entityNodeID = "entity:\(Self.nodeKey(entity))"
+            for entity in SemanticTextAnalyzer.namedEntities(in: chunk.text, limit: 3) {
+                let entityNodeID = "entity:\(Self.nodeKey(entity.key))"
                 upsertNode(
                     id: entityNodeID,
                     kind: "entity",
-                    title: entity,
-                    subtitle: "Named context",
+                    title: entity.title,
+                    subtitle: entity.category,
                     weight: 1.45,
                     lastSeenAt: chunk.sourceCreatedAt
                 )
-                upsertEdge(source: entityNodeID, target: chunkNodeID, kind: "entity", weight: 0.64, evidence: entity)
+                trackMention(nodeID: entityNodeID, date: chunk.sourceCreatedAt)
+                upsertEdge(source: entityNodeID, target: chunkNodeID, kind: "entity", weight: 0.64, evidence: entity.title)
             }
 
             if let vector = SemanticVectorCodec.decode(chunk.vectorData, expectedDimension: chunk.dimension) {
@@ -2466,19 +2695,45 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             }
         }
 
-        let similarityCandidates = embeddedChunks.prefix(100)
-        for (leftOffset, left) in similarityCandidates.enumerated() {
+        // Recurrence is computed, not asserted: a topic/entity is "recurring"
+        // only when it shows up in several chunks across multiple days.
+        for (nodeID, count) in mentionCounts {
+            guard var node = nodesByID[nodeID] else { continue }
+            let days = mentionDays[nodeID]?.count ?? 0
+            let recurrence: String
+            if count >= 3 && days >= 2 {
+                recurrence = "Recurring · \(count) mentions over \(days) day\(days == 1 ? "" : "s")"
+            } else {
+                recurrence = "\(count) mention\(count == 1 ? "" : "s")"
+            }
+            if let category = node.subtitle, !category.isEmpty {
+                node.subtitle = "\(category) · \(recurrence)"
+            } else {
+                node.subtitle = recurrence
+            }
+            nodesByID[nodeID] = node
+        }
+
+        // Semantic similarity across the whole indexed corpus (previously only
+        // the first 100 chunks), bounded by keeping each chunk's top matches.
+        let comparableChunks = embeddedChunks.filter { vectorsByChunkID[$0.chunkID] != nil }
+        let maxNeighborsPerChunk = 3
+        for (leftOffset, left) in comparableChunks.enumerated() {
             guard let leftVector = vectorsByChunkID[left.chunkID] else { continue }
-            for right in similarityCandidates.dropFirst(leftOffset + 1) {
+            var neighbors: [(chunkID: Int64, score: Double)] = []
+            for right in comparableChunks.dropFirst(leftOffset + 1) {
                 guard let rightVector = vectorsByChunkID[right.chunkID] else { continue }
                 let score = SemanticVectorMath.cosineSimilarity(leftVector, rightVector)
                 guard score >= 0.74 else { continue }
+                neighbors.append((right.chunkID, score))
+            }
+            for neighbor in neighbors.sorted(by: { $0.score > $1.score }).prefix(maxNeighborsPerChunk) {
                 upsertEdge(
                     source: "chunk:\(left.chunkID)",
-                    target: "chunk:\(right.chunkID)",
+                    target: "chunk:\(neighbor.chunkID)",
                     kind: "semantic",
-                    weight: min(1.0, score),
-                    evidence: "Semantic similarity \(Int((score * 100).rounded()))%"
+                    weight: min(1.0, neighbor.score),
+                    evidence: "Semantic similarity \(Int((neighbor.score * 100).rounded()))%"
                 )
             }
         }
@@ -2512,70 +2767,6 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         return trimmed.count > 64 ? String(trimmed.prefix(61)) + "..." : trimmed
     }
 
-    nonisolated private static func topicPhrases(in text: String, limit: Int) -> [String] {
-        var counts: [String: Int] = [:]
-        let tokens = LexicalSemanticEmbeddingProvider.tokens(in: text)
-        for token in tokens where token.count >= 4 {
-            counts[token, default: 0] += 1
-        }
-        guard !counts.isEmpty else { return [] }
-        return counts
-            .sorted {
-                if $0.value == $1.value { return $0.key < $1.key }
-                return $0.value > $1.value
-            }
-            .prefix(max(1, limit))
-            .map(\.key)
-    }
-
-    nonisolated private static func entityPhrases(in text: String, limit: Int) -> [String] {
-        let rawWords = text
-            .split { character in
-                !(character.isLetter || character.isNumber || character == "'" || character == "-")
-            }
-            .map(String.init)
-
-        var counts: [String: Int] = [:]
-        var current: [String] = []
-
-        func flushCurrent() {
-            guard current.count >= 2 else {
-                current.removeAll()
-                return
-            }
-            let phrase = current.joined(separator: " ")
-            guard phrase.count <= 64 else {
-                current.removeAll()
-                return
-            }
-            counts[phrase, default: 0] += 1
-            current.removeAll()
-        }
-
-        for word in rawWords {
-            guard let first = word.unicodeScalars.first else {
-                flushCurrent()
-                continue
-            }
-            let isCandidate = CharacterSet.uppercaseLetters.contains(first) && word.count > 2
-            let isCommonSentenceStart = Self.entityStopWords.contains(word.lowercased())
-            if isCandidate && !isCommonSentenceStart {
-                current.append(word.trimmingCharacters(in: .punctuationCharacters))
-            } else {
-                flushCurrent()
-            }
-        }
-        flushCurrent()
-
-        return counts
-            .sorted {
-                if $0.value == $1.value { return $0.key < $1.key }
-                return $0.value > $1.value
-            }
-            .prefix(max(1, limit))
-            .map(\.key)
-    }
-
     nonisolated private static func nodeKey(_ value: String) -> String {
         let key = value
             .lowercased()
@@ -2597,10 +2788,6 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         return formatter
     }()
 
-    nonisolated private static let entityStopWords: Set<String> = [
-        "the", "this", "that", "these", "those", "when", "where", "what", "please",
-        "today", "tomorrow", "yesterday", "after", "before", "because"
-    ]
 }
 
 private extension String {

@@ -32,17 +32,22 @@ final class LocalLLMTextProcessor: TextProcessor {
 
     private let baseProcessor: TextProcessor
     private let settings: AppSettings
-    private let ollamaClient: OllamaClient
+    private let injectedClient: (any LocalLLMServing)?
     private let circuitBreaker = CircuitBreaker()
 
     init(
         baseProcessor: TextProcessor,
         settings: AppSettings,
-        ollamaClient: OllamaClient = OllamaClient()
+        ollamaClient: (any LocalLLMServing)? = nil
     ) {
         self.baseProcessor = baseProcessor
         self.settings = settings
-        self.ollamaClient = ollamaClient
+        self.injectedClient = ollamaClient
+    }
+
+    /// Resolved per request so switching providers takes effect immediately.
+    private var llmClient: any LocalLLMServing {
+        injectedClient ?? settings.activeLocalLLMClient
     }
 
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
@@ -86,14 +91,18 @@ final class LocalLLMTextProcessor: TextProcessor {
         Logger.ai.debug("Local polish request started [model=\(model), chars=\(normalizedInput.count), timeoutMs=\(timeoutMs)]")
 
         do {
-            let rawResponse = try await ollamaClient.generate(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+            let rawResponse = try await llmClient.generate(
+                baseURLString: settings.activeLocalLLMEndpoint,
                 model: model,
                 prompt: prompt,
                 timeoutMs: timeoutMs,
                 think: false,
+                format: nil,
+                formatJSONSchema: nil,
                 temperature: 0,
-                numPredict: max(24, min(120, (normalizedInput.count / 2) + 24))
+                numPredict: max(24, min(120, (normalizedInput.count / 2) + 24)),
+                numContext: nil,
+                keepAlive: "5m"
             )
 
             guard var polishedText = sanitizePolishOutput(rawResponse, original: normalizedInput) else {
@@ -127,7 +136,7 @@ final class LocalLLMTextProcessor: TextProcessor {
         } catch {
             if isTimeoutError(error) {
                 await circuitBreaker.recordTimeout()
-                warmModelInBackground(endpoint: settings.normalizedLocalLLMEndpoint, model: model)
+                warmModelInBackground(endpoint: settings.activeLocalLLMEndpoint, model: model)
                 let suggestedTimeoutMs = max(timeoutMs, recommendedMinimumTimeoutMs(for: model))
                 Logger.ai.debug("Local polish timed out at \(timeoutMs)ms for model \(model). Increase polish timeout to ~\(suggestedTimeoutMs)ms+ for this model.")
             } else {
@@ -189,15 +198,20 @@ final class LocalLLMTextProcessor: TextProcessor {
 
     private func warmModelInBackground(endpoint: String, model: String) {
         let warmPrompt = "Fix punctuation only: hello world"
+        let client = llmClient
         Task {
-            _ = try? await ollamaClient.generate(
+            _ = try? await client.generate(
                 baseURLString: endpoint,
                 model: model,
                 prompt: warmPrompt,
                 timeoutMs: 1_400,
                 think: false,
+                format: nil,
+                formatJSONSchema: nil,
                 temperature: 0,
-                numPredict: 24
+                numPredict: 24,
+                numContext: nil,
+                keepAlive: "5m"
             )
         }
     }

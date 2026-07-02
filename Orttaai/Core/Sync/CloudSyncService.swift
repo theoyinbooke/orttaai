@@ -350,13 +350,7 @@ final class CloudSyncService {
     }
 
     private func deviceID() -> String {
-        let defaults = UserDefaults.standard
-        if let existing = defaults.string(forKey: Self.deviceIDKey), !existing.isEmpty {
-            return existing
-        }
-        let id = UUID().uuidString.lowercased()
-        defaults.set(id, forKey: Self.deviceIDKey)
-        return id
+        DeviceIdentity.currentID
     }
 
     private func markUserDefaultsSyncCompleted(at date: Date) {

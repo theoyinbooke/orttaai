@@ -409,6 +409,67 @@ final class DatabaseManager {
             )
         }
 
+        migrator.registerMigration("v10_transcription_source_device") { db in
+            try db.alter(table: "transcription") { t in
+                // NULL means the row predates device tagging (or came from an
+                // older app version); readers treat NULL as local.
+                t.add(column: "sourceDeviceID", .text)
+            }
+        }
+
+        migrator.registerMigration("v11_semantic_signals") { db in
+            try db.create(table: "semantic_signal") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("chunkID", .integer).notNull()
+                t.column("family", .text).notNull()
+                t.column("value", .text).notNull()
+                t.column("confidence", .double).notNull()
+                t.column("modelID", .text).notNull()
+                t.column("extractedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "idx_semantic_signal_chunk_family_value_unique",
+                on: "semantic_signal",
+                columns: ["chunkID", "family", "value"],
+                unique: true
+            )
+            try db.create(
+                index: "idx_semantic_signal_family",
+                on: "semantic_signal",
+                columns: ["family", "extractedAt"]
+            )
+        }
+
+        migrator.registerMigration("v12_insight_findings") { db in
+            try db.create(table: "insight_finding") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("kind", .text).notNull()
+                t.column("subjectKey", .text).notNull()
+                t.column("title", .text).notNull()
+                t.column("detail", .text).notNull()
+                t.column("magnitude", .double).notNull().defaults(to: 0)
+                t.column("confidence", .double).notNull().defaults(to: 0.5)
+                t.column("windowStart", .datetime)
+                t.column("windowEnd", .datetime)
+                t.column("evidenceChunkIDs", .text).notNull().defaults(to: "[]")
+                t.column("firstSeenAt", .datetime).notNull()
+                t.column("lastComputedAt", .datetime).notNull()
+                t.column("lastShownAt", .datetime)
+                t.column("status", .text).notNull().defaults(to: "active")
+            }
+            try db.create(
+                index: "idx_insight_finding_kind_subject_unique",
+                on: "insight_finding",
+                columns: ["kind", "subjectKey"],
+                unique: true
+            )
+            try db.create(
+                index: "idx_insight_finding_status_computed",
+                on: "insight_finding",
+                columns: ["status", "lastComputedAt"]
+            )
+        }
+
         return migrator
     }
 
@@ -623,7 +684,8 @@ final class DatabaseManager {
         modelId: String,
         audioDevice: String? = nil,
         latency: DictationLatencyTelemetry? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        sourceDeviceID: String = DeviceIdentity.currentID
     ) throws {
         try dbQueue.write { db in
             let record = Transcription(
@@ -640,7 +702,8 @@ final class DatabaseManager {
                 appActivationDurationMs: latency?.appActivationMs,
                 clipboardRestoreDelayMs: latency?.clipboardRestoreDelayMs,
                 modelId: modelId,
-                audioDevice: audioDevice
+                audioDevice: audioDevice,
+                sourceDeviceID: sourceDeviceID
             )
             try record.insert(db)
             try Self.touchSyncMetadata(
@@ -766,6 +829,7 @@ final class DatabaseManager {
         try db.execute(sql: "DELETE FROM semantic_insight_snapshot")
         try db.execute(sql: "DELETE FROM semantic_graph_edge")
         try db.execute(sql: "DELETE FROM semantic_graph_node")
+        try db.execute(sql: "DELETE FROM semantic_signal")
         try db.execute(sql: "DELETE FROM semantic_embedding")
         try db.execute(sql: "DELETE FROM semantic_chunk")
     }
@@ -781,11 +845,217 @@ final class DatabaseManager {
                 sql: "DELETE FROM semantic_embedding WHERE chunkID IN \(chunkIDs.sqlInList)",
                 arguments: StatementArguments(chunkIDs)
             )
+            try db.execute(
+                sql: "DELETE FROM semantic_signal WHERE chunkID IN \(chunkIDs.sqlInList)",
+                arguments: StatementArguments(chunkIDs)
+            )
         }
         try db.execute(
             sql: "DELETE FROM semantic_chunk WHERE transcriptionID = ?",
             arguments: [transcriptionID]
         )
+    }
+
+    // MARK: - Insight Findings
+
+    /// Reconciles a fresh computation with stored findings: recomputed
+    /// findings update in place (preserving firstSeenAt, lastShownAt, and any
+    /// user resolve/dismiss), previously-active findings of the computed kinds
+    /// that vanished are expired, and new findings are inserted.
+    func reconcileInsightFindings(
+        _ drafts: [InsightFindingDraft],
+        computedKinds: [InsightFindingKind],
+        now: Date = Date()
+    ) throws {
+        let encoder = JSONEncoder()
+        try dbQueue.write { db in
+            let kindValues = computedKinds.map(\.rawValue)
+            var freshSubjects: Set<String> = []
+
+            for draft in drafts {
+                let subject = "\(draft.kind.rawValue)|\(draft.subjectKey)"
+                freshSubjects.insert(subject)
+                let evidenceJSON = (try? encoder.encode(draft.evidenceChunkIDs))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+
+                let existing = try InsightFinding
+                    .filter(Column("kind") == draft.kind.rawValue && Column("subjectKey") == draft.subjectKey)
+                    .fetchOne(db)
+
+                if var finding = existing {
+                    finding.title = draft.title
+                    finding.detail = draft.detail
+                    finding.magnitude = draft.magnitude
+                    finding.confidence = draft.confidence
+                    finding.windowStart = draft.windowStart
+                    finding.windowEnd = draft.windowEnd
+                    finding.evidenceChunkIDs = evidenceJSON
+                    finding.lastComputedAt = now
+                    // Re-activate expired findings; never un-resolve/undismiss.
+                    if finding.status == InsightFindingStatus.expired.rawValue {
+                        finding.status = InsightFindingStatus.active.rawValue
+                    }
+                    try finding.update(db)
+                } else {
+                    var finding = InsightFinding(
+                        kind: draft.kind.rawValue,
+                        subjectKey: draft.subjectKey,
+                        title: draft.title,
+                        detail: draft.detail,
+                        magnitude: draft.magnitude,
+                        confidence: draft.confidence,
+                        windowStart: draft.windowStart,
+                        windowEnd: draft.windowEnd,
+                        evidenceChunkIDs: evidenceJSON,
+                        firstSeenAt: now,
+                        lastComputedAt: now,
+                        lastShownAt: nil,
+                        status: InsightFindingStatus.active.rawValue
+                    )
+                    try finding.insert(db)
+                }
+            }
+
+            // Expire active findings of the computed kinds that no longer hold.
+            if !kindValues.isEmpty {
+                let stale = try InsightFinding
+                    .filter(kindValues.contains(Column("kind")))
+                    .filter(Column("status") == InsightFindingStatus.active.rawValue)
+                    .fetchAll(db)
+                for var finding in stale where !freshSubjects.contains("\(finding.kind)|\(finding.subjectKey)") {
+                    finding.status = InsightFindingStatus.expired.rawValue
+                    finding.lastComputedAt = now
+                    try finding.update(db)
+                }
+            }
+        }
+    }
+
+    func fetchInsightFindings(
+        kinds: [InsightFindingKind]? = nil,
+        statuses: [InsightFindingStatus] = [.active],
+        limit: Int = 200
+    ) throws -> [InsightFinding] {
+        try dbQueue.read { db in
+            var request = InsightFinding
+                .filter(statuses.map(\.rawValue).contains(Column("status")))
+            if let kinds, !kinds.isEmpty {
+                request = request.filter(kinds.map(\.rawValue).contains(Column("kind")))
+            }
+            return try request
+                .order(Column("magnitude").desc)
+                .limit(max(1, limit))
+                .fetchAll(db)
+        }
+    }
+
+    func updateInsightFindingStatus(id: Int64, status: InsightFindingStatus) throws {
+        _ = try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE insight_finding SET status = ? WHERE id = ?",
+                arguments: [status.rawValue, id]
+            )
+        }
+    }
+
+    func markInsightFindingsShown(ids: [Int64], at date: Date = Date()) throws {
+        guard !ids.isEmpty else { return }
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE insight_finding SET lastShownAt = ? WHERE id IN \(ids.sqlInList)",
+                arguments: StatementArguments([date] + ids.map { $0 as DatabaseValueConvertible })
+            )
+        }
+    }
+
+    // MARK: - Semantic Signals
+
+    /// Inserts signals, ignoring duplicates (unique on chunk+family+value).
+    func insertSemanticSignals(_ signals: [SemanticSignal]) throws {
+        guard !signals.isEmpty else { return }
+        try dbQueue.write { db in
+            for signal in signals {
+                try db.execute(
+                    sql: """
+                    INSERT OR IGNORE INTO semantic_signal
+                        (chunkID, family, value, confidence, modelID, extractedAt)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        signal.chunkID,
+                        signal.family,
+                        signal.value,
+                        signal.confidence,
+                        signal.modelID,
+                        signal.extractedAt
+                    ]
+                )
+            }
+        }
+    }
+
+    /// Chunk IDs that already have signals from the given extractor.
+    func fetchSemanticSignalChunkIDs(modelID: String) throws -> Set<Int64> {
+        try dbQueue.read { db in
+            let ids = try Int64.fetchAll(
+                db,
+                sql: "SELECT DISTINCT chunkID FROM semantic_signal WHERE modelID = ?",
+                arguments: [modelID]
+            )
+            return Set(ids)
+        }
+    }
+
+    /// Signals joined with their source chunk context, newest first.
+    func fetchSemanticSignals(
+        families: [String]? = nil,
+        limit: Int = 2_000
+    ) throws -> [SemanticSignalWithContext] {
+        try dbQueue.read { db in
+            var sql = """
+            SELECT s.id, s.chunkID, s.family, s.value, s.confidence, s.modelID, s.extractedAt,
+                   c.text AS chunkText, c.sourceCreatedAt, c.targetAppName, c.transcriptionID
+            FROM semantic_signal s
+            JOIN semantic_chunk c ON c.id = s.chunkID
+            """
+            var arguments: [DatabaseValueConvertible] = []
+            if let families, !families.isEmpty {
+                sql += " WHERE s.family IN (\(families.map { _ in "?" }.joined(separator: ", ")))"
+                arguments.append(contentsOf: families)
+            }
+            sql += " ORDER BY c.sourceCreatedAt DESC LIMIT ?"
+            arguments.append(max(1, limit))
+
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            return rows.compactMap { row in
+                guard let chunkID: Int64 = row["chunkID"],
+                      let family: String = row["family"],
+                      let value: String = row["value"],
+                      let confidence: Double = row["confidence"],
+                      let modelID: String = row["modelID"],
+                      let extractedAt: Date = row["extractedAt"],
+                      let chunkText: String = row["chunkText"],
+                      let sourceCreatedAt: Date = row["sourceCreatedAt"],
+                      let transcriptionID: Int64 = row["transcriptionID"] else {
+                    return nil
+                }
+                return SemanticSignalWithContext(
+                    signal: SemanticSignal(
+                        id: row["id"],
+                        chunkID: chunkID,
+                        family: family,
+                        value: value,
+                        confidence: confidence,
+                        modelID: modelID,
+                        extractedAt: extractedAt
+                    ),
+                    chunkText: chunkText,
+                    sourceCreatedAt: sourceCreatedAt,
+                    targetAppName: row["targetAppName"],
+                    transcriptionID: transcriptionID
+                )
+            }
+        }
     }
 
     func clearSemanticMemory() throws {
@@ -1917,7 +2187,8 @@ extension DatabaseManager {
             SELECT id, syncID, modifiedAt, createdAt, text, targetAppName, targetAppBundleID,
                    recordingDurationMs, processingDurationMs, settingsSyncDurationMs,
                    transcriptionDurationMs, textProcessingDurationMs, injectionDurationMs,
-                   appActivationDurationMs, clipboardRestoreDelayMs, modelId, audioDevice
+                   appActivationDurationMs, clipboardRestoreDelayMs, modelId, audioDevice,
+                   sourceDeviceID
             FROM transcription
             WHERE syncID IS NOT NULL
             """
@@ -1949,7 +2220,8 @@ extension DatabaseManager {
                 appActivationDurationMs: row["appActivationDurationMs"],
                 clipboardRestoreDelayMs: row["clipboardRestoreDelayMs"],
                 modelId: modelId,
-                audioDevice: row["audioDevice"]
+                audioDevice: row["audioDevice"],
+                sourceDeviceID: row["sourceDeviceID"]
             )
         }
     }
@@ -2136,7 +2408,7 @@ extension DatabaseManager {
                     recordingDurationMs = ?, processingDurationMs = ?, settingsSyncDurationMs = ?,
                     transcriptionDurationMs = ?, textProcessingDurationMs = ?, injectionDurationMs = ?,
                     appActivationDurationMs = ?, clipboardRestoreDelayMs = ?, modelId = ?,
-                    audioDevice = ?, syncID = ?, modifiedAt = ?
+                    audioDevice = ?, sourceDeviceID = ?, syncID = ?, modifiedAt = ?
                 WHERE id = ?
                 """,
                 arguments: transcriptionArguments(record) + [id]
@@ -2148,9 +2420,9 @@ extension DatabaseManager {
                     createdAt, text, targetAppName, targetAppBundleID, recordingDurationMs,
                     processingDurationMs, settingsSyncDurationMs, transcriptionDurationMs,
                     textProcessingDurationMs, injectionDurationMs, appActivationDurationMs,
-                    clipboardRestoreDelayMs, modelId, audioDevice, syncID, modifiedAt
+                    clipboardRestoreDelayMs, modelId, audioDevice, sourceDeviceID, syncID, modifiedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: transcriptionArguments(record)
             )
@@ -2173,6 +2445,7 @@ extension DatabaseManager {
             record.clipboardRestoreDelayMs,
             record.modelId,
             record.audioDevice,
+            record.sourceDeviceID,
             record.syncID,
             record.modifiedAt
         ]

@@ -123,6 +123,8 @@ struct CloudSyncTranscription: Codable, Equatable, Sendable {
     var clipboardRestoreDelayMs: Int?
     var modelId: String
     var audioDevice: String?
+    // Optional for backward compatibility with payloads from older app versions.
+    var sourceDeviceID: String?
 }
 
 struct CloudSyncDictionaryEntry: Codable, Equatable, Sendable {
@@ -225,32 +227,31 @@ enum UserDefaultsSyncValue: Codable, Equatable, Sendable {
 struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     static let modifiedAtKey = "cloudSyncProfileModifiedAt"
 
+    // Device-specific keys are intentionally NOT synced. Each Mac has different
+    // hardware, downloaded models, and audio devices, so syncing these breaks the
+    // receiving machine (e.g. Performance Health filtering by a model this device
+    // never ran, or activating a model that isn't downloaded here):
+    // selectedModelId, activeModelId, selectedAudioDeviceID, computeMode,
+    // decodingWorkerCount, lowLatencyModeEnabled, fastFirstRecommendedModelId,
+    // fastFirstPrefetchStarted/Ready/ErrorMessage, localLLMPolishModel,
+    // localLLMInsightsModel, semanticEmbeddingModel.
     static let syncedUserDefaultsKeys: [String] = [
-        "selectedModelId",
-        "activeModelId",
-        "selectedAudioDeviceID",
         "polishModeEnabled",
         "launchAtLogin",
         "hasCompletedSetup",
         "showProcessingEstimate",
         "homeWorkspaceAutoOpenEnabled",
-        "lowLatencyModeEnabled",
         "spokenFormattingEnabled",
         "dictionaryEnabled",
         "snippetsEnabled",
         "aiSuggestionsEnabled",
         "fastFirstOnboardingEnabled",
-        "fastFirstRecommendedModelId",
-        "fastFirstPrefetchStarted",
-        "fastFirstPrefetchReady",
         "fastFirstUpgradeDismissed",
-        "fastFirstPrefetchErrorMessage",
         "githubStarPromptCompleted",
         "githubStarPromptShownCount",
         "githubStarPromptLastShownAtEpoch",
         "dictationLanguage",
         "maxRecordingDuration",
-        "computeMode",
         "decodingPreset",
         "advancedDecodingEnabled",
         "decodingTemperature",
@@ -259,20 +260,16 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         "decodingCompressionRatioThreshold",
         "decodingLogProbThreshold",
         "decodingNoSpeechThreshold",
-        "decodingWorkerCount",
         "localLLMPolishEnabled",
         "localLLMEndpoint",
-        "localLLMPolishModel",
         "localLLMPolishTimeoutMs",
         "localLLMPolishMaxChars",
         "localLLMInsightsEnabled",
-        "localLLMInsightsModel",
         "localLLMInsightsContextTokens",
         "localLLMInsightsThinkingEnabled",
         "semanticMemoryEnabled",
         "semanticMemoryAutoIndexEnabled",
         "semanticEmbeddingFallbackEnabled",
-        "semanticEmbeddingModel",
         "modelSortMode",
         "homeSidebarCollapsed",
         "toneOfVoiceProfile",
@@ -316,7 +313,10 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
             for key in Self.syncedUserDefaultsKeys where values[key] == nil {
                 defaults.removeObject(forKey: key)
             }
-            for (key, value) in values {
+            // Only apply listed keys: snapshots pushed by older app versions may
+            // still carry device-specific keys that must not overwrite this Mac.
+            let allowedKeys = Set(Self.syncedUserDefaultsKeys)
+            for (key, value) in values where allowedKeys.contains(key) {
                 defaults.set(value.object, forKey: key)
             }
             if let modifiedAt {

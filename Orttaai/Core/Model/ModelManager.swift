@@ -85,6 +85,10 @@ final class ModelManager {
 
     private let transcriptionService: TranscriptionService
     private let settings: AppSettings
+
+    /// The app-wide warm transcription service. Features like ChatAI voice
+    /// input reuse it instead of owning a second copy of the Whisper model.
+    var runtimeTranscriptionService: TranscriptionService { transcriptionService }
     private let downloader: ModelDownloader
     private let modelsDirectory: URL
     nonisolated private static let requiredModelComponents = [

@@ -61,6 +61,40 @@ struct SemanticEmbeddedChunk: Sendable, Identifiable {
     var id: Int64 { chunkID }
 }
 
+/// A typed signal extracted from one chunk of dictated text: a commitment the
+/// user voiced, a question they asked, a decision they stated, tone, or intent.
+/// The raw material for ledgers and pattern mining.
+struct SemanticSignal: Codable, Identifiable, FetchableRecord, PersistableRecord, Sendable, Hashable {
+    var id: Int64?
+    var chunkID: Int64
+    /// One of SemanticSignalFamily's raw values.
+    var family: String
+    var value: String
+    var confidence: Double
+    /// Extractor identity, e.g. "heuristic-v1" or an Ollama model name.
+    var modelID: String
+    var extractedAt: Date
+
+    static let databaseTableName = "semantic_signal"
+}
+
+enum SemanticSignalFamily: String, Sendable, CaseIterable {
+    case commitment
+    case question
+    case decision
+    case tone
+    case intent
+}
+
+/// A signal joined with its source chunk's context for pattern mining.
+struct SemanticSignalWithContext: Sendable {
+    let signal: SemanticSignal
+    let chunkText: String
+    let sourceCreatedAt: Date
+    let targetAppName: String?
+    let transcriptionID: Int64
+}
+
 struct SemanticGraphNode: Codable, Identifiable, FetchableRecord, PersistableRecord, Sendable, Hashable {
     var nodeID: String
     var kind: String

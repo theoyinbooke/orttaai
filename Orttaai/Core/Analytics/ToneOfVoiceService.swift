@@ -6,11 +6,15 @@ import os
 
 final class ToneOfVoiceService {
     private let settings: AppSettings
-    private let ollamaClient: OllamaClient
+    private let injectedClient: (any LocalLLMServing)?
 
-    init(settings: AppSettings = AppSettings(), ollamaClient: OllamaClient = OllamaClient()) {
+    init(settings: AppSettings = AppSettings(), ollamaClient: (any LocalLLMServing)? = nil) {
         self.settings = settings
-        self.ollamaClient = ollamaClient
+        self.injectedClient = ollamaClient
+    }
+
+    private var llmClient: any LocalLLMServing {
+        injectedClient ?? settings.activeLocalLLMClient
     }
 
     func analyze(transcriptions: [Transcription], model: String) async -> ToneOfVoiceAnalysisResult? {
@@ -27,16 +31,18 @@ final class ToneOfVoiceService {
         }
 
         do {
-            let response = try await ollamaClient.generate(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+            let response = try await llmClient.generate(
+                baseURLString: settings.activeLocalLLMEndpoint,
                 model: normalizedModel,
                 prompt: ollamaPrompt(samples: samples, fallbackProfile: profile),
                 timeoutMs: nil,
                 think: settings.localLLMInsightsThinkingEnabled,
                 format: nil,
+                formatJSONSchema: nil,
                 temperature: 0.12,
                 numPredict: 4_000,
-                numContext: settings.clampedLocalLLMInsightsContextTokens
+                numContext: settings.clampedLocalLLMInsightsContextTokens,
+                keepAlive: "5m"
             )
 
             if let aiProfile = decodeAIProfile(from: response, fallback: profile, model: normalizedModel) {

@@ -8,15 +8,18 @@ final class DashboardStatsService {
     private let databaseManager: DatabaseManager
     private let calendar: Calendar
     private let nowProvider: () -> Date
+    private let currentDeviceID: String
 
     init(
         databaseManager: DatabaseManager,
         calendar: Calendar = .current,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        currentDeviceID: String = DeviceIdentity.currentID
     ) {
         self.databaseManager = databaseManager
         self.calendar = calendar
         self.nowProvider = now
+        self.currentDeviceID = currentDeviceID
     }
 
     func load(currentModelId: String? = nil) throws -> DashboardStatsPayload {
@@ -160,11 +163,18 @@ final class DashboardStatsService {
         modelSourceRecords: [Transcription],
         currentModelId: String?
     ) -> DashboardPerformanceHealth {
-        let modelId = resolvedModelId(currentModelId: currentModelId, records: modelSourceRecords)
-        let modelScopedRecords = recordsForModel(modelId, in: records)
-        let processingValues = modelScopedRecords.map { max(0, $0.processingDurationMs) }
-        let transcriptionValues = modelScopedRecords.compactMap(\.transcriptionDurationMs)
-        let injectionValues = modelScopedRecords.compactMap(\.injectionDurationMs)
+        // Performance is scoped to dictations produced by THIS device. Samples
+        // synced in from another Mac reflect its hardware, and the model a row
+        // ran under can differ from the currently selected model without making
+        // the sample any less representative of this machine's latency.
+        let deviceScopedRecords = recordsForCurrentDevice(in: records)
+        let modelId = resolvedModelId(
+            currentModelId: currentModelId,
+            records: recordsForCurrentDevice(in: modelSourceRecords)
+        )
+        let processingValues = deviceScopedRecords.map { max(0, $0.processingDurationMs) }
+        let transcriptionValues = deviceScopedRecords.compactMap(\.transcriptionDurationMs)
+        let injectionValues = deviceScopedRecords.compactMap(\.injectionDurationMs)
 
         let avgProcessing = averageLatency(from: processingValues)
         let processingP50 = percentileLatency(from: processingValues, percentile: 0.50)
@@ -179,7 +189,7 @@ final class DashboardStatsService {
 
         return DashboardPerformanceHealth(
             level: level,
-            sampleCount: modelScopedRecords.count,
+            sampleCount: deviceScopedRecords.count,
             averageProcessingMs: avgProcessing,
             processingP50Ms: processingP50,
             processingP95Ms: processingP95,
@@ -243,12 +253,11 @@ final class DashboardStatsService {
         return "Not set"
     }
 
-    private func recordsForModel(_ modelId: String, in records: [Transcription]) -> [Transcription] {
-        let normalizedTargetModel = canonicalModelID(modelId)
-        guard !normalizedTargetModel.isEmpty else { return [] }
-
-        return records.filter { record in
-            canonicalModelID(record.modelId) == normalizedTargetModel
+    private func recordsForCurrentDevice(in records: [Transcription]) -> [Transcription] {
+        records.filter { record in
+            // NULL = row predates device tagging or came from an older app
+            // version; treat as local so history doesn't vanish after upgrade.
+            record.sourceDeviceID == nil || record.sourceDeviceID == currentDeviceID
         }
     }
 

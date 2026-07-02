@@ -195,18 +195,12 @@ struct ReadyStepView: View {
 
                 Spacer(minLength: Spacing.xs)
 
-                Picker("Microphone input", selection: $selectedAudioDeviceID) {
-                    Text(systemDefaultInputLabel)
-                        .tag("")
-
-                    ForEach(audioDeviceManager.devices) { device in
-                        Text(device.name)
-                            .tag(String(device.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 148, alignment: .trailing)
+                OrttaaiDropdown(
+                    selection: $selectedAudioDeviceID,
+                    options: [.init("", systemDefaultInputLabel)]
+                        + audioDeviceManager.devices.map { .init(String($0.id), $0.name) },
+                    width: 148
+                )
 
                 Text(monitoringStateLabel)
                     .font(.Orttaai.caption)
@@ -336,7 +330,7 @@ struct ReadyStepView: View {
                 }
 
                 if let countdownSeconds, quickTestState == .recording {
-                    statusPill(title: "Time Left", value: "\(countdownSeconds)s", tint: Color.Orttaai.warning)
+                    statusPill(title: "Time Left", value: "\(countdownSeconds)s", tint: Color.Orttaai.error)
                 }
             }
 

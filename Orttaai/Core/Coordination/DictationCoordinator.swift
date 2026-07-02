@@ -59,8 +59,11 @@ final class DictationCoordinator {
     private var maxDuration: TimeInterval {
         TimeInterval(settings.maxRecordingDuration)
     }
+    /// The countdown (and its red warning treatment in the UI) covers the final
+    /// 20 seconds of the recording window.
+    static let countdownWarningWindowSeconds: TimeInterval = 20
     private var countdownStart: TimeInterval {
-        max(0, maxDuration - 10)
+        max(0, maxDuration - Self.countdownWarningWindowSeconds)
     }
     private let minDuration: TimeInterval = 0.5
     private let liveDecodePollIntervalNs: UInt64 = 750_000_000
@@ -347,12 +350,11 @@ final class DictationCoordinator {
         capTimerTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
 
-            // Wait until countdown start (35s)
+            // Wait until the warning window begins
             try? await Task.sleep(nanoseconds: UInt64(self.countdownStart * 1_000_000_000))
 
             guard !Task.isCancelled else { return }
 
-            // Start countdown from 10s remaining
             let remainingSeconds = Int(self.maxDuration - self.countdownStart)
             for i in stride(from: remainingSeconds, through: 1, by: -1) {
                 guard !Task.isCancelled else { return }

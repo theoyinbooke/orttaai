@@ -17,8 +17,9 @@ final class ToneOfVoiceViewModel {
     var sampleCount = 0
 
     private let settings = AppSettings()
-    private let ollamaClient = OllamaClient()
     private let service = ToneOfVoiceService()
+
+    private var llmClient: any LocalLLMServing { settings.activeLocalLLMClient }
     private var didLoad = false
 
     var selectedModelDisplayName: String {
@@ -46,8 +47,8 @@ final class ToneOfVoiceViewModel {
         defer { isLoadingModels = false }
 
         do {
-            let models = try await ollamaClient.fetchModelNames(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+            let models = try await llmClient.fetchModelNames(
+                baseURLString: settings.activeLocalLLMEndpoint,
                 timeoutMs: 2_400
             )
             availableModels = models.sorted()

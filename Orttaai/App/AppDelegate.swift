@@ -341,7 +341,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func prewarmLocalLLMModelsIfNeeded() {
         guard let settings = appState?.settings else { return }
 
-        let endpoint = settings.normalizedLocalLLMEndpoint
+        let endpoint = settings.activeLocalLLMEndpoint
+        let providerKind = settings.localLLMProvider
         var modelsToWarm: [String] = []
         if settings.localLLMPolishEnabled {
             modelsToWarm.append(settings.normalizedLocalLLMPolishModel)
@@ -355,13 +356,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let aiLogger = Logger(subsystem: "com.orttaai.app", category: "ai")
 
         Task.detached(priority: .utility) {
-            let client = OllamaClient()
+            let client = LocalLLM.client(for: providerKind)
             for model in uniqueModels {
                 do {
                     let elapsedMs = try await client.warmModel(
                         baseURLString: endpoint,
                         model: model,
-                        timeoutMs: 40_000
+                        timeoutMs: 40_000,
+                        keepAlive: "5m"
                     )
                     aiLogger.info("Prewarmed local LLM model [model=\(model), elapsedMs=\(elapsedMs)]")
                 } catch {

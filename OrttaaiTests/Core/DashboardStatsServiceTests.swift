@@ -6,7 +6,10 @@ import GRDB
 @testable import Orttaai
 
 final class DashboardStatsServiceTests: XCTestCase {
+    private static let localDeviceID = "test-local-device"
+
     private var db: DatabaseManager!
+    private var dbQueue: DatabaseQueue!
     private var calendar: Calendar!
     private var now: Date!
     private var service: DashboardStatsService!
@@ -18,18 +21,20 @@ final class DashboardStatsServiceTests: XCTestCase {
 
         now = makeDate(year: 2026, month: 2, day: 23, hour: 12)
 
-        let dbQueue = try DatabaseQueue(path: ":memory:")
+        dbQueue = try DatabaseQueue(path: ":memory:")
         db = try DatabaseManager(dbQueue: dbQueue)
         service = DashboardStatsService(
             databaseManager: db,
             calendar: calendar,
-            now: { [unowned self] in self.now }
+            now: { [unowned self] in self.now },
+            currentDeviceID: Self.localDeviceID
         )
     }
 
     override func tearDownWithError() throws {
         service = nil
         db = nil
+        dbQueue = nil
         calendar = nil
         now = nil
     }
@@ -163,7 +168,7 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(payload.performance.sampleCount, 2)
     }
 
-    func testPerformanceLatencyUsesCurrentModelOnlyWithPercentiles() throws {
+    func testPerformanceIncludesAllLocalModelsAndExcludesOtherDevices() throws {
         try save(
             text: "alpha one",
             dayOffset: 0,
@@ -194,6 +199,8 @@ final class DashboardStatsServiceTests: XCTestCase {
                 clipboardRestoreDelayMs: 44
             )
         )
+        // A different model on the SAME device still counts toward this
+        // machine's performance health.
         try save(
             text: "beta one",
             dayOffset: 0,
@@ -209,20 +216,87 @@ final class DashboardStatsServiceTests: XCTestCase {
                 clipboardRestoreDelayMs: 48
             )
         )
+        // A sample synced from another Mac must NOT pollute local latency.
+        try save(
+            text: "remote sample",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 60_000,
+            modelId: "model-a",
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 9,
+                transcriptionMs: 50_000,
+                textProcessingMs: 12,
+                injectionMs: 5_000,
+                appActivationMs: 25,
+                clipboardRestoreDelayMs: 50
+            ),
+            sourceDeviceID: "some-other-device"
+        )
 
         let payload = try service.load(currentModelId: "model-a")
 
         XCTAssertEqual(payload.performance.currentModelId, "model-a")
-        XCTAssertEqual(payload.performance.sampleCount, 2)
-        XCTAssertEqual(payload.performance.averageProcessingMs, 2_000)
-        XCTAssertEqual(payload.performance.processingP50Ms, 2_000)
-        XCTAssertEqual(payload.performance.processingP95Ms, 2_900)
-        XCTAssertEqual(payload.performance.averageTranscriptionMs, 300)
-        XCTAssertEqual(payload.performance.transcriptionP50Ms, 300)
-        XCTAssertEqual(payload.performance.transcriptionP95Ms, 480)
-        XCTAssertEqual(payload.performance.averageInjectionMs, 100)
-        XCTAssertEqual(payload.performance.injectionP50Ms, 100)
-        XCTAssertEqual(payload.performance.injectionP95Ms, 145)
+        XCTAssertEqual(payload.performance.sampleCount, 3)
+        XCTAssertEqual(payload.performance.averageProcessingMs, 4_000)
+        XCTAssertEqual(payload.performance.processingP50Ms, 3_000)
+        XCTAssertEqual(payload.performance.processingP95Ms, 7_500)
+        XCTAssertEqual(payload.performance.averageTranscriptionMs, 867)
+        XCTAssertEqual(payload.performance.transcriptionP50Ms, 500)
+        XCTAssertEqual(payload.performance.transcriptionP95Ms, 1_850)
+        XCTAssertEqual(payload.performance.averageInjectionMs, 200)
+        XCTAssertEqual(payload.performance.injectionP50Ms, 150)
+        XCTAssertEqual(payload.performance.injectionP95Ms, 375)
+    }
+
+    func testPerformanceTreatsLegacyRowsWithoutDeviceIdAsLocal() throws {
+        try save(
+            text: "legacy row",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 900,
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 5,
+                transcriptionMs: 700,
+                textProcessingMs: 8,
+                injectionMs: 80,
+                appActivationMs: 10,
+                clipboardRestoreDelayMs: 40
+            )
+        )
+        try clearSourceDeviceIDs()
+
+        let payload = try service.load(currentModelId: nil)
+
+        XCTAssertEqual(payload.performance.sampleCount, 1)
+        XCTAssertEqual(payload.performance.averageTranscriptionMs, 700)
+    }
+
+    func testPerformanceModelLabelIgnoresOtherDevicesNewestRecord() throws {
+        try save(
+            text: "local sample",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 900,
+            modelId: "local-model",
+            minuteOffset: 0
+        )
+        try save(
+            text: "newer remote sample",
+            dayOffset: 0,
+            recordingMs: 1_000,
+            processingMs: 1_100,
+            modelId: "remote-model",
+            minuteOffset: 5,
+            sourceDeviceID: "some-other-device"
+        )
+
+        // With no current model set, the label falls back to the newest LOCAL
+        // record's model, not the other device's newer record.
+        let payload = try service.load(currentModelId: nil)
+
+        XCTAssertEqual(payload.performance.currentModelId, "local-model")
+        XCTAssertEqual(payload.performance.sampleCount, 1)
     }
 
     func testRecentDictationIncludesMetadataAndSupportsDelete() throws {
@@ -320,7 +394,8 @@ final class DashboardStatsServiceTests: XCTestCase {
         modelId: String = "test-model",
         appName: String? = "TextEdit",
         minuteOffset: Int = 0,
-        latency: DictationLatencyTelemetry? = nil
+        latency: DictationLatencyTelemetry? = nil,
+        sourceDeviceID: String = DashboardStatsServiceTests.localDeviceID
     ) throws {
         let day = calendar.date(byAdding: .day, value: dayOffset, to: now)!
         let createdAt = calendar.date(byAdding: .minute, value: minuteOffset, to: day) ?? day
@@ -331,8 +406,15 @@ final class DashboardStatsServiceTests: XCTestCase {
             processingMs: processingMs,
             modelId: modelId,
             latency: latency,
-            createdAt: createdAt
+            createdAt: createdAt,
+            sourceDeviceID: sourceDeviceID
         )
+    }
+
+    private func clearSourceDeviceIDs() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE transcription SET sourceDeviceID = NULL")
+        }
     }
 
     private func makeDate(

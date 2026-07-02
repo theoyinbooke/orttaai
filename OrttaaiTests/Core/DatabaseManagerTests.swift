@@ -596,6 +596,7 @@ final class DatabaseManagerTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
+        defaults.set("en-GB", forKey: "dictationLanguage")
         defaults.set("openai_whisper-large-v3_turbo", forKey: "selectedModelId")
         defaults.set(true, forKey: CloudSyncService.syncEnabledKey)
         defaults.set(1_800_000_000.0, forKey: CloudSyncService.lastCompletedAtKey)
@@ -604,7 +605,9 @@ final class DatabaseManagerTests: XCTestCase {
 
         let snapshot = CloudProfileSnapshot.capture(defaults: defaults)
 
-        XCTAssertEqual(snapshot.values["selectedModelId"], .string("openai_whisper-large-v3_turbo"))
+        XCTAssertEqual(snapshot.values["dictationLanguage"], .string("en-GB"))
+        // Model choice is per-device and must not travel between Macs.
+        XCTAssertNil(snapshot.values["selectedModelId"])
         XCTAssertNil(snapshot.values[CloudSyncService.syncEnabledKey])
         XCTAssertNil(snapshot.values[CloudSyncService.lastCompletedAtKey])
         XCTAssertNil(snapshot.values[CloudSyncService.deviceIDKey])
@@ -618,18 +621,27 @@ final class DatabaseManagerTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         defaults.set("local-model", forKey: "selectedModelId")
+        defaults.set("snippets-on", forKey: "toneOfVoiceProfile")
         defaults.set("device-a", forKey: CloudSyncService.deviceIDKey)
         defaults.set(true, forKey: CloudSyncService.syncEnabledKey)
 
         let modifiedAt = Date(timeIntervalSince1970: 1_800_000_200.0)
         let snapshot = CloudProfileSnapshot(
-            values: ["dictationLanguage": .string("en-GB")],
+            values: [
+                "dictationLanguage": .string("en-GB"),
+                // Older app versions still push device-specific keys; they
+                // must not be applied to this Mac.
+                "selectedModelId": .string("remote-model")
+            ],
             modifiedAt: modifiedAt
         )
 
         snapshot.apply(to: defaults)
 
-        XCTAssertNil(defaults.object(forKey: "selectedModelId"))
+        // Local model choice survives sync untouched; synced keys missing from
+        // the snapshot (toneOfVoiceProfile) are removed.
+        XCTAssertEqual(defaults.string(forKey: "selectedModelId"), "local-model")
+        XCTAssertNil(defaults.object(forKey: "toneOfVoiceProfile"))
         XCTAssertEqual(defaults.string(forKey: "dictationLanguage"), "en-GB")
         XCTAssertEqual(defaults.string(forKey: CloudSyncService.deviceIDKey), "device-a")
         XCTAssertTrue(defaults.bool(forKey: CloudSyncService.syncEnabledKey))

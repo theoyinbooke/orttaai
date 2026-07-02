@@ -25,7 +25,7 @@ enum DecodingPreset: String, CaseIterable, Sendable {
         case .fast:
             return "Fastest response for quick dictation."
         case .balanced:
-            return "Balanced speed and recognition stability."
+            return "Balanced speed and reliable accuracy."
         case .accuracy:
             return "Higher resilience for difficult audio."
         }
@@ -120,7 +120,11 @@ final class AppSettings: ObservableObject {
     @AppStorage("decodingNoSpeechThreshold") var decodingNoSpeechThreshold: Double = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") var decodingWorkerCount: Int = DecodingPreferences.defaultWorkerCount
 
-    // Local LLM (Ollama)
+    // Local LLM (Ollama or LM Studio)
+    // Provider choice and endpoints are device-specific and intentionally not
+    // synced across Macs.
+    @AppStorage("localLLMProvider") var localLLMProviderRaw: String = LocalLLMProviderKind.ollama.rawValue
+    @AppStorage("lmStudioEndpoint") var lmStudioEndpoint: String = "http://127.0.0.1:1234"
     @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = false
     @AppStorage("localLLMEndpoint") var localLLMEndpoint: String = "http://127.0.0.1:11434"
     @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma3:1b"
@@ -169,6 +173,30 @@ final class AppSettings: ObservableObject {
     var normalizedLocalLLMEndpoint: String {
         let trimmed = localLLMEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "http://127.0.0.1:11434" : trimmed
+    }
+
+    var localLLMProvider: LocalLLMProviderKind {
+        get { LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama }
+        set { localLLMProviderRaw = newValue.rawValue }
+    }
+
+    var normalizedLMStudioEndpoint: String {
+        let trimmed = lmStudioEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? LocalLLMProviderKind.lmStudio.defaultEndpoint : trimmed
+    }
+
+    /// Endpoint for the currently selected local-LLM provider. Every feature
+    /// (polish, insights, chat, tone, semantic memory) resolves through this.
+    var activeLocalLLMEndpoint: String {
+        switch localLLMProvider {
+        case .ollama: return normalizedLocalLLMEndpoint
+        case .lmStudio: return normalizedLMStudioEndpoint
+        }
+    }
+
+    /// Client for the currently selected local-LLM provider.
+    var activeLocalLLMClient: any LocalLLMServing {
+        LocalLLM.client(for: localLLMProvider)
     }
 
     var normalizedLocalLLMPolishModel: String {

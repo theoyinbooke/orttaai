@@ -59,7 +59,9 @@ enum OllamaClientError: LocalizedError {
     }
 }
 
-actor OllamaClient {
+actor OllamaClient: LocalLLMServing {
+    nonisolated var providerKind: LocalLLMProviderKind { .ollama }
+
     nonisolated private static let curatedLightweightOllamaModels: [OllamaCatalogModel] = [
         OllamaCatalogModel(name: "gemma3:1b", sizeBytes: nil),
         OllamaCatalogModel(name: "gemma3:4b", sizeBytes: 8_600_000_000),

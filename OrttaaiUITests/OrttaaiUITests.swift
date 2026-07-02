@@ -11,13 +11,13 @@ final class OrttaaiUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Welcome back"].waitForExistence(timeout: 10))
 
-        app.staticTexts["Memory"].firstMatch.click()
+        app.buttons["Sidebar-Memory"].firstMatch.click()
         XCTAssertTrue(app.staticTexts["Auto-correct your preferred terms."].waitForExistence(timeout: 5))
 
-        app.staticTexts["About"].firstMatch.click()
+        app.buttons["Sidebar-About"].firstMatch.click()
         XCTAssertTrue(app.staticTexts["Build info, creator details, and open-source components."].waitForExistence(timeout: 5))
 
-        app.staticTexts["Overview"].firstMatch.click()
+        app.buttons["Sidebar-Overview"].firstMatch.click()
         XCTAssertTrue(app.staticTexts["Welcome back"].waitForExistence(timeout: 5))
     }
 }

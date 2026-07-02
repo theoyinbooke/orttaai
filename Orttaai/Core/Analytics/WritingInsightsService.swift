@@ -347,17 +347,21 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
 }
 
 final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
-    let name = "Ollama (Local)"
+    var name: String { "\(settings.localLLMProvider.displayName) (Local)" }
 
     private let settings: AppSettings
-    private let ollamaClient: OllamaClient
+    private let injectedClient: (any LocalLLMServing)?
 
     init(
         settings: AppSettings = AppSettings(),
-        ollamaClient: OllamaClient = OllamaClient()
+        ollamaClient: (any LocalLLMServing)? = nil
     ) {
         self.settings = settings
-        self.ollamaClient = ollamaClient
+        self.injectedClient = ollamaClient
+    }
+
+    private var llmClient: any LocalLLMServing {
+        injectedClient ?? settings.activeLocalLLMClient
     }
 
     func isAvailable() -> Bool {
@@ -503,16 +507,18 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         Logger.ai.debug("Ollama insights request started [model=\(model), samples=\(sampleCount), timeout=long-running, think=\(thinkingEnabled), num_ctx=\(contextTokens)]")
 
         do {
-            let response = try await ollamaClient.generate(
-                baseURLString: settings.normalizedLocalLLMEndpoint,
+            let response = try await llmClient.generate(
+                baseURLString: settings.activeLocalLLMEndpoint,
                 model: model,
                 prompt: prompt,
                 timeoutMs: nil,
                 think: thinkingEnabled,
                 format: nil,
+                formatJSONSchema: nil,
                 temperature: 0.15,
                 numPredict: 6_000,
-                numContext: contextTokens
+                numContext: contextTokens,
+                keepAlive: "5m"
             )
 
             guard let parsed = decodeInsightsResponse(from: response) else {

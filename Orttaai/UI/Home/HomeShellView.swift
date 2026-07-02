@@ -97,24 +97,32 @@ private struct HomeSidebarView: View {
         VStack(spacing: 0) {
             sidebarHeader
 
-            List(selection: $selection) {
-                Section("Workspace") {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    sectionHeader("Workspace")
                     ForEach(workspaceSections) { section in
-                        HomeSidebarRow(section: section)
-                            .contentShape(Rectangle())
-                            .tag(section)
+                        HomeSidebarRow(
+                            section: section,
+                            isSelected: selection == section
+                        ) {
+                            selection = section
+                        }
                     }
-                }
 
-                Section("Manage") {
+                    sectionHeader("Manage")
+                        .padding(.top, Spacing.md)
                     ForEach(systemSections) { section in
-                        HomeSidebarRow(section: section)
-                            .contentShape(Rectangle())
-                            .tag(section)
+                        HomeSidebarRow(
+                            section: section,
+                            isSelected: selection == section
+                        ) {
+                            selection = section
+                        }
                     }
                 }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.top, Spacing.xs)
             }
-            .listStyle(.sidebar)
 
             Divider()
 
@@ -131,6 +139,15 @@ private struct HomeSidebarView: View {
             .help("Run setup again")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.Orttaai.caption)
+            .foregroundStyle(Color.Orttaai.textTertiary)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.bottom, 2)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var sidebarHeader: some View {
@@ -162,25 +179,55 @@ private struct HomeSidebarView: View {
 
 private struct HomeSidebarRow: View {
     let section: HomeSection
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: section.icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.Orttaai.accent : Color.Orttaai.textSecondary)
+                    .frame(width: 18)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(section.title)
-                    .font(.Orttaai.bodyMedium)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(section.title)
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .lineLimit(1)
 
-                Text(section.subtitle)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    Text(section.subtitle)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
             }
+            .padding(.vertical, 6)
+            .padding(.horizontal, Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(rowBackground)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .padding(.vertical, 2)
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .accessibilityLabel("\(section.title). \(section.subtitle)")
+        .accessibilityIdentifier("Sidebar-\(section.title)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var rowBackground: Color {
+        if isSelected {
+            return Color.Orttaai.accentSubtle
+        }
+        if isHovering {
+            return Color.Orttaai.bgTertiary.opacity(0.5)
+        }
+        return .clear
     }
 }

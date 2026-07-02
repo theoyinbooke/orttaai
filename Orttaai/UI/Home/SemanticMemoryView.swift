@@ -18,6 +18,7 @@ final class SemanticMemoryViewModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var errorMessage: String?
     @Published var insightFreshness: SemanticInsightFreshness?
+    @Published var openLoops: [InsightFinding] = []
 
     private let service: any SemanticMemoryServiceProviding
 
@@ -30,7 +31,25 @@ final class SemanticMemoryViewModel: ObservableObject {
         let loadedGraph = service.graph(limitNodes: 180, limitEdges: 360)
         graph = loadedGraph
         insightReport = service.loadLatestInsightReport()
+        refreshOpenLoops()
         refreshInsightFreshness()
+    }
+
+    func refreshOpenLoops() {
+        openLoops = service.insightFindings(kinds: [.openCommitment, .openQuestion], limit: 12)
+            .sorted { ($0.windowStart ?? .distantPast) > ($1.windowStart ?? .distantPast) }
+    }
+
+    func resolveFinding(_ finding: InsightFinding) {
+        guard let id = finding.id else { return }
+        service.setFindingStatus(id: id, status: .resolved)
+        refreshOpenLoops()
+    }
+
+    func dismissFinding(_ finding: InsightFinding) {
+        guard let id = finding.id else { return }
+        service.setFindingStatus(id: id, status: .dismissed)
+        refreshOpenLoops()
     }
 
     func buildIndex() async {
@@ -91,6 +110,7 @@ final class SemanticMemoryViewModel: ObservableObject {
         stats = service.stats()
         graph = service.graph(limitNodes: 180, limitEdges: 360)
         insightReport = report
+        refreshOpenLoops()
         refreshInsightFreshness()
         if report.cards.isEmpty {
             statusMessage = "Build more semantic memory before insights can be generated."
@@ -159,7 +179,9 @@ struct SemanticMemoryView: View {
     @State private var insightInstallError: String?
     @State private var embeddingInstallSuccessMessage: String?
     @State private var insightInstallSuccessMessage: String?
+    @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
+    @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
     @AppStorage("semanticMemoryEnabled") private var semanticMemoryEnabled = true
     @AppStorage("semanticMemoryAutoIndexEnabled") private var semanticMemoryAutoIndexEnabled = true
     @AppStorage("semanticEmbeddingFallbackEnabled") private var semanticEmbeddingFallbackEnabled = true
@@ -247,6 +269,22 @@ struct SemanticMemoryView: View {
             }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
+    }
+
+    private var embeddingDropdownOptions: [OrttaaiDropdown<String>.Option] {
+        guard !embeddingModelOptions.isEmpty else {
+            let fallback = normalizedSemanticEmbeddingModel.isEmpty ? "all-minilm" : normalizedSemanticEmbeddingModel
+            return [.init(fallback, fallback)]
+        }
+        return embeddingModelOptions.map { .init($0.name, embeddingModelOptionLabel(for: $0)) }
+    }
+
+    private var insightDropdownOptions: [OrttaaiDropdown<String>.Option] {
+        guard !insightModelOptions.isEmpty else {
+            let fallback = normalizedSemanticInsightSummaryModel.isEmpty ? "qwen3.5:0.8b" : normalizedSemanticInsightSummaryModel
+            return [.init(fallback, fallback)]
+        }
+        return insightModelOptions.map { .init($0.name, insightModelOptionLabel(for: $0)) }
     }
 
     private var insightModelOptions: [OllamaCatalogModel] {
@@ -510,20 +548,10 @@ struct SemanticMemoryView: View {
             }
 
             HStack(spacing: Spacing.sm) {
-                Picker("Embedding Model", selection: $selectedEmbeddingCatalogModel) {
-                    if embeddingModelOptions.isEmpty {
-                        let fallbackModel = normalizedSemanticEmbeddingModel.isEmpty ? "all-minilm" : normalizedSemanticEmbeddingModel
-                        Text(fallbackModel)
-                            .tag(fallbackModel)
-                    } else {
-                        ForEach(embeddingModelOptions) { model in
-                            Text(embeddingModelOptionLabel(for: model))
-                                .tag(model.name)
-                        }
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
+                OrttaaiDropdown(
+                    selection: $selectedEmbeddingCatalogModel,
+                    options: embeddingDropdownOptions
+                )
                 .frame(maxWidth: .infinity)
                 .onChange(of: selectedEmbeddingCatalogModel) { _, newValue in
                     selectEmbeddingModelIfInstalled(newValue)
@@ -605,20 +633,10 @@ struct SemanticMemoryView: View {
             }
 
             HStack(spacing: Spacing.sm) {
-                Picker("Graph Insight Model", selection: $selectedInsightCatalogModel) {
-                    if insightModelOptions.isEmpty {
-                        let fallbackModel = normalizedSemanticInsightSummaryModel.isEmpty ? "qwen3.5:0.8b" : normalizedSemanticInsightSummaryModel
-                        Text(fallbackModel)
-                            .tag(fallbackModel)
-                    } else {
-                        ForEach(insightModelOptions) { model in
-                            Text(insightModelOptionLabel(for: model))
-                                .tag(model.name)
-                        }
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
+                OrttaaiDropdown(
+                    selection: $selectedInsightCatalogModel,
+                    options: insightDropdownOptions
+                )
                 .frame(maxWidth: .infinity)
                 .onChange(of: selectedInsightCatalogModel) { _, newValue in
                     selectInsightModelIfInstalled(newValue)
@@ -880,6 +898,124 @@ struct SemanticMemoryView: View {
         .dashboardCard()
     }
 
+    /// Honesty footer: sample size and how the words were produced. Insights
+    /// are always computed from evidence; a model only phrases them.
+    private func insightCaveatLine(_ report: SemanticInsightReport) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "checkmark.shield")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.textTertiary)
+            Text(caveatText(report))
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.xs)
+    }
+
+    private func caveatText(_ report: SemanticInsightReport) -> String {
+        var parts = ["Computed from \(report.sourceChunkCount) transcript segments"]
+        if let model = report.summaryModelName {
+            parts.append("phrased by \(model) — wording only, every claim is evidence-linked")
+        } else {
+            parts.append("deterministic phrasing (local model offline)")
+        }
+        if report.sourceChunkCount < 40 {
+            parts.append("early days: patterns sharpen as you dictate more")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func openLoopsSection(_ loops: [InsightFinding]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "arrow.uturn.left.circle")
+                    .foregroundStyle(Color.Orttaai.accent)
+                Text("Open Loops & Commitments")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Spacer()
+                Text("things you said you'd do, still unclosed")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+            }
+
+            VStack(spacing: Spacing.sm) {
+                ForEach(loops) { loop in
+                    openLoopRow(loop)
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .dashboardCard()
+    }
+
+    private func openLoopRow(_ loop: InsightFinding) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            let isQuestion = loop.kind == InsightFindingKind.openQuestion.rawValue
+            Image(systemName: isQuestion ? "questionmark.circle" : "hand.raised")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isQuestion ? Color.Orttaai.warning : Color.Orttaai.accent)
+                .frame(width: 18)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(loop.detail)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(3)
+                Text(ageBadgeText(for: loop))
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(ageBadgeColor(for: loop))
+            }
+
+            Spacer(minLength: Spacing.sm)
+
+            HStack(spacing: Spacing.xs) {
+                Button {
+                    viewModel.resolveFinding(loop)
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.Orttaai.success)
+                .help("Mark as done — it won't come back")
+                .accessibilityLabel("Mark resolved")
+
+                Button {
+                    viewModel.dismissFinding(loop)
+                } label: {
+                    Image(systemName: "xmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .help("Not relevant — dismiss permanently")
+                .accessibilityLabel("Dismiss")
+            }
+        }
+        .padding(Spacing.sm)
+        .background(Color.Orttaai.bgTertiary.opacity(0.35))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func ageBadgeText(for loop: InsightFinding) -> String {
+        guard let start = loop.windowStart else { return "recent" }
+        let days = max(0, Int(Date().timeIntervalSince(start) / 86_400))
+        switch days {
+        case 0: return "today"
+        case 1: return "1 day open"
+        default: return "\(days) days open"
+        }
+    }
+
+    private func ageBadgeColor(for loop: InsightFinding) -> Color {
+        guard let start = loop.windowStart else { return Color.Orttaai.textTertiary }
+        let days = Date().timeIntervalSince(start) / 86_400
+        if days >= 7 { return Color.Orttaai.error }
+        if days >= 3 { return Color.Orttaai.warning }
+        return Color.Orttaai.textTertiary
+    }
+
     private var readyInsightsState: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("Ready to synthesize insights.")
@@ -904,8 +1040,14 @@ struct SemanticMemoryView: View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             insightSummaryCard(report)
 
+            insightCaveatLine(report)
+
             if let freshness = viewModel.insightFreshness, freshness.isStale {
                 insightFreshnessBanner(freshness)
+            }
+
+            if !viewModel.openLoops.isEmpty {
+                openLoopsSection(viewModel.openLoops)
             }
 
             if !report.charts.isEmpty {
@@ -1165,9 +1307,11 @@ struct SemanticMemoryView: View {
             HStack(alignment: .top, spacing: Spacing.md) {
                 ForEach(clusters.prefix(3)) { cluster in
                     insightClusterCard(cluster)
-                        .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
+            // Sizes the row to its tallest card so the flexible cards all
+            // stretch to the same height.
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1184,7 +1328,9 @@ struct SemanticMemoryView: View {
             if let evidence = cluster.evidence.first {
                 insightEvidenceRow(evidence)
             }
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(Spacing.lg)
         .dashboardCard()
     }
@@ -1461,6 +1607,14 @@ struct SemanticMemoryView: View {
         }
     }
 
+    private var providerKind: LocalLLMProviderKind {
+        LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama
+    }
+
+    private var activeLLMEndpoint: String {
+        providerKind == .ollama ? localLLMEndpoint : lmStudioEndpoint
+    }
+
     private func loadEmbeddingModelCatalog() async {
         await MainActor.run {
             normalizeSemanticEmbeddingSelection()
@@ -1470,8 +1624,8 @@ struct SemanticMemoryView: View {
             insightInstallError = nil
         }
 
-        let health = await OllamaClient().checkHealth(
-            baseURLString: localLLMEndpoint,
+        let health = await LocalLLM.client(for: providerKind).checkHealth(
+            baseURLString: activeLLMEndpoint,
             timeoutMs: 1_500
         )
 
@@ -1480,7 +1634,9 @@ struct SemanticMemoryView: View {
             isCheckingEmbeddingModels = false
         }
 
-        guard health.isReachable else {
+        // Curated download catalogs are Ollama-specific; for LM Studio the
+        // option lists are built purely from installed models.
+        guard health.isReachable, providerKind.supportsModelInstall else {
             await MainActor.run {
                 embeddingCatalogModels = []
                 insightCatalogModels = []
@@ -1500,7 +1656,7 @@ struct SemanticMemoryView: View {
         }
 
         do {
-            let catalog = try await OllamaClient().fetchEmbeddingLibraryModels(limit: 20)
+            let catalog = try await LocalLLM.ollamaClient.fetchEmbeddingLibraryModels(limit: 20)
             await MainActor.run {
                 embeddingCatalogModels = catalog
                 syncSelectedEmbeddingModel()
@@ -1523,7 +1679,7 @@ struct SemanticMemoryView: View {
         }
 
         do {
-            let catalog = try await OllamaClient().fetchLibraryModels(limit: 80)
+            let catalog = try await LocalLLM.ollamaClient.fetchLibraryModels(limit: 80)
             let textModels = catalog.filter { !isLikelyEmbeddingModel($0.name) }
             await MainActor.run {
                 insightCatalogModels = textModels
@@ -1612,6 +1768,14 @@ struct SemanticMemoryView: View {
             return
         }
 
+        guard providerKind.supportsModelInstall else {
+            await MainActor.run {
+                embeddingInstallError = "\(normalized) is not available in \(providerKind.displayName). Download it in the \(providerKind.displayName) app first."
+                embeddingInstallSuccessMessage = nil
+            }
+            return
+        }
+
         await installEmbeddingModel(named: normalized)
     }
 
@@ -1634,6 +1798,14 @@ struct SemanticMemoryView: View {
             return
         }
 
+        guard providerKind.supportsModelInstall else {
+            await MainActor.run {
+                insightInstallError = "\(normalized) is not available in \(providerKind.displayName). Download it in the \(providerKind.displayName) app first."
+                insightInstallSuccessMessage = nil
+            }
+            return
+        }
+
         await installInsightModel(named: normalized)
     }
 
@@ -1648,7 +1820,7 @@ struct SemanticMemoryView: View {
         }
 
         do {
-            try await OllamaClient().pullModel(baseURLString: localLLMEndpoint, model: modelName) { progress in
+            try await LocalLLM.ollamaClient.pullModel(baseURLString: localLLMEndpoint, model: modelName) { progress in
                 let message = formattedInstallMessage(progress)
                 Task { @MainActor in
                     embeddingInstallStatusMessage = message
@@ -1692,7 +1864,7 @@ struct SemanticMemoryView: View {
         }
 
         do {
-            try await OllamaClient().pullModel(baseURLString: localLLMEndpoint, model: modelName) { progress in
+            try await LocalLLM.ollamaClient.pullModel(baseURLString: localLLMEndpoint, model: modelName) { progress in
                 let message = formattedInstallMessage(progress)
                 Task { @MainActor in
                     insightInstallStatusMessage = message

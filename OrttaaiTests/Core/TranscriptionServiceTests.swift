@@ -56,6 +56,33 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(normalized, "you")
     }
 
+    func testMergedLiveTranscriptJoinsCommittedClipsAndTail() {
+        let merged = TranscriptionService.mergedLiveTranscript(
+            committedTexts: ["First clip of speech.", "Second clip continues"],
+            tailText: "and the tail wraps up."
+        )
+
+        XCTAssertEqual(merged, "First clip of speech. Second clip continues and the tail wraps up.")
+    }
+
+    func testMergedLiveTranscriptSkipsEmptyClipsAndMissingTail() {
+        let merged = TranscriptionService.mergedLiveTranscript(
+            committedTexts: ["  Speech before silence  ", " ", "[BLANK_AUDIO]"],
+            tailText: nil
+        )
+
+        XCTAssertEqual(merged, "Speech before silence")
+    }
+
+    func testMergedLiveTranscriptReturnsNilWhenEverythingIsEmpty() {
+        let merged = TranscriptionService.mergedLiveTranscript(
+            committedTexts: [" ", "[BLANK_AUDIO]"],
+            tailText: "  "
+        )
+
+        XCTAssertNil(merged)
+    }
+
     func testSpeculativeReuseRejectedForLongAudio() {
         let rejectionReason = TranscriptionService.speculativeReuseRejectionReason(
             for: "This sounded plausible",

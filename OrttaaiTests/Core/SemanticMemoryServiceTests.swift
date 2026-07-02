@@ -434,6 +434,12 @@ private final class FakeSemanticMemoryService: SemanticMemoryServiceProviding {
         storedGraph
     }
 
+    func insightFindings(kinds: [InsightFindingKind]?, limit: Int) -> [InsightFinding] {
+        []
+    }
+
+    func setFindingStatus(id: Int64, status: InsightFindingStatus) {}
+
     func loadLatestInsightReport() -> SemanticInsightReport? {
         latestReportCallCount += 1
         return storedReport

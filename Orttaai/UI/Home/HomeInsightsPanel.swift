@@ -166,42 +166,33 @@ struct HomeInsightsPanel: View {
 
             HStack(alignment: .top, spacing: Spacing.sm) {
                 controlPickerCard(title: "Range") {
-                    Picker("Range", selection: Binding(
-                        get: { request.timeRange },
-                        set: { onTimeRangeChange($0) }
-                    )) {
-                        ForEach(WritingInsightsTimeRange.allCases) { range in
-                            Text(range.title).tag(range)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { request.timeRange },
+                            set: { onTimeRangeChange($0) }
+                        ),
+                        options: WritingInsightsTimeRange.allCases.map { .init($0, $0.title) }
+                    )
                 }
 
                 controlPickerCard(title: "Mode") {
-                    Picker("Mode", selection: Binding(
-                        get: { request.generationMode },
-                        set: { onGenerationModeChange($0) }
-                    )) {
-                        ForEach(WritingInsightsGenerationMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { request.generationMode },
+                            set: { onGenerationModeChange($0) }
+                        ),
+                        options: WritingInsightsGenerationMode.allCases.map { .init($0, $0.title) }
+                    )
                 }
 
                 controlPickerCard(title: "Apps") {
-                    Picker("Apps", selection: Binding(
-                        get: { request.appFilterMode },
-                        set: { onAppFilterModeChange($0) }
-                    )) {
-                        ForEach(WritingInsightsAppFilterMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { request.appFilterMode },
+                            set: { onAppFilterModeChange($0) }
+                        ),
+                        options: WritingInsightsAppFilterMode.allCases.map { .init($0, $0.title) }
+                    )
                 }
             }
 

@@ -29,17 +29,26 @@ enum SetupModelLoadStage: Sendable {
 }
 
 actor TranscriptionService: Transcribing {
-    private struct LiveTranscriptionResult: Sendable {
-        let sampleCount: Int
+    private struct SpeculativeTailResult: Sendable {
+        /// `committedSampleCount` at the time the tail decode started.
+        let base: Int
+        /// Absolute samples covered: base + tail length.
+        let coveredSampleCount: Int
         let text: String
     }
 
+    /// Live session state. Audio is committed in fixed 15s clips as the
+    /// recording progresses (matching the clip grid the final batch decode has
+    /// always used), so finalize only has to decode the short uncommitted tail
+    /// no matter how long the dictation ran.
     private struct LiveTranscriptionSession {
         let id = UUID()
-        var latestResult: LiveTranscriptionResult?
+        var committedTexts: [String] = []
+        var committedSampleCount: Int = 0
+        var commitTask: Task<Void, Never>?
+        var speculativeResult: SpeculativeTailResult?
         var lastQueuedSampleCount: Int = 0
-        var activeSampleCount: Int = 0
-        var task: Task<LiveTranscriptionResult?, Never>?
+        var speculativeTask: Task<Void, Never>?
     }
 
     private static let liveTranscriptionMinSampleCount = 16_000 * 2
@@ -49,6 +58,8 @@ actor TranscriptionService: Transcribing {
     private static let mergedTranscriptSeparator = " "
     private static let liveTranscriptionReuseMaxAudioSeconds = 15.0
     private static let finalDecodeClipSeconds: Float = 15.0
+    /// Live clips are committed on the same 15s grid the final decode uses.
+    private static let liveCommitClipSampleCount = Int(finalDecodeClipSeconds) * transcriptionSampleRate
 
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
@@ -148,71 +159,115 @@ actor TranscriptionService: Transcribing {
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {
         guard whisperKit != nil else { return }
         guard var session = liveSession else { return }
-        guard audioSamples.count >= Self.liveTranscriptionMinSampleCount else { return }
-        guard session.task == nil else { return }
+        // One decode in flight at a time; the ANE serializes work anyway.
+        guard session.commitTask == nil, session.speculativeTask == nil else { return }
+        guard audioSamples.count >= session.committedSampleCount else { return }
+
+        // Commit finished 15s clips as soon as they exist so finalize only has
+        // to decode the short tail, regardless of total recording length.
+        let pendingSamples = audioSamples.count - session.committedSampleCount
+        if pendingSamples >= Self.liveCommitClipSampleCount {
+            let clipCount = pendingSamples / Self.liveCommitClipSampleCount
+            let start = session.committedSampleCount
+            let end = start + clipCount * Self.liveCommitClipSampleCount
+            let clipAudio = Array(audioSamples[start..<end])
+            let sessionID = session.id
+            session.commitTask = Task { [weak self] in
+                await self?.runLiveCommit(clipAudio: clipAudio, startSample: start, sessionID: sessionID)
+            }
+            liveSession = session
+            return
+        }
+
+        // Otherwise speculatively decode the uncommitted tail.
+        guard pendingSamples >= Self.liveTranscriptionMinSampleCount else { return }
         guard audioSamples.count - session.lastQueuedSampleCount >= Self.liveTranscriptionIncrementSampleCount else { return }
 
         let sessionID = session.id
+        let base = session.committedSampleCount
+        let tailAudio = Array(audioSamples[base...])
         session.lastQueuedSampleCount = audioSamples.count
-        session.activeSampleCount = audioSamples.count
-        session.task = Task { [weak self] in
-            guard let self else { return nil }
-            return await self.runLiveTranscription(audioSamples: audioSamples, sessionID: sessionID)
+        session.speculativeTask = Task { [weak self] in
+            await self?.runLiveTranscription(tailAudio: tailAudio, base: base, sessionID: sessionID)
         }
         liveSession = session
     }
 
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String {
-        let finalSampleCount = audioSamples.count
-        let reuseThreshold = max(0, finalSampleCount - Self.liveTranscriptionReuseSlackSampleCount)
-        let speculativeReuseEligible = Self.isSpeculativeReuseEligible(finalSampleCount: finalSampleCount)
+        defer { liveSession = nil }
 
-        if var session = liveSession {
-            if speculativeReuseEligible, session.activeSampleCount >= reuseThreshold, let task = session.task {
-                if let result = await task.value, result.sampleCount >= reuseThreshold {
-                    if let rejectionReason = Self.speculativeReuseRejectionReason(
-                        for: result.text,
-                        finalSampleCount: finalSampleCount
-                    ) {
-                        Logger.transcription.debug("Skipping speculative transcription reuse: \(rejectionReason)")
-                    } else {
-                        liveSession = nil
-                        Logger.transcription.debug("Using speculative transcription result at \(result.sampleCount) samples")
-                        return result.text
-                    }
-                }
-                session.task = nil
-                session.activeSampleCount = 0
-                liveSession = session
-            } else if let task = session.task {
-                task.cancel()
-                session.task = nil
-                session.activeSampleCount = 0
-                liveSession = session
-            }
+        guard liveSession != nil else {
+            return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+        }
 
-            if speculativeReuseEligible,
-               let latestResult = session.latestResult,
-               latestResult.sampleCount >= reuseThreshold {
-                if let rejectionReason = Self.speculativeReuseRejectionReason(
-                    for: latestResult.text,
-                    finalSampleCount: finalSampleCount
-                ) {
-                    Logger.transcription.debug("Skipping cached speculative transcript reuse: \(rejectionReason)")
-                } else {
-                    liveSession = nil
-                    Logger.transcription.debug("Reusing cached speculative transcript at \(latestResult.sampleCount) samples")
-                    return latestResult.text
-                }
+        let reuseThreshold = max(0, audioSamples.count - Self.liveTranscriptionReuseSlackSampleCount)
+
+        // An in-flight clip commit always advances the committed prefix, so
+        // waiting for it is never wasted work.
+        if let commitTask = liveSession?.commitTask {
+            await commitTask.value
+        }
+        // An in-flight tail decode is only worth waiting for if it covers the
+        // final audio within slack; otherwise cancel it to free the engine.
+        if let inFlight = liveSession, let speculativeTask = inFlight.speculativeTask {
+            if inFlight.lastQueuedSampleCount >= reuseThreshold {
+                await speculativeTask.value
+            } else {
+                speculativeTask.cancel()
             }
         }
 
-        defer { liveSession = nil }
+        guard let session = liveSession else {
+            // Session was cancelled while awaiting.
+            return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+        }
+
+        let base = min(session.committedSampleCount, audioSamples.count)
+        let tailAudio = Array(audioSamples[base...])
+
+        var tailText: String?
+        if let speculative = session.speculativeResult,
+           speculative.base == base,
+           speculative.coveredSampleCount >= reuseThreshold {
+            if let rejectionReason = Self.speculativeReuseRejectionReason(
+                for: speculative.text,
+                finalSampleCount: tailAudio.count
+            ) {
+                Logger.transcription.debug("Skipping speculative tail reuse: \(rejectionReason)")
+            } else {
+                Logger.transcription.debug("Reusing speculative tail covering \(speculative.coveredSampleCount) samples")
+                tailText = speculative.text
+            }
+        }
+
+        if tailText == nil, !tailAudio.isEmpty {
+            do {
+                tailText = try await performTranscription(audioSamples: tailAudio, allowCancellation: false)
+            } catch {
+                // The tail may legitimately be silence; committed clips can
+                // still carry the transcript.
+                Logger.transcription.debug("Tail decode produced no text: \(error.localizedDescription)")
+            }
+        }
+
+        if let combined = Self.mergedLiveTranscript(
+            committedTexts: session.committedTexts,
+            tailText: tailText
+        ) {
+            Logger.transcription.debug(
+                "Finalized with \(session.committedTexts.count) committed clip(s) and \(tailAudio.count) tail samples"
+            )
+            return combined
+        }
+
+        // Nothing anywhere — fall back to a full decode (with its relaxed
+        // retry) to preserve the previous behavior for quiet recordings.
         return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
     }
 
     func cancelLiveTranscriptionSession() {
-        liveSession?.task?.cancel()
+        liveSession?.commitTask?.cancel()
+        liveSession?.speculativeTask?.cancel()
         liveSession = nil
     }
 
@@ -248,32 +303,89 @@ actor TranscriptionService: Transcribing {
         self.decodingPreferences = decodingPreferences.clamped()
     }
 
-    private func runLiveTranscription(
-        audioSamples: [Float],
-        sessionID: UUID
-    ) async -> LiveTranscriptionResult? {
-        let result: LiveTranscriptionResult?
-
+    /// Decodes one or more complete 15s clips and folds them into the
+    /// session's committed prefix. On failure the clip stays uncommitted so
+    /// finalize re-decodes it; an empty (silent) clip commits as empty text.
+    private func runLiveCommit(clipAudio: [Float], startSample: Int, sessionID: UUID) async {
+        var committed: String?
         do {
-            let text = try await performTranscription(audioSamples: audioSamples, allowCancellation: true)
-            result = Task.isCancelled ? nil : LiveTranscriptionResult(sampleCount: audioSamples.count, text: text)
+            committed = try await performClipTranscription(audioSamples: clipAudio) ?? ""
+        } catch {
+            if !Task.isCancelled {
+                Logger.transcription.debug("Live clip commit skipped: \(error.localizedDescription)")
+            }
+        }
+
+        guard var session = liveSession, session.id == sessionID else { return }
+        session.commitTask = nil
+        if let committed, session.committedSampleCount == startSample {
+            if !committed.isEmpty {
+                session.committedTexts.append(committed)
+            }
+            session.committedSampleCount = startSample + clipAudio.count
+            // Tail results decoded against the previous base now overlap
+            // committed audio and must not be reused.
+            session.speculativeResult = nil
+        }
+        liveSession = session
+    }
+
+    private func runLiveTranscription(
+        tailAudio: [Float],
+        base: Int,
+        sessionID: UUID
+    ) async {
+        var result: SpeculativeTailResult?
+        do {
+            let text = try await performTranscription(audioSamples: tailAudio, allowCancellation: true)
+            if !Task.isCancelled {
+                result = SpeculativeTailResult(
+                    base: base,
+                    coveredSampleCount: base + tailAudio.count,
+                    text: text
+                )
+            }
         } catch {
             if !Task.isCancelled {
                 Logger.transcription.debug("Speculative transcription skipped: \(error.localizedDescription)")
             }
-            result = nil
         }
 
-        if var session = liveSession, session.id == sessionID {
-            session.task = nil
-            session.activeSampleCount = 0
-            if let result, result.sampleCount >= session.latestResult?.sampleCount ?? 0 {
-                session.latestResult = result
-            }
-            liveSession = session
+        guard var session = liveSession, session.id == sessionID else { return }
+        session.speculativeTask = nil
+        if let result,
+           result.base == session.committedSampleCount,
+           result.coveredSampleCount >= session.speculativeResult?.coveredSampleCount ?? 0 {
+            session.speculativeResult = result
+        }
+        liveSession = session
+    }
+
+    /// Decode used for committing live clips: same fixed clip grid as the
+    /// final decode, cancellable, no relaxed retry. Returns nil when the audio
+    /// decoded successfully but contained no speech.
+    private func performClipTranscription(audioSamples: [Float]) async throws -> String? {
+        guard let wk = whisperKit else {
+            throw OrttaaiError.modelNotLoaded
         }
 
-        return result
+        try Task.checkCancellation()
+        let callback: TranscriptionCallback = { _ in
+            Task.isCancelled ? false : nil
+        }
+        let options = Self.finalTranscriptionOptions(
+            from: makeDecodingOptions(),
+            sampleCount: audioSamples.count
+        )
+
+        let results = try await wk.transcribe(
+            audioArray: audioSamples,
+            decodeOptions: options,
+            callback: callback
+        )
+
+        try Task.checkCancellation()
+        return Self.mergedTranscriptionText(from: results)
     }
 
     private func performTranscription(
@@ -402,6 +514,20 @@ actor TranscriptionService: Transcribing {
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "No transcription result"]
         ))
+    }
+
+    nonisolated static func mergedLiveTranscript(
+        committedTexts: [String],
+        tailText: String?
+    ) -> String? {
+        let merged = (committedTexts + [tailText ?? ""])
+            .map { normalizedTranscriptionText($0) }
+            .filter { !$0.isEmpty }
+            .joined(separator: mergedTranscriptSeparator)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return merged.isEmpty ? nil : merged
     }
 
     nonisolated static func mergedTranscriptionText(from results: [TranscriptionResult]) -> String? {

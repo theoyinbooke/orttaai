@@ -34,7 +34,9 @@ struct ModelSettingsView: View {
     @AppStorage("decodingNoSpeechThreshold") private var decodingNoSpeechThreshold = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") private var decodingWorkerCount = DecodingPreferences.defaultWorkerCount
     @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
+    @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
+    @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
     @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma3:1b"
     @AppStorage("localLLMPolishTimeoutMs") private var localLLMPolishTimeoutMs = 650
     @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 280
@@ -430,7 +432,7 @@ struct ModelSettingsView: View {
                     .clipShape(Capsule())
             }
 
-            VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 Toggle(isOn: $lowLatencyModeEnabled) {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text("Low Latency Mode")
@@ -443,7 +445,8 @@ struct ModelSettingsView: View {
                     }
                 }
                 .toggleStyle(OrttaaiToggleStyle())
-                .padding(Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .padding(.horizontal, Spacing.md)
                 .background(Color.Orttaai.bgPrimary.opacity(0.42))
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
                 .overlay(
@@ -458,13 +461,11 @@ struct ModelSettingsView: View {
                         subtitle: "Avoid Auto-detect when speed matters.",
                         systemImage: "textformat"
                     ) {
-                        Picker("", selection: $dictationLanguage) {
-                            ForEach(supportedLanguages, id: \.code) { language in
-                                Text(language.name).tag(language.code)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 180)
+                        OrttaaiDropdown(
+                            selection: $dictationLanguage,
+                            options: supportedLanguages.map { .init($0.code, $0.name) },
+                            width: 180
+                        )
                         .help("Sets decode language. Auto-detect can be slower.")
                     }
 
@@ -473,13 +474,15 @@ struct ModelSettingsView: View {
                         subtitle: computeModeSubtitle,
                         systemImage: "cpu"
                     ) {
-                        Picker("", selection: $computeMode) {
-                            Text("CPU + Neural Engine").tag("cpuAndNeuralEngine")
-                            Text("CPU + GPU").tag("cpuAndGPU")
-                            Text("CPU Only").tag("cpuOnly")
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 220)
+                        OrttaaiDropdown(
+                            selection: $computeMode,
+                            options: [
+                                .init("cpuAndNeuralEngine", "CPU + Neural Engine"),
+                                .init("cpuAndGPU", "CPU + GPU"),
+                                .init("cpuOnly", "CPU Only")
+                            ],
+                            width: 220
+                        )
                         .help("Changes take effect after model reload.")
                     }
                 }
@@ -517,7 +520,13 @@ struct ModelSettingsView: View {
     }
 
     private var decodingProfileColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 190), spacing: Spacing.sm)]
+        // Three equal, flexible columns so each card grows and shrinks with the
+        // window instead of locking to a fixed minimum width (which forced the
+        // middle card's description to wrap at every size).
+        Array(
+            repeating: GridItem(.flexible(), spacing: Spacing.sm, alignment: .top),
+            count: 3
+        )
     }
 
     private var computeModeSubtitle: String {
@@ -539,13 +548,13 @@ struct ModelSettingsView: View {
     ) -> some View {
         HStack(alignment: .center, spacing: Spacing.md) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.Orttaai.accent)
-                .frame(width: 34, height: 34)
+                .frame(width: 30, height: 30)
                 .background(Color.Orttaai.accentSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.Orttaai.bodyMedium)
                     .foregroundStyle(Color.Orttaai.textPrimary)
@@ -562,14 +571,55 @@ struct ModelSettingsView: View {
             control()
                 .labelsHidden()
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .center)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.md)
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .center)
         .background(Color.Orttaai.bgPrimary.opacity(0.42))
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                 .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
         )
+    }
+
+    /// Bordered sub-panel matching the Compute & Decoding design language.
+    private func llmGroupBox<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            content()
+        }
+        .padding(.vertical, Spacing.sm + 2)
+        .padding(.horizontal, Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.Orttaai.bgPrimary.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+        )
+    }
+
+    private func llmGroupHeader(icon: String, title: String, subtitle: String? = nil) -> some View {
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.accent)
+                .frame(width: 28, height: 28)
+                .background(Color.Orttaai.accentSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
     }
 
     private func decodingProfileTile(_ preset: DecodingPreset) -> some View {
@@ -580,28 +630,28 @@ struct ModelSettingsView: View {
                 decodingPresetRaw = preset.rawValue
             }
         } label: {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 HStack(alignment: .center, spacing: Spacing.sm) {
                     Image(systemName: decodingProfileIcon(for: preset))
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(isSelected ? Color.Orttaai.bgPrimary : Color.Orttaai.accent)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 24, height: 24)
                         .background(isSelected ? Color.Orttaai.accent : Color.Orttaai.accentSubtle)
                         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
 
-                    Spacer()
+                    Text(preset.title)
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
 
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Color.Orttaai.accent)
                     }
                 }
-
-                Text(preset.title)
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                    .lineLimit(1)
 
                 Text(preset.summary)
                     .font(.Orttaai.caption)
@@ -615,7 +665,7 @@ struct ModelSettingsView: View {
                             .font(.Orttaai.caption)
                             .foregroundStyle(isSelected ? Color.Orttaai.accent : Color.Orttaai.textTertiary)
                             .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 3)
+                            .padding(.vertical, 2)
                             .background(
                                 (isSelected ? Color.Orttaai.accentSubtle : Color.Orttaai.bgTertiary.opacity(0.56))
                                     .clipShape(Capsule())
@@ -623,8 +673,8 @@ struct ModelSettingsView: View {
                     }
                 }
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, minHeight: 146, alignment: .topLeading)
+            .padding(Spacing.sm + 2)
+            .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
             .background(isSelected ? Color.Orttaai.accentSubtle : Color.Orttaai.bgPrimary.opacity(0.42))
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
             .overlay(
@@ -776,7 +826,7 @@ struct ModelSettingsView: View {
     private var localLLMCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Local LLM (Ollama)")
+                Text("Local LLM")
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
@@ -785,29 +835,52 @@ struct ModelSettingsView: View {
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
 
-            VStack(spacing: 0) {
-                Toggle(isOn: $localLLMPolishEnabled) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Enable Local Text Polish")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                llmGroupBox {
+                    Toggle(isOn: $localLLMPolishEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Enable Local Text Polish")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
 
-                        Text("Runs a fast local post-pass after transcription with strict timeout fallback.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
+                            Text("Runs a fast local post-pass after transcription with strict timeout fallback.")
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                        }
                     }
+                    .toggleStyle(OrttaaiToggleStyle())
                 }
-                .toggleStyle(OrttaaiToggleStyle())
 
-                divider
+                llmGroupBox {
+                    HStack(alignment: .center, spacing: Spacing.sm) {
+                        llmGroupHeader(
+                            icon: "server.rack",
+                            title: "\(providerKind.displayName) Connection",
+                            subtitle: "Provider and endpoint shared by polish, insights, chat, and semantic memory."
+                        )
 
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Ollama Endpoint")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        OrttaaiDropdown(
+                            selection: Binding(
+                                get: { providerKind },
+                                set: { newKind in
+                                    localLLMProviderRaw = newKind.rawValue
+                                    ollamaStatusReachable = nil
+                                    ollamaStatusMessage = "Check connection to validate local model availability."
+                                    installedOllamaModels = []
+                                    Task { await checkOllamaAvailability() }
+                                }
+                            ),
+                            options: LocalLLMProviderKind.allCases.map { .init($0, $0.displayName) },
+                            width: 140
+                        )
+                    }
 
                     HStack(alignment: .center, spacing: Spacing.sm) {
-                        OrttaaiTextField(placeholder: "http://127.0.0.1:11434", text: $localLLMEndpoint)
+                        OrttaaiTextField(
+                            placeholder: providerKind.defaultEndpoint,
+                            text: activeLLMEndpointBinding
+                        )
+                        .id(providerKind)
 
                         Button {
                             Task { await checkOllamaAvailability() }
@@ -816,6 +889,12 @@ struct ModelSettingsView: View {
                         }
                         .buttonStyle(OrttaaiButtonStyle(.secondary))
                         .disabled(isCheckingOllama || isInstallingOllamaModel || isLoadingOllamaCatalog)
+                    }
+
+                    if providerKind == .lmStudio {
+                        Text("Model downloads are managed inside the LM Studio app. Models you download or load there appear here automatically.")
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
                     }
 
                     HStack(spacing: Spacing.sm) {
@@ -872,11 +951,17 @@ struct ModelSettingsView: View {
                             .lineLimit(2)
                     }
 
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Curated Lightweight Downloads (<= 5B)")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
+                }
 
+                if providerKind.supportsModelInstall {
+                llmGroupBox {
+                    llmGroupHeader(
+                        icon: "arrow.down.circle",
+                        title: "Curated Downloads",
+                        subtitle: "Lightweight models (5B or smaller) for polish, insights, and semantic memory."
+                    )
+
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
                         if isLoadingOllamaCatalog {
                             HStack(spacing: Spacing.xs) {
                                 ProgressView().controlSize(.small)
@@ -886,13 +971,15 @@ struct ModelSettingsView: View {
                             }
                         } else if !downloadableOllamaModels.isEmpty {
                             HStack(spacing: Spacing.sm) {
-                                Picker("Polish Download", selection: $selectedPolishDownloadModel) {
-                                    ForEach(downloadableOllamaModels) { model in
-                                        Text(ollamaCatalogLabel(for: model)).tag(model.name)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .frame(width: 320)
+                                Text("Polish")
+                                    .font(.Orttaai.secondary)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                                    .frame(width: 76, alignment: .leading)
+                                OrttaaiDropdown(
+                                    selection: $selectedPolishDownloadModel,
+                                    options: downloadableOllamaModels.map { .init($0.name, ollamaCatalogLabel(for: $0)) },
+                                    width: 300
+                                )
 
                                 Button {
                                     let model = normalizedSelectedPolishDownloadModel
@@ -920,13 +1007,15 @@ struct ModelSettingsView: View {
                             }
 
                             HStack(spacing: Spacing.sm) {
-                                Picker("Insights Download", selection: $selectedInsightsDownloadModel) {
-                                    ForEach(downloadableOllamaModels) { model in
-                                        Text(ollamaCatalogLabel(for: model)).tag(model.name)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .frame(width: 320)
+                                Text("Insights")
+                                    .font(.Orttaai.secondary)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                                    .frame(width: 76, alignment: .leading)
+                                OrttaaiDropdown(
+                                    selection: $selectedInsightsDownloadModel,
+                                    options: downloadableOllamaModels.map { .init($0.name, ollamaCatalogLabel(for: $0)) },
+                                    width: 300
+                                )
 
                                 Button {
                                     let model = normalizedSelectedInsightsDownloadModel
@@ -954,13 +1043,15 @@ struct ModelSettingsView: View {
                             }
 
                             HStack(spacing: Spacing.sm) {
-                                Picker("Semantic Download", selection: $selectedSemanticDownloadModel) {
-                                    ForEach(downloadableOllamaModels) { model in
-                                        Text(ollamaCatalogLabel(for: model)).tag(model.name)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .frame(width: 320)
+                                Text("Semantic")
+                                    .font(.Orttaai.secondary)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                                    .frame(width: 76, alignment: .leading)
+                                OrttaaiDropdown(
+                                    selection: $selectedSemanticDownloadModel,
+                                    options: downloadableOllamaModels.map { .init($0.name, ollamaCatalogLabel(for: $0)) },
+                                    width: 300
+                                )
 
                                 Button {
                                     let model = normalizedSelectedSemanticDownloadModel
@@ -1056,33 +1147,22 @@ struct ModelSettingsView: View {
                         }
                     }
                 }
+                }
 
-                divider
-
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Polish Model")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    if !installedOllamaModels.isEmpty {
-                        Picker(
-                            "Use Installed Model",
-                            selection: Binding(
-                                get: { installedPickerSelection(for: normalizedPolishOllamaModel) },
-                                set: { newValue in
-                                    guard newValue != "__custom__" else { return }
-                                    localLLMPolishModel = newValue
-                                }
-                            )
-                        ) {
-                            Text("Custom").tag("__custom__")
-                            ForEach(installedOllamaModels, id: \.self) { name in
-                                Text(name).tag(name)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 280)
-                    }
-                    OrttaaiTextField(placeholder: "gemma3:1b", text: $localLLMPolishModel)
+                llmGroupBox {
+                    llmGroupHeader(
+                        icon: "wand.and.stars",
+                        title: "Polish Model",
+                        subtitle: "Model and time budget for the post-transcription cleanup pass."
+                    )
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
+                            set: { localLLMPolishModel = $0 }
+                        ),
+                        options: modelDropdownOptions(current: normalizedPolishOllamaModel),
+                        width: 280
+                    )
 
                     HStack {
                         Text("Polish Timeout")
@@ -1113,47 +1193,34 @@ struct ModelSettingsView: View {
                         .foregroundStyle(Color.Orttaai.textTertiary)
                 }
 
-                divider
-
-                Toggle(isOn: $localLLMInsightsEnabled) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Use Ollama for Writing Insights")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-                        Text("Uses local LLM analysis to surface speaking and writing patterns.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
+                llmGroupBox {
+                    Toggle(isOn: $localLLMInsightsEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Use Ollama for Writing Insights")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
+                            Text("Uses local LLM analysis to surface speaking and writing patterns.")
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                        }
                     }
-                }
-                .toggleStyle(OrttaaiToggleStyle())
+                    .toggleStyle(OrttaaiToggleStyle())
 
-                if localLLMInsightsEnabled {
-                    divider
+                    if localLLMInsightsEnabled {
+                        divider
 
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text("Insights Model")
                             .font(.Orttaai.bodyMedium)
                             .foregroundStyle(Color.Orttaai.textPrimary)
-                        if !installedOllamaModels.isEmpty {
-                            Picker(
-                                "Use Installed Model",
-                                selection: Binding(
-                                    get: { installedPickerSelection(for: normalizedInsightsOllamaModel) },
-                                    set: { newValue in
-                                        guard newValue != "__custom__" else { return }
-                                        localLLMInsightsModel = newValue
-                                    }
-                                )
-                            ) {
-                                Text("Custom").tag("__custom__")
-                                ForEach(installedOllamaModels, id: \.self) { name in
-                                    Text(name).tag(name)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 280)
-                        }
-                        OrttaaiTextField(placeholder: "qwen3.5:0.8b", text: $localLLMInsightsModel)
+                        OrttaaiDropdown(
+                            selection: Binding(
+                                get: { resolvedModelSelection(for: normalizedInsightsOllamaModel) },
+                                set: { localLLMInsightsModel = $0 }
+                            ),
+                            options: modelDropdownOptions(current: normalizedInsightsOllamaModel),
+                            width: 280
+                        )
 
                         Stepper(value: $localLLMInsightsContextTokens, in: 8_192...262_144, step: 8_192) {
                             rowValueLabel("Context Window", value: "\(formattedInsightsContextTokens) tokens")
@@ -1174,51 +1241,41 @@ struct ModelSettingsView: View {
                         Text(insightsRecommendationMessage)
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
+                        }
                     }
                 }
 
-                divider
-
-                Toggle(isOn: $semanticMemoryEnabled) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Enable Semantic Memory")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-                        Text("Indexes dictation history locally for graph view and semantic ChatAI context.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
+                llmGroupBox {
+                    Toggle(isOn: $semanticMemoryEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Enable Semantic Memory")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
+                            Text("Indexes dictation history locally for graph view and semantic ChatAI context.")
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                        }
                     }
-                }
-                .toggleStyle(OrttaaiToggleStyle())
+                    .toggleStyle(OrttaaiToggleStyle())
 
-                if semanticMemoryEnabled {
-                    divider
+                    if semanticMemoryEnabled {
+                        divider
 
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text("Semantic Embedding Model")
                             .font(.Orttaai.bodyMedium)
                             .foregroundStyle(Color.Orttaai.textPrimary)
-                        if !installedOllamaModels.isEmpty {
-                            Picker(
-                                "Use Installed Model",
-                                selection: Binding(
-                                    get: { installedPickerSelection(for: normalizedSemanticEmbeddingModel) },
-                                    set: { newValue in
-                                        guard newValue != "__custom__" else { return }
-                                        semanticEmbeddingModel = newValue
-                                        semanticActiveIndexModelID = ""
-                                    }
-                                )
-                            ) {
-                                Text("Custom").tag("__custom__")
-                                ForEach(installedOllamaModels, id: \.self) { name in
-                                    Text(name).tag(name)
+                        OrttaaiDropdown(
+                            selection: Binding(
+                                get: { resolvedModelSelection(for: normalizedSemanticEmbeddingModel) },
+                                set: { newValue in
+                                    semanticEmbeddingModel = newValue
+                                    semanticActiveIndexModelID = ""
                                 }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 280)
-                        }
-                        OrttaaiTextField(placeholder: "all-minilm", text: $semanticEmbeddingModel)
+                            ),
+                            options: modelDropdownOptions(current: normalizedSemanticEmbeddingModel),
+                            width: 280
+                        )
 
                         Toggle(isOn: $semanticMemoryAutoIndexEnabled) {
                             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1247,6 +1304,7 @@ struct ModelSettingsView: View {
                         Text("Recommended: install `all-minilm` for a tiny indexer, or `embeddinggemma` for stronger local semantic retrieval.")
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
+                        }
                     }
                 }
             }
@@ -1584,12 +1642,29 @@ struct ModelSettingsView: View {
         }
     }
 
+    private var providerKind: LocalLLMProviderKind {
+        LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama
+    }
+
+    private var activeLLMClient: any LocalLLMServing {
+        LocalLLM.client(for: providerKind)
+    }
+
+    private var activeLLMEndpoint: String {
+        providerKind == .ollama ? localLLMEndpoint : lmStudioEndpoint
+    }
+
+    private var activeLLMEndpointBinding: Binding<String> {
+        providerKind == .ollama ? $localLLMEndpoint : $lmStudioEndpoint
+    }
+
     private func checkOllamaAvailability() async {
         isCheckingOllama = true
         defer { isCheckingOllama = false }
 
-        let health = await OllamaClient().checkHealth(
-            baseURLString: localLLMEndpoint,
+        let providerName = providerKind.displayName
+        let health = await activeLLMClient.checkHealth(
+            baseURLString: activeLLMEndpoint,
             timeoutMs: 1_500
         )
         await MainActor.run {
@@ -1598,10 +1673,20 @@ struct ModelSettingsView: View {
             installedOllamaModels = health.installedModels
         }
 
+        // Curated one-click downloads only exist for Ollama; LM Studio manages
+        // its own downloads.
+        guard providerKind.supportsModelInstall else {
+            await MainActor.run {
+                downloadableOllamaModels = []
+                ollamaCatalogMessage = ""
+            }
+            return
+        }
+
         guard health.isReachable else {
             await MainActor.run {
                 downloadableOllamaModels = []
-                ollamaCatalogMessage = "Ollama must be reachable before loading downloadable models."
+                ollamaCatalogMessage = "\(providerName) must be reachable before loading downloadable models."
             }
             return
         }
@@ -1616,7 +1701,7 @@ struct ModelSettingsView: View {
         }
 
         do {
-            let catalog = try await OllamaClient().fetchLibraryModels(limit: 80)
+            let catalog = try await LocalLLM.ollamaClient.fetchLibraryModels(limit: 80)
             await MainActor.run {
                 downloadableOllamaModels = catalog
                 if catalog.isEmpty {
@@ -1657,14 +1742,24 @@ struct ModelSettingsView: View {
         }
     }
 
-    private func installedPickerSelection(for currentValue: String) -> String {
+    /// The installed model matching the stored value, or the stored value
+    /// itself when the current provider doesn't have it.
+    private func resolvedModelSelection(for currentValue: String) -> String {
         let canonicalCurrent = canonicalOllamaModelName(currentValue)
-        if installedOllamaModels.contains(where: { canonicalOllamaModelName($0) == canonicalCurrent }) {
-            if let matched = installedOllamaModels.first(where: { canonicalOllamaModelName($0) == canonicalCurrent }) {
-                return matched
-            }
+        return installedOllamaModels.first { canonicalOllamaModelName($0) == canonicalCurrent } ?? currentValue
+    }
+
+    /// Installed models, with the stored value injected at the top (flagged as
+    /// not installed) when the current provider doesn't have it — so the
+    /// dropdown always displays the active model without a separate text field.
+    private func modelDropdownOptions(current: String) -> [OrttaaiDropdown<String>.Option] {
+        var options = installedOllamaModels.map { OrttaaiDropdown<String>.Option($0, $0) }
+        let canonicalCurrent = canonicalOllamaModelName(current)
+        let isInstalled = installedOllamaModels.contains { canonicalOllamaModelName($0) == canonicalCurrent }
+        if !isInstalled, !current.isEmpty {
+            options.insert(.init(current, "\(current) (not installed)"), at: 0)
         }
-        return "__custom__"
+        return options
     }
 
     private func ollamaCatalogLabel(for model: OllamaCatalogModel) -> String {
@@ -1733,15 +1828,17 @@ struct ModelSettingsView: View {
             ollamaWarmSuccessMessage = nil
         }
 
-        let client = OllamaClient()
+        let client = activeLLMClient
+        let endpoint = activeLLMEndpoint
         var warmed: [(name: String, elapsedMs: Int)] = []
 
         do {
             for model in models {
                 let elapsedMs = try await client.warmModel(
-                    baseURLString: localLLMEndpoint,
+                    baseURLString: endpoint,
                     model: model,
-                    timeoutMs: 40_000
+                    timeoutMs: 40_000,
+                    keepAlive: "5m"
                 )
                 warmed.append((name: model, elapsedMs: elapsedMs))
                 await MainActor.run {
@@ -1788,7 +1885,8 @@ struct ModelSettingsView: View {
         }
 
         do {
-            try await OllamaClient().pullModel(
+            // Installs are Ollama-only; the button is hidden for LM Studio.
+            try await LocalLLM.ollamaClient.pullModel(
                 baseURLString: localLLMEndpoint,
                 model: normalizedModel
             ) { progress in

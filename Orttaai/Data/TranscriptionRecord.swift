@@ -20,6 +20,9 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     var clipboardRestoreDelayMs: Int?
     var modelId: String
     var audioDevice: String?
+    // NULL on rows created before device tagging or synced from older app
+    // versions; readers treat NULL as belonging to this device.
+    var sourceDeviceID: String?
 
     static let databaseTableName = "transcription"
 }
