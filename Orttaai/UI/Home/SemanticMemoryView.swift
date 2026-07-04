@@ -652,6 +652,12 @@ struct SemanticMemoryView: View {
             }
             .disabled(!semanticInsightSummaryEnabled)
 
+            if !activeProviderKind.isLocal {
+                Text("Graph insights run on \(activeProviderKind.displayName) while it's the active provider. This model is the local fallback.")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+
             if let insightInstallStatusMessage {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     HStack(spacing: Spacing.xs) {
@@ -1607,8 +1613,20 @@ struct SemanticMemoryView: View {
         }
     }
 
-    private var providerKind: LocalLLMProviderKind {
+    /// The provider the user actually selected, cloud or local. Distinct from
+    /// `providerKind`, which resolves to the local provider this view manages.
+    private var activeProviderKind: LocalLLMProviderKind {
         LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama
+    }
+
+    private var providerKind: LocalLLMProviderKind {
+        let active = activeProviderKind
+        if active.supportsEmbeddings { return active }
+        // This view manages on-device embedding/graph models; while a cloud
+        // provider is active those stay on the last local provider.
+        let storedRaw = UserDefaults.standard.string(forKey: "lastLocalLLMProvider") ?? ""
+        let stored = LocalLLMProviderKind(rawValue: storedRaw) ?? .ollama
+        return stored.isLocal ? stored : .ollama
     }
 
     private var activeLLMEndpoint: String {

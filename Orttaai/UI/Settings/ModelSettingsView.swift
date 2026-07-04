@@ -35,6 +35,8 @@ struct ModelSettingsView: View {
     @AppStorage("decodingWorkerCount") private var decodingWorkerCount = DecodingPreferences.defaultWorkerCount
     @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
+    @AppStorage("lastLocalLLMProvider") private var lastLocalLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
+    @AppStorage("codexModel") private var codexModel = "gpt-5.4-mini"
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
     @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
     @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma3:1b"
@@ -864,8 +866,16 @@ struct ModelSettingsView: View {
                                 get: { providerKind },
                                 set: { newKind in
                                     localLLMProviderRaw = newKind.rawValue
+                                    if newKind.isLocal {
+                                        // Remembered so on-device features
+                                        // (polish, embeddings) keep a local
+                                        // provider while a cloud one is active.
+                                        lastLocalLLMProviderRaw = newKind.rawValue
+                                    }
                                     ollamaStatusReachable = nil
-                                    ollamaStatusMessage = "Check connection to validate local model availability."
+                                    ollamaStatusMessage = newKind == .codex
+                                        ? "Check connection to validate ChatGPT sign-in and models."
+                                        : "Check connection to validate local model availability."
                                     installedOllamaModels = []
                                     Task { await checkOllamaAvailability() }
                                 }
@@ -876,11 +886,13 @@ struct ModelSettingsView: View {
                     }
 
                     HStack(alignment: .center, spacing: Spacing.sm) {
-                        OrttaaiTextField(
-                            placeholder: providerKind.defaultEndpoint,
-                            text: activeLLMEndpointBinding
-                        )
-                        .id(providerKind)
+                        if providerKind.usesHTTPEndpoint {
+                            OrttaaiTextField(
+                                placeholder: providerKind.defaultEndpoint,
+                                text: activeLLMEndpointBinding
+                            )
+                            .id(providerKind)
+                        }
 
                         Button {
                             Task { await checkOllamaAvailability() }
@@ -889,6 +901,14 @@ struct ModelSettingsView: View {
                         }
                         .buttonStyle(OrttaaiButtonStyle(.secondary))
                         .disabled(isCheckingOllama || isInstallingOllamaModel || isLoadingOllamaCatalog)
+
+                        if !providerKind.usesHTTPEndpoint {
+                            Spacer()
+                        }
+                    }
+
+                    if providerKind == .codex {
+                        CodexSettingsCard()
                     }
 
                     if providerKind == .lmStudio {
@@ -897,6 +917,7 @@ struct ModelSettingsView: View {
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
 
+                    if providerKind.isLocal {
                     HStack(spacing: Spacing.sm) {
                         Button {
                             Task {
@@ -931,6 +952,7 @@ struct ModelSettingsView: View {
                             }
                         }
                     }
+                    }
 
                     HStack(spacing: Spacing.xs) {
                         if isCheckingOllama {
@@ -945,7 +967,9 @@ struct ModelSettingsView: View {
                     }
 
                     if !installedOllamaModels.isEmpty {
-                        Text("Available on this Mac: \(installedOllamaModels.prefix(6).joined(separator: ", "))")
+                        Text(providerKind.isLocal
+                             ? "Available on this Mac: \(installedOllamaModels.prefix(6).joined(separator: ", "))"
+                             : "Available models: \(installedOllamaModels.prefix(6).joined(separator: ", "))")
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                             .lineLimit(2)
@@ -1155,14 +1179,20 @@ struct ModelSettingsView: View {
                         title: "Polish Model",
                         subtitle: "Model and time budget for the post-transcription cleanup pass."
                     )
-                    OrttaaiDropdown(
-                        selection: Binding(
-                            get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
-                            set: { localLLMPolishModel = $0 }
-                        ),
-                        options: modelDropdownOptions(current: normalizedPolishOllamaModel),
-                        width: 280
-                    )
+                    if providerKind.isLocal {
+                        OrttaaiDropdown(
+                            selection: Binding(
+                                get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
+                                set: { localLLMPolishModel = $0 }
+                            ),
+                            options: modelDropdownOptions(current: normalizedPolishOllamaModel),
+                            width: 280
+                        )
+                    } else {
+                        Text("Dictation polish stays on-device for speed: it keeps using \(localFallbackProviderKind.displayName) with \"\(normalizedPolishOllamaModel)\". Switch back to \(localFallbackProviderKind.displayName) to change the polish model.")
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
 
                     HStack {
                         Text("Polish Timeout")
@@ -1196,10 +1226,12 @@ struct ModelSettingsView: View {
                 llmGroupBox {
                     Toggle(isOn: $localLLMInsightsEnabled) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Use Ollama for Writing Insights")
+                            Text("Use \(providerKind.displayName) for Writing Insights")
                                 .font(.Orttaai.bodyMedium)
                                 .foregroundStyle(Color.Orttaai.textPrimary)
-                            Text("Uses local LLM analysis to surface speaking and writing patterns.")
+                            Text(providerKind.isLocal
+                                 ? "Uses local LLM analysis to surface speaking and writing patterns."
+                                 : "Uses your ChatGPT subscription to surface speaking and writing patterns.")
                                 .font(.Orttaai.caption)
                                 .foregroundStyle(Color.Orttaai.textSecondary)
                         }
@@ -1210,6 +1242,7 @@ struct ModelSettingsView: View {
                         divider
 
                         VStack(alignment: .leading, spacing: Spacing.sm) {
+                        if providerKind.isLocal {
                         Text("Insights Model")
                             .font(.Orttaai.bodyMedium)
                             .foregroundStyle(Color.Orttaai.textPrimary)
@@ -1241,6 +1274,11 @@ struct ModelSettingsView: View {
                         Text(insightsRecommendationMessage)
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
+                        } else {
+                            Text("Writing insights and graph interpretation use \"\(codexModel)\" through your ChatGPT subscription. Change the model and reasoning effort in the ChatGPT Account section above.")
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                        }
                         }
                     }
                 }
@@ -1262,6 +1300,7 @@ struct ModelSettingsView: View {
                         divider
 
                         VStack(alignment: .leading, spacing: Spacing.sm) {
+                        if providerKind.supportsEmbeddings {
                         Text("Semantic Embedding Model")
                             .font(.Orttaai.bodyMedium)
                             .foregroundStyle(Color.Orttaai.textPrimary)
@@ -1276,6 +1315,11 @@ struct ModelSettingsView: View {
                             options: modelDropdownOptions(current: normalizedSemanticEmbeddingModel),
                             width: 280
                         )
+                        } else {
+                            Text("Semantic embeddings stay on-device for privacy: they keep using \(localFallbackProviderKind.displayName) with \"\(normalizedSemanticEmbeddingModel)\". Switch back to \(localFallbackProviderKind.displayName) to change the embedding model.")
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                        }
 
                         Toggle(isOn: $semanticMemoryAutoIndexEnabled) {
                             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1651,11 +1695,23 @@ struct ModelSettingsView: View {
     }
 
     private var activeLLMEndpoint: String {
-        providerKind == .ollama ? localLLMEndpoint : lmStudioEndpoint
+        switch providerKind {
+        case .ollama: return localLLMEndpoint
+        case .lmStudio: return lmStudioEndpoint
+        case .codex: return "" // Spawned subprocess; no HTTP endpoint.
+        }
     }
 
     private var activeLLMEndpointBinding: Binding<String> {
         providerKind == .ollama ? $localLLMEndpoint : $lmStudioEndpoint
+    }
+
+    /// Local provider that keeps serving on-device features (polish,
+    /// embeddings) while a cloud provider is selected.
+    private var localFallbackProviderKind: LocalLLMProviderKind {
+        if providerKind.isLocal { return providerKind }
+        let stored = LocalLLMProviderKind(rawValue: lastLocalLLMProviderRaw) ?? .ollama
+        return stored.isLocal ? stored : .ollama
     }
 
     private func checkOllamaAvailability() async {

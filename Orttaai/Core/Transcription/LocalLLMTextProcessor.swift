@@ -46,8 +46,10 @@ final class LocalLLMTextProcessor: TextProcessor {
     }
 
     /// Resolved per request so switching providers takes effect immediately.
+    /// Polish always uses a local provider — a cloud round-trip can't meet
+    /// the dictation hot path's latency budget.
     private var llmClient: any LocalLLMServing {
-        injectedClient ?? settings.activeLocalLLMClient
+        injectedClient ?? settings.polishLLMClient
     }
 
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
@@ -92,7 +94,7 @@ final class LocalLLMTextProcessor: TextProcessor {
 
         do {
             let rawResponse = try await llmClient.generate(
-                baseURLString: settings.activeLocalLLMEndpoint,
+                baseURLString: settings.polishLLMEndpoint,
                 model: model,
                 prompt: prompt,
                 timeoutMs: timeoutMs,
@@ -136,7 +138,7 @@ final class LocalLLMTextProcessor: TextProcessor {
         } catch {
             if isTimeoutError(error) {
                 await circuitBreaker.recordTimeout()
-                warmModelInBackground(endpoint: settings.activeLocalLLMEndpoint, model: model)
+                warmModelInBackground(endpoint: settings.polishLLMEndpoint, model: model)
                 let suggestedTimeoutMs = max(timeoutMs, recommendedMinimumTimeoutMs(for: model))
                 Logger.ai.debug("Local polish timed out at \(timeoutMs)ms for model \(model). Increase polish timeout to ~\(suggestedTimeoutMs)ms+ for this model.")
             } else {

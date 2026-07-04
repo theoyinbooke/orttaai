@@ -2482,11 +2482,13 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
         if let primaryProviderOverride {
             return primaryProviderOverride
         }
+        // Embeddings always run on a local provider: the Codex cloud provider
+        // has no embedding endpoint, so it falls back to the last local one.
         return OllamaSemanticEmbeddingProvider(
             modelID: settings.normalizedSemanticEmbeddingModel,
-            baseURLString: settings.activeLocalLLMEndpoint,
+            baseURLString: settings.embeddingLLMEndpoint,
             timeoutMs: nil,
-            client: llmClient
+            client: injectedClient ?? settings.embeddingLLMClient
         )
     }
 

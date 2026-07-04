@@ -136,6 +136,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         CloudProfileChangeTracker.shared.stop()
         CloudSyncScheduler.stop()
+        // Stop the spawned Codex app-server (if one is running) so no orphan
+        // process outlives the app. Termination proceeds without waiting.
+        Task.detached {
+            await CodexAppServerConnection.shared.shutdown()
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -341,33 +346,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func prewarmLocalLLMModelsIfNeeded() {
         guard let settings = appState?.settings else { return }
 
-        let endpoint = settings.activeLocalLLMEndpoint
-        let providerKind = settings.localLLMProvider
-        var modelsToWarm: [String] = []
+        // Warm each feature's model on the provider that actually serves it:
+        // polish always runs locally, insights follow the active provider
+        // (cloud models have nothing to warm — Codex warmModel is a no-op).
+        var warmTargets: [(model: String, provider: LocalLLMProviderKind, endpoint: String)] = []
         if settings.localLLMPolishEnabled {
-            modelsToWarm.append(settings.normalizedLocalLLMPolishModel)
+            warmTargets.append((
+                settings.normalizedLocalLLMPolishModel,
+                settings.polishLLMProvider,
+                settings.polishLLMEndpoint
+            ))
         }
-        if settings.localLLMInsightsEnabled {
-            modelsToWarm.append(settings.normalizedLocalLLMInsightsModel)
+        if settings.localLLMInsightsEnabled, settings.localLLMProvider.isLocal {
+            warmTargets.append((
+                settings.normalizedLocalLLMInsightsModel,
+                settings.localLLMProvider,
+                settings.activeLocalLLMEndpoint
+            ))
         }
 
-        let uniqueModels = Array(Set(modelsToWarm)).sorted()
-        guard !uniqueModels.isEmpty else { return }
+        var seen = Set<String>()
+        let uniqueTargets = warmTargets.filter { seen.insert("\($0.provider.rawValue)|\($0.model)").inserted }
+        guard !uniqueTargets.isEmpty else { return }
         let aiLogger = Logger(subsystem: "com.orttaai.app", category: "ai")
 
         Task.detached(priority: .utility) {
-            let client = LocalLLM.client(for: providerKind)
-            for model in uniqueModels {
+            for target in uniqueTargets {
+                let client = LocalLLM.client(for: target.provider)
                 do {
                     let elapsedMs = try await client.warmModel(
-                        baseURLString: endpoint,
-                        model: model,
+                        baseURLString: target.endpoint,
+                        model: target.model,
                         timeoutMs: 40_000,
                         keepAlive: "5m"
                     )
-                    aiLogger.info("Prewarmed local LLM model [model=\(model), elapsedMs=\(elapsedMs)]")
+                    aiLogger.info("Prewarmed local LLM model [model=\(target.model), elapsedMs=\(elapsedMs)]")
                 } catch {
-                    aiLogger.debug("Local LLM prewarm skipped for \(model): \(error.localizedDescription)")
+                    aiLogger.debug("Local LLM prewarm skipped for \(target.model): \(error.localizedDescription)")
                 }
             }
         }

@@ -347,7 +347,10 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
 }
 
 final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
-    var name: String { "\(settings.localLLMProvider.displayName) (Local)" }
+    var name: String {
+        let provider = settings.localLLMProvider
+        return provider.isLocal ? "\(provider.displayName) (Local)" : provider.displayName
+    }
 
     private let settings: AppSettings
     private let injectedClient: (any LocalLLMServing)?
@@ -372,7 +375,11 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         let models = settings.localLLMInsightCandidateModels
         guard !models.isEmpty else { return nil }
 
-        let contextTokens = settings.clampedLocalLLMInsightsContextTokens
+        // Cloud models aren't bound by the local context-window setting;
+        // give them a much larger history budget for deeper interpretation.
+        let contextTokens = settings.localLLMProvider.isLocal
+            ? settings.clampedLocalLLMInsightsContextTokens
+            : 65_536
         let historyLines = historyLines(from: transcriptions, contextTokens: contextTokens)
 
         guard !historyLines.isEmpty else { return nil }

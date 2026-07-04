@@ -480,6 +480,9 @@ private final class ChatAIViewModel: ObservableObject {
     @Published var uploadedDocuments: [ChatAIUploadedDocument] = []
     @Published var isHistoryVisible: Bool = false
     @Published var isSending: Bool = false
+    /// Partial assistant reply while a streaming provider is generating;
+    /// nil when idle or when the provider doesn't stream.
+    @Published var streamingReply: String?
     @Published var isLoadingModels: Bool = false
     @Published var isVoiceRecording: Bool = false
     @Published var isVoiceProcessing: Bool = false
@@ -706,15 +709,17 @@ private final class ChatAIViewModel: ObservableObject {
         draft = ""
         errorMessage = nil
         isSending = true
+        streamingReply = nil
         defer {
             isSending = false
+            streamingReply = nil
         }
 
         appendMessage(ChatAIMessage(role: .user, content: prompt), to: selectedConversationID)
 
         do {
             let messages = try await ollamaMessages(for: selectedConversationID, latestPrompt: prompt)
-            let response = try await client.chat(
+            let response = try await client.chatStream(
                 baseURLString: settings.activeLocalLLMEndpoint,
                 model: selectedModel,
                 messages: messages,
@@ -723,7 +728,13 @@ private final class ChatAIViewModel: ObservableObject {
                 temperature: 0.35,
                 numPredict: thinkingDepth.numPredict,
                 numContext: thinkingDepth.numContext,
-                keepAlive: "5m"
+                keepAlive: "5m",
+                onDelta: { [weak self] partial in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.isSending else { return }
+                        self.streamingReply = partial
+                    }
+                }
             )
             appendMessage(ChatAIMessage(role: .assistant, content: assistantVisibleContent(from: response)), to: selectedConversationID)
             statusMessage = "Generated with \(selectedModelDisplayName)."
@@ -912,7 +923,7 @@ private final class ChatAIViewModel: ObservableObject {
     private func systemPrompt(latestPrompt: String) async -> String {
         var sections: [String] = [
             """
-            You are ChatAI inside Orttaai, a local writing assistant powered by Ollama.
+            You are ChatAI inside Orttaai, a writing assistant powered by \(settings.localLLMProvider.displayName).
             Help the user understand their writing pattern, draft content, rewrite text, and produce clear finished writing.
             Mode: \(mode.title).
             Thinking depth: \(thinkingDepth.title). \(thinkingDepth.instruction)
@@ -1358,7 +1369,12 @@ struct ChatAIView: View {
                     }
 
                     if viewModel.isSending {
-                        assistantActivityRow
+                        if let partial = viewModel.streamingReply, !partial.isEmpty {
+                            streamingBubble(partial)
+                                .id("streaming-reply")
+                        } else {
+                            assistantActivityRow
+                        }
                     }
                 }
                 .padding(.horizontal, Spacing.xxxl)
@@ -1371,6 +1387,10 @@ struct ChatAIView: View {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
+            }
+            .onChange(of: viewModel.streamingReply) { _, partial in
+                guard partial != nil else { return }
+                proxy.scrollTo("streaming-reply", anchor: .bottom)
             }
         }
     }
@@ -1415,6 +1435,21 @@ struct ChatAIView: View {
                 : "Writing..."
         )
         .padding(.top, Spacing.xs)
+    }
+
+    /// In-progress assistant reply, styled like a finished assistant bubble.
+    private func streamingBubble(_ partial: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("ChatAI")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+
+                ChatAIRichMessageText(content: partial)
+            }
+
+            Spacer(minLength: 80)
+        }
     }
 
     private var starterPromptRow: some View {
@@ -1511,7 +1546,7 @@ struct ChatAIView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.Orttaai.textTertiary)
                 .disabled(viewModel.isLoadingModels)
-                .help("Refresh Ollama models")
+                .help("Refresh available models")
 
                 modeMenu
 
@@ -1621,7 +1656,7 @@ struct ChatAIView: View {
             .frame(maxWidth: 164)
         }
         .menuStyle(.borderlessButton)
-        .help("Ollama model")
+        .help("Chat model")
     }
 
     private var modeMenu: some View {

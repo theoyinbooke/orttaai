@@ -142,6 +142,16 @@ final class AppSettings: ObservableObject {
     @AppStorage("semanticInsightSummaryEnabled") var semanticInsightSummaryEnabled: Bool = true
     @AppStorage("semanticInsightSummaryModel") var semanticInsightSummaryModel: String = "qwen3.5:0.8b"
 
+    // ChatGPT (Codex) cloud provider. Auth lives in ~/.codex (owned by the
+    // Codex CLI); these are only model choice and routing preferences.
+    @AppStorage("codexModel") var codexModel: String = "gpt-5.4-mini"
+    @AppStorage(CodexClient.reasoningEffortKey) var codexReasoningEffort: String = "medium"
+    @AppStorage("codexConsentAcknowledged") var codexConsentAcknowledged: Bool = false
+    /// Last local provider the user had selected; features that must stay
+    /// on-device (embeddings, dictation polish) fall back to it while the
+    /// active provider is cloud-based.
+    @AppStorage("lastLocalLLMProvider") var lastLocalLLMProviderRaw: String = LocalLLMProviderKind.ollama.rawValue
+
     var selectedAudioDevice: String? {
         selectedAudioDeviceID.isEmpty ? nil : selectedAudioDeviceID
     }
@@ -177,7 +187,20 @@ final class AppSettings: ObservableObject {
 
     var localLLMProvider: LocalLLMProviderKind {
         get { LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama }
-        set { localLLMProviderRaw = newValue.rawValue }
+        set {
+            localLLMProviderRaw = newValue.rawValue
+            if newValue.isLocal {
+                lastLocalLLMProviderRaw = newValue.rawValue
+            }
+        }
+    }
+
+    /// The local provider used for features that must stay on-device while a
+    /// cloud provider is active.
+    var localFallbackLLMProvider: LocalLLMProviderKind {
+        if localLLMProvider.isLocal { return localLLMProvider }
+        let stored = LocalLLMProviderKind(rawValue: lastLocalLLMProviderRaw) ?? .ollama
+        return stored.isLocal ? stored : .ollama
     }
 
     var normalizedLMStudioEndpoint: String {
@@ -185,26 +208,71 @@ final class AppSettings: ObservableObject {
         return trimmed.isEmpty ? LocalLLMProviderKind.lmStudio.defaultEndpoint : trimmed
     }
 
-    /// Endpoint for the currently selected local-LLM provider. Every feature
-    /// (polish, insights, chat, tone, semantic memory) resolves through this.
-    var activeLocalLLMEndpoint: String {
-        switch localLLMProvider {
+    func endpoint(for kind: LocalLLMProviderKind) -> String {
+        switch kind {
         case .ollama: return normalizedLocalLLMEndpoint
         case .lmStudio: return normalizedLMStudioEndpoint
+        case .codex: return "" // Spawned subprocess; no HTTP endpoint.
         }
     }
 
-    /// Client for the currently selected local-LLM provider.
+    /// Endpoint for the currently selected LLM provider. Every feature
+    /// (polish, insights, chat, tone, semantic memory) resolves through this.
+    var activeLocalLLMEndpoint: String {
+        endpoint(for: localLLMProvider)
+    }
+
+    /// Client for the currently selected LLM provider.
     var activeLocalLLMClient: any LocalLLMServing {
         LocalLLM.client(for: localLLMProvider)
+    }
+
+    /// Provider/client/endpoint for semantic embeddings. The Codex app-server
+    /// has no embedding endpoint, so embeddings stay on the local fallback
+    /// provider while generation runs in the cloud.
+    var embeddingLLMProvider: LocalLLMProviderKind {
+        localLLMProvider.supportsEmbeddings ? localLLMProvider : localFallbackLLMProvider
+    }
+
+    var embeddingLLMClient: any LocalLLMServing {
+        LocalLLM.client(for: embeddingLLMProvider)
+    }
+
+    var embeddingLLMEndpoint: String {
+        endpoint(for: embeddingLLMProvider)
+    }
+
+    /// Provider/client/endpoint for dictation polish, which cannot afford a
+    /// cloud round-trip on the dictation hot path and therefore always runs
+    /// on the local fallback provider.
+    var polishLLMProvider: LocalLLMProviderKind {
+        localLLMProvider.isLocal ? localLLMProvider : localFallbackLLMProvider
+    }
+
+    var polishLLMClient: any LocalLLMServing {
+        LocalLLM.client(for: polishLLMProvider)
+    }
+
+    var polishLLMEndpoint: String {
+        endpoint(for: polishLLMProvider)
     }
 
     var normalizedLocalLLMPolishModel: String {
         sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma3:1b")
     }
 
+    var normalizedCodexModel: String {
+        let trimmed = codexModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "gpt-5.4-mini" : trimmed
+    }
+
+    /// Insights model for the active provider: the Codex cloud model when the
+    /// cloud provider is selected, otherwise the configured local model (the
+    /// local sanitizer's "llama" filter must not touch cloud model ids).
     var normalizedLocalLLMInsightsModel: String {
-        sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+        localLLMProvider == .codex
+            ? normalizedCodexModel
+            : sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
     }
 
     var normalizedSemanticEmbeddingModel: String {
@@ -212,7 +280,9 @@ final class AppSettings: ObservableObject {
     }
 
     var normalizedSemanticInsightSummaryModel: String {
-        sanitizeLocalLLMModel(semanticInsightSummaryModel, fallback: "qwen3.5:0.8b")
+        localLLMProvider == .codex
+            ? normalizedCodexModel
+            : sanitizeLocalLLMModel(semanticInsightSummaryModel, fallback: "qwen3.5:0.8b")
     }
 
     var localLLMInsightCandidateModels: [String] {
@@ -220,7 +290,9 @@ final class AppSettings: ObservableObject {
         if localLLMInsightsEnabled {
             candidates.append(normalizedLocalLLMInsightsModel)
         }
-        if localLLMPolishEnabled {
+        // The polish model is only a sensible insights fallback when the
+        // active provider is local — it doesn't exist on a cloud provider.
+        if localLLMPolishEnabled, localLLMProvider.isLocal {
             candidates.append(normalizedLocalLLMPolishModel)
         }
         var seen = Set<String>()
