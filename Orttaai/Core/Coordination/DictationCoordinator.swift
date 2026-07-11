@@ -66,7 +66,7 @@ final class DictationCoordinator {
         max(0, maxDuration - Self.countdownWarningWindowSeconds)
     }
     private let minDuration: TimeInterval = 0.5
-    private let liveDecodePollIntervalNs: UInt64 = 750_000_000
+    private let liveDecodePollIntervalNs: UInt64 = 250_000_000
 
     private var capTimerTask: Task<Void, Never>?
     private var liveDecodeTask: Task<Void, Never>?

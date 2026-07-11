@@ -167,4 +167,148 @@ final class TranscriptionServiceTests: XCTestCase {
 
         XCTAssertEqual(underlying.localizedDescription, "No transcription result")
     }
+
+    // MARK: - Energy helpers
+
+    private func silence(seconds: Double, amplitude: Float = 0) -> [Float] {
+        [Float](repeating: amplitude, count: Int(seconds * 16_000))
+    }
+
+    private func speech(seconds: Double, amplitude: Float = 0.1) -> [Float] {
+        let count = Int(seconds * 16_000)
+        return (0..<count).map { amplitude * sin(Float($0) * 0.1) }
+    }
+
+    func testContainsSpeechEnergyDetectsSpeechBurst() {
+        let samples = silence(seconds: 1) + speech(seconds: 0.3) + silence(seconds: 1)
+
+        XCTAssertTrue(TranscriptionService.containsSpeechEnergy(samples[...]))
+    }
+
+    func testContainsSpeechEnergyIgnoresSilenceAndFaintNoise() {
+        XCTAssertFalse(TranscriptionService.containsSpeechEnergy(silence(seconds: 2)[...]))
+        XCTAssertFalse(
+            TranscriptionService.containsSpeechEnergy(silence(seconds: 2, amplitude: 0.01)[...])
+        )
+    }
+
+    func testLastSpeechSampleIndexCoversSpeechEnd() {
+        let leading = silence(seconds: 1)
+        let talk = speech(seconds: 2)
+        let samples = leading + talk + silence(seconds: 3)
+
+        let lastIndex = TranscriptionService.lastSpeechSampleIndex(in: samples[...])
+
+        let speechEnd = leading.count + talk.count
+        XCTAssertNotNil(lastIndex)
+        XCTAssertGreaterThanOrEqual(lastIndex ?? 0, speechEnd)
+        XCTAssertLessThan(lastIndex ?? 0, speechEnd + TranscriptionService.energyFrameSampleCount)
+    }
+
+    func testLastSpeechSampleIndexWorksOnSlices() {
+        let samples = speech(seconds: 1) + silence(seconds: 2)
+        let slice = samples[16_000...]
+
+        XCTAssertNil(TranscriptionService.lastSpeechSampleIndex(in: slice))
+    }
+
+    // MARK: - Speculative coverage
+
+    func testCoverageSufficientWithinSlack() {
+        let samples = speech(seconds: 10)
+
+        XCTAssertTrue(TranscriptionService.speculativeCoverageIsSufficient(
+            coveredSampleCount: samples.count - 4_000,
+            audioSamples: samples
+        ))
+    }
+
+    func testCoverageSufficientWhenRemainderIsSilence() {
+        let talk = speech(seconds: 8)
+        let samples = talk + silence(seconds: 2)
+
+        XCTAssertTrue(TranscriptionService.speculativeCoverageIsSufficient(
+            coveredSampleCount: talk.count,
+            audioSamples: samples
+        ))
+    }
+
+    func testCoverageInsufficientWhenRemainderHasSpeech() {
+        let covered = speech(seconds: 6)
+        let samples = covered + silence(seconds: 1) + speech(seconds: 2)
+
+        XCTAssertFalse(TranscriptionService.speculativeCoverageIsSufficient(
+            coveredSampleCount: covered.count,
+            audioSamples: samples
+        ))
+    }
+
+    // MARK: - Tail trimming
+
+    func testTrimmedTailAudioRemovesDeadSilenceAroundSpeech() {
+        let talk = speech(seconds: 3)
+        let samples = silence(seconds: 2) + talk + silence(seconds: 4)
+
+        let trimmed = TranscriptionService.trimmedTailAudio(from: samples)
+
+        let pad = TranscriptionService.silencePadSampleCount
+        let frame = TranscriptionService.energyFrameSampleCount
+        XCTAssertLessThanOrEqual(trimmed.count, talk.count + 2 * pad + 2 * frame)
+        XCTAssertGreaterThanOrEqual(trimmed.count, talk.count)
+    }
+
+    func testTrimmedTailAudioKeepsQuietAudioUnchanged() {
+        // Quiet (above the faint floor, below the VAD threshold) audio must
+        // never be discarded by trimming.
+        let samples = silence(seconds: 4, amplitude: 0.01)
+
+        let trimmed = TranscriptionService.trimmedTailAudio(from: samples)
+
+        XCTAssertEqual(trimmed.count, samples.count)
+    }
+
+    func testTrimmedTailAudioReturnsEmptyForDeadSilence() {
+        let trimmed = TranscriptionService.trimmedTailAudio(from: silence(seconds: 5))
+
+        XCTAssertTrue(trimmed.isEmpty)
+    }
+
+    func testTrimmedTailAudioSkipsTinySavings() {
+        let samples = speech(seconds: 3) + silence(seconds: 0.2)
+
+        let trimmed = TranscriptionService.trimmedTailAudio(from: samples)
+
+        XCTAssertEqual(trimmed.count, samples.count)
+    }
+
+    // MARK: - Pause commits
+
+    func testPauseCommitAfterSpeechAndSustainedSilence() {
+        let talk = speech(seconds: 4)
+        let samples = talk + silence(seconds: 1.5)
+
+        let commitCount = TranscriptionService.pauseCommitSampleCount(pendingAudio: samples[...])
+
+        let pad = TranscriptionService.silencePadSampleCount
+        let frame = TranscriptionService.energyFrameSampleCount
+        XCTAssertNotNil(commitCount)
+        XCTAssertGreaterThanOrEqual(commitCount ?? 0, talk.count)
+        XCTAssertLessThanOrEqual(commitCount ?? 0, talk.count + pad + frame)
+    }
+
+    func testPauseCommitSkippedWhileStillSpeaking() {
+        let samples = speech(seconds: 6) + silence(seconds: 0.3)
+
+        XCTAssertNil(TranscriptionService.pauseCommitSampleCount(pendingAudio: samples[...]))
+    }
+
+    func testPauseCommitSkippedForShortClips() {
+        let samples = speech(seconds: 1) + silence(seconds: 2)
+
+        XCTAssertNil(TranscriptionService.pauseCommitSampleCount(pendingAudio: samples[...]))
+    }
+
+    func testPauseCommitSkippedForPureSilence() {
+        XCTAssertNil(TranscriptionService.pauseCommitSampleCount(pendingAudio: silence(seconds: 6)[...]))
+    }
 }

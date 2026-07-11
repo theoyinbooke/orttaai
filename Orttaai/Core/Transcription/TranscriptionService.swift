@@ -37,10 +37,10 @@ actor TranscriptionService: Transcribing {
         let text: String
     }
 
-    /// Live session state. Audio is committed in fixed 15s clips as the
-    /// recording progresses (matching the clip grid the final batch decode has
-    /// always used), so finalize only has to decode the short uncommitted tail
-    /// no matter how long the dictation ran.
+    /// Live session state. Audio is committed as the recording progresses —
+    /// in fixed 15s clips (matching the clip grid the final batch decode has
+    /// always used) and early at speech pauses — so finalize only has to
+    /// decode the short uncommitted tail no matter how long the dictation ran.
     private struct LiveTranscriptionSession {
         let id = UUID()
         var committedTexts: [String] = []
@@ -60,6 +60,20 @@ actor TranscriptionService: Transcribing {
     private static let finalDecodeClipSeconds: Float = 15.0
     /// Live clips are committed on the same 15s grid the final decode uses.
     private static let liveCommitClipSampleCount = Int(finalDecodeClipSeconds) * transcriptionSampleRate
+    /// Energy framing matches WhisperKit's EnergyVAD (100ms frames, 0.02 RMS).
+    static let energyFrameSampleCount = transcriptionSampleRate / 10
+    static let speechEnergyThreshold: Float = 0.02
+    /// Below this RMS a frame is treated as dead silence (muted or absent
+    /// mic), not merely quiet speech. Used where discarding audio must be safe.
+    static let faintEnergyFloor: Float = 0.005
+    /// Audio kept around detected speech when trimming or committing at pauses.
+    static let silencePadSampleCount = transcriptionSampleRate * 3 / 10
+    /// Trimming that saves less than this isn't worth the copy.
+    private static let trimMinSavingsSampleCount = transcriptionSampleRate / 2
+    /// A speech gap this long counts as a pause worth committing at.
+    static let pauseCommitSilenceSampleCount = transcriptionSampleRate * 7 / 10
+    /// Pause commits below this length risk hallucinated decodes; skip them.
+    static let pauseCommitMinClipSampleCount = liveTranscriptionMinSampleCount
 
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
@@ -159,14 +173,18 @@ actor TranscriptionService: Transcribing {
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {
         guard whisperKit != nil else { return }
         guard var session = liveSession else { return }
-        // One decode in flight at a time; the ANE serializes work anyway.
-        guard session.commitTask == nil, session.speculativeTask == nil else { return }
+        // One commit in flight at a time; the ANE serializes work anyway.
+        guard session.commitTask == nil else { return }
         guard audioSamples.count >= session.committedSampleCount else { return }
 
         // Commit finished 15s clips as soon as they exist so finalize only has
-        // to decode the short tail, regardless of total recording length.
+        // to decode the short tail, regardless of total recording length. A
+        // due commit preempts tail speculation: the commit invalidates the
+        // speculative base anyway, and waiting a poll cycle only grows the
+        // tail left for finalize.
         let pendingSamples = audioSamples.count - session.committedSampleCount
         if pendingSamples >= Self.liveCommitClipSampleCount {
+            session.speculativeTask?.cancel()
             let clipCount = pendingSamples / Self.liveCommitClipSampleCount
             let start = session.committedSampleCount
             let end = start + clipCount * Self.liveCommitClipSampleCount
@@ -179,7 +197,25 @@ actor TranscriptionService: Transcribing {
             return
         }
 
-        // Otherwise speculatively decode the uncommitted tail.
+        // Commit early at speech pauses so short dictations also finalize with
+        // a near-empty tail instead of re-decoding everything at stop.
+        if let pauseClipSampleCount = Self.pauseCommitSampleCount(
+            pendingAudio: audioSamples[session.committedSampleCount...]
+        ) {
+            session.speculativeTask?.cancel()
+            let start = session.committedSampleCount
+            let clipAudio = Array(audioSamples[start..<(start + pauseClipSampleCount)])
+            let sessionID = session.id
+            session.commitTask = Task { [weak self] in
+                await self?.runLiveCommit(clipAudio: clipAudio, startSample: start, sessionID: sessionID)
+            }
+            liveSession = session
+            return
+        }
+
+        // Otherwise speculatively decode the uncommitted tail, one decode in
+        // flight at a time.
+        guard session.speculativeTask == nil else { return }
         guard pendingSamples >= Self.liveTranscriptionMinSampleCount else { return }
         guard audioSamples.count - session.lastQueuedSampleCount >= Self.liveTranscriptionIncrementSampleCount else { return }
 
@@ -200,17 +236,20 @@ actor TranscriptionService: Transcribing {
             return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
         }
 
-        let reuseThreshold = max(0, audioSamples.count - Self.liveTranscriptionReuseSlackSampleCount)
-
         // An in-flight clip commit always advances the committed prefix, so
         // waiting for it is never wasted work.
         if let commitTask = liveSession?.commitTask {
             await commitTask.value
         }
-        // An in-flight tail decode is only worth waiting for if it covers the
-        // final audio within slack; otherwise cancel it to free the engine.
+        // An in-flight tail decode is worth waiting for when it covers the
+        // final audio within slack — or when everything queued after it is
+        // silence, which is the common case of the user stopping speech just
+        // before releasing the hotkey. Otherwise cancel it to free the engine.
         if let inFlight = liveSession, let speculativeTask = inFlight.speculativeTask {
-            if inFlight.lastQueuedSampleCount >= reuseThreshold {
+            if Self.speculativeCoverageIsSufficient(
+                coveredSampleCount: inFlight.lastQueuedSampleCount,
+                audioSamples: audioSamples
+            ) {
                 await speculativeTask.value
             } else {
                 speculativeTask.cancel()
@@ -223,12 +262,15 @@ actor TranscriptionService: Transcribing {
         }
 
         let base = min(session.committedSampleCount, audioSamples.count)
-        let tailAudio = Array(audioSamples[base...])
+        let tailAudio = Self.trimmedTailAudio(from: Array(audioSamples[base...]))
 
         var tailText: String?
         if let speculative = session.speculativeResult,
            speculative.base == base,
-           speculative.coveredSampleCount >= reuseThreshold {
+           Self.speculativeCoverageIsSufficient(
+               coveredSampleCount: speculative.coveredSampleCount,
+               audioSamples: audioSamples
+           ) {
             if let rejectionReason = Self.speculativeReuseRejectionReason(
                 for: speculative.text,
                 finalSampleCount: tailAudio.count
@@ -303,9 +345,10 @@ actor TranscriptionService: Transcribing {
         self.decodingPreferences = decodingPreferences.clamped()
     }
 
-    /// Decodes one or more complete 15s clips and folds them into the
-    /// session's committed prefix. On failure the clip stays uncommitted so
-    /// finalize re-decodes it; an empty (silent) clip commits as empty text.
+    /// Decodes a committed clip — one or more complete 15s clips, or a
+    /// shorter pause-bounded clip — and folds it into the session's committed
+    /// prefix. On failure the clip stays uncommitted so finalize re-decodes
+    /// it; an empty (silent) clip commits as empty text.
     private func runLiveCommit(clipAudio: [Float], startSample: Int, sessionID: UUID) async {
         var committed: String?
         do {
@@ -420,6 +463,14 @@ actor TranscriptionService: Transcribing {
         }
 
         guard !allowCancellation else {
+            throw Self.noTranscriptionResultError()
+        }
+
+        // The relaxed retry exists to recover quiet speech the thresholds
+        // filtered out. Dead-silent audio has nothing to recover — skip the
+        // second full decode.
+        guard Self.containsSpeechEnergy(audioSamples[...], threshold: Self.faintEnergyFloor) else {
+            Logger.transcription.info("Primary decode empty and audio is silent; skipping relaxed retry")
             throw Self.noTranscriptionResultError()
         }
 
@@ -545,6 +596,111 @@ actor TranscriptionService: Transcribing {
         text
             .replacingOccurrences(of: #"\[BLANK_AUDIO\]"#, with: " ", options: [.regularExpression, .caseInsensitive])
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Sample count from the start of the slice through the end of the last
+    /// 100ms frame whose RMS energy reaches `threshold`, or nil if none does.
+    /// Frames are aligned from the end of the slice so the trailing-silence
+    /// scan exits as soon as it meets speech.
+    nonisolated static func lastSpeechSampleIndex(
+        in samples: ArraySlice<Float>,
+        threshold: Float = speechEnergyThreshold
+    ) -> Int? {
+        guard !samples.isEmpty else { return nil }
+        let start = samples.startIndex
+        var frameEnd = samples.endIndex
+        while frameEnd > start {
+            let frameStart = max(start, frameEnd - energyFrameSampleCount)
+            if frameRMS(samples[frameStart..<frameEnd]) >= threshold {
+                return frameEnd - start
+            }
+            frameEnd = frameStart
+        }
+        return nil
+    }
+
+    /// Offset from the start of the slice to the beginning of the first 100ms
+    /// frame whose RMS energy reaches `threshold`, or nil if none does.
+    nonisolated static func firstSpeechSampleIndex(
+        in samples: ArraySlice<Float>,
+        threshold: Float = speechEnergyThreshold
+    ) -> Int? {
+        guard !samples.isEmpty else { return nil }
+        let start = samples.startIndex
+        var frameStart = start
+        while frameStart < samples.endIndex {
+            let frameEnd = min(samples.endIndex, frameStart + energyFrameSampleCount)
+            if frameRMS(samples[frameStart..<frameEnd]) >= threshold {
+                return frameStart - start
+            }
+            frameStart = frameEnd
+        }
+        return nil
+    }
+
+    nonisolated static func containsSpeechEnergy(
+        _ samples: ArraySlice<Float>,
+        threshold: Float = speechEnergyThreshold
+    ) -> Bool {
+        lastSpeechSampleIndex(in: samples, threshold: threshold) != nil
+    }
+
+    nonisolated private static func frameRMS(_ samples: ArraySlice<Float>) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        var sum: Float = 0
+        for sample in samples {
+            sum += sample * sample
+        }
+        return (sum / Float(samples.count)).squareRoot()
+    }
+
+    /// A speculative tail result can stand in for the final decode when it
+    /// covers the recording up to the reuse slack, or when everything recorded
+    /// after it carries no voice-level energy (the user stopped speaking
+    /// before releasing the hotkey).
+    nonisolated static func speculativeCoverageIsSufficient(
+        coveredSampleCount: Int,
+        audioSamples: [Float]
+    ) -> Bool {
+        guard coveredSampleCount >= 0 else { return false }
+        guard coveredSampleCount < audioSamples.count else { return true }
+        let reuseThreshold = max(0, audioSamples.count - liveTranscriptionReuseSlackSampleCount)
+        if coveredSampleCount >= reuseThreshold {
+            return true
+        }
+        return !containsSpeechEnergy(audioSamples[coveredSampleCount...])
+    }
+
+    /// Trims dead silence from both ends of tail audio before the final
+    /// decode. The boundary uses the faint-energy floor, not the VAD
+    /// threshold, so quiet speech is never discarded. Returns the input
+    /// unchanged when trimming would save under half a second, and an empty
+    /// array when the audio is dead silent throughout (nothing to decode).
+    nonisolated static func trimmedTailAudio(from samples: [Float]) -> [Float] {
+        guard !samples.isEmpty else { return samples }
+        guard let lastEnd = lastSpeechSampleIndex(in: samples[...], threshold: faintEnergyFloor) else {
+            return []
+        }
+        let firstStart = firstSpeechSampleIndex(in: samples[...], threshold: faintEnergyFloor) ?? 0
+        let start = max(0, firstStart - silencePadSampleCount)
+        let end = min(samples.count, lastEnd + silencePadSampleCount)
+        guard start < end else { return samples }
+        guard start + (samples.count - end) >= trimMinSavingsSampleCount else { return samples }
+        return Array(samples[start..<end])
+    }
+
+    /// Length of the pending-audio prefix to commit early because the speaker
+    /// paused: the pending audio must contain speech, end in a sustained
+    /// silence gap, and yield a clip long enough to decode reliably.
+    nonisolated static func pauseCommitSampleCount(pendingAudio: ArraySlice<Float>) -> Int? {
+        guard pendingAudio.count >= pauseCommitMinClipSampleCount + pauseCommitSilenceSampleCount else {
+            return nil
+        }
+        guard let lastSpeechEnd = lastSpeechSampleIndex(in: pendingAudio) else { return nil }
+        guard pendingAudio.count - lastSpeechEnd >= pauseCommitSilenceSampleCount else { return nil }
+        let clipSampleCount = min(pendingAudio.count, lastSpeechEnd + silencePadSampleCount)
+        guard clipSampleCount >= pauseCommitMinClipSampleCount else { return nil }
+        return clipSampleCount
     }
 
     nonisolated static func isSpeculativeReuseEligible(finalSampleCount: Int) -> Bool {
