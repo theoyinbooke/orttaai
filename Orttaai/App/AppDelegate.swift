@@ -205,8 +205,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let db = try DatabaseManager()
             let baseTextProcessor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
-            let textProcessor = LocalLLMTextProcessor(
+            let localLLMProcessor = LocalLLMTextProcessor(
                 baseProcessor: baseTextProcessor,
+                settings: settings
+            )
+            let textProcessor = AppleIntelligencePolishProcessor(
+                baseProcessor: localLLMProcessor,
                 settings: settings
             )
             databaseManager = db

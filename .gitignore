@@ -13,3 +13,6 @@ DerivedData/
 *.dmg
 *.xcarchive
 *.xcresult
+
+# Local eval data (contains personal dictation content — never commit)
+/eval/

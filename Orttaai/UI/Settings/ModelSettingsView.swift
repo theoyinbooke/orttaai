@@ -34,6 +34,7 @@ struct ModelSettingsView: View {
     @AppStorage("decodingNoSpeechThreshold") private var decodingNoSpeechThreshold = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") private var decodingWorkerCount = DecodingPreferences.defaultWorkerCount
     @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
+    @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("lastLocalLLMProvider") private var lastLocalLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("codexModel") private var codexModel = "gpt-5.4-mini"
@@ -838,6 +839,23 @@ struct ModelSettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: Spacing.md) {
+                if AppleIntelligencePolishProcessor.isModelAvailable {
+                    llmGroupBox {
+                        Toggle(isOn: $appleIntelligencePolishEnabled) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Apple Intelligence Polish")
+                                    .font(.Orttaai.bodyMedium)
+                                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                                Text("Cleans filler words and punctuation with the on-device Apple model. No download, fully private.")
+                                    .font(.Orttaai.caption)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                            }
+                        }
+                        .toggleStyle(OrttaaiToggleStyle())
+                    }
+                }
+
                 llmGroupBox {
                     Toggle(isOn: $localLLMPolishEnabled) {
                         VStack(alignment: .leading, spacing: 2) {

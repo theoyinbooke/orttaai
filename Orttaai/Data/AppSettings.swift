@@ -126,6 +126,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("localLLMProvider") var localLLMProviderRaw: String = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("lmStudioEndpoint") var lmStudioEndpoint: String = "http://127.0.0.1:1234"
     @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = false
+    @AppStorage("appleIntelligencePolishEnabled") var appleIntelligencePolishEnabled: Bool = false
     @AppStorage("localLLMEndpoint") var localLLMEndpoint: String = "http://127.0.0.1:11434"
     @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma3:1b"
     @AppStorage("localLLMPolishTimeoutMs") var localLLMPolishTimeoutMs: Int = 650
