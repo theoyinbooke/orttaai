@@ -7,12 +7,14 @@ struct Options {
     let outputPath: String
     let appPath: String
     let appName: String
+    let theme: String
 }
 
 enum ArgumentError: Error, CustomStringConvertible {
     case missingValue(String)
     case missingRequired(String)
     case unknownArgument(String)
+    case invalidTheme(String)
 
     var description: String {
         switch self {
@@ -22,6 +24,8 @@ enum ArgumentError: Error, CustomStringConvertible {
             return "Missing required argument \(flag)"
         case .unknownArgument(let arg):
             return "Unknown argument \(arg)"
+        case .invalidTheme(let value):
+            return "Invalid --theme value: \(value) (expected auto, light, or dark)"
         }
     }
 }
@@ -30,6 +34,7 @@ func parseOptions() throws -> Options {
     var outputPath: String?
     var appPath: String?
     var appName = "Orttaai"
+    var theme = "auto"
 
     var iterator = CommandLine.arguments.dropFirst().makeIterator()
     while let arg = iterator.next() {
@@ -44,7 +49,9 @@ func parseOptions() throws -> Options {
             guard let value = iterator.next() else { throw ArgumentError.missingValue(arg) }
             appName = value
         case "--theme":
-            guard iterator.next() != nil else { throw ArgumentError.missingValue(arg) }
+            guard let value = iterator.next() else { throw ArgumentError.missingValue(arg) }
+            guard ["auto", "light", "dark"].contains(value) else { throw ArgumentError.invalidTheme(value) }
+            theme = value
         default:
             throw ArgumentError.unknownArgument(arg)
         }
@@ -52,66 +59,115 @@ func parseOptions() throws -> Options {
 
     guard let outputPath else { throw ArgumentError.missingRequired("--output") }
     guard let appPath else { throw ArgumentError.missingRequired("--app-path") }
-    return Options(outputPath: outputPath, appPath: appPath, appName: appName)
+    return Options(outputPath: outputPath, appPath: appPath, appName: appName, theme: theme)
 }
 
-func drawCenteredText(_ text: String, y: CGFloat, attributes: [NSAttributedString.Key: Any], width: CGFloat) {
-    let size = text.size(withAttributes: attributes)
-    let point = NSPoint(x: (width - size.width) / 2.0, y: y)
-    text.draw(at: point, withAttributes: attributes)
+func color(hex: String, alpha: CGFloat = 1.0) -> NSColor {
+    var value: UInt64 = 0
+    Scanner(string: hex).scanHexInt64(&value)
+    return NSColor(
+        srgbRed: CGFloat((value >> 16) & 0xFF) / 255.0,
+        green: CGFloat((value >> 8) & 0xFF) / 255.0,
+        blue: CGFloat(value & 0xFF) / 255.0,
+        alpha: alpha
+    )
 }
 
-func drawArrow(from start: CGPoint, to end: CGPoint, color: NSColor) {
-    let glowColor = color.withAlphaComponent(0.22)
-    let shaft = NSBezierPath()
-    shaft.move(to: start)
-    shaft.line(to: end)
-    shaft.lineWidth = 12
-    shaft.lineCapStyle = .round
+/// Brand palette (matches Orttaai/Design/Colors.swift).
+struct Palette {
+    let backgroundTop: NSColor
+    let backgroundBottom: NSColor
+    let wordmark: NSColor
+    let arrow: NSColor
+    let waveform: NSColor
 
-    glowColor.setStroke()
-    shaft.stroke()
+    static func forTheme(_ theme: String) -> Palette {
+        // A DMG background can't adapt to Finder's appearance, so "auto"
+        // resolves to the light treatment, which reads well in both modes.
+        if theme == "dark" {
+            return Palette(
+                backgroundTop: color(hex: "26241F"),
+                backgroundBottom: color(hex: "1C1C1E"),
+                wordmark: color(hex: "F5F3F0"),
+                arrow: color(hex: "D4952A"),
+                waveform: color(hex: "D4952A")
+            )
+        }
+        return Palette(
+            backgroundTop: color(hex: "FBF7F0"),
+            backgroundBottom: color(hex: "F3E4C9"),
+            wordmark: color(hex: "3A342A"),
+            arrow: color(hex: "C88920"),
+            waveform: color(hex: "D4952A")
+        )
+    }
+}
 
-    shaft.lineWidth = 6
+/// Dotted curved arrow that dips between the two Finder icons, LM Studio style.
+func drawDottedArrow(from start: CGPoint, to end: CGPoint, dip: CGFloat, color: NSColor) {
+    let controlPoint1 = CGPoint(x: start.x + (end.x - start.x) * 0.30, y: start.y - dip)
+    let controlPoint2 = CGPoint(x: start.x + (end.x - start.x) * 0.75, y: end.y - dip * 0.55)
+
+    let path = NSBezierPath()
+    path.move(to: start)
+    path.curve(to: end, controlPoint1: controlPoint1, controlPoint2: controlPoint2)
+    path.lineWidth = 5
+    path.lineCapStyle = .round
+    path.setLineDash([0.5, 14], count: 2, phase: 0)
     color.setStroke()
-    shaft.stroke()
+    path.stroke()
 
-    let angle = atan2(end.y - start.y, end.x - start.x)
-    let headLength: CGFloat = 18
-    let headAngle: CGFloat = .pi / 6
-
-    let left = CGPoint(
-        x: end.x - cos(angle - headAngle) * headLength,
-        y: end.y - sin(angle - headAngle) * headLength
-    )
-    let right = CGPoint(
-        x: end.x - cos(angle + headAngle) * headLength,
-        y: end.y - sin(angle + headAngle) * headLength
-    )
+    // Open chevron head along the curve's exit tangent (end minus the last
+    // control point for a cubic bezier).
+    let angle = atan2(end.y - controlPoint2.y, end.x - controlPoint2.x)
+    let headLength: CGFloat = 15
+    let headAngle: CGFloat = .pi / 4.2
 
     let head = NSBezierPath()
-    head.move(to: left)
+    head.move(to: CGPoint(
+        x: end.x - cos(angle - headAngle) * headLength,
+        y: end.y - sin(angle - headAngle) * headLength
+    ))
     head.line(to: end)
-    head.line(to: right)
-    head.lineWidth = 12
+    head.line(to: CGPoint(
+        x: end.x - cos(angle + headAngle) * headLength,
+        y: end.y - sin(angle + headAngle) * headLength
+    ))
+    head.lineWidth = 5
     head.lineCapStyle = .round
     head.lineJoinStyle = .round
-
-    glowColor.setStroke()
-    head.stroke()
-
-    head.lineWidth = 6
     color.setStroke()
     head.stroke()
 }
 
-func makeBitmap(size: NSSize) -> NSBitmapImageRep? {
-    let pixelsWide = Int(size.width)
-    let pixelsHigh = Int(size.height)
-    return NSBitmapImageRep(
+/// Decorative audio waveform: rounded bars fading toward the edges.
+/// On-brand ornament for a voice keyboard, standing in for a mascot.
+func drawWaveform(centeredAt center: CGPoint, color: NSColor) {
+    let heights: [CGFloat] = [10, 22, 38, 58, 44, 70, 52, 30, 46, 24, 12]
+    let barWidth: CGFloat = 7
+    let spacing: CGFloat = 13
+    let totalWidth = CGFloat(heights.count - 1) * spacing
+    let peak = heights.max() ?? 1
+
+    for (index, height) in heights.enumerated() {
+        let x = center.x - totalWidth / 2 + CGFloat(index) * spacing
+        // Taller bars are more opaque, so the shape fades at its edges.
+        let alpha = 0.16 + 0.30 * (height / peak)
+        let bar = NSBezierPath(
+            roundedRect: NSRect(x: x - barWidth / 2, y: center.y - height / 2, width: barWidth, height: height),
+            xRadius: barWidth / 2,
+            yRadius: barWidth / 2
+        )
+        color.withAlphaComponent(alpha).setFill()
+        bar.fill()
+    }
+}
+
+func makeBitmap(pointSize: NSSize, scale: CGFloat) -> NSBitmapImageRep? {
+    let bitmap = NSBitmapImageRep(
         bitmapDataPlanes: nil,
-        pixelsWide: pixelsWide,
-        pixelsHigh: pixelsHigh,
+        pixelsWide: Int(pointSize.width * scale),
+        pixelsHigh: Int(pointSize.height * scale),
         bitsPerSample: 8,
         samplesPerPixel: 4,
         hasAlpha: true,
@@ -120,45 +176,68 @@ func makeBitmap(size: NSSize) -> NSBitmapImageRep? {
         bytesPerRow: 0,
         bitsPerPixel: 0
     )
+    // Point size differs from pixel size, so the PNG carries retina DPI and
+    // Finder renders it at window size instead of cropping the 2x pixels.
+    bitmap?.size = pointSize
+    return bitmap
 }
 
 do {
     let options = try parseOptions()
+    let palette = Palette.forTheme(options.theme)
+
+    // Must match the Finder window content size set in release_dmg.sh
+    // (bounds {100, 100, 860, 540}).
     let canvasSize = NSSize(width: 760, height: 440)
 
-    guard let bitmap = makeBitmap(size: canvasSize),
+    guard let bitmap = makeBitmap(pointSize: canvasSize, scale: 2),
           let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
         fputs("Failed to create bitmap context.\n", stderr)
         exit(1)
     }
 
-    bitmap.size = canvasSize
-
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = context
 
     let rect = NSRect(origin: .zero, size: canvasSize)
-    NSColor.white.setFill()
-    rect.fill()
+    NSGradient(starting: palette.backgroundTop, ending: palette.backgroundBottom)?
+        .draw(in: rect, angle: -90)
 
-    let titleAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 24, weight: .semibold),
-        .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1.0)
+    // Wordmark: app icon + name, top-left.
+    let iconInset: CGFloat = 28
+    let iconSide: CGFloat = 30
+    let iconY = canvasSize.height - iconInset - iconSide
+    var wordmarkX = iconInset
+    if let appIcon = NSImage(contentsOfFile: "\(options.appPath)/Contents/Resources/AppIcon.icns") {
+        appIcon.draw(
+            in: NSRect(x: iconInset, y: iconY, width: iconSide, height: iconSide),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+        wordmarkX += iconSide + 10
+    }
+    let wordmarkAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 20, weight: .semibold),
+        .foregroundColor: palette.wordmark
     ]
-    let subtitleAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-        .foregroundColor: NSColor(calibratedWhite: 0.36, alpha: 1.0)
-    ]
-
-    drawCenteredText("Drag \(options.appName) to Applications", y: 388, attributes: titleAttributes, width: canvasSize.width)
-    drawCenteredText("Install by dropping the app onto the Applications folder.", y: 362, attributes: subtitleAttributes, width: canvasSize.width)
-
-    // Arrow y must match Finder icon y in Cocoa coords: canvasHeight - finderY = 440 - 220 = 220
-    drawArrow(
-        from: CGPoint(x: 296, y: 220),
-        to: CGPoint(x: 464, y: 220),
-        color: NSColor(calibratedWhite: 0.60, alpha: 1.0)
+    let wordmarkSize = options.appName.size(withAttributes: wordmarkAttributes)
+    options.appName.draw(
+        at: NSPoint(x: wordmarkX, y: iconY + (iconSide - wordmarkSize.height) / 2),
+        withAttributes: wordmarkAttributes
     )
+
+    // Icons sit at Finder coords (190, 220) and (570, 220) with 152pt icons;
+    // in Cocoa coords their centers are at y = 440 - 220 = 220.
+    drawDottedArrow(
+        from: CGPoint(x: 292, y: 200),
+        to: CGPoint(x: 462, y: 208),
+        dip: 58,
+        color: palette.arrow
+    )
+
+    // Kept clear of the "Applications" label Finder draws under the icon.
+    drawWaveform(centeredAt: CGPoint(x: 655, y: 60), color: palette.waveform)
 
     let outputURL = URL(fileURLWithPath: options.outputPath)
     try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
