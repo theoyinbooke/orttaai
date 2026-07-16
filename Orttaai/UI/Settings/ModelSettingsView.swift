@@ -2100,12 +2100,12 @@ struct ModelSettingsView: View {
             "openai_whisper-tiny.en",
             "openai_whisper-base",
             "openai_whisper-base.en",
-            "openai_whisper-small",
-            "openai_whisper-small.en",
+            "openai_whisper-small_216MB",
+            "openai_whisper-small.en_217MB",
             "openai_whisper-medium",
             "openai_whisper-medium.en",
-            "openai_whisper-large-v3_turbo",
-            "openai_whisper-large-v3",
+            "openai_whisper-large-v3-v20240930_626MB",
+            "openai_whisper-large-v3_947MB",
         ]
     }
 
@@ -2127,36 +2127,15 @@ struct ModelSettingsView: View {
     }
 
     private func formatDisplayName(_ id: String) -> String {
-        var name = id
-            .replacingOccurrences(of: "openai_whisper-", with: "Whisper ")
-            .replacingOccurrences(of: "openai_whisper_", with: "Whisper ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-
-        name = name.split(separator: " ")
-            .map { word in
-                let w = String(word)
-                if w.hasPrefix("v") && w.count <= 3 { return w.uppercased() }
-                if w == "en" || w == ".en" { return "(English)" }
-                return w.prefix(1).uppercased() + w.dropFirst()
-            }
-            .joined(separator: " ")
-
-        // Handle ".en" suffix
-        name = name.replacingOccurrences(of: ".(English)", with: " (English)")
-
-        return name
+        var name = ModelManager.formatDisplayName(id)
+        // ModelManager keeps ".en" tokens intact; render them as a suffix here.
+        name = name.replacingOccurrences(of: ".en", with: " (English)", options: [.caseInsensitive])
+        while name.contains("  ") { name = name.replacingOccurrences(of: "  ", with: " ") }
+        return name.trimmingCharacters(in: .whitespaces)
     }
 
     private func estimateSize(_ id: String) -> Int {
-        let lowered = id.lowercased()
-        if lowered.contains("tiny") { return 70 }
-        if lowered.contains("base") { return 140 }
-        if lowered.contains("small") { return 300 }
-        if lowered.contains("medium") { return 770 }
-        if lowered.contains("large") && lowered.contains("turbo") { return 950 }
-        if lowered.contains("large") { return 1500 }
-        return 500
+        ModelManager.estimateSize(id)
     }
 
     private func descriptionFor(_ id: String) -> String {
@@ -2165,7 +2144,7 @@ struct ModelSettingsView: View {
         if lowered.contains("base") { return "Short dictation" }
         if lowered.contains("small") { return "General dictation" }
         if lowered.contains("medium") { return "Longer dictation" }
-        if lowered.contains("large") && lowered.contains("turbo") { return "Maximum accuracy, optimized speed" }
+        if ModelManager.isTurboFamily(lowered) { return "Maximum accuracy, optimized speed" }
         if lowered.contains("large") { return "Highest accuracy, slowest" }
         return "WhisperKit model"
     }
@@ -2175,7 +2154,7 @@ struct ModelSettingsView: View {
         if lowered.contains("tiny") || lowered.contains("base") || lowered.contains("small") {
             return .m1_8gb
         }
-        if lowered.contains("medium") || (lowered.contains("large") && lowered.contains("turbo")) {
+        if lowered.contains("medium") || ModelManager.isTurboFamily(lowered) {
             return .m1_16gb
         }
         return .m3_16gb
@@ -2185,7 +2164,7 @@ struct ModelSettingsView: View {
         let lowered = id.lowercased()
         if lowered.contains("tiny") { return .fastest }
         if lowered.contains("base") || lowered.contains("small") { return .fast }
-        if lowered.contains("medium") || (lowered.contains("large") && lowered.contains("turbo")) { return .moderate }
+        if lowered.contains("medium") || ModelManager.isTurboFamily(lowered) { return .moderate }
         return .slow
     }
 
@@ -2198,13 +2177,13 @@ struct ModelSettingsView: View {
     }
 
     private func isEnglishOnlyModel(_ id: String) -> Bool {
-        let lowered = id.lowercased()
+        let lowered = ModelManager.normalizedModelID(id.lowercased())
         return lowered.hasSuffix(".en") || lowered.hasSuffix("-en") || lowered.hasSuffix("_en")
     }
 
     private func isRecommended(_ id: String) -> Bool {
         let hardware = HardwareDetector.detect()
-        return id == hardware.recommendedModel
+        return ModelManager.canonicalModelListID(id) == ModelManager.canonicalModelListID(hardware.recommendedModel)
     }
 
     private func isSupported(_ id: String) -> Bool {

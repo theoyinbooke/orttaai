@@ -10,9 +10,9 @@ enum QuickStartModelSelector {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         if language == "en" || language.hasPrefix("en-") {
-            return "openai_whisper-small.en"
+            return "openai_whisper-small.en_217MB"
         }
-        return "openai_whisper-small"
+        return "openai_whisper-small_216MB"
     }
 }
 
@@ -86,7 +86,7 @@ struct DownloadStepView: View {
     }
 
     private var quickStartModelSummary: String {
-        quickStartModelId == "openai_whisper-small.en"
+        ModelManager.normalizedModelID(quickStartModelId) == "openai_whisper-small.en"
             ? "English-optimized model that keeps first-run dictation responsive without dropping too much accuracy."
             : "Multilingual model that balances first-run speed and accuracy."
     }
@@ -363,11 +363,11 @@ struct DownloadStepView: View {
     }
 
     private func configureFastFirstOnboarding(settings: AppSettings, quickModelId: String) {
-        let recommendedModelId = ModelManager.normalizedModelID(
-            hardwareInfo.recommendedModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        let normalizedQuickModelId = ModelManager.normalizedModelID(quickModelId)
-        let shouldEnableFastFirst = !recommendedModelId.isEmpty && recommendedModelId != normalizedQuickModelId
+        // Store the exact variant id — normalization strips quantized size
+        // suffixes and would make the later prefetch fetch the full model.
+        let recommendedModelId = hardwareInfo.recommendedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldEnableFastFirst = !recommendedModelId.isEmpty
+            && ModelManager.normalizedModelID(recommendedModelId) != ModelManager.normalizedModelID(quickModelId)
 
         settings.fastFirstOnboardingEnabled = shouldEnableFastFirst
         settings.fastFirstRecommendedModelId = shouldEnableFastFirst ? recommendedModelId : ""

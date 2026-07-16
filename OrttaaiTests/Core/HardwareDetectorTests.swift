@@ -15,13 +15,13 @@ final class HardwareDetectorTests: XCTestCase {
 
     func testRecommendedModelForEachTier() {
         let m3 = HardwareDetector.recommendedModel(for: .m3_16gb)
-        XCTAssertEqual(m3, "openai_whisper-large-v3_turbo")
+        XCTAssertEqual(m3, "openai_whisper-large-v3-v20240930_626MB")
 
         let m1_16 = HardwareDetector.recommendedModel(for: .m1_16gb)
-        XCTAssertEqual(m1_16, "openai_whisper-large-v3_turbo")
+        XCTAssertEqual(m1_16, "openai_whisper-large-v3-v20240930_626MB")
 
         let m1_8 = HardwareDetector.recommendedModel(for: .m1_8gb)
-        XCTAssertEqual(m1_8, "openai_whisper-small")
+        XCTAssertEqual(m1_8, "openai_whisper-small_216MB")
 
         let intel = HardwareDetector.recommendedModel(for: .intel_unsupported)
         XCTAssertEqual(intel, "")

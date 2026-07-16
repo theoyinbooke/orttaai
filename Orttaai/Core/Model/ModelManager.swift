@@ -127,6 +127,11 @@ final class ModelManager {
             let models = allModelNames.compactMap { name -> ModelInfo? in
                 // Skip internal/test variants
                 guard !name.contains("test") else { return nil }
+                // Skip families whose value is duplicated by a better option:
+                // large-v2 is superseded by large-v3, and the distil variants
+                // by the official large-v3 turbo (smaller and more accurate).
+                let lowered = name.lowercased()
+                guard !lowered.contains("large-v2"), !lowered.contains("distil") else { return nil }
 
                 return ModelInfo(
                     id: name,
@@ -211,7 +216,10 @@ final class ModelManager {
     }
 
     func switchModel(toModelId modelId: String) async throws {
-        let normalizedModelId = Self.normalizedModelID(modelId)
+        // Keep the exact variant id for the download target; the normalized
+        // id (size suffix stripped) is only for matching existing entries.
+        let exactModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedModelId = Self.normalizedModelID(exactModelId)
 
         if let available = availableModels.first(where: { Self.normalizedModelID($0.id) == normalizedModelId }) {
             try await switchModel(to: available)
@@ -221,35 +229,33 @@ final class ModelManager {
         let support = WhisperKit.recommendedModels()
         let hardware = HardwareDetector.detect()
         let fallback = ModelInfo(
-            id: normalizedModelId,
-            name: formatDisplayName(normalizedModelId),
-            downloadSizeMB: estimateSize(normalizedModelId),
-            description: descriptionFor(normalizedModelId),
-            minimumTier: tierFor(normalizedModelId, ramGB: hardware.ramGB),
-            speedLabel: speedLabelFor(normalizedModelId),
-            accuracyLabel: accuracyLabelFor(normalizedModelId),
+            id: exactModelId,
+            name: formatDisplayName(exactModelId),
+            downloadSizeMB: estimateSize(exactModelId),
+            description: descriptionFor(exactModelId),
+            minimumTier: tierFor(exactModelId, ramGB: hardware.ramGB),
+            speedLabel: speedLabelFor(exactModelId),
+            accuracyLabel: accuracyLabelFor(exactModelId),
             isDeviceRecommended: normalizedModelId == Self.normalizedModelID(support.default),
             isDeviceSupported: support.supported.map(Self.normalizedModelID).contains(normalizedModelId),
-            isEnglishOnly: isEnglishOnly(normalizedModelId)
+            isEnglishOnly: isEnglishOnly(exactModelId)
         )
         try await switchModel(to: fallback)
     }
 
     func deleteModel(named modelId: String) throws {
+        // A list row represents a whole model family (quantized builds and
+        // date-stamped aliases merged), so deleting it removes every variant
+        // directory in that family — no orphaned duplicates left on disk.
         var removedAny = false
-        let normalizedTargetID = Self.normalizedModelID(modelId)
+        let canonicalTargetID = Self.canonicalModelListID(modelId)
         let detectedMetrics = Self.detectDownloadedModelMetrics()
-        if let detectedModelDir = detectedMetrics.modelDirectories[normalizedTargetID],
-           FileManager.default.fileExists(atPath: detectedModelDir.path)
-        {
-            try FileManager.default.removeItem(at: detectedModelDir)
-            removedAny = true
-        }
-
-        let appSupportModelDir = modelsDirectory.appendingPathComponent(normalizedTargetID)
-        if FileManager.default.fileExists(atPath: appSupportModelDir.path) {
-            try FileManager.default.removeItem(at: appSupportModelDir)
-            removedAny = true
+        for (detectedID, detectedModelDir) in detectedMetrics.modelDirectories
+        where Self.canonicalModelListID(detectedID) == canonicalTargetID {
+            if FileManager.default.fileExists(atPath: detectedModelDir.path) {
+                try FileManager.default.removeItem(at: detectedModelDir)
+                removedAny = true
+            }
         }
 
         if FileManager.default.fileExists(atPath: modelsDirectory.path),
@@ -259,7 +265,7 @@ final class ModelManager {
                options: [.skipsHiddenFiles]
            )
         {
-            for entry in entries where Self.normalizedModelID(entry.lastPathComponent) == normalizedTargetID {
+            for entry in entries where Self.canonicalModelListID(entry.lastPathComponent) == canonicalTargetID {
                 if FileManager.default.fileExists(atPath: entry.path) {
                     try FileManager.default.removeItem(at: entry)
                     removedAny = true
@@ -267,14 +273,14 @@ final class ModelManager {
             }
         }
 
-        if Self.normalizedModelID(currentModelId ?? "") == normalizedTargetID {
+        if Self.canonicalModelListID(currentModelId ?? "") == canonicalTargetID {
             currentModelId = nil
             state = .notDownloaded
         }
         if removedAny {
-            Logger.model.info("Model deleted: \(normalizedTargetID)")
+            Logger.model.info("Model family deleted: \(canonicalTargetID)")
         } else {
-            Logger.model.info("No local model files found for: \(normalizedTargetID)")
+            Logger.model.info("No local model files found for: \(canonicalTargetID)")
         }
     }
 
@@ -283,29 +289,44 @@ final class ModelManager {
     private func setupHardcodedModels() {
         let deviceSupport = WhisperKit.recommendedModels()
 
+        let supportedFamilies = Set(deviceSupport.supported.map(Self.canonicalModelListID))
+        let defaultFamily = Self.canonicalModelListID(deviceSupport.default)
+
         availableModels = Self.sortModelsBySize([
             ModelInfo(
-                id: "openai_whisper-large-v3_turbo",
+                id: "openai_whisper-large-v3-v20240930_626MB",
                 name: "Whisper Large V3 Turbo",
-                downloadSizeMB: 950,
+                downloadSizeMB: 626,
                 description: "Best accuracy, recommended for 16GB+ RAM",
                 minimumTier: .m1_16gb,
                 speedLabel: .moderate,
                 accuracyLabel: .best,
-                isDeviceRecommended: "openai_whisper-large-v3_turbo" == deviceSupport.default,
-                isDeviceSupported: deviceSupport.supported.contains("openai_whisper-large-v3_turbo"),
+                isDeviceRecommended: defaultFamily == "openai_whisper-large-v3_turbo",
+                isDeviceSupported: supportedFamilies.contains("openai_whisper-large-v3_turbo"),
                 isEnglishOnly: false
             ),
             ModelInfo(
-                id: "openai_whisper-small",
+                id: "openai_whisper-large-v3_947MB",
+                name: "Whisper Large V3",
+                downloadSizeMB: 947,
+                description: "Highest accuracy, slowest",
+                minimumTier: .m3_16gb,
+                speedLabel: .slow,
+                accuracyLabel: .best,
+                isDeviceRecommended: defaultFamily == "openai_whisper-large-v3",
+                isDeviceSupported: supportedFamilies.contains("openai_whisper-large-v3"),
+                isEnglishOnly: false
+            ),
+            ModelInfo(
+                id: "openai_whisper-small_216MB",
                 name: "Whisper Small",
-                downloadSizeMB: 300,
+                downloadSizeMB: 216,
                 description: "Good accuracy, works on 8GB RAM",
                 minimumTier: .m1_8gb,
                 speedLabel: .fast,
                 accuracyLabel: .great,
-                isDeviceRecommended: "openai_whisper-small" == deviceSupport.default,
-                isDeviceSupported: deviceSupport.supported.contains("openai_whisper-small"),
+                isDeviceRecommended: defaultFamily == "openai_whisper-small",
+                isDeviceSupported: supportedFamilies.contains("openai_whisper-small"),
                 isEnglishOnly: false
             ),
         ])
@@ -354,7 +375,9 @@ final class ModelManager {
             return ModelInfo(
                 id: preferred.id,
                 name: preferred.name,
-                downloadSizeMB: variants.map(\.downloadSizeMB).min() ?? preferred.downloadSizeMB,
+                // Show the size of the variant that will actually download,
+                // not the smallest size across merged aliases.
+                downloadSizeMB: preferred.downloadSizeMB,
                 description: preferred.description,
                 minimumTier: preferred.minimumTier,
                 speedLabel: preferred.speedLabel,
@@ -366,8 +389,28 @@ final class ModelManager {
         }
     }
 
+    /// Quantized (mixed-bit palettized) variants Argmax publishes alongside
+    /// each full-precision model. Preferring these keeps accuracy within ~1%
+    /// WER while cutting download size, RAM, and load time by 2-5x.
+    nonisolated static let curatedDownloadVariants: [String: String] = [
+        "openai_whisper-large-v3_turbo": "openai_whisper-large-v3-v20240930_626MB",
+        "openai_whisper-large-v3": "openai_whisper-large-v3_947MB",
+        "openai_whisper-small": "openai_whisper-small_216MB",
+        "openai_whisper-small.en": "openai_whisper-small.en_217MB",
+    ]
+
+    nonisolated static func curatedDownloadVariantID(forFamily familyID: String) -> String? {
+        curatedDownloadVariants[familyID]
+    }
+
     nonisolated private static func preferredModelVariant(for variants: [ModelInfo]) -> ModelInfo {
-        variants.sorted { a, b in
+        if let familyID = variants.first.map({ canonicalModelListID($0.id) }),
+           let curatedID = curatedDownloadVariants[familyID],
+           let curated = variants.first(where: { $0.id == curatedID }) {
+            return curated
+        }
+
+        return variants.sorted { a, b in
             let aIsCanonical = canonicalModelListID(a.id) == a.id
             let bIsCanonical = canonicalModelListID(b.id) == b.id
             if aIsCanonical != bIsCanonical {
@@ -389,6 +432,13 @@ final class ModelManager {
     nonisolated static func canonicalModelListID(_ modelId: String) -> String {
         var canonical = normalizedModelID(modelId)
         guard !canonical.isEmpty else { return canonical }
+
+        // "openai_whisper-large-v3-v20240930" is the official large-v3-turbo
+        // release (4 decoder layers), not a date-stamped alias of large-v3
+        // (32 layers) — its whole subtree belongs to the turbo family.
+        if canonical.lowercased().hasPrefix("openai_whisper-large-v3-v20240930") {
+            return "openai_whisper-large-v3_turbo"
+        }
 
         // Collapse date-stamped aliases such as "...-v20240930_turbo" to a stable family id.
         let dateTagPattern = #"([-_])v\d{8}(?=([-_]|$))"#
@@ -434,7 +484,11 @@ final class ModelManager {
     }
 
     nonisolated static func prefetchModelIfNeeded(_ modelId: String) async -> ModelPrefetchOutcome {
-        let normalizedModelId = normalizedModelID(modelId)
+        // Normalization strips quantized-variant size suffixes ("_626MB"), so
+        // it is only safe for the already-downloaded check — downloading must
+        // use the exact variant id or it silently fetches the full-size model.
+        let exactModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedModelId = normalizedModelID(exactModelId)
         guard !normalizedModelId.isEmpty else {
             return .failed(message: "Missing model id.")
         }
@@ -445,7 +499,7 @@ final class ModelManager {
         }
 
         do {
-            _ = try await WhisperKit.download(variant: normalizedModelId)
+            _ = try await WhisperKit.download(variant: exactModelId)
             return .downloaded
         } catch {
             return .failed(message: error.localizedDescription)
@@ -575,11 +629,34 @@ final class ModelManager {
         return total
     }
 
-    // MARK: - Private: Model Metadata
+    // MARK: - Model Metadata
 
-    private func formatDisplayName(_ id: String) -> String {
-        // "openai_whisper-large-v3_turbo" → "Whisper Large V3 Turbo"
-        var name = id
+    /// True for the fast 4-decoder-layer turbo family, whether named "_turbo"
+    /// or via the official "v20240930" release id.
+    nonisolated static func isTurboFamily(_ id: String) -> Bool {
+        let lowered = id.lowercased()
+        return lowered.contains("turbo") || lowered.contains("v20240930")
+    }
+
+    /// Parses an explicit size suffix like "_626MB" or "_1GB" from a variant id.
+    nonisolated static func parsedSizeSuffixMB(_ id: String) -> Int? {
+        guard let regex = try? NSRegularExpression(pattern: #"_(\d+)(mb|gb)$"#, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let range = NSRange(id.startIndex..<id.endIndex, in: id)
+        guard let match = regex.firstMatch(in: id, options: [], range: range),
+              let numberRange = Range(match.range(at: 1), in: id),
+              let unitRange = Range(match.range(at: 2), in: id),
+              let value = Int(id[numberRange]) else {
+            return nil
+        }
+        return id[unitRange].lowercased() == "gb" ? value * 1024 : value
+    }
+
+    nonisolated static func formatDisplayName(_ id: String) -> String {
+        // Variants display their family name: size/date suffixes describe the
+        // build, not the model ("...-v20240930_626MB" → "Whisper Large V3 Turbo").
+        var name = canonicalModelListID(id)
             .replacingOccurrences(of: "openai_whisper-", with: "Whisper ")
             .replacingOccurrences(of: "openai_whisper_", with: "Whisper ")
             .replacingOccurrences(of: "_", with: " ")
@@ -599,16 +676,28 @@ final class ModelManager {
         return name
     }
 
-    private func estimateSize(_ id: String) -> Int {
+    private func formatDisplayName(_ id: String) -> String {
+        Self.formatDisplayName(id)
+    }
+
+    /// Download size in MB. Exact for size-suffixed quantized variants;
+    /// full-precision sizes measured from the WhisperKit Hugging Face repo.
+    nonisolated static func estimateSize(_ id: String) -> Int {
+        if let parsed = parsedSizeSuffixMB(id) { return parsed }
+
         let lowered = id.lowercased()
-        if lowered.contains("tiny") { return 70 }
-        if lowered.contains("base") { return 140 }
-        if lowered.contains("small") { return 300 }
-        if lowered.contains("medium") { return 770 }
-        if lowered.contains("large") && lowered.contains("turbo") { return 950 }
-        if lowered.contains("large") { return 1500 }
-        if lowered.contains("distil") { return 400 }
+        if lowered.contains("tiny") { return 75 }
+        if lowered.contains("base") { return 145 }
+        if lowered.contains("small") { return 465 }
+        if lowered.contains("medium") { return 1450 }
+        if lowered.contains("distil") { return 1200 }
+        if isTurboFamily(lowered) { return 1550 }
+        if lowered.contains("large") { return 2950 }
         return 500 // Unknown
+    }
+
+    private func estimateSize(_ id: String) -> Int {
+        Self.estimateSize(id)
     }
 
     private func descriptionFor(_ id: String) -> String {
@@ -619,7 +708,7 @@ final class ModelManager {
         if lowered.contains("base") { return "Short dictation\(eng)" }
         if lowered.contains("small") { return "General dictation\(eng)" }
         if lowered.contains("medium") { return "Longer dictation\(eng)" }
-        if lowered.contains("large") && lowered.contains("turbo") { return "Maximum accuracy, optimized speed\(eng)" }
+        if Self.isTurboFamily(lowered) { return "Maximum accuracy, optimized speed\(eng)" }
         if lowered.contains("large") { return "Highest accuracy, slowest\(eng)" }
         if lowered.contains("distil") { return "Distilled variant, fast\(eng)" }
         return "WhisperKit model\(eng)"
@@ -630,7 +719,7 @@ final class ModelManager {
         if lowered.contains("tiny") || lowered.contains("base") || lowered.contains("small") {
             return .m1_8gb
         }
-        if lowered.contains("medium") || (lowered.contains("large") && lowered.contains("turbo")) {
+        if lowered.contains("medium") || Self.isTurboFamily(lowered) {
             return .m1_16gb
         }
         if lowered.contains("large") {
@@ -643,7 +732,7 @@ final class ModelManager {
         let lowered = id.lowercased()
         if lowered.contains("tiny") { return .fastest }
         if lowered.contains("base") || lowered.contains("small") || lowered.contains("distil") { return .fast }
-        if lowered.contains("medium") || (lowered.contains("large") && lowered.contains("turbo")) { return .moderate }
+        if lowered.contains("medium") || Self.isTurboFamily(lowered) { return .moderate }
         if lowered.contains("large") { return .slow }
         return .moderate
     }
@@ -659,6 +748,7 @@ final class ModelManager {
 
     private func isEnglishOnly(_ id: String) -> Bool {
         let lowered = id.lowercased()
-        return lowered.hasSuffix(".en") || lowered.hasSuffix("-en") || lowered.hasSuffix("_en")
+        let withoutSizeSuffix = Self.normalizedModelID(lowered)
+        return withoutSizeSuffix.hasSuffix(".en") || withoutSizeSuffix.hasSuffix("-en") || withoutSizeSuffix.hasSuffix("_en")
     }
 }

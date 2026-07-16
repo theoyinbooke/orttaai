@@ -318,11 +318,11 @@ final class DictationCoordinator {
         guard settings.fastFirstOnboardingEnabled else { return }
         guard !settings.fastFirstPrefetchStarted else { return }
 
-        let recommendedModelId = ModelManager.normalizedModelID(
-            settings.fastFirstRecommendedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
+        // Keep the exact variant id for the download; normalize only for the
+        // same-family comparison (suffix-stripped ids are ambiguous targets).
+        let recommendedModelId = settings.fastFirstRecommendedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !recommendedModelId.isEmpty else { return }
-        guard recommendedModelId != ModelManager.normalizedModelID(activeModelId) else { return }
+        guard ModelManager.normalizedModelID(recommendedModelId) != ModelManager.normalizedModelID(activeModelId) else { return }
 
         settings.fastFirstPrefetchStarted = true
         settings.fastFirstPrefetchReady = false

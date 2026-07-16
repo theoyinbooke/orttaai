@@ -137,13 +137,15 @@ final class HardwareDetector {
     }
 
     static func recommendedModel(for tier: HardwareTier) -> String {
+        // Quantized variants: same family accuracy within ~1% WER at a
+        // fraction of the download size, RAM footprint, and load time.
         switch tier {
         case .m3_16gb:
-            return "openai_whisper-large-v3_turbo"
+            return "openai_whisper-large-v3-v20240930_626MB"
         case .m1_16gb:
-            return "openai_whisper-large-v3_turbo"
+            return "openai_whisper-large-v3-v20240930_626MB"
         case .m1_8gb:
-            return "openai_whisper-small"
+            return "openai_whisper-small_216MB"
         case .intel_unsupported:
             return ""
         }
