@@ -280,4 +280,104 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         XCTAssertEqual(output.text, "number one open settings number two choose audio")
         XCTAssertFalse(output.changes.contains { $0.contains("Spoken formatting") })
     }
+
+    // MARK: - Line break commands
+
+    func testNewParagraphCommandInsertsParagraphBreak() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "thanks for your help new paragraph best regards John",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "thanks for your help\n\nBest regards John")
+        XCTAssertTrue(output.changes.contains { $0.contains("line break command") })
+    }
+
+    func testNewLineCommandConsumesSurroundingCommas() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "first step done, new line, second step",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "first step done\nSecond step")
+    }
+
+    func testNewParagraphKeepsSentencePunctuationBeforeBreak() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "Done. New paragraph. Next section covers billing",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "Done.\n\nNext section covers billing")
+    }
+
+    func testNewLineAsNounPhraseIsLeftAlone() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "we are launching a new line of products this fall",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "we are launching a new line of products this fall")
+        XCTAssertFalse(output.changes.contains { $0.contains("line break") })
+    }
+
+    func testNewParagraphAsNounPhraseIsLeftAlone() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "add a new paragraph about pricing to the doc",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "add a new paragraph about pricing to the doc")
+    }
+
+    func testTrailingNewLineCommandIsDropped() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "send the file new line",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "send the file")
+    }
+
+    func testSingleWordNewlineIsACommand() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "alpha newline beta",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "alpha\nBeta")
+    }
+
+    func testLineBreakCommandsComposeWithNumberedList() async throws {
+        let output = try await processor.process(
+            TextProcessorInput(
+                rawTranscript: "here is the plan new line number one review the budget number two send the report",
+                targetApp: nil,
+                mode: .raw
+            )
+        )
+
+        XCTAssertEqual(output.text, "here is the plan\n1. Review the budget\n2. Send the report")
+    }
 }

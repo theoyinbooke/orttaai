@@ -49,7 +49,7 @@ struct GeneralSettingsView: View {
 
                 toggleRow(
                     title: "Spoken Formatting",
-                    subtitle: "Turns list cues like \"number one\" into formatted lines.",
+                    subtitle: "Applies \"new line\" and \"new paragraph\", and turns list cues like \"number one\" or \"bullet point\" into formatted lines.",
                     isOn: $spokenFormattingEnabled
                 )
             }

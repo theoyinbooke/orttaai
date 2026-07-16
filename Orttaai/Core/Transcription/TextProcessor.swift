@@ -215,16 +215,91 @@ enum SpokenFormattingFormatter {
     (?<![\p{L}\p{N}_])bullet\s+point(?![\p{L}\p{N}_])
     """#
 
+    /// Guards that keep break commands from firing inside noun phrases:
+    /// "add [a] new paragraph [about pricing]" is prose, "new paragraph" alone
+    /// is a command.
+    private static let breakCommandArticleGuard = #"(?<!\b(?:a|the|another|every|each|this|that|per|one) )"#
+    private static let breakCommandFollowerGuard = #"(?![ \t]+(?:of|for|to|in|on|at|with|from|about|between|into)\b)"#
+
+    private static var paragraphBreakPattern: String {
+        #"[ \t]*[,;:]?[ \t]*(?<![\p{L}\p{N}_])"# + breakCommandArticleGuard
+            + #"(?:new|next)[ \t]+paragraph(?![\p{L}\p{N}_])"# + breakCommandFollowerGuard
+            + #"[.,;:]?"#
+    }
+
+    private static var lineBreakPattern: String {
+        #"[ \t]*[,;:]?[ \t]*(?<![\p{L}\p{N}_])"# + breakCommandArticleGuard
+            + #"(?:new[ \t]+line|newline|next[ \t]+line)(?![\p{L}\p{N}_])"# + breakCommandFollowerGuard
+            + #"[.,;:]?"#
+    }
+
     static func format(_ text: String) -> (text: String, changes: [String]) {
-        if let formattedText = formatOrderedList(text) {
-            return (formattedText, ["Spoken formatting: numbered list"])
+        let lineBreakResult = applyLineBreakCommands(to: text)
+
+        if let formattedText = formatOrderedList(lineBreakResult.text) {
+            return (formattedText, lineBreakResult.changes + ["Spoken formatting: numbered list"])
         }
 
-        if let formattedText = formatBulletList(text) {
-            return (formattedText, ["Spoken formatting: bullet list"])
+        if let formattedText = formatBulletList(lineBreakResult.text) {
+            return (formattedText, lineBreakResult.changes + ["Spoken formatting: bullet list"])
         }
 
-        return (text, [])
+        return (lineBreakResult.text, lineBreakResult.changes)
+    }
+
+    /// Applies spoken "new line" / "new paragraph" commands as real breaks,
+    /// consuming the filler punctuation Whisper wraps them in and re-casing
+    /// the sentence that follows. Trailing breaks are dropped (a pasted
+    /// trailing newline submits in terminals and some chat apps); leading
+    /// breaks are kept so dictation can push below the current line.
+    static func applyLineBreakCommands(to text: String) -> (text: String, changes: [String]) {
+        var replacementCount = 0
+        var value = text
+
+        for (pattern, breakText) in [(paragraphBreakPattern, "\n\n"), (lineBreakPattern, "\n")] {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            let range = NSRange(value.startIndex..<value.endIndex, in: value)
+            let matches = regex.numberOfMatches(in: value, options: [], range: range)
+            guard matches > 0 else { continue }
+            replacementCount += matches
+            value = regex.stringByReplacingMatches(in: value, options: [], range: range, withTemplate: breakText)
+        }
+
+        guard replacementCount > 0 else { return (text, []) }
+
+        value = value.replacingOccurrences(of: #"[ \t]+\n"#, with: "\n", options: .regularExpression)
+        value = value.replacingOccurrences(of: #"\n[ \t]+"#, with: "\n", options: .regularExpression)
+        value = value.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        value = value.replacingOccurrences(of: #"\s+$"#, with: "", options: .regularExpression)
+        value = capitalizedAfterLineBreaks(value)
+
+        let label = replacementCount == 1 ? "1 line break command" : "\(replacementCount) line break commands"
+        return (value, ["Spoken formatting: \(label)"])
+    }
+
+    private static func capitalizedAfterLineBreaks(_ text: String) -> String {
+        var result = text
+        var searchIndex = result.startIndex
+
+        while let newlineIndex = result[searchIndex...].firstIndex(of: "\n") {
+            var contentIndex = result.index(after: newlineIndex)
+            while contentIndex < result.endIndex, result[contentIndex] == "\n" {
+                contentIndex = result.index(after: contentIndex)
+            }
+            guard contentIndex < result.endIndex else { break }
+
+            let firstCharacter = result[contentIndex]
+            let nextIndex = result.index(after: contentIndex)
+            // Same guard as capitalizedFirstContentWord: leave mixed-case
+            // tokens like "iPhone" alone.
+            let followedByUppercase = nextIndex < result.endIndex && result[nextIndex].isUppercase
+            if firstCharacter.isLowercase, !followedByUppercase {
+                result.replaceSubrange(contentIndex...contentIndex, with: String(firstCharacter).uppercased())
+            }
+            searchIndex = contentIndex
+        }
+
+        return result
     }
 
     private static func formatOrderedList(_ text: String) -> String? {
