@@ -333,7 +333,8 @@ tell application "Finder"
   activate
   tell disk "$APP_NAME"
     open
-    delay 1
+    -- Style immediately: any delay before this leaves Finder's default
+    -- small-icon view visible on the build machine.
     set current view of container window to icon view
     set toolbar visible of container window to false
     set statusbar visible of container window to false
@@ -345,6 +346,7 @@ tell application "Finder"
     $BG_SCRIPT_LINE
     set position of item "$APP_NAME.app" of container window to {190, 220}
     set position of item "Applications" of container window to {570, 220}
+    delay 1
     close
     delay 1
     open
