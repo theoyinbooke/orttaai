@@ -19,6 +19,8 @@ final class DatabaseManager {
     private let databaseURL: URL?
     private let backupDirectoryURL: URL?
     private static let maxInsightSnapshots = 60
+    private static let maxRecentCloudSyncBackups = 100
+    private static let maxDailyCloudSyncBackups = 30
     private static let databaseFileName = "orttaai.db"
 
     convenience init(dbQueue: DatabaseQueue) throws {
@@ -111,7 +113,55 @@ final class DatabaseManager {
         }
 
         Logger.database.info("Database backup created at \(backupURL.path, privacy: .public)")
+        do {
+            let removedCount = try pruneCloudSyncBackups(in: resolvedBackupDirectoryURL)
+            if removedCount > 0 {
+                Logger.database.info("Pruned \(removedCount) expired iCloud database backups")
+            }
+        } catch {
+            Logger.database.error("Could not prune database backups: \(error.localizedDescription, privacy: .public)")
+        }
         return backupURL
+    }
+
+    @discardableResult
+    static func pruneCloudSyncBackups(in backupDirectoryURL: URL) throws -> Int {
+        let fileManager = FileManager.default
+        let cloudSyncBackups = try fileManager.contentsOfDirectory(
+            at: backupDirectoryURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        .filter {
+            $0.pathExtension == "db"
+                && $0.lastPathComponent.hasPrefix("\(databaseFileNameWithoutExtension)-")
+                && $0.lastPathComponent.hasSuffix("-icloud-sync.db")
+        }
+        .sorted { $0.lastPathComponent > $1.lastPathComponent }
+
+        guard cloudSyncBackups.count > maxRecentCloudSyncBackups else { return 0 }
+
+        let recentBackups = cloudSyncBackups.prefix(maxRecentCloudSyncBackups)
+        var retainedURLs = Set(recentBackups)
+        var retainedDays = Set(recentBackups.compactMap(backupDay))
+        var retainedDailyCount = 0
+
+        for backupURL in cloudSyncBackups.dropFirst(maxRecentCloudSyncBackups) {
+            guard retainedDailyCount < maxDailyCloudSyncBackups,
+                  let day = backupDay(backupURL),
+                  retainedDays.insert(day).inserted else {
+                continue
+            }
+            retainedURLs.insert(backupURL)
+            retainedDailyCount += 1
+        }
+
+        var removedCount = 0
+        for backupURL in cloudSyncBackups where !retainedURLs.contains(backupURL) {
+            try fileManager.removeItem(at: backupURL)
+            removedCount += 1
+        }
+        return removedCount
     }
 
     @discardableResult
@@ -148,6 +198,14 @@ final class DatabaseManager {
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
 
         return sanitized.isEmpty ? "manual" : sanitized
+    }
+
+    nonisolated private static func backupDay(_ backupURL: URL) -> String? {
+        let components = backupURL.deletingPathExtension().lastPathComponent.split(separator: "-")
+        guard components.count >= 4 else { return nil }
+        let day = components[1]
+        guard day.count == 8, day.allSatisfy(\.isNumber) else { return nil }
+        return String(day)
     }
 
     private func createDestructiveOperationBackup(reason: String) throws {

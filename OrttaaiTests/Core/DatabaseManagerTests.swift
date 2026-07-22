@@ -146,6 +146,51 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(backedUpRecords.map(\.text), ["Keep this in the backup"])
     }
 
+    func testCloudSyncBackupRetentionKeepsRecentAndDailyRecoveryPoints() throws {
+        let fileManager = FileManager.default
+        let backupDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("OrttaaiBackupRetentionTests-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: backupDirectory) }
+
+        for index in 0..<110 {
+            let fileName = String(
+                format: "orttaai-20260722-%06d-icloud-sync.db",
+                120_000 + index
+            )
+            XCTAssertTrue(fileManager.createFile(
+                atPath: backupDirectory.appendingPathComponent(fileName).path,
+                contents: Data()
+            ))
+        }
+
+        let calendar = Calendar(identifier: .gregorian)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd"
+        let baseDate = try XCTUnwrap(formatter.date(from: "20260722"))
+        for dayOffset in 1...45 {
+            let date = try XCTUnwrap(calendar.date(byAdding: .day, value: -dayOffset, to: baseDate))
+            let fileName = "orttaai-\(formatter.string(from: date))-120000-icloud-sync.db"
+            XCTAssertTrue(fileManager.createFile(
+                atPath: backupDirectory.appendingPathComponent(fileName).path,
+                contents: Data()
+            ))
+        }
+
+        let destructiveBackup = backupDirectory
+            .appendingPathComponent("orttaai-20260101-120000-full-reset.db")
+        XCTAssertTrue(fileManager.createFile(atPath: destructiveBackup.path, contents: Data()))
+
+        let removedCount = try DatabaseManager.pruneCloudSyncBackups(in: backupDirectory)
+        let retainedFiles = try fileManager.contentsOfDirectory(atPath: backupDirectory.path)
+
+        XCTAssertEqual(removedCount, 25)
+        XCTAssertEqual(retainedFiles.filter { $0.hasSuffix("-icloud-sync.db") }.count, 130)
+        XCTAssertTrue(retainedFiles.contains(destructiveBackup.lastPathComponent))
+    }
+
     func testDeleteTranscriptionById() throws {
         try db.saveTranscription(
             text: "Delete me",
