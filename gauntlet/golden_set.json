@@ -1,0 +1,1069 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "email-001",
+      "category": "email",
+      "raw": "Hi Sarah, thanks for sending over the deck. I had a look this morning and I think the numbers on slide 4 need updating before we share it with the client",
+      "expected": "Hi Sarah, thanks for sending over the deck. I had a look this morning and I think the numbers on slide 4 need updating before we share it with the client.",
+      "notes": "Only the missing terminal period is added. No sign-off, greeting, or rewording may be introduced; slide 4 stays verbatim."
+    },
+    {
+      "id": "email-002",
+      "category": "email",
+      "raw": "hi team just a quick note to say the review is moved to thursday at 3pm please update your calendars",
+      "expected": "Hi team, just a quick note to say the review is moved to Thursday at 3pm. Please update your calendars.",
+      "notes": "Sentence capitalization, comma after the greeting, split into two sentences, weekday capitalized. 3pm must not become 3:00 PM."
+    },
+    {
+      "id": "email-003",
+      "category": "email",
+      "raw": "Hi Daniel, I've attached the signed contract. Let me know if you need anything else. Best, Olan",
+      "expected": "Hi Daniel, I've attached the signed contract. Let me know if you need anything else. Best, Olan",
+      "notes": "Identity case: input is already clean and must come back byte-identical. Guards against fidgety over-editing."
+    },
+    {
+      "id": "email-004",
+      "category": "email",
+      "raw": "Dear Mr Adeyemi I am writing to follow up on the invoice we sent on the 12th of June it is still showing as unpaid in our system",
+      "expected": "Dear Mr. Adeyemi, I am writing to follow up on the invoice we sent on the 12th of June. It is still showing as unpaid in our system.",
+      "notes": "Abbreviation period, comma after salutation, sentence split. Adeyemi and the 12th of June stay verbatim."
+    },
+    {
+      "id": "email-005",
+      "category": "email",
+      "raw": "morning everyone. um, I wanted to flag that the deployment window has, uh, shifted to saturday night so please plan around that",
+      "expected": "Morning everyone. I wanted to flag that the deployment window has shifted to Saturday night, so please plan around that.",
+      "notes": "Removes um/uh, capitalizes the opener and the weekday. Keeps the speaker's casual register rather than formalizing into a memo."
+    },
+    {
+      "id": "email-006",
+      "category": "email",
+      "raw": "Thanks for the quick turnaround on this, really appreciate it, I'll take a look tonight and get back to you first thing tomorrow",
+      "expected": "Thanks for the quick turnaround on this. Really appreciate it. I'll take a look tonight and get back to you first thing tomorrow.",
+      "notes": "Comma splices become sentence boundaries. No content added, no clauses merged or dropped."
+    },
+    {
+      "id": "email-007",
+      "category": "email",
+      "raw": "hey can you loop in legal on the vendor agreement before friday i don't want to be the one holding it up",
+      "expected": "Hey, can you loop in legal on the vendor agreement before Friday? I don't want to be the one holding it up.",
+      "notes": "Interrogative gets a question mark and stays a request; the model must not reply that it has looped in legal."
+    },
+    {
+      "id": "email-008",
+      "category": "email",
+      "raw": "Following up on my last email, we still need the signed W-9 and the updated bank details before we can process the payment of $4,500",
+      "expected": "Following up on my last email, we still need the signed W-9 and the updated bank details before we can process the payment of $4,500.",
+      "notes": "Only the terminal period is added. W-9 and $4,500 must survive exactly, including the thousands comma."
+    },
+    {
+      "id": "email-009",
+      "category": "email",
+      "raw": "Hi Ngozi hope you're well I've reviewed the proposal and I have two questions first about the timeline and second about the pricing tiers",
+      "expected": "Hi Ngozi, hope you're well. I've reviewed the proposal and I have two questions: first about the timeline, and second about the pricing tiers.",
+      "notes": "Punctuation only. Ngozi verbatim, 'two' stays spelled out, and the two questions must not be turned into a bulleted list."
+    },
+    {
+      "id": "email-010",
+      "category": "email",
+      "raw": "apologies for the delay in responding i was out on leave last week the short answer is yes we can support that integration in q3",
+      "expected": "Apologies for the delay in responding. I was out on leave last week. The short answer is yes, we can support that integration in Q3.",
+      "notes": "Three sentences recovered from an unpunctuated stream; q3 capitalized to Q3 as an obvious casing fix."
+    },
+    {
+      "id": "email-011",
+      "category": "email",
+      "raw": "Can you send me the latest version of the onboarding doc, I think mine is out of date, the one I have still mentions the old pricing",
+      "expected": "Can you send me the latest version of the onboarding doc? I think mine is out of date. The one I have still mentions the old pricing.",
+      "notes": "First clause is a request and takes a question mark; the model must not attach the doc or answer on the recipient's behalf."
+    },
+    {
+      "id": "email-012",
+      "category": "email",
+      "raw": "thanks for your help today\n\nBest regards Olanrewaju",
+      "expected": "Thanks for your help today.\n\nBest regards, Olanrewaju",
+      "notes": "The blank line came from a spoken 'new paragraph' command in the rule-based pass and must be preserved exactly. Only a comma is added; the sign-off must not be re-split onto its own line, and Olanrewaju must not be respelled."
+    },
+    {
+      "id": "email-013",
+      "category": "email",
+      "raw": "Just confirming that the invoice for 1,250 dollars was paid on the 3rd, please let me know if it hasn't landed on your end",
+      "expected": "Just confirming that the invoice for 1,250 dollars was paid on the 3rd. Please let me know if it hasn't landed on your end.",
+      "notes": "Comma splice split. 1,250 and 3rd verbatim; 'dollars' must not become a $ sign."
+    },
+    {
+      "id": "email-014",
+      "category": "email",
+      "raw": "hi Chidi quick one are we still on for the standup at 9:30 or has that moved i've got a conflict at 10",
+      "expected": "Hi Chidi, quick one: are we still on for the standup at 9:30, or has that moved? I've got a conflict at 10.",
+      "notes": "Chidi verbatim; 9:30 and 10 preserved; the embedded question keeps its question mark and is not answered."
+    },
+    {
+      "id": "chat-001",
+      "category": "chat",
+      "raw": "yeah that works for me, i'll push the branch in a sec",
+      "expected": "Yeah, that works for me. I'll push the branch in a sec.",
+      "notes": "Casual register preserved: 'yeah' and 'in a sec' must not be upgraded to 'Yes' and 'shortly'."
+    },
+    {
+      "id": "chat-002",
+      "category": "chat",
+      "raw": "lol no worries, take your time",
+      "expected": "Lol, no worries, take your time.",
+      "notes": "Internet shorthand stays as dictated; only capitalization and a terminal period are added."
+    },
+    {
+      "id": "chat-003",
+      "category": "chat",
+      "raw": "sounds good, ship it",
+      "expected": "Sounds good, ship it.",
+      "notes": "Near pass-through. No exclamation mark and no added enthusiasm."
+    },
+    {
+      "id": "chat-004",
+      "category": "chat",
+      "raw": "im gonna be like 10 minutes late to the call, got stuck on a support thing",
+      "expected": "I'm gonna be like 10 minutes late to the call. Got stuck on a support thing.",
+      "notes": "'like' here is an approximator on '10 minutes' and must survive; 'gonna' is the speaker's register and stays. Only the missing apostrophe and the comma splice are fixed. 10 verbatim."
+    },
+    {
+      "id": "chat-005",
+      "category": "chat",
+      "raw": "can someone review my PR when they get a chance its the one that fixes the clipboard restore bug",
+      "expected": "Can someone review my PR when they get a chance? It's the one that fixes the clipboard restore bug.",
+      "notes": "PR stays uppercase, its/it's fixed, question mark added. The model must not offer to review the PR."
+    },
+    {
+      "id": "chat-006",
+      "category": "chat",
+      "raw": "we shipped it 🎉 the build is on TestFlight now",
+      "expected": "We shipped it 🎉 The build is on TestFlight now.",
+      "notes": "Emoji preserved in place; TestFlight's internal capital survives."
+    },
+    {
+      "id": "chat-007",
+      "category": "chat",
+      "raw": "so um basically the issue is that the hotkey doesn't fire when the app is in the background you know",
+      "expected": "So basically, the issue is that the hotkey doesn't fire when the app is in the background.",
+      "notes": "Removes 'um' and the trailing 'you know'. 'basically' is the speaker's voice and stays."
+    },
+    {
+      "id": "chat-008",
+      "category": "chat",
+      "raw": "did you see the thread in #general about the pricing change",
+      "expected": "Did you see the thread in #general about the pricing change?",
+      "notes": "#general must not be escaped, linkified, or turned into a markdown heading."
+    },
+    {
+      "id": "chat-009",
+      "category": "chat",
+      "raw": "no wait i mean the staging database not production",
+      "expected": "I mean the staging database, not production.",
+      "notes": "The false start 'no wait' is dropped; 'I mean' is load-bearing here (it introduces the correction) so the sentence keeps its intent. Neither database is swapped."
+    },
+    {
+      "id": "chat-010",
+      "category": "chat",
+      "raw": "brb grabbing coffee",
+      "expected": "Brb, grabbing coffee.",
+      "notes": "'brb' must not be expanded to 'be right back'."
+    },
+    {
+      "id": "chat-011",
+      "category": "chat",
+      "raw": "thanks Tunde that fixed it, you're a lifesaver",
+      "expected": "Thanks Tunde, that fixed it. You're a lifesaver.",
+      "notes": "Tunde verbatim. No exclamation mark added — punctuation fixes must not amplify tone."
+    },
+    {
+      "id": "chat-012",
+      "category": "chat",
+      "raw": "i think we should just, like, ship the smaller version first and then see what people say",
+      "expected": "I think we should just ship the smaller version first and then see what people say.",
+      "notes": "The interjected 'like' is a filler and goes; 'I think' is a hedge the speaker chose and stays."
+    },
+    {
+      "id": "chat-013",
+      "category": "chat",
+      "raw": "@Fola can you take a look at the failing test on main it's been red since yesterday",
+      "expected": "@Fola, can you take a look at the failing test on main? It's been red since yesterday.",
+      "notes": "@Fola mention preserved verbatim; branch name 'main' stays lowercase; request stays a request."
+    },
+    {
+      "id": "tech-001",
+      "category": "technical",
+      "raw": "the bug is in LocalLLMTextProcessor, the sanitizer rejects anything under 0.55 of the original length",
+      "expected": "The bug is in LocalLLMTextProcessor. The sanitizer rejects anything under 0.55 of the original length.",
+      "notes": "Camel-case identifier LocalLLMTextProcessor and the decimal 0.55 must be byte-identical. Comma splice becomes a sentence break."
+    },
+    {
+      "id": "tech-002",
+      "category": "technical",
+      "raw": "we need to bump the dependency to version 1.6.1 before we can use the new API",
+      "expected": "we need to bump the dependency to version 1.6.1 before we can use the new API",
+      "notes": "Identity case except for the missing leading capital — a judge should accept either 'we' or 'We' here, but nothing else may change. 1.6.1 verbatim."
+    },
+    {
+      "id": "tech-003",
+      "category": "technical",
+      "raw": "run npm install then npm run dev and it should come up on localhost 3000",
+      "expected": "Run npm install, then npm run dev, and it should come up on localhost 3000.",
+      "notes": "Commands stay lowercase and unquoted. 'localhost 3000' must not be rewritten as localhost:3000 — inventing the colon is adding content."
+    },
+    {
+      "id": "tech-004",
+      "category": "technical",
+      "raw": "the cash is stale so the first request after a deploy is always slow",
+      "expected": "The cache is stale, so the first request after a deploy is always slow.",
+      "notes": "Classic ASR homophone in a technical context: cash to cache. Nothing else changes."
+    },
+    {
+      "id": "tech-005",
+      "category": "technical",
+      "raw": "i set keepAlive to 5m so the model stays warm between dictations",
+      "expected": "I set keepAlive to 5m so the model stays warm between dictations.",
+      "notes": "keepAlive keeps its camel case and 5m keeps its shorthand — no expansion to '5 minutes'."
+    },
+    {
+      "id": "tech-006",
+      "category": "technical",
+      "raw": "so the circuit breaker backs off exponentially, um, up to 20 seconds, and then it retries",
+      "expected": "So the circuit breaker backs off exponentially, up to 20 seconds, and then it retries.",
+      "notes": "Filler removed; 20 preserved; the clause order is untouched."
+    },
+    {
+      "id": "tech-007",
+      "category": "technical",
+      "raw": "can you check whether the Sparkle appcast points at the 1.6.1 dmg or still the 1.6.0 one",
+      "expected": "Can you check whether the Sparkle appcast points at the 1.6.1 DMG or still the 1.6.0 one?",
+      "notes": "Sparkle and appcast preserved, dmg uppercased as an obvious casing fix, both version strings verbatim. The model must not go look it up or claim an answer."
+    },
+    {
+      "id": "tech-008",
+      "category": "technical",
+      "raw": "the numPredict cap is max 24 min 120 which is why long dictations get truncated",
+      "expected": "The numPredict cap is max 24, min 120, which is why long dictations get truncated.",
+      "notes": "numPredict casing plus both bounds (24, 120) verbatim. Punctuation only."
+    },
+    {
+      "id": "tech-009",
+      "category": "technical",
+      "raw": "we're on swift 6 strict concurrency now so every actor boundary needs sendable types",
+      "expected": "We're on Swift 6 strict concurrency now, so every actor boundary needs Sendable types.",
+      "notes": "Swift and Sendable are proper nouns/type names and get capitalized; 6 verbatim."
+    },
+    {
+      "id": "tech-010",
+      "category": "technical",
+      "raw": "i think the whisper model is quantized to Q4_K_M in the small build",
+      "expected": "I think the Whisper model is quantized to Q4_K_M in the small build.",
+      "notes": "Q4_K_M must survive underscores and casing exactly; Whisper capitalized as a product name."
+    },
+    {
+      "id": "tech-011",
+      "category": "technical",
+      "raw": "the git rebase blew up, there were conflicts in AppSettings.swift and DatabaseManager.swift",
+      "expected": "The git rebase blew up. There were conflicts in AppSettings.swift and DatabaseManager.swift.",
+      "notes": "Filenames including the .swift extension stay verbatim; 'git' stays lowercase as the command name."
+    },
+    {
+      "id": "tech-012",
+      "category": "technical",
+      "raw": "make sure the ollama endpoint is http localhost 11434 and not the LM studio one",
+      "expected": "Make sure the Ollama endpoint is http localhost 11434 and not the LM Studio one.",
+      "notes": "Ollama and LM Studio capitalized. The port 11434 is verbatim and the model must not synthesize 'http://localhost:11434' — that is fabricated punctuation."
+    },
+    {
+      "id": "tech-013",
+      "category": "technical",
+      "raw": "uh the UI test target fails in automation mode on this machine but the unit tests are fine",
+      "expected": "The UI test target fails in automation mode on this machine, but the unit tests are fine.",
+      "notes": "Leading 'uh' removed; UI stays uppercase; the contrast clause keeps its comma."
+    },
+    {
+      "id": "tech-014",
+      "category": "technical",
+      "raw": "we should probably memoize that selector, it's re-rendering on every keystroke",
+      "expected": "We should probably memoize that selector. It's re-rendering on every keystroke.",
+      "notes": "'memoize' must not be 'corrected' to 'memorize'. Comma splice split."
+    },
+    {
+      "id": "list-001",
+      "category": "lists",
+      "raw": "1. Review the budget\n2. Send the report",
+      "expected": "1. Review the budget\n2. Send the report",
+      "notes": "Already formatted by SpokenFormattingFormatter from spoken 'number one/number two'. Identity case: markers, numbering, and newlines unchanged, and no terminal periods bolted onto fragments."
+    },
+    {
+      "id": "list-002",
+      "category": "lists",
+      "raw": "Here are the steps\n1. Open settings\n2. Choose audio\n3. Pick the built in mic",
+      "expected": "Here are the steps:\n1. Open settings\n2. Choose audio\n3. Pick the built-in mic",
+      "notes": "Colon after the intro line and the hyphen in 'built-in' are punctuation fixes. Line breaks and 1./2./3. markers must be preserved exactly and not renumbered."
+    },
+    {
+      "id": "list-003",
+      "category": "lists",
+      "raw": "- Fast on device transcription\n- Clipboard is preserved\n- Works offline",
+      "expected": "- Fast on-device transcription\n- Clipboard is preserved\n- Works offline",
+      "notes": "Hyphenates 'on-device' only. Bullet markers must stay as '- ' and must not become '*', '•', or a numbered list."
+    },
+    {
+      "id": "list-004",
+      "category": "lists",
+      "raw": "Shopping list\n- Milk\n- 2 dozen eggs\n- Bread",
+      "expected": "Shopping list\n- Milk\n- 2 dozen eggs\n- Bread",
+      "notes": "Identity case. The 2 is preserved and the list must not be flattened into a sentence."
+    },
+    {
+      "id": "list-005",
+      "category": "lists",
+      "raw": "1. Um, first we need to get sign off from finance\n2. Then we can, uh, start the build",
+      "expected": "1. First we need to get sign-off from finance\n2. Then we can start the build",
+      "notes": "Disfluencies are removed inside list items while the markers and the line break survive. 'sign-off' hyphenated as a noun."
+    },
+    {
+      "id": "list-006",
+      "category": "lists",
+      "raw": "three things went wrong today\n1. The build broke\n2. The tests timed out\n3. The deploy rolled back",
+      "expected": "Three things went wrong today:\n1. The build broke\n2. The tests timed out\n3. The deploy rolled back",
+      "notes": "Intro line capitalized and given a colon; 'three' stays spelled out; three items stay three items."
+    },
+    {
+      "id": "list-007",
+      "category": "lists",
+      "raw": "1. Talk to Ade\n2. Talk to Ngozi\n3. Talk to Kemi",
+      "expected": "1. Talk to Ade\n2. Talk to Ngozi\n3. Talk to Kemi",
+      "notes": "Identity case. Ade, Ngozi, and Kemi must not be respelled (Aide, Ngozzi, Kemie) or merged into one item."
+    },
+    {
+      "id": "list-008",
+      "category": "lists",
+      "raw": "agenda for monday\n- Budget review\n- Hiring update\n- Q3 roadmap",
+      "expected": "Agenda for Monday:\n- Budget review\n- Hiring update\n- Q3 roadmap",
+      "notes": "Intro capitalized with a colon; Monday capitalized; Q3 casing preserved. Bullets untouched."
+    },
+    {
+      "id": "list-009",
+      "category": "lists",
+      "raw": "1. Send the contract to Olanrewaju\n2. Wait for the counter signature\n3. File it in the drive",
+      "expected": "1. Send the contract to Olanrewaju\n2. Wait for the countersignature\n3. File it in the drive",
+      "notes": "Fixes the ASR word split 'counter signature'. Olanrewaju verbatim, 'drive' stays lowercase (no assumption it means Google Drive)."
+    },
+    {
+      "id": "list-010",
+      "category": "lists",
+      "raw": "- Check the mic input level\n- Check the sample rate is 16 kilohertz\n- Check the model is loaded",
+      "expected": "- Check the mic input level\n- Check the sample rate is 16 kilohertz\n- Check the model is loaded",
+      "notes": "Identity case. '16 kilohertz' must not be compressed to '16 kHz' — that is a wording change, not a punctuation fix."
+    },
+    {
+      "id": "list-011",
+      "category": "lists",
+      "raw": "the two blockers are\n1. We don't have the API key yet\n2. The vendor hasn't signed",
+      "expected": "The two blockers are:\n1. We don't have the API key yet\n2. The vendor hasn't signed",
+      "notes": "Colon added, intro capitalized. Both items keep their contractions and their markers."
+    },
+    {
+      "id": "list-012",
+      "category": "lists",
+      "raw": "1. Draft the post\n2. Um, get Fola to review it\n3. Schedule for tuesday at 9",
+      "expected": "1. Draft the post\n2. Get Fola to review it\n3. Schedule for Tuesday at 9",
+      "notes": "Filler stripped from item 2, weekday capitalized, and the 9 preserved without inventing ':00' or 'am'."
+    },
+    {
+      "id": "runon-001",
+      "category": "run-on",
+      "raw": "so I was looking at the dashboard this morning and I noticed that the numbers for last week are way off from what we reported in the deck and I think it's because the tracking script wasn't firing on the pricing page which would explain the drop",
+      "expected": "So I was looking at the dashboard this morning and I noticed that the numbers for last week are way off from what we reported in the deck. I think it's because the tracking script wasn't firing on the pricing page, which would explain the drop.",
+      "notes": "Split at the second 'and I think'. The first-person narrative voice must survive — this is the case where a bad model produces terse meeting minutes instead of the speaker's sentence."
+    },
+    {
+      "id": "runon-002",
+      "category": "run-on",
+      "raw": "okay so the plan for the week is we finish the polish work by wednesday then we do a round of testing on thursday and if that looks clean we ship friday morning but if anything breaks we hold until monday",
+      "expected": "Okay, so the plan for the week is we finish the polish work by Wednesday, then we do a round of testing on Thursday. If that looks clean we ship Friday morning, but if anything breaks we hold until Monday.",
+      "notes": "Four weekdays capitalized, one sentence break inserted. No day may be dropped and the conditional structure must stay intact."
+    },
+    {
+      "id": "runon-003",
+      "category": "run-on",
+      "raw": "i talked to the vendor and they said the contract needs to go through their legal team first which takes about two weeks and then once that's done we can start the pilot but they want a purchase order before anything moves",
+      "expected": "I talked to the vendor and they said the contract needs to go through their legal team first, which takes about two weeks. Then, once that's done, we can start the pilot, but they want a purchase order before anything moves.",
+      "notes": "'and then' is preserved as 'Then' at the sentence head rather than reworded. 'about two weeks' stays hedged and spelled out."
+    },
+    {
+      "id": "runon-004",
+      "category": "run-on",
+      "raw": "so the reason I'm calling is that we've been going back and forth on this for about three weeks now and I still don't have a clear answer on whether the migration is happening this quarter or next and it matters because if it's this quarter I need to pull two engineers off the mobile work and that pushes the app release into August",
+      "expected": "So the reason I'm calling is that we've been going back and forth on this for about three weeks now, and I still don't have a clear answer on whether the migration is happening this quarter or next. It matters because if it's this quarter I need to pull two engineers off the mobile work, and that pushes the app release into August.",
+      "notes": "Over 280 characters, so the shipping app skips LLM polish at the default localLLMPolishMaxChars; scored here for model quality when the cap is raised. Also the length case where a model is most tempted to summarize — every clause must survive."
+    },
+    {
+      "id": "runon-005",
+      "category": "run-on",
+      "raw": "and the other thing is that the onboarding flow has too many steps people are dropping off at the permissions screen because we ask for microphone and accessibility at the same time which feels like a lot",
+      "expected": "And the other thing is that the onboarding flow has too many steps. People are dropping off at the permissions screen because we ask for microphone and accessibility at the same time, which feels like a lot.",
+      "notes": "Sentence boundary recovered where there was no punctuation at all. The sentence-initial 'And' is the speaker's voice and must not be edited away."
+    },
+    {
+      "id": "runon-006",
+      "category": "run-on",
+      "raw": "i mean the whole point of doing it locally is privacy right so if we start sending transcripts to a server for polish then we've kind of lost the thing that makes the product worth using in the first place",
+      "expected": "The whole point of doing it locally is privacy, right? So if we start sending transcripts to a server for polish, then we've kind of lost the thing that makes the product worth using in the first place.",
+      "notes": "Leading 'i mean' is a disfluency and goes; the rhetorical 'right' keeps its question mark. The argument must not be summarized or agreed with."
+    },
+    {
+      "id": "runon-007",
+      "category": "run-on",
+      "raw": "he said he'd send the file by end of day yesterday and it never came so I pinged him this morning and he said he's still waiting on his designer so realistically we're looking at wednesday",
+      "expected": "He said he'd send the file by end of day yesterday and it never came, so I pinged him this morning. He said he's still waiting on his designer, so realistically we're looking at Wednesday.",
+      "notes": "Split between the two 'he said' clauses; Wednesday capitalized. No judgement or advice may be appended."
+    },
+    {
+      "id": "runon-008",
+      "category": "run-on",
+      "raw": "the way the pipeline works is the audio goes to whisper first then the rule based processor applies your dictionary and snippets then the LLM polish runs on top of that and finally the text gets injected into whatever app has focus",
+      "expected": "The way the pipeline works is the audio goes to Whisper first, then the rule-based processor applies your dictionary and snippets, then the LLM polish runs on top of that, and finally the text gets injected into whatever app has focus.",
+      "notes": "A legitimately single long sentence: commas are added but it must NOT be chopped into four sentences. Whisper capitalized, 'rule-based' hyphenated, LLM left uppercase."
+    },
+    {
+      "id": "runon-009",
+      "category": "run-on",
+      "raw": "we should probably talk about pricing at some point because right now we're at nine dollars a month and I think there's room to go higher especially if we're the only app doing on device polish but I don't want to spook the early users",
+      "expected": "We should probably talk about pricing at some point, because right now we're at nine dollars a month. I think there's room to go higher, especially if we're the only app doing on-device polish, but I don't want to spook the early users.",
+      "notes": "'nine dollars' stays spelled out (no $9). Hedges 'probably' and 'I think' survive; the final reservation must not be dropped as redundant."
+    },
+    {
+      "id": "runon-010",
+      "category": "run-on",
+      "raw": "yeah so I tried it on the M1 air and it was noticeably slower like two and a half seconds versus under a second on the mini which is probably the memory bandwidth so we might need to gate the bigger model on hardware",
+      "expected": "Yeah, so I tried it on the M1 Air and it was noticeably slower, like two and a half seconds versus under a second on the mini, which is probably the memory bandwidth. So we might need to gate the bigger model on hardware.",
+      "notes": "M1 Air capitalized and the 1 preserved; timings stay spelled out. Clause order must not change: 'which is probably the memory bandwidth' explains the slowdown, so moving it next to the gating decision alters the meaning."
+    },
+    {
+      "id": "runon-011",
+      "category": "run-on",
+      "raw": "the customer said the app crashed when they were dictating into slack but they couldn't reproduce it and there's nothing in the logs so I'm not sure what to do with that ticket honestly",
+      "expected": "The customer said the app crashed when they were dictating into Slack, but they couldn't reproduce it and there's nothing in the logs. So I'm not sure what to do with that ticket, honestly.",
+      "notes": "Slack capitalized; the trailing 'honestly' is retained as the speaker's tone marker. No troubleshooting suggestions may be added."
+    },
+    {
+      "id": "runon-012",
+      "category": "run-on",
+      "raw": "okay let me think through this out loud the reason the polish model keeps answering questions is that it was trained as a chat assistant so when it sees a question it wants to be helpful and the only way to fix that is to train on examples where the target is the polished question itself not an answer",
+      "expected": "Okay, let me think through this out loud. The reason the polish model keeps answering questions is that it was trained as a chat assistant, so when it sees a question it wants to be helpful. The only way to fix that is to train on examples where the target is the polished question itself, not an answer.",
+      "notes": "Over 280 characters, so the default configuration skips polish. Doubles as a trap: the content is about answering questions, and a bad model will start discussing or agreeing with it instead of punctuating it."
+    },
+    {
+      "id": "disfl-001",
+      "category": "disfluency",
+      "raw": "um so I think we should, uh, move the meeting to next week",
+      "expected": "So I think we should move the meeting to next week.",
+      "notes": "Both fillers removed; 'I think' kept. Length ratio 0.86 — safely inside the sanitizer band."
+    },
+    {
+      "id": "disfl-002",
+      "category": "disfluency",
+      "raw": "the thing is, you know, we never actually tested it on a cold start",
+      "expected": "The thing is, we never actually tested it on a cold start.",
+      "notes": "'you know' removed while the comma structure that framed it is repaired. 'actually' stays."
+    },
+    {
+      "id": "disfl-003",
+      "category": "disfluency",
+      "raw": "I'll send you the deck on tuesday, no wait, I mean wednesday",
+      "expected": "I'll send you the deck on Wednesday.",
+      "notes": "Self-correction resolved to the final intent: Tuesday must be gone, Wednesday must remain. Length ratio is ~0.59, close to the 0.55 floor in sanitizePolishOutput — a slightly terser correct answer would be rejected by the app."
+    },
+    {
+      "id": "disfl-004",
+      "category": "disfluency",
+      "raw": "we, we need to fix the, the hotkey handler before release",
+      "expected": "We need to fix the hotkey handler before release.",
+      "notes": "Stutter repetitions collapsed. Nothing else changes and no urgency is added."
+    },
+    {
+      "id": "disfl-005",
+      "category": "disfluency",
+      "raw": "so basically what happened was, um, the disk filled up and then the writes started failing",
+      "expected": "So basically what happened was the disk filled up and then the writes started failing.",
+      "notes": "Only 'um' and its orphaned commas go. 'basically' is register, not filler."
+    },
+    {
+      "id": "disfl-006",
+      "category": "disfluency",
+      "raw": "like I said before, like, the numbers just don't add up",
+      "expected": "Like I said before, the numbers just don't add up.",
+      "notes": "The first 'like' heads a meaningful clause and stays; only the interjected one is removed. Distinguishing the two is the whole point of this case."
+    },
+    {
+      "id": "disfl-007",
+      "category": "disfluency",
+      "raw": "can you, uh, can you check if the mic permission is granted",
+      "expected": "Can you check if the mic permission is granted?",
+      "notes": "False start plus filler collapsed into one clean question, which stays a question and is not answered."
+    },
+    {
+      "id": "disfl-008",
+      "category": "disfluency",
+      "raw": "it's kind of, sort of, working but not really",
+      "expected": "It's kind of working, but not really.",
+      "notes": "The doubled hedge collapses to one, but a hedge must remain — 'It's working, but not really' would overstate the claim."
+    },
+    {
+      "id": "disfl-009",
+      "category": "disfluency",
+      "raw": "I want to say it was, what, maybe forty percent of users",
+      "expected": "I want to say it was maybe forty percent of users.",
+      "notes": "Filler 'what' removed. 'forty percent' stays spelled out and 'maybe' keeps the uncertainty."
+    },
+    {
+      "id": "disfl-010",
+      "category": "disfluency",
+      "raw": "and then he said, um, he said that the contract was already signed",
+      "expected": "And then he said that the contract was already signed.",
+      "notes": "Repeated 'he said' collapsed; the reported-speech framing is kept rather than converted to a direct claim."
+    },
+    {
+      "id": "disfl-011",
+      "category": "disfluency",
+      "raw": "we're going to launch on the tenth, sorry, we're launching on the fifteenth",
+      "expected": "We're launching on the fifteenth.",
+      "notes": "Correct polish is ~0.44 of the input length, below the 0.55 floor in sanitizePolishOutput, so the shipping app rejects it and injects the raw text. Kept deliberately: it scores model quality and documents a known sanitizer limitation on heavy self-corrections."
+    },
+    {
+      "id": "disfl-012",
+      "category": "disfluency",
+      "raw": "okay so, right, the point I'm making is that latency matters more than quality here",
+      "expected": "Okay, so the point I'm making is that latency matters more than quality here.",
+      "notes": "Discourse filler 'right' removed mid-sentence. The claim must not be softened or debated."
+    },
+    {
+      "id": "disfl-013",
+      "category": "disfluency",
+      "raw": "I think, and correct me if I'm wrong, that we already paid for that license",
+      "expected": "I think, and correct me if I'm wrong, that we already paid for that license.",
+      "notes": "Identity case apart from the terminal period: 'and correct me if I'm wrong' is a deliberate hedge, not a disfluency, and stripping it changes the speaker's stance."
+    },
+    {
+      "id": "disfl-014",
+      "category": "disfluency",
+      "raw": "um. Yeah. So the answer is no, we can't support that yet.",
+      "expected": "Yeah, so the answer is no, we can't support that yet.",
+      "notes": "Whisper punctuated the filler as its own sentence; removing 'um.' requires re-joining the fragments without altering the answer."
+    },
+    {
+      "id": "disfl-015",
+      "category": "disfluency",
+      "raw": "he's uh he's the one who filed the ticket, Adebayo I think",
+      "expected": "He's the one who filed the ticket, Adebayo I think.",
+      "notes": "Repetition collapsed; Adebayo verbatim; the trailing hedge 'I think' stays."
+    },
+    {
+      "id": "asr-001",
+      "category": "asr-error",
+      "raw": "make sure their is enough space on the disk before you start the export",
+      "expected": "Make sure there is enough space on the disk before you start the export.",
+      "notes": "their to there. Nothing else in the sentence is touched."
+    },
+    {
+      "id": "asr-002",
+      "category": "asr-error",
+      "raw": "we need to clear the cash after every deploy",
+      "expected": "We need to clear the cache after every deploy.",
+      "notes": "cash to cache — the canonical Whisper error in engineering dictation."
+    },
+    {
+      "id": "asr-003",
+      "category": "asr-error",
+      "raw": "the effect of the change was that the queue drained twice as fast",
+      "expected": "The effect of the change was that the queue drained twice as fast.",
+      "notes": "Identity case beyond capitalization: 'effect' is already correct and must NOT be 'fixed' to 'affect'. Probes over-correction."
+    },
+    {
+      "id": "asr-004",
+      "category": "asr-error",
+      "raw": "can you sight the source for that number in the doc",
+      "expected": "Can you cite the source for that number in the doc?",
+      "notes": "sight to cite, plus the question mark. The request must not be fulfilled."
+    },
+    {
+      "id": "asr-005",
+      "category": "asr-error",
+      "raw": "its going to brake if we push more than ten megabytes",
+      "expected": "It's going to break if we push more than ten megabytes.",
+      "notes": "Two fixes: its/it's and brake/break. 'ten megabytes' stays spelled out."
+    },
+    {
+      "id": "asr-006",
+      "category": "asr-error",
+      "raw": "we should of tested that on the beta build first",
+      "expected": "We should have tested that on the beta build first.",
+      "notes": "'should of' to 'should have' — a transcription artifact of the spoken contraction, not a style edit."
+    },
+    {
+      "id": "asr-007",
+      "category": "asr-error",
+      "raw": "the two teams are working on to many things at once",
+      "expected": "The two teams are working on too many things at once.",
+      "notes": "to/too. 'two teams' must stay as the numeral word and not be re-spelled."
+    },
+    {
+      "id": "asr-008",
+      "category": "asr-error",
+      "raw": "I sent it to know one, it's still in my drafts",
+      "expected": "I sent it to no one, it's still in my drafts.",
+      "notes": "'know one' to 'no one'. The comma splice is mild enough to leave; a judge should accept either the comma or a period."
+    },
+    {
+      "id": "asr-009",
+      "category": "asr-error",
+      "raw": "the whether in Lagos is brutal this week",
+      "expected": "The weather in Lagos is brutal this week.",
+      "notes": "whether to weather. Lagos must not be altered."
+    },
+    {
+      "id": "asr-010",
+      "category": "asr-error",
+      "raw": "he's going to right the migration script tonight",
+      "expected": "He's going to write the migration script tonight.",
+      "notes": "right to write."
+    },
+    {
+      "id": "asr-011",
+      "category": "asr-error",
+      "raw": "your the only person who has access to that bucket",
+      "expected": "You're the only person who has access to that bucket.",
+      "notes": "your to you're."
+    },
+    {
+      "id": "asr-012",
+      "category": "asr-error",
+      "raw": "we lost about a week do to the outage",
+      "expected": "We lost about a week due to the outage.",
+      "notes": "'do to' to 'due to'. The hedge 'about' stays."
+    },
+    {
+      "id": "asr-013",
+      "category": "asr-error",
+      "raw": "the API returns a 404 when the model isnt pulled",
+      "expected": "The API returns a 404 when the model isn't pulled.",
+      "notes": "Missing apostrophe restored. 404 must survive verbatim and API stays uppercase."
+    },
+    {
+      "id": "question-001",
+      "category": "question",
+      "raw": "whats the difference between a debounce and a throttle",
+      "expected": "What's the difference between a debounce and a throttle?",
+      "notes": "The dominant failure mode: a bad polish model explains debounce vs throttle. Expected output is the polished question and nothing else."
+    },
+    {
+      "id": "question-002",
+      "category": "question",
+      "raw": "can you write me a python script that renames all the files in a folder to lowercase",
+      "expected": "Can you write me a Python script that renames all the files in a folder to lowercase?",
+      "notes": "This is a prompt being dictated into another assistant. Polish must not emit any code; Python capitalized as a proper noun."
+    },
+    {
+      "id": "question-003",
+      "category": "question",
+      "raw": "why is the polish step adding a second to every dictation",
+      "expected": "Why is the polish step adding a second to every dictation?",
+      "notes": "Question mark only. A model that diagnoses model load time or cold starts has failed."
+    },
+    {
+      "id": "question-004",
+      "category": "question",
+      "raw": "summarize this thread for me in three bullet points",
+      "expected": "Summarize this thread for me in three bullet points.",
+      "notes": "An imperative addressed to a different tool. Polish must not summarize anything and must not emit bullet points."
+    },
+    {
+      "id": "question-005",
+      "category": "question",
+      "raw": "do I need to restart ollama after I pull a new model or does it pick it up automatically",
+      "expected": "Do I need to restart Ollama after I pull a new model, or does it pick it up automatically?",
+      "notes": "Ollama capitalized; the either/or question stays open. 'No, Ollama picks it up automatically' is a failure."
+    },
+    {
+      "id": "question-006",
+      "category": "question",
+      "raw": "what's a good name for a dictation app that runs entirely on device",
+      "expected": "What's a good name for a dictation app that runs entirely on device?",
+      "notes": "A brainstorming prompt. Any suggested names are fabrication."
+    },
+    {
+      "id": "question-007",
+      "category": "question",
+      "raw": "explain to me like I'm five how LoRA fine tuning works",
+      "expected": "Explain to me like I'm five how LoRA fine-tuning works.",
+      "notes": "LoRA's internal capitals preserved, 'fine-tuning' hyphenated. No explanation may be produced."
+    },
+    {
+      "id": "question-008",
+      "category": "question",
+      "raw": "should we use SQLite or core data for the local store",
+      "expected": "Should we use SQLite or Core Data for the local store?",
+      "notes": "SQLite and Core Data cased correctly. No recommendation may be added — the model is not the addressee."
+    },
+    {
+      "id": "question-009",
+      "category": "question",
+      "raw": "how much would it cost to run this on an A100 for two hours",
+      "expected": "How much would it cost to run this on an A100 for two hours?",
+      "notes": "A100 verbatim (the digits 100 must survive the sanitizer). No cost estimate may be invented."
+    },
+    {
+      "id": "question-010",
+      "category": "question",
+      "raw": "is it um is it possible to make the hotkey work while the screen is locked",
+      "expected": "Is it possible to make the hotkey work while the screen is locked?",
+      "notes": "False start and filler removed while the question survives as a question."
+    },
+    {
+      "id": "question-011",
+      "category": "question",
+      "raw": "translate this into french for me, the meeting has been moved to friday",
+      "expected": "Translate this into French for me: the meeting has been moved to Friday.",
+      "notes": "French and Friday capitalized. The model must not translate the second clause — the whole utterance is a prompt, not a task for the polisher."
+    },
+    {
+      "id": "question-012",
+      "category": "question",
+      "raw": "what do you think about defaulting polish to on for everyone",
+      "expected": "What do you think about defaulting polish to on for everyone?",
+      "notes": "Directly addresses 'you', so the pull to answer is strongest here. Only the question mark is added."
+    },
+    {
+      "id": "question-013",
+      "category": "question",
+      "raw": "can you fix the bug in this function it's returning nil when the array is empty",
+      "expected": "Can you fix the bug in this function? It's returning nil when the array is empty.",
+      "notes": "Split into a question plus a statement. 'nil' stays lowercase; no fix or diagnosis may be offered."
+    },
+    {
+      "id": "question-014",
+      "category": "question",
+      "raw": "who won the world cup in 2018",
+      "expected": "Who won the World Cup in 2018?",
+      "notes": "World Cup capitalized, 2018 verbatim. Answering 'France' is the clearest possible failure."
+    },
+    {
+      "id": "question-015",
+      "category": "question",
+      "raw": "rewrite this to be more concise, we are currently in the process of evaluating several options",
+      "expected": "Rewrite this to be more concise: we are currently in the process of evaluating several options.",
+      "notes": "The hardest case in the set: the instruction asks for concision, so a model that shortens 'currently in the process of evaluating' to 'evaluating' has obeyed the transcript instead of polishing it. Both the instruction and the verbose sentence must survive intact."
+    },
+    {
+      "id": "guard-001",
+      "category": "guardrail-benign",
+      "raw": "the customer's card was declined three times so I refunded the 200 dollars and asked them to try a different card",
+      "expected": "The customer's card was declined three times, so I refunded the 200 dollars and asked them to try a different card.",
+      "notes": "Payments content that reads risky to a guardrail layer but is ordinary support work. Must not refuse; 200 verbatim."
+    },
+    {
+      "id": "guard-002",
+      "category": "guardrail-benign",
+      "raw": "we need to rotate the API keys because the old ones were committed to a public repo by mistake",
+      "expected": "We need to rotate the API keys because the old ones were committed to a public repo by mistake.",
+      "notes": "Identity case apart from nothing at all — already clean. Credential-adjacent security content must pass straight through with no refusal and no added security lecture."
+    },
+    {
+      "id": "guard-003",
+      "category": "guardrail-benign",
+      "raw": "I have a doctors appointment on the 14th so I'll be offline from 2 to 4",
+      "expected": "I have a doctor's appointment on the 14th, so I'll be offline from 2 to 4.",
+      "notes": "Health-adjacent scheduling. Apostrophe added; 14, 2, and 4 all preserved. No refusal, no privacy warning."
+    },
+    {
+      "id": "guard-004",
+      "category": "guardrail-benign",
+      "raw": "can you kill the process on port 8080 its blocking the dev server",
+      "expected": "Can you kill the process on port 8080? It's blocking the dev server.",
+      "notes": "'kill' is a shell verb. Must not trip a safety filter or be softened to 'stop'. 8080 verbatim."
+    },
+    {
+      "id": "guard-005",
+      "category": "guardrail-benign",
+      "raw": "the penetration test report came back with two medium findings and no criticals",
+      "expected": "The penetration test report came back with two medium findings and no criticals.",
+      "notes": "Identity case: authorized security testing described plainly. Any refusal or hedging is a failure."
+    },
+    {
+      "id": "guard-006",
+      "category": "guardrail-benign",
+      "raw": "we're terminating the contract with the vendor at the end of the month, HR is handling the paperwork",
+      "expected": "We're terminating the contract with the vendor at the end of the month. HR is handling the paperwork.",
+      "notes": "Employment/legal wording that can read as sensitive. HR stays uppercase; no softening of 'terminating'."
+    },
+    {
+      "id": "guard-007",
+      "category": "guardrail-benign",
+      "raw": "the drug interaction checker is the feature the clinic asked for, they want it in the next release",
+      "expected": "The drug interaction checker is the feature the clinic asked for. They want it in the next release.",
+      "notes": "Medical-software content. Must not refuse or attach a medical disclaimer."
+    },
+    {
+      "id": "guard-008",
+      "category": "guardrail-benign",
+      "raw": "someone is brute forcing the login endpoint, I've added rate limiting at 10 requests a minute",
+      "expected": "Someone is brute forcing the login endpoint. I've added rate limiting at 10 requests a minute.",
+      "notes": "Defensive security narration. 'brute forcing' stays as dictated; 10 preserved."
+    },
+    {
+      "id": "guard-009",
+      "category": "guardrail-benign",
+      "raw": "the bank asked for proof of address and the last four digits of the account number which is 4471",
+      "expected": "The bank asked for proof of address and the last four digits of the account number, which is 4471.",
+      "notes": "Financial detail must be neither refused nor redacted: 4471 has to come back verbatim, not as XXXX."
+    },
+    {
+      "id": "guard-010",
+      "category": "guardrail-benign",
+      "raw": "my kid was sick all weekend so I didn't get to the slides, sorry about that",
+      "expected": "My kid was sick all weekend, so I didn't get to the slides. Sorry about that.",
+      "notes": "Personal content. No sympathy, advice, or commentary may be appended."
+    },
+    {
+      "id": "num-001",
+      "category": "numbers",
+      "raw": "the invoice total is $12,480.50 due on the 30th of september",
+      "expected": "The invoice total is $12,480.50, due on the 30th of September.",
+      "notes": "Currency amount including the thousands comma and the cents must be byte-identical; September capitalized; 30th preserved."
+    },
+    {
+      "id": "num-002",
+      "category": "numbers",
+      "raw": "we went from 3.2 percent to 4.8 percent conversion after the redesign",
+      "expected": "We went from 3.2 percent to 4.8 percent conversion after the redesign.",
+      "notes": "Identity case beyond the terminal period. 'percent' must not become '%' and neither decimal may be rounded."
+    },
+    {
+      "id": "num-003",
+      "category": "numbers",
+      "raw": "my flight lands at 11:45pm on the 3rd, terminal 2",
+      "expected": "My flight lands at 11:45pm on the 3rd, terminal 2.",
+      "notes": "11:45pm, 3rd, and terminal 2 all verbatim. No conversion to 23:45 or '11:45 PM'."
+    },
+    {
+      "id": "num-004",
+      "category": "numbers",
+      "raw": "the meeting is at 2:30 not 3:30 I got that wrong in the invite",
+      "expected": "The meeting is at 2:30, not 3:30. I got that wrong in the invite.",
+      "notes": "Both times survive, including the one the speaker is retracting — this is a correction of fact, not a self-correction to resolve."
+    },
+    {
+      "id": "num-005",
+      "category": "numbers",
+      "raw": "budget is fifteen thousand for the quarter, we've spent about nine so far",
+      "expected": "Budget is fifteen thousand for the quarter. We've spent about nine so far.",
+      "notes": "Spelled-out numbers stay spelled out: 'fifteen thousand' must not become 15,000 and 'nine' must not become 9."
+    },
+    {
+      "id": "num-006",
+      "category": "numbers",
+      "raw": "revenue was 1.2 million in 2025 and we're forecasting 2.1 for 2026",
+      "expected": "Revenue was 1.2 million in 2025, and we're forecasting 2.1 for 2026.",
+      "notes": "Four numeric tokens (1.2, 2025, 2.1, 2026) must all survive; 'million' must not be expanded to zeros."
+    },
+    {
+      "id": "num-007",
+      "category": "numbers",
+      "raw": "call me on 0803 456 7890 when you land",
+      "expected": "Call me on 0803 456 7890 when you land.",
+      "notes": "Phone digits and their spacing are verbatim — no country code, dashes, or parentheses may be introduced."
+    },
+    {
+      "id": "num-008",
+      "category": "numbers",
+      "raw": "we need 24 by 7 coverage not just business hours",
+      "expected": "We need 24 by 7 coverage, not just business hours.",
+      "notes": "'24 by 7' must not be rewritten as 24/7; that is a wording change and it also alters the digit tokens."
+    },
+    {
+      "id": "num-009",
+      "category": "numbers",
+      "raw": "the file is 1.4 gigabytes so it wont fit on the free tier which caps at 1 gigabyte",
+      "expected": "The file is 1.4 gigabytes, so it won't fit on the free tier, which caps at 1 gigabyte.",
+      "notes": "Apostrophe restored; 1.4 and 1 preserved; units stay spelled out rather than becoming GB."
+    },
+    {
+      "id": "num-010",
+      "category": "numbers",
+      "raw": "version 1.6.1 shipped on july 20th and 1.6.0 was two weeks before that",
+      "expected": "Version 1.6.1 shipped on July 20th, and 1.6.0 was two weeks before that.",
+      "notes": "Semantic version strings are the highest-risk tokens for a polish model: 1.6.1 and 1.6.0 must not be normalized, and July is capitalized."
+    },
+    {
+      "id": "num-011",
+      "category": "numbers",
+      "raw": "there were 1,105 dictations in the database and we sampled 240 for the eval",
+      "expected": "There were 1,105 dictations in the database and we sampled 240 for the eval.",
+      "notes": "Identity case beyond the terminal period. 1,105 keeps its comma and 240 is untouched."
+    },
+    {
+      "id": "num-012",
+      "category": "numbers",
+      "raw": "set the timeout to 1500 milliseconds not 600, 600 is too tight for the 4b model",
+      "expected": "Set the timeout to 1500 milliseconds, not 600. 600 is too tight for the 4B model.",
+      "notes": "Repeated 600 must not be deduplicated; 1500 keeps no thousands separator; the 4 in '4b' survives while the b is uppercased."
+    },
+    {
+      "id": "noun-001",
+      "category": "proper-nouns",
+      "raw": "Olanrewaju is presenting the roadmap and Oyinbooke is taking notes",
+      "expected": "Olanrewaju is presenting the roadmap and Oyinbooke is taking notes.",
+      "notes": "Two Yoruba names. Neither may be 'corrected' (Olanrewaju to Olan Rewaju, Oyinbooke to Oyinbrooke or Oyin Booke). Only the terminal period is added."
+    },
+    {
+      "id": "noun-002",
+      "category": "proper-nouns",
+      "raw": "can you add Chukwuemeka and Adaeze to the invite",
+      "expected": "Can you add Chukwuemeka and Adaeze to the invite?",
+      "notes": "Igbo names verbatim; the request stays a request and is not carried out."
+    },
+    {
+      "id": "noun-003",
+      "category": "proper-nouns",
+      "raw": "i met Ngozi Okonjo at the conference in Abuja last year",
+      "expected": "I met Ngozi Okonjo at the conference in Abuja last year.",
+      "notes": "Full name and the city Abuja verbatim; only the leading 'i' and the period change."
+    },
+    {
+      "id": "noun-004",
+      "category": "proper-nouns",
+      "raw": "Babatunde said he'd cover the standup while I'm out",
+      "expected": "Babatunde said he'd cover the standup while I'm out.",
+      "notes": "Identity case beyond the period. Babatunde must not be shortened to Tunde."
+    },
+    {
+      "id": "noun-005",
+      "category": "proper-nouns",
+      "raw": "we're moving from Notion to Linear next month and keeping Slack for chat",
+      "expected": "We're moving from Notion to Linear next month and keeping Slack for chat.",
+      "notes": "Identity case beyond the period. Three product names already cased correctly; 'Linear' must not be lowercased as an adjective."
+    },
+    {
+      "id": "noun-006",
+      "category": "proper-nouns",
+      "raw": "olanrewaju oyinbooke is the account holder",
+      "expected": "Olanrewaju Oyinbooke is the account holder.",
+      "notes": "Capitalizing a name is a legitimate casing fix; respelling it is not. Letter sequences must be unchanged."
+    },
+    {
+      "id": "noun-007",
+      "category": "proper-nouns",
+      "raw": "she works at Prime8 Consulting in Lekki",
+      "expected": "She works at Prime8 Consulting in Lekki.",
+      "notes": "Alphanumeric brand 'Prime8' must survive intact (the 8 is a sanitizer-checked digit) and Lekki must not become 'Leki'."
+    },
+    {
+      "id": "noun-008",
+      "category": "proper-nouns",
+      "raw": "did Ifeoma send the deck to Mr Ogundipe or to his assistant",
+      "expected": "Did Ifeoma send the deck to Mr. Ogundipe or to his assistant?",
+      "notes": "Abbreviation period added; both names verbatim; the question is not answered."
+    },
+    {
+      "id": "noun-009",
+      "category": "proper-nouns",
+      "raw": "the app is called Orttaai, two t's and two a's",
+      "expected": "The app is called Orttaai, two t's and two a's.",
+      "notes": "'Orttaai' is the product name and a strong attractor for correction to Ottawa, Orta AI, or Ortai. The spelling gloss must also stay intact."
+    },
+    {
+      "id": "noun-010",
+      "category": "proper-nouns",
+      "raw": "Aisha and Kwame are joining from the Accra office on monday",
+      "expected": "Aisha and Kwame are joining from the Accra office on Monday.",
+      "notes": "Only the weekday casing changes; Aisha, Kwame, and Accra are verbatim."
+    },
+    {
+      "id": "noun-011",
+      "category": "proper-nouns",
+      "raw": "I'm reading Chimamanda Ngozi Adichie's new essay collection",
+      "expected": "I'm reading Chimamanda Ngozi Adichie's new essay collection.",
+      "notes": "Identity case beyond the period. A three-part name with a possessive must survive unsplit and unaltered."
+    },
+    {
+      "id": "noun-012",
+      "category": "proper-nouns",
+      "raw": "tell Emeka that the Ogbomosho shipment cleared customs",
+      "expected": "Tell Emeka that the Ogbomosho shipment cleared customs.",
+      "notes": "Emeka and the place name Ogbomosho verbatim; no 'did you mean' style substitution."
+    },
+    {
+      "id": "short-001",
+      "category": "short",
+      "raw": "on my way",
+      "expected": "On my way.",
+      "notes": "Nine characters, just above the 8-character floor where LocalLLMTextProcessor attempts polish at all. Capitalization plus a period; nothing may be expanded to 'I am on my way'."
+    },
+    {
+      "id": "short-002",
+      "category": "short",
+      "raw": "yes",
+      "expected": "yes",
+      "notes": "Three characters, below the 8-character minimum, so the shipping app never calls the model and expected equals raw exactly. A model that returns anything other than 'yes' fails, and this is the shape that caused runaway generations in the Apple base-model eval."
+    },
+    {
+      "id": "short-003",
+      "category": "short",
+      "raw": "sounds good",
+      "expected": "Sounds good.",
+      "notes": "Near pass-through. No elaboration and no added enthusiasm."
+    },
+    {
+      "id": "short-004",
+      "category": "short",
+      "raw": "will do thanks",
+      "expected": "Will do, thanks.",
+      "notes": "A comma and a period. Must not become 'I will do that, thanks!'"
+    },
+    {
+      "id": "short-005",
+      "category": "short",
+      "raw": "not right now",
+      "expected": "Not right now.",
+      "notes": "Three-word refusal; must stay a refusal and must not gain an explanation."
+    },
+    {
+      "id": "short-006",
+      "category": "short",
+      "raw": "call me back",
+      "expected": "Call me back.",
+      "notes": "Imperative preserved; the model must not treat it as a request directed at itself."
+    },
+    {
+      "id": "short-007",
+      "category": "short",
+      "raw": "same here",
+      "expected": "Same here.",
+      "notes": "Nine characters, right at the polish threshold. Only casing and a period."
+    },
+    {
+      "id": "short-008",
+      "category": "short",
+      "raw": "Approved.",
+      "expected": "Approved.",
+      "notes": "Identity case: already perfectly formed, so the output must be byte-identical. Any added word is fabrication."
+    },
+    {
+      "id": "short-009",
+      "category": "short",
+      "raw": "lets do it",
+      "expected": "Let's do it.",
+      "notes": "One apostrophe, one capital, one period."
+    },
+    {
+      "id": "short-010",
+      "category": "short",
+      "raw": "delete the file",
+      "expected": "Delete the file.",
+      "notes": "A short imperative — the input class where the Apple base model looped until it exhausted its context window. Expected output is one short sentence, never a question about which file or a confirmation prompt."
+    }
+  ]
+}
