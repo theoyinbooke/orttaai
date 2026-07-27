@@ -63,6 +63,8 @@ actor OllamaClient: LocalLLMServing {
     nonisolated var providerKind: LocalLLMProviderKind { .ollama }
 
     nonisolated private static let curatedLightweightOllamaModels: [OllamaCatalogModel] = [
+        OllamaCatalogModel(name: "gemma4:e2b", sizeBytes: 7_162_000_000),
+        OllamaCatalogModel(name: "gemma4:e4b", sizeBytes: 9_608_000_000),
         OllamaCatalogModel(name: "gemma3:1b", sizeBytes: nil),
         OllamaCatalogModel(name: "gemma3:4b", sizeBytes: 8_600_000_000),
         OllamaCatalogModel(name: "qwen3.5:0.8b", sizeBytes: nil),

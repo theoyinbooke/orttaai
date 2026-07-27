@@ -81,10 +81,29 @@ struct DecodingPreferences: Sendable, Equatable {
 final class AppSettings: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
 
+    init(defaults: UserDefaults = .standard) {
+        // "polishModeEnabled" (pre-1.7) was written and iCloud-synced but read
+        // nowhere; "localLLMPolishEnabled" is the single source of truth for
+        // polish. Delete the stale key so it stops shadowing the real one.
+        defaults.removeObject(forKey: "polishModeEnabled")
+
+        // The pre-default-on Model settings screen unconditionally persisted
+        // localLLMPolishModel="gemma3:1b" for anyone who ever opened it, but
+        // that model scores far below the shipped default on the golden eval
+        // set (see gauntlet/eval_results.json). Users who never explicitly
+        // chose polish (no stored localLLMPolishEnabled) are flipped ON by the
+        // new default, so migrate them to the eval-proven model. An explicit
+        // enabled/disabled choice means the user may also have chosen the
+        // model deliberately; leave those untouched.
+        if defaults.object(forKey: "localLLMPolishEnabled") == nil,
+           defaults.string(forKey: "localLLMPolishModel") == "gemma3:1b" {
+            defaults.set("gemma4:e2b", forKey: "localLLMPolishModel")
+        }
+    }
+
     @AppStorage("selectedModelId") var selectedModelId: String = "openai_whisper-small"
     @AppStorage("activeModelId") var activeModelId: String = ""
     @AppStorage("selectedAudioDeviceID") var selectedAudioDeviceID: String = ""
-    @AppStorage("polishModeEnabled") var polishModeEnabled: Bool = false
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("hasCompletedSetup") var hasCompletedSetup: Bool = false
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
@@ -125,12 +144,18 @@ final class AppSettings: ObservableObject {
     // synced across Macs.
     @AppStorage("localLLMProvider") var localLLMProviderRaw: String = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("lmStudioEndpoint") var lmStudioEndpoint: String = "http://127.0.0.1:1234"
-    @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = false
+    /// Local LLM polish is ON by default (eval-proven on the golden set, see
+    /// gauntlet/eval_results.json). Users who explicitly turned it off have a
+    /// stored `false` that this default never overrides; when no local
+    /// provider is reachable the processor falls back to rule-based output
+    /// behind the circuit breaker, so the default is safe for users without
+    /// Ollama.
+    @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = true
     @AppStorage("appleIntelligencePolishEnabled") var appleIntelligencePolishEnabled: Bool = false
     @AppStorage("localLLMEndpoint") var localLLMEndpoint: String = "http://127.0.0.1:11434"
-    @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma3:1b"
-    @AppStorage("localLLMPolishTimeoutMs") var localLLMPolishTimeoutMs: Int = 650
-    @AppStorage("localLLMPolishMaxChars") var localLLMPolishMaxChars: Int = 280
+    @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma4:e2b"
+    @AppStorage("localLLMPolishTimeoutMs") var localLLMPolishTimeoutMs: Int = 3_000
+    @AppStorage("localLLMPolishMaxChars") var localLLMPolishMaxChars: Int = 400
     @AppStorage("localLLMInsightsEnabled") var localLLMInsightsEnabled: Bool = false
     @AppStorage("localLLMInsightsModel") var localLLMInsightsModel: String = "qwen3.5:0.8b"
     @AppStorage("localLLMInsightsContextTokens") var localLLMInsightsContextTokens: Int = 16_384
@@ -259,7 +284,7 @@ final class AppSettings: ObservableObject {
     }
 
     var normalizedLocalLLMPolishModel: String {
-        sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma3:1b")
+        sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma4:e2b")
     }
 
     var normalizedCodexModel: String {
@@ -306,16 +331,22 @@ final class AppSettings: ObservableObject {
     }
 
     var clampedLocalLLMPolishTimeoutMs: Int {
-        let clamped = max(80, min(1_500, localLLMPolishTimeoutMs))
-        // Migrate from old default that is too low for real local generation latency.
-        if clamped == 220 {
-            return 650
+        let clamped = max(80, min(4_000, localLLMPolishTimeoutMs))
+        // Migrate from old defaults that are too low for real local
+        // generation latency (220 pre-1.5, 650 pre-polish-default-on).
+        if clamped == 220 || clamped == 650 {
+            return 3_000
         }
         return clamped
     }
 
     var clampedLocalLLMPolishMaxChars: Int {
-        max(80, min(2_000, localLLMPolishMaxChars))
+        // Migrate the old 280-char default so polish covers longer dictation
+        // (ModelSettingsView persists the same migration when settings open).
+        if localLLMPolishMaxChars == 280 {
+            return 400
+        }
+        return max(80, min(2_000, localLLMPolishMaxChars))
     }
 
     var clampedLocalLLMInsightsContextTokens: Int {

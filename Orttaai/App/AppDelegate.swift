@@ -32,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var runtimeServicesStarted = false
     private var shortcutObserver: NSObjectProtocol?
     private var audioResetObserver: NSObjectProtocol?
+    private var polishSettingObserver: NSObjectProtocol?
     private var isResettingAudioPipeline = false
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
     private let hasCompletedSetupKey = "hasCompletedSetup"
@@ -103,6 +104,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBarMenu?.onQuitAction = {
             NSApplication.shared.terminate(nil)
+        }
+        statusBarMenu?.onPolishModeToggle = { [weak self] in
+            guard let settings = self?.appState?.settings else { return }
+            settings.localLLMPolishEnabled.toggle()
+            self?.statusBarMenu?.updatePolishMode(isOn: settings.localLLMPolishEnabled)
+        }
+        statusBarMenu?.updatePolishMode(isOn: state.settings.localLLMPolishEnabled)
+        // Keep the menu checkmark honest when the setting changes elsewhere
+        // (Settings window toggle, iCloud profile sync).
+        polishSettingObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, let settings = self.appState?.settings else { return }
+            self.statusBarMenu?.updatePolishMode(isOn: settings.localLLMPolishEnabled)
         }
         statusBarMenu?.setHomePreviewMode(!isHomeWorkspaceAutoOpenEnabled)
 

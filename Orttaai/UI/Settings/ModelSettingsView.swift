@@ -33,16 +33,16 @@ struct ModelSettingsView: View {
     @AppStorage("decodingLogProbThreshold") private var decodingLogProbThreshold = DecodingPreferences.defaultLogProbThreshold
     @AppStorage("decodingNoSpeechThreshold") private var decodingNoSpeechThreshold = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") private var decodingWorkerCount = DecodingPreferences.defaultWorkerCount
-    @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
+    @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = true
     @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("lastLocalLLMProvider") private var lastLocalLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("codexModel") private var codexModel = "gpt-5.4-mini"
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
     @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
-    @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma3:1b"
-    @AppStorage("localLLMPolishTimeoutMs") private var localLLMPolishTimeoutMs = 650
-    @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 280
+    @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma4:e2b"
+    @AppStorage("localLLMPolishTimeoutMs") private var localLLMPolishTimeoutMs = 3_000
+    @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 400
     @AppStorage("localLLMInsightsEnabled") private var localLLMInsightsEnabled = false
     @AppStorage("localLLMInsightsModel") private var localLLMInsightsModel = "qwen3.5:0.8b"
     @AppStorage("localLLMInsightsContextTokens") private var localLLMInsightsContextTokens = 16_384
@@ -291,13 +291,15 @@ struct ModelSettingsView: View {
         if lower.contains("qwen3.5:0.8b") { return 1_300 }
         if lower.contains("qwen3.5:2b") { return 1_400 }
         if lower.contains("qwen3.5:4b") { return 1_500 }
+        if lower.contains("gemma4:e2b") { return 2_500 }
+        if lower.contains("gemma4:e4b") { return 3_000 }
         return 600
     }
 
     private var polishRecommendationMessage: String {
         let lower = normalizedPolishOllamaModel.lowercased()
         if lower.contains(":4b") {
-            return "This model is usually too heavy for fast polish. `gemma3:1b` is the safer default."
+            return "This model is usually too heavy for fast polish. `gemma4:e2b` is the eval-proven default."
         }
         if localLLMPolishTimeoutMs < recommendedPolishTimeoutMs {
             return "Current timeout is aggressive for this model. Expect cold-start fallbacks until it is warmed."
@@ -1226,7 +1228,7 @@ struct ModelSettingsView: View {
                             get: { Double(localLLMPolishTimeoutMs) },
                             set: { localLLMPolishTimeoutMs = Int($0) }
                         ),
-                        in: 80...1_500,
+                        in: 80...4_000,
                         step: 10
                     )
                     .tint(Color.Orttaai.accent)
@@ -1683,7 +1685,7 @@ struct ModelSettingsView: View {
             localLLMEndpoint = "http://127.0.0.1:11434"
         }
 
-        localLLMPolishModel = sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma3:1b")
+        localLLMPolishModel = sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma4:e2b")
         localLLMInsightsModel = sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
         semanticEmbeddingModel = semanticEmbeddingModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if semanticEmbeddingModel.isEmpty {
@@ -1691,11 +1693,16 @@ struct ModelSettingsView: View {
         }
         semanticActiveIndexModelID = semanticActiveIndexModelID.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Migrate old default (220ms) which is usually too short for local polish.
-        if localLLMPolishTimeoutMs == 220 {
-            localLLMPolishTimeoutMs = 650
+        // Migrate old defaults (220ms pre-1.5, 650ms pre-polish-default-on)
+        // which are too short for real local generation latency.
+        if localLLMPolishTimeoutMs == 220 || localLLMPolishTimeoutMs == 650 {
+            localLLMPolishTimeoutMs = 3_000
         }
-        localLLMPolishTimeoutMs = max(80, min(1_500, localLLMPolishTimeoutMs))
+        localLLMPolishTimeoutMs = max(80, min(4_000, localLLMPolishTimeoutMs))
+        // Migrate the old 280-char default so polish covers longer dictation.
+        if localLLMPolishMaxChars == 280 {
+            localLLMPolishMaxChars = 400
+        }
         localLLMPolishMaxChars = max(80, min(2_000, localLLMPolishMaxChars))
         if localLLMInsightsContextTokens == 65_536 {
             localLLMInsightsContextTokens = 16_384

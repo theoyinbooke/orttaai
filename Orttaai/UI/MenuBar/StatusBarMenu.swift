@@ -15,6 +15,7 @@ final class StatusBarMenu {
     var onSettingsAction: (() -> Void)?
     var onCheckForUpdatesAction: (() -> Void)?
     var onQuitAction: (() -> Void)?
+    var onPolishModeToggle: (() -> Void)?
 
     init() {
         menu = NSMenu()
@@ -29,6 +30,12 @@ final class StatusBarMenu {
         homeItem.title = isPreview ? "Home (Preview)" : "Home"
     }
 
+    /// Reflects the polish setting in the menu; the checkmark is the single
+    /// visible truth for whether dictation output gets the local LLM polish.
+    func updatePolishMode(isOn: Bool) {
+        polishModeItem.state = isOn ? .on : .off
+    }
+
     // MARK: - Private
 
     private func buildMenu() {
@@ -39,18 +46,10 @@ final class StatusBarMenu {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Polish Mode (disabled for v1.0)
-        polishModeItem = NSMenuItem(title: "Polish Mode", action: nil, keyEquivalent: "")
-        polishModeItem.isEnabled = false
-        let subtitleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.tertiaryLabelColor
-        ]
-        // Add subtitle via attributed title
-        let fullTitle = NSMutableAttributedString(string: "Polish Mode")
-        fullTitle.append(NSAttributedString(string: "\n"))
-        fullTitle.append(NSAttributedString(string: "Coming soon", attributes: subtitleAttributes))
-        polishModeItem.attributedTitle = fullTitle
+        // Polish Mode — toggles the local LLM polish pass on dictation output.
+        polishModeItem = NSMenuItem(title: "Polish Mode", action: #selector(polishModeAction), keyEquivalent: "")
+        polishModeItem.target = self
+        polishModeItem.toolTip = "Clean up punctuation, capitalization, and filler words with the on-device model."
         menu.addItem(polishModeItem)
 
         // Home
@@ -92,6 +91,10 @@ final class StatusBarMenu {
         let quitItem = NSMenuItem(title: "Quit Orttaai", action: #selector(quitAction), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+    }
+
+    @objc private func polishModeAction() {
+        onPolishModeToggle?()
     }
 
     @objc private func historyAction() {

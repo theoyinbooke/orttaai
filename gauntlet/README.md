@@ -100,8 +100,9 @@ rejected by it, in the app's default configuration. Their `notes` say so:
 - `disfl-011` — the correct polish is ~0.44× the input length, below the 0.55 length-ratio
   floor in `sanitizePolishOutput`, so the app discards it and injects the raw text. Kept as
   a documented sanitizer limitation on heavy self-corrections.
-- `runon-004` (333 chars) and `runon-012` (302 chars) — above the default
-  `localLLMPolishMaxChars` of 280, so polish is skipped entirely unless the cap is raised.
+- `runon-004` (333 chars) and `runon-012` (302 chars) — above the pre-1.7 default
+  `localLLMPolishMaxChars` of 280. The shipping default is now 400, so both cases are
+  polished in the default configuration; with a user-lowered cap they skip polish entirely.
 
 Every other case's `expected` satisfies both shipping sanitizers: the length band in
 `LocalLLMTextProcessor.sanitizePolishOutput` and the digit-preservation check in

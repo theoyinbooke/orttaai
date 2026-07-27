@@ -235,8 +235,10 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     // decodingWorkerCount, lowLatencyModeEnabled, fastFirstRecommendedModelId,
     // fastFirstPrefetchStarted/Ready/ErrorMessage, localLLMPolishModel,
     // localLLMInsightsModel, semanticEmbeddingModel.
+    // "polishModeEnabled" was removed in 1.7: it was an orphaned key that
+    // synced but controlled nothing. Polish is governed solely by
+    // "localLLMPolishEnabled"; AppSettings deletes the stale key at launch.
     static let syncedUserDefaultsKeys: [String] = [
-        "polishModeEnabled",
         "launchAtLogin",
         "hasCompletedSetup",
         "showProcessingEstimate",
