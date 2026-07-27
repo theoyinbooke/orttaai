@@ -42,6 +42,7 @@ actor MockTranscriptionService: Transcribing {
     var processedLiveSampleCounts: [Int] = []
     var finalizeLiveTranscriptionCallCount = 0
     var cancelLiveSessionCallCount = 0
+    var liveTranscriptEventHandler: (@Sendable (LiveTranscriptEvent) -> Void)?
 
     func loadedModelID() -> String? {
         mockLoadedModelID
@@ -82,6 +83,18 @@ actor MockTranscriptionService: Transcribing {
 
     func cancelLiveTranscriptionSession() {
         cancelLiveSessionCallCount += 1
+    }
+
+    func setLiveTranscriptEventHandler(_ handler: (@Sendable (LiveTranscriptEvent) -> Void)?) {
+        liveTranscriptEventHandler = handler
+    }
+
+    func emitLiveTranscriptEventForTest(_ event: LiveTranscriptEvent) {
+        liveTranscriptEventHandler?(event)
+    }
+
+    func hasLiveTranscriptEventHandler() -> Bool {
+        liveTranscriptEventHandler != nil
     }
 
     func updateSettings(
@@ -299,6 +312,54 @@ final class DictationCoordinatorTests: XCTestCase {
 
         let liveSampleCounts = await transcriptionService.processedLiveSampleCounts
         XCTAssertFalse(liveSampleCounts.isEmpty)
+    }
+
+    @MainActor
+    func testLiveTranscriptEventsFlowFromSessionToCoordinator() async {
+        coordinator.startRecording()
+
+        // Let the live-decode loop install the handler and begin the session.
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let handlerInstalled = await transcriptionService.hasLiveTranscriptEventHandler()
+        XCTAssertTrue(handlerInstalled, "Coordinator should install the live transcript handler while recording")
+
+        await transcriptionService.emitLiveTranscriptEventForTest(.speculative("hel"))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(coordinator.liveTranscript?.speculativeText, "hel")
+
+        // Speculative tail replaces the previous one.
+        await transcriptionService.emitLiveTranscriptEventForTest(.speculative("hello there"))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(coordinator.liveTranscript?.speculativeText, "hello there")
+        XCTAssertEqual(coordinator.liveTranscript?.committedText, "")
+
+        // A commit appends stable text and supersedes the speculative tail.
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("hello there"))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(coordinator.liveTranscript?.committedText, "hello there")
+        XCTAssertEqual(coordinator.liveTranscript?.speculativeText, "")
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testStopRecordingClearsLiveTranscript() async {
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("hello"))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNotNil(coordinator.liveTranscript)
+
+        coordinator.stopRecording()
+        XCTAssertNil(coordinator.liveTranscript, "Finalize path must clear the live transcript display")
+
+        // Events arriving after stop (in-flight commits) must not resurrect it.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("late clip"))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(coordinator.liveTranscript)
     }
 
     @MainActor

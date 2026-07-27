@@ -15,6 +15,7 @@ protocol Transcribing: Actor {
     func processLiveAudioSnapshot(_ audioSamples: [Float])
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String
     func cancelLiveTranscriptionSession()
+    func setLiveTranscriptEventHandler(_ handler: (@Sendable (LiveTranscriptEvent) -> Void)?)
     func updateSettings(
         language: String,
         computeMode: String,
@@ -78,6 +79,10 @@ actor TranscriptionService: Transcribing {
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
     private var liveSession: LiveTranscriptionSession?
+    /// Observer for in-progress transcript text (committed clips and
+    /// speculative tails) so the UI can show a live transcript. Purely a
+    /// side channel: it never influences finalization.
+    private var liveTranscriptEventHandler: (@Sendable (LiveTranscriptEvent) -> Void)?
 
     /// Language code for transcription (e.g. "en", "es", "auto").
     /// Set from AppSettings.dictationLanguage before transcribing.
@@ -167,7 +172,12 @@ actor TranscriptionService: Transcribing {
     func beginLiveTranscriptionSession() {
         cancelLiveTranscriptionSession()
         liveSession = LiveTranscriptionSession()
+        liveTranscriptEventHandler?(.sessionBegan)
         Logger.transcription.debug("Live transcription session started")
+    }
+
+    func setLiveTranscriptEventHandler(_ handler: (@Sendable (LiveTranscriptEvent) -> Void)?) {
+        liveTranscriptEventHandler = handler
     }
 
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {
@@ -369,6 +379,9 @@ actor TranscriptionService: Transcribing {
             // Tail results decoded against the previous base now overlap
             // committed audio and must not be reused.
             session.speculativeResult = nil
+            // Even an empty commit is reported: it invalidates the displayed
+            // speculative tail for the audio it covers.
+            liveTranscriptEventHandler?(.committed(committed))
         }
         liveSession = session
     }
@@ -400,6 +413,7 @@ actor TranscriptionService: Transcribing {
            result.base == session.committedSampleCount,
            result.coveredSampleCount >= session.speculativeResult?.coveredSampleCount ?? 0 {
             session.speculativeResult = result
+            liveTranscriptEventHandler?(.speculative(result.text))
         }
         liveSession = session
     }

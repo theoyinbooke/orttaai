@@ -47,6 +47,8 @@ enum WindowSize {
     static let historyMin = CGSize(width: 480, height: 300)
     static let floatingPanelHandle = CGSize(width: 332, height: 32)
     static let floatingPanelRecording = CGSize(width: 286, height: 42)
+    /// Recording pill grown to fit the live transcript line under the waveform.
+    static let floatingPanelRecordingTranscript = CGSize(width: 460, height: 66)
     static let floatingPanelProcessing = CGSize(width: 140, height: 28)
     static let floatingPanelError = CGSize(width: 200, height: 28)
 }

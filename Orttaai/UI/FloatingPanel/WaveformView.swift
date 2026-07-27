@@ -8,6 +8,7 @@ struct WaveformView: View {
     let audioLevel: Float
     let elapsedSeconds: Int
     var countdownSeconds: Int? = nil
+    var liveTranscript: LiveTranscript? = nil
     var onStop: (() -> Void)? = nil
 
     private let barCount = 16
@@ -18,6 +19,11 @@ struct WaveformView: View {
 
     private var isCountingDown: Bool { countdownSeconds != nil }
 
+    private var hasTranscript: Bool {
+        guard let liveTranscript else { return false }
+        return !liveTranscript.isEmpty
+    }
+
     private var activeTint: Color {
         isCountingDown ? Color.Orttaai.error : Color.Orttaai.accent
     }
@@ -26,69 +32,13 @@ struct WaveformView: View {
         ZStack {
             waveBannerBackground
 
-            HStack(spacing: Spacing.md) {
-                HStack(spacing: barGap) {
-                    ForEach(0..<barCount, id: \.self) { index in
-                        RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
-                            .fill(activeTint.opacity(0.95))
-                            .frame(width: barWidth, height: barHeight(for: index))
-                    }
-                }
-                .shadow(color: activeTint.opacity(Double(audioLevel) * 0.5), radius: 6, y: 0)
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: Spacing.xs) {
-                    Text(formattedElapsed)
-                        .font(.Orttaai.mono)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                        .contentTransition(.numericText())
-
-                    if let countdown = countdownSeconds {
-                        Text("\u{00B7}")
-                            .font(.Orttaai.mono)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-
-                        Text("\(countdown)s")
-                            .font(.Orttaai.mono)
-                            .foregroundStyle(Color.Orttaai.error)
-                            .contentTransition(.numericText())
-                    }
-                }
-                .frame(minWidth: 42, alignment: .trailing)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(
-                    isCountingDown
-                        ? Color.Orttaai.errorSubtle.opacity(0.32)
-                        : Color.Orttaai.bgPrimary.opacity(0.32)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
-                        .stroke(
-                            isCountingDown
-                                ? Color.Orttaai.error.opacity(0.35)
-                                : Color.Orttaai.border.opacity(0.35),
-                            lineWidth: BorderWidth.standard
-                        )
-                )
-
-                if let onStop {
-                    Button(action: onStop) {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.Orttaai.error)
-                            .frame(width: 22, height: 22)
-                            .background(Color.Orttaai.errorSubtle.opacity(0.85))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Stop dictation")
-                    .accessibilityLabel("Stop dictation")
+            VStack(spacing: Spacing.xs) {
+                controlsRow
+                if hasTranscript, let liveTranscript {
+                    transcriptRow(liveTranscript)
                 }
             }
-            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, hasTranscript ? Spacing.sm : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(Capsule())
@@ -102,6 +52,95 @@ struct WaveformView: View {
         .animation(.easeInOut(duration: 0.18), value: elapsedSeconds)
         .animation(.easeInOut(duration: 0.3), value: isCountingDown)
         .animation(.easeInOut(duration: 0.18), value: countdownSeconds)
+        .animation(.easeInOut(duration: 0.18), value: hasTranscript)
+    }
+
+    private var controlsRow: some View {
+        HStack(spacing: Spacing.md) {
+            HStack(spacing: barGap) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
+                        .fill(activeTint.opacity(0.95))
+                        .frame(width: barWidth, height: barHeight(for: index))
+                }
+            }
+            .shadow(color: activeTint.opacity(Double(audioLevel) * 0.5), radius: 6, y: 0)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: Spacing.xs) {
+                Text(formattedElapsed)
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .contentTransition(.numericText())
+
+                if let countdown = countdownSeconds {
+                    Text("\u{00B7}")
+                        .font(.Orttaai.mono)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+
+                    Text("\(countdown)s")
+                        .font(.Orttaai.mono)
+                        .foregroundStyle(Color.Orttaai.error)
+                        .contentTransition(.numericText())
+                }
+            }
+            .frame(minWidth: 42, alignment: .trailing)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .background(
+                isCountingDown
+                    ? Color.Orttaai.errorSubtle.opacity(0.32)
+                    : Color.Orttaai.bgPrimary.opacity(0.32)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
+                    .stroke(
+                        isCountingDown
+                            ? Color.Orttaai.error.opacity(0.35)
+                            : Color.Orttaai.border.opacity(0.35),
+                        lineWidth: BorderWidth.standard
+                    )
+            )
+
+            if let onStop {
+                Button(action: onStop) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.Orttaai.error)
+                        .frame(width: 22, height: 22)
+                        .background(Color.Orttaai.errorSubtle.opacity(0.85))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Stop dictation")
+                .accessibilityLabel("Stop dictation")
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+    }
+
+    /// One line of in-progress transcript: committed text is stable and
+    /// full-strength; the speculative tail is dimmed because it may still be
+    /// revised. Head truncation keeps the most recent words visible.
+    private func transcriptRow(_ transcript: LiveTranscript) -> some View {
+        transcriptText(transcript)
+            .font(.Orttaai.secondary)
+            .lineLimit(1)
+            .truncationMode(.head)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.lg)
+            .accessibilityLabel("Live transcript")
+    }
+
+    private func transcriptText(_ transcript: LiveTranscript) -> Text {
+        let committed = Text(transcript.committedText)
+            .foregroundStyle(Color.Orttaai.textPrimary)
+        guard !transcript.speculativeText.isEmpty else { return committed }
+        let separator = transcript.committedText.isEmpty ? "" : " "
+        return committed + Text(separator + transcript.speculativeText)
+            .foregroundStyle(Color.Orttaai.textSecondary)
     }
 
     private var waveBannerBackground: some View {

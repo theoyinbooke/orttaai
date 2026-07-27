@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastRecordingCountdown: Int?
     private var lastRecordingElapsedSeconds: Int?
     private var lastRecordingTargetAppName: String?
+    private var lastRecordingLiveTranscript: LiveTranscript?
     private var runtimeServicesStarted = false
     private var shortcutObserver: NSObjectProtocol?
     private var audioResetObserver: NSObjectProtocol?
@@ -525,6 +526,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     audioLevel: coordinator?.audioLevel ?? 0,
                     elapsedSeconds: coordinator?.recordingElapsedSeconds ?? 0,
                     countdownSeconds: coordinator?.countdownSeconds,
+                    liveTranscript: coordinator?.liveTranscript,
                     onStop: { [weak self] in
                         self?.coordinator?.stopRecording()
                     }
@@ -578,6 +580,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastRecordingCountdown = coordinator?.countdownSeconds
         lastRecordingElapsedSeconds = coordinator?.recordingElapsedSeconds
         lastRecordingTargetAppName = coordinator?.targetAppName
+        lastRecordingLiveTranscript = coordinator?.liveTranscript
         waveformUpdateTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self = self, let coordinator = self.coordinator else { break }
@@ -587,21 +590,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let elapsedSeconds = coordinator.recordingElapsedSeconds ?? 0
                 let countdownSeconds = coordinator.countdownSeconds
                 let targetAppName = coordinator.targetAppName
+                let liveTranscript = coordinator.liveTranscript
                 let bucket = Int((level * 24).rounded())
                 let didWaveformChange = bucket != self.lastWaveformLevelBucket
                 let didElapsedChange = elapsedSeconds != self.lastRecordingElapsedSeconds
                 let didCountdownChange = countdownSeconds != self.lastRecordingCountdown
+                let didTranscriptChange = liveTranscript != self.lastRecordingLiveTranscript
                 let didSignalChange = didCountdownChange ||
                     targetAppName != self.lastRecordingTargetAppName ||
                     didElapsedChange
 
-                if didWaveformChange || didElapsedChange || didCountdownChange {
+                if didTranscriptChange {
+                    self.lastRecordingLiveTranscript = liveTranscript
+                    self.floatingPanel?.setRecordingTranscriptVisible(liveTranscript?.isEmpty == false)
+                }
+
+                if didWaveformChange || didElapsedChange || didCountdownChange || didTranscriptChange {
                     self.lastWaveformLevelBucket = bucket
                     self.floatingPanel?.updateContent(
                         WaveformView(
                             audioLevel: level,
                             elapsedSeconds: elapsedSeconds,
                             countdownSeconds: countdownSeconds,
+                            liveTranscript: liveTranscript,
                             onStop: { [weak self] in
                                 self?.coordinator?.stopRecording()
                             }
@@ -636,6 +647,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastRecordingCountdown = nil
         lastRecordingElapsedSeconds = nil
         lastRecordingTargetAppName = nil
+        lastRecordingLiveTranscript = nil
     }
 
     private func postDictationSignal(

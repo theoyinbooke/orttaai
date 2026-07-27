@@ -48,6 +48,10 @@ final class DictationCoordinator {
         }
     }
     private(set) var countdownSeconds: Int?
+    /// In-progress transcript assembled from the live session's clip commits
+    /// and speculative tail decodes, for display while recording. Nil when no
+    /// partial text is available (UI falls back to waveform-only).
+    private(set) var liveTranscript: LiveTranscript?
 
     private let audioService: any AudioCapturing
     private let transcriptionService: any Transcribing
@@ -156,6 +160,10 @@ final class DictationCoordinator {
         liveDecodeTask = nil
         audioHealthTask?.cancel()
         audioHealthTask = nil
+        liveTranscript = nil
+        Task { [transcriptionService] in
+            await transcriptionService.setLiveTranscriptEventHandler(nil)
+        }
 
         // Stop capture
         let samples = audioService.stopCapture()
@@ -377,6 +385,14 @@ final class DictationCoordinator {
 
             await self.syncTranscriptionSettings()
             guard !Task.isCancelled else { return }
+            // Handler installed before the session begins so no early commit
+            // or speculative result is missed.
+            await self.transcriptionService.setLiveTranscriptEventHandler { [weak self] event in
+                Task { @MainActor [weak self] in
+                    self?.applyLiveTranscriptEvent(event)
+                }
+            }
+            guard !Task.isCancelled else { return }
             await self.transcriptionService.beginLiveTranscriptionSession()
 
             while !Task.isCancelled {
@@ -422,12 +438,24 @@ final class DictationCoordinator {
                     self.countdownSeconds = nil
                     self.liveDecodeTask?.cancel()
                     self.liveDecodeTask = nil
+                    self.liveTranscript = nil
                     self.state = .error(message: "Microphone unavailable. Try again.")
                     self.targetApp = nil
                     self.autoDismissError()
                 }
             }
         }
+    }
+
+    /// Folds a live transcript event into the display model. Events landing
+    /// after recording ended (in-flight commits) are ignored — the final
+    /// transcript comes from finalizeLiveTranscription, never from here.
+    @MainActor
+    private func applyLiveTranscriptEvent(_ event: LiveTranscriptEvent) {
+        guard case .recording = state else { return }
+        var transcript = liveTranscript ?? LiveTranscript()
+        transcript.apply(event)
+        liveTranscript = transcript.isEmpty ? nil : transcript
     }
 
     private func syncTranscriptionSettings() async {

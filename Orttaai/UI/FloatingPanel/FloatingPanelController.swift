@@ -166,6 +166,19 @@ final class FloatingPanelController: NSObject {
         }
     }
 
+    /// Grows or shrinks the recording pill to make room for the live
+    /// transcript line. No-op outside the recording state.
+    func setRecordingTranscriptVisible(_ visible: Bool) {
+        guard panelState == .recording else { return }
+        let size = visible
+            ? WindowSize.floatingPanelRecordingTranscript
+            : WindowSize.floatingPanelRecording
+        guard size != currentSize else { return }
+        animateTransition(to: size) { [weak self] in
+            self?.applyExpandedAppearance()
+        }
+    }
+
     func transitionToProcessing(content view: some View) {
         panelState = .processing
         isShowingHint = false
