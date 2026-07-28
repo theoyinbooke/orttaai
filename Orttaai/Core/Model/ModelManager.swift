@@ -57,9 +57,28 @@ struct ModelInfo: Identifiable {
     let isEnglishOnly: Bool
 }
 
+/// One downloaded build exactly as it exists on disk. `variantID` is the
+/// directory name, never normalized, so the full-precision and quantized
+/// builds of one family stay distinguishable ("openai_whisper-large-v3" vs
+/// "openai_whisper-large-v3_947MB").
+struct DownloadedVariantRecord: Sendable, Equatable {
+    let variantID: String
+    let directoryURL: URL
+    let bytes: Int64
+
+    var isQuantized: Bool {
+        ModelManager.parsedSizeSuffixMB(variantID) != nil
+    }
+}
+
 struct DownloadedModelMetrics: Sendable {
     let modelDirectories: [String: URL]
     let totalBytes: Int64
+    /// Every downloaded build, one record per on-disk directory. Unlike
+    /// `modelDirectories` (keyed by normalized id, one entry per family
+    /// build name), this keeps coexisting full-precision and quantized
+    /// builds separate so the UI can tell the truth about variants.
+    let variants: [DownloadedVariantRecord]
 
     var downloadedModelIDs: Set<String> {
         Set(modelDirectories.keys)
@@ -226,9 +245,19 @@ final class ModelManager {
             return
         }
 
+        try await switchModel(to: modelInfo(forExactVariantID: exactModelId))
+    }
+
+    /// Builds a ModelInfo whose id is used verbatim as the download/load
+    /// target, bypassing family-row substitution. The quantized migration
+    /// flow depends on this: it must load the exact variant it will later
+    /// verify against before anything is deleted.
+    func modelInfo(forExactVariantID variantID: String) -> ModelInfo {
+        let exactModelId = variantID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedModelId = Self.normalizedModelID(exactModelId)
         let support = WhisperKit.recommendedModels()
         let hardware = HardwareDetector.detect()
-        let fallback = ModelInfo(
+        return ModelInfo(
             id: exactModelId,
             name: formatDisplayName(exactModelId),
             downloadSizeMB: estimateSize(exactModelId),
@@ -240,7 +269,6 @@ final class ModelManager {
             isDeviceSupported: support.supported.map(Self.normalizedModelID).contains(normalizedModelId),
             isEnglishOnly: isEnglishOnly(exactModelId)
         )
-        try await switchModel(to: fallback)
     }
 
     func deleteModel(named modelId: String) throws {
@@ -476,11 +504,48 @@ final class ModelManager {
 
     nonisolated static func detectDownloadedModelMetrics(in roots: [URL]? = nil) -> DownloadedModelMetrics {
         let modelRoots = roots ?? modelStorageRoots()
-        let downloadedDirectories = detectDownloadedModelDirectories(in: modelRoots)
-        let totalBytes = downloadedDirectories.values.reduce(Int64(0)) { total, directory in
-            total + directoryByteSize(directory)
+        let variantDirectories = detectDownloadedVariantDirectories(in: modelRoots)
+
+        let variants = variantDirectories
+            .sorted { $0.key < $1.key }
+            .map { variantID, directory in
+                DownloadedVariantRecord(
+                    variantID: variantID,
+                    directoryURL: directory,
+                    bytes: directoryByteSize(directory)
+                )
+            }
+        // Total disk usage counts every build, so a family with both a
+        // full-precision and a quantized directory reports both — keeping
+        // the footer consistent with the per-row variant truth.
+        let totalBytes = variants.reduce(Int64(0)) { $0 + $1.bytes }
+
+        var downloadedDirectories: [String: URL] = [:]
+        for record in variants {
+            insertDownloadedModelDirectory(record.directoryURL, into: &downloadedDirectories)
         }
-        return DownloadedModelMetrics(modelDirectories: downloadedDirectories, totalBytes: totalBytes)
+        return DownloadedModelMetrics(
+            modelDirectories: downloadedDirectories,
+            totalBytes: totalBytes,
+            variants: variants
+        )
+    }
+
+    /// Removes exactly one downloaded build (matched by its on-disk directory
+    /// name) and leaves every other variant of the family untouched — the
+    /// quantized-migration counterpart to `deleteModel(named:)`, which removes
+    /// a whole family.
+    nonisolated static func deleteDownloadedVariant(named variantID: String, in roots: [URL]? = nil) throws {
+        let trimmed = variantID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let fileManager = FileManager.default
+        for record in detectDownloadedModelMetrics(in: roots).variants where record.variantID == trimmed {
+            if fileManager.fileExists(atPath: record.directoryURL.path) {
+                try fileManager.removeItem(at: record.directoryURL)
+                Logger.model.info("Deleted downloaded variant: \(record.variantID)")
+            }
+        }
     }
 
     nonisolated static func prefetchModelIfNeeded(_ modelId: String) async -> ModelPrefetchOutcome {
@@ -539,13 +604,22 @@ final class ModelManager {
         return dedupedRoots
     }
 
-    nonisolated private static func detectDownloadedModelDirectories(in roots: [URL]) -> [String: URL] {
+    /// Walks the storage roots and returns every valid model build keyed by
+    /// its exact directory name (no normalization) — the source of truth for
+    /// which precise variants exist on disk.
+    nonisolated private static func detectDownloadedVariantDirectories(in roots: [URL]) -> [String: URL] {
         let fileManager = FileManager.default
-        var downloadedDirectories: [String: URL] = [:]
+        var variantDirectories: [String: URL] = [:]
+
+        func insert(_ url: URL) {
+            let variantID = url.lastPathComponent
+            guard !variantID.isEmpty, variantDirectories[variantID] == nil else { return }
+            variantDirectories[variantID] = url
+        }
 
         for root in roots where fileManager.fileExists(atPath: root.path) {
             if root.lastPathComponent.hasPrefix("openai_whisper-"), isValidModelDirectory(root) {
-                insertDownloadedModelDirectory(root, into: &downloadedDirectories)
+                insert(root)
             }
 
             guard let enumerator = fileManager.enumerator(
@@ -564,13 +638,13 @@ final class ModelManager {
                 guard modelID.hasPrefix("openai_whisper-") else { continue }
 
                 if isValidModelDirectory(url) {
-                    insertDownloadedModelDirectory(url, into: &downloadedDirectories)
+                    insert(url)
                     enumerator.skipDescendants()
                 }
             }
         }
 
-        return downloadedDirectories
+        return variantDirectories
     }
 
     nonisolated private static func insertDownloadedModelDirectory(

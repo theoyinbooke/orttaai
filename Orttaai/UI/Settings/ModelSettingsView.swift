@@ -20,6 +20,8 @@ private enum ModelSortMode: String, CaseIterable {
 
 struct ModelSettingsView: View {
     @AppStorage("selectedModelId") private var selectedModelId = "openai_whisper-small"
+    @AppStorage("activeModelId") private var activeModelId = ""
+    @AppStorage("quantizedMigrationDismissedFamilies") private var dismissedMigrationFamiliesRaw = ""
     @AppStorage("modelSortMode") private var modelSortModeRaw: String = ModelSortMode.size.rawValue
     @AppStorage("lowLatencyModeEnabled") private var lowLatencyModeEnabled = false
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
@@ -54,6 +56,10 @@ struct ModelSettingsView: View {
     @AppStorage("semanticActiveIndexModelID") private var semanticActiveIndexModelID = ""
     @State private var diskUsage: String = "Checking downloaded models..."
     @State private var downloadedModelIDs: Set<String> = []
+    @State private var downloadedVariants: [DownloadedVariantRecord] = []
+    @State private var migratingFamilyID: String?
+    @State private var migrationError: String?
+    @State private var migrationSuccessMessage: String?
     @State private var models: [ModelInfo] = []
     @State private var isFetching: Bool = false
     @State private var isPickerExpanded: Bool = false
@@ -143,6 +149,34 @@ struct ModelSettingsView: View {
                     .padding(Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.Orttaai.errorSubtle.opacity(0.45))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+                }
+
+                if let migrationError {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color.Orttaai.error)
+                        Text("Quantized migration failed: \(migrationError)")
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.error)
+                    }
+                    .padding(Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.Orttaai.errorSubtle.opacity(0.45))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+                }
+
+                if let migrationSuccessMessage {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.Orttaai.success)
+                        Text(migrationSuccessMessage)
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.success)
+                    }
+                    .padding(Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.Orttaai.success.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
                 }
 
@@ -1388,7 +1422,7 @@ struct ModelSettingsView: View {
                         .minimumScaleFactor(0.86)
 
                     if let selectedModel {
-                        modelBadgeCluster(for: selectedModel)
+                        modelBadgeCluster(for: selectedModel, precision: resolvedRow(for: selectedModel).precision)
                     }
                 }
 
@@ -1419,7 +1453,9 @@ struct ModelSettingsView: View {
 
     private func metaLine(for model: ModelInfo?) -> String {
         guard let model else { return "No model selected" }
-        return "\(model.downloadSizeMB)MB • \(model.speedLabel.rawValue) • \(model.accuracyLabel.rawValue) accuracy"
+        // Size follows the loaded/downloaded variant, never the curated alias.
+        let sizeText = ModelSizeFormatter.text(for: resolvedRow(for: model))
+        return "\(sizeText) • \(model.speedLabel.rawValue) • \(model.accuracyLabel.rawValue) accuracy"
     }
 
     // MARK: - Model Row
@@ -1427,16 +1463,18 @@ struct ModelSettingsView: View {
     private func compactModelRow(_ model: ModelInfo) -> some View {
         let modelID = ModelManager.canonicalModelListID(model.id)
         let selectedID = ModelManager.canonicalModelListID(selectedModelId)
-        let downloadedCanonicalIDs = Set(downloadedModelIDs.map(ModelManager.canonicalModelListID))
+        let resolved = resolvedRow(for: model)
         let isSelected = modelID == selectedID
-        let isDownloaded = downloadedCanonicalIDs.contains(modelID)
+        let isDownloaded = resolved.isDownloaded
         let isUnsupported = !model.isDeviceSupported
         let isThisSwitching = switchingModelId == model.id && isSwitching
+        let isMigratingThisFamily = migratingFamilyID == modelID
         let switchingStatusText = isDownloaded ? "Loading + warm-up..." : "Downloading + warm-up..."
 
-        return HStack(spacing: Spacing.sm) {
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.sm) {
             Button {
-                guard !isUnsupported, !isSwitching, !isDeletingModel else { return }
+                guard !isUnsupported, !isSwitching, !isDeletingModel, migratingFamilyID == nil else { return }
                 switchToModel(model)
             } label: {
                 HStack(spacing: Spacing.sm) {
@@ -1456,12 +1494,14 @@ struct ModelSettingsView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.86)
 
-                    Text("\(model.downloadSizeMB)MB")
+                    // Measured on-disk size for downloaded builds; the
+                    // curated estimate only for models not on this Mac.
+                    Text(ModelSizeFormatter.text(for: resolved))
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                         .lineLimit(1)
 
-                    modelBadgeCluster(for: model)
+                    modelBadgeCluster(for: model, precision: resolved.precision)
 
                     Spacer(minLength: Spacing.sm)
 
@@ -1493,7 +1533,7 @@ struct ModelSettingsView: View {
                 .opacity(isUnsupported ? 0.62 : 1.0)
             }
             .buttonStyle(.plain)
-            .disabled(isUnsupported || isSwitching || isDeletingModel)
+            .disabled(isUnsupported || isSwitching || isDeletingModel || migratingFamilyID != nil)
 
             if isDownloaded && !isSelected {
                 Button {
@@ -1514,10 +1554,74 @@ struct ModelSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Remove this model's downloaded files")
-                .disabled(isSwitching || isDeletingModel)
+                .disabled(isSwitching || isDeletingModel || migratingFamilyID != nil)
+            }
+            }
+
+            if let offer = resolved.migrationOffer {
+                QuantizedMigrationOfferView(
+                    offer: offer,
+                    isMigrating: isMigratingThisFamily,
+                    isDisabled: isSwitching || isDeletingModel
+                        || (migratingFamilyID != nil && !isMigratingThisFamily),
+                    onMigrate: { startQuantizedMigration(offer) },
+                    onDismiss: { dismissMigrationOffer(offer) }
+                )
+                .padding(.leading, Spacing.lg)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Variant Truth & Quantized Migration
+
+    /// Resolves what this family row must show so it never contradicts the
+    /// disk or the loaded model: loaded variant first, then the downloaded
+    /// build with its measured size, then the curated download estimate.
+    private func resolvedRow(for model: ModelInfo) -> ResolvedModelRow {
+        ModelVariantResolver.resolveRow(
+            family: model,
+            downloadedVariants: downloadedVariants,
+            activeModelID: activeModelId.isEmpty ? nil : activeModelId,
+            dismissedMigrationFamilies: QuantizedMigrationDismissals.parse(dismissedMigrationFamiliesRaw)
+        )
+    }
+
+    private func startQuantizedMigration(_ offer: QuantizedMigrationOffer) {
+        guard let manager = ModelManager.shared else {
+            migrationError = "Model manager unavailable."
+            return
+        }
+
+        migrationError = nil
+        migrationSuccessMessage = nil
+        migratingFamilyID = offer.familyID
+        let previousActiveModelID = activeModelId
+
+        Task {
+            defer { migratingFamilyID = nil }
+            let migrator = QuantizedMigrator(
+                operations: ModelManagerQuantizedMigrationOperations(manager: manager)
+            )
+            do {
+                try await migrator.migrate(offer: offer, previousActiveModelID: previousActiveModelID)
+                if ModelManager.canonicalModelListID(selectedModelId) == offer.familyID {
+                    selectedModelId = offer.quantizedVariantID
+                }
+                let reclaimed = ModelSizeFormatter.text(forBytes: offer.estimatedReclaimedBytes)
+                migrationSuccessMessage = "Switched \(ModelManager.formatDisplayName(offer.quantizedVariantID)) to the quantized build — reclaimed ~\(reclaimed)."
+            } catch {
+                migrationError = error.localizedDescription
+            }
+            await refreshDownloadedMetrics()
+        }
+    }
+
+    private func dismissMigrationOffer(_ offer: QuantizedMigrationOffer) {
+        dismissedMigrationFamiliesRaw = QuantizedMigrationDismissals.adding(
+            offer.familyID,
+            to: dismissedMigrationFamiliesRaw
+        )
     }
 
     private func switchToModel(_ model: ModelInfo) {
@@ -1572,24 +1676,38 @@ struct ModelSettingsView: View {
     }
 
     @ViewBuilder
-    private func modelBadgeCluster(for model: ModelInfo) -> some View {
+    private func modelBadgeCluster(for model: ModelInfo, precision: ModelVariantPrecision? = nil) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: Spacing.xs) {
                 compatibilityBadge(for: model)
-                if model.isEnglishOnly {
-                    badge("English", color: Color.Orttaai.textTertiary)
+                languageBadge(for: model)
+                if let precision {
+                    ModelPrecisionChip(precision: precision)
                 }
             }
 
             HStack(spacing: Spacing.xs) {
                 compatibilityBadge(for: model, compact: true)
-                if model.isEnglishOnly {
-                    badge("EN", color: Color.Orttaai.textTertiary, compact: true)
+                languageBadge(for: model, compact: true)
+                if let precision {
+                    ModelPrecisionChip(precision: precision, compact: true)
                 }
             }
 
             compatibilityDot(for: model)
         }
+    }
+
+    /// English-only and Multilingual chips are mutually exclusive by
+    /// construction: one call, one boolean, one chip.
+    private func languageBadge(for model: ModelInfo, compact: Bool = false) -> some View {
+        badge(
+            compact
+                ? ModelVariantResolver.compactLanguageBadgeTitle(isEnglishOnly: model.isEnglishOnly)
+                : ModelVariantResolver.languageBadgeTitle(isEnglishOnly: model.isEnglishOnly),
+            color: Color.Orttaai.textTertiary,
+            compact: compact
+        )
     }
 
     @ViewBuilder
@@ -2104,6 +2222,7 @@ struct ModelSettingsView: View {
 
         await MainActor.run {
             downloadedModelIDs = metrics.downloadedModelIDs
+            downloadedVariants = metrics.variants
             diskUsage = summary
         }
     }

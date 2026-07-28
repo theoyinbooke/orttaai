@@ -204,6 +204,57 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(metrics.downloadedModelIDs.contains("openai_whisper-large-v3_turbo"))
     }
 
+    func testDetectDownloadedModelMetricsKeepsFullAndQuantizedVariantsSeparate() throws {
+        let fileManager = FileManager.default
+        let tempRoot = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? fileManager.removeItem(at: tempRoot) }
+
+        let fullDir = tempRoot.appendingPathComponent("openai_whisper-large-v3", isDirectory: true)
+        let quantizedDir = tempRoot.appendingPathComponent("openai_whisper-large-v3_947MB", isDirectory: true)
+        try fileManager.createDirectory(at: fullDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: quantizedDir, withIntermediateDirectories: true)
+        try createFakeModelFiles(at: fullDir)
+        try createFakeModelFiles(at: quantizedDir)
+
+        let metrics = ModelManager.detectDownloadedModelMetrics(in: [tempRoot])
+
+        // The raw inventory distinguishes both builds...
+        XCTAssertEqual(
+            Set(metrics.variants.map(\.variantID)),
+            ["openai_whisper-large-v3", "openai_whisper-large-v3_947MB"]
+        )
+        XCTAssertEqual(metrics.variants.filter(\.isQuantized).map(\.variantID), ["openai_whisper-large-v3_947MB"])
+        // ...while the normalized family view still collapses to one entry.
+        XCTAssertEqual(metrics.downloadedModelIDs, ["openai_whisper-large-v3"])
+        // The footer total counts every build on disk.
+        XCTAssertEqual(metrics.totalBytes, metrics.variants.reduce(Int64(0)) { $0 + $1.bytes })
+        XCTAssertEqual(metrics.variants.count, 2)
+        for record in metrics.variants {
+            XCTAssertGreaterThan(record.bytes, 0)
+        }
+    }
+
+    func testDeleteDownloadedVariantRemovesOnlyThatBuild() throws {
+        let fileManager = FileManager.default
+        let tempRoot = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? fileManager.removeItem(at: tempRoot) }
+
+        let fullDir = tempRoot.appendingPathComponent("openai_whisper-large-v3", isDirectory: true)
+        let quantizedDir = tempRoot.appendingPathComponent("openai_whisper-large-v3_947MB", isDirectory: true)
+        try fileManager.createDirectory(at: fullDir, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: quantizedDir, withIntermediateDirectories: true)
+        try createFakeModelFiles(at: fullDir)
+        try createFakeModelFiles(at: quantizedDir)
+
+        try ModelManager.deleteDownloadedVariant(named: "openai_whisper-large-v3", in: [tempRoot])
+
+        XCTAssertFalse(fileManager.fileExists(atPath: fullDir.path), "Full-precision build should be removed")
+        XCTAssertTrue(
+            fileManager.fileExists(atPath: quantizedDir.path),
+            "The quantized sibling must survive a variant-scoped delete"
+        )
+    }
+
     func testSetupDownloadedModelResolverPrefersSelectedDownloadedModel() {
         let resolved = SetupDownloadedModelResolver.resolveInstalledModelID(
             downloadedModelIDs: ["openai_whisper-small.en", "openai_whisper-large-v3_turbo"],
