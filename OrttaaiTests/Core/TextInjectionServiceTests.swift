@@ -221,6 +221,19 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(outcome, .confirmed)
     }
 
+    func testVerificationEmptyStringExposureIsInconclusive() {
+        // Regression (cmux/Ghostty): the terminal's AX element reports "" for
+        // value even after the paste lands inside the running TUI. Treating
+        // "" as judgeable evidence double-pasted and fired an AX insert that
+        // selected the entire terminal screen.
+        let outcome = TextInjectionService.evaluatePasteVerification(
+            pre: .value(FocusedTextSnapshot(value: "", selectedText: nil)),
+            post: .value(FocusedTextSnapshot(value: "", selectedText: "")),
+            expectedText: "hello world"
+        )
+        XCTAssertEqual(outcome, .inconclusive)
+    }
+
     func testVerificationUnchangedValueWithoutTextFails() {
         let outcome = TextInjectionService.evaluatePasteVerification(
             pre: .value(FocusedTextSnapshot(value: "unchanged", selectedText: nil)),
@@ -306,11 +319,28 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.restoreCount, 1)
     }
 
+    func testInjectIntoTerminalStyleEmptyValueElementPastesOnceWithoutFallbacks() async {
+        // Regression (cmux/Ghostty): element exposes value == "" before and
+        // after the paste. Must behave like an unverifiable element: one
+        // paste, assumed success, no retry, no AX insert (screen-wide
+        // selection side effect), no typed duplicate.
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+
+        let result = await service.inject(text: "Hello world")
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1, "Terminal-style elements must not double-paste")
+        XCTAssertTrue(inspector.insertedTexts.isEmpty, "AX insert must never fire on unverifiable elements")
+        XCTAssertTrue(keyPoster.typedTexts.isEmpty)
+        XCTAssertEqual(clipboard.restoreCount, 1)
+    }
+
     // MARK: Fallback chain
 
     func testInjectRetriesPasteOnceWhenFirstPasteDidNotLand() async {
         inspector.detailsResult = normalDetails()
-        inspector.simulatedFieldValue = ""
+        inspector.simulatedFieldValue = "draft: "
         keyPoster.onPasteChord = { [inspector] attempt in
             if attempt == 2 {
                 inspector?.simulatedFieldValue = "Hello world"
@@ -328,7 +358,7 @@ final class TextInjectionServiceTests: XCTestCase {
 
     func testInjectFallsBackToAXInsertAfterPasteRetryFails() async {
         inspector.detailsResult = normalDetails()
-        inspector.simulatedFieldValue = ""
+        inspector.simulatedFieldValue = "draft: "
         inspector.insertResult = true
         inspector.onInsert = { [inspector] text in
             inspector?.simulatedFieldValue = text
@@ -346,7 +376,7 @@ final class TextInjectionServiceTests: XCTestCase {
 
     func testInjectFallsBackToTypedKeystrokesAfterAXInsertFails() async {
         inspector.detailsResult = normalDetails()
-        inspector.simulatedFieldValue = ""
+        inspector.simulatedFieldValue = "draft: "
         inspector.insertResult = false
         keyPoster.onTypedText = { [inspector] text in
             inspector?.simulatedFieldValue = text

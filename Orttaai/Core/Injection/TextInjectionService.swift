@@ -154,9 +154,15 @@ final class TextInjectionService: TextInjecting {
         guard case .value(let postSnapshot) = post else {
             return .inconclusive
         }
-        guard postSnapshot.value != nil || postSnapshot.selectedText != nil else {
-            // Element exposes no text to AX (canvas editors, terminals) —
-            // we cannot judge, so we must not trigger fallbacks.
+        let postExposesText = (postSnapshot.value?.isEmpty == false)
+            || (postSnapshot.selectedText?.isEmpty == false)
+        guard postExposesText else {
+            // Element exposes no text to AX — nil attributes (canvas editors)
+            // or empty strings (terminals like Ghostty/cmux report "" for the
+            // screen even after a paste lands in the running TUI). We cannot
+            // judge, so we must not trigger fallbacks: a false `.failed` here
+            // double-pastes and fires an AX insert that selects the whole
+            // terminal screen.
             return .inconclusive
         }
 
