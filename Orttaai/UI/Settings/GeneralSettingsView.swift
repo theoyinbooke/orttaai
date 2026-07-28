@@ -11,6 +11,7 @@ struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
     @AppStorage("spokenFormattingEnabled") private var spokenFormattingEnabled = true
+    @AppStorage("inFieldStreamingEnabled") private var inFieldStreamingEnabled = true
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 90
     @AppStorage("handsFreeModeEnabled") private var handsFreeModeEnabled = true
     @AppStorage("handsFreeSilenceStopEnabled") private var handsFreeSilenceStopEnabled = true
@@ -56,6 +57,14 @@ struct GeneralSettingsView: View {
                     title: "Spoken Formatting",
                     subtitle: "Applies \"new line\" and \"new paragraph\", and turns list cues like \"number one\" or \"bullet point\" into formatted lines.",
                     isOn: $spokenFormattingEnabled
+                )
+
+                divider
+
+                toggleRow(
+                    title: "Stream Words Into the App",
+                    subtitle: "Type your words at the cursor while you speak. AI polish is skipped for streamed dictations so finished words aren't rewritten. Where streaming isn't safe (terminals, password fields), the transcript shows in the recording pill instead.",
+                    isOn: $inFieldStreamingEnabled
                 )
             }
             .padding(Spacing.lg)

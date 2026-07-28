@@ -15,6 +15,10 @@ protocol KeyEventPosting: AnyObject {
     /// Types `text` as ordered unicode keystrokes, chunked so long transcripts
     /// stay within CGEvent's per-event unicode payload limits.
     func postTypedText(_ text: String)
+    /// Posts `count` Delete (backspace) keystrokes. Used by streaming
+    /// reconciliation to remove exactly the divergent tail of the span it
+    /// streamed — never more.
+    func postBackspaces(count: Int)
 }
 
 final class CGKeyEventPoster: KeyEventPosting {
@@ -70,6 +74,23 @@ final class CGKeyEventPoster: KeyEventPosting {
         keyDown.post(tap: .cghidEventTap)
         usleep(7_000) // 7ms pause between key-down and key-up
         keyUp.post(tap: .cghidEventTap)
+    }
+
+    func postBackspaces(count: Int) {
+        guard count > 0 else { return }
+        let source = CGEventSource(stateID: .hidSystemState)
+        let deleteKey: CGKeyCode = 0x33
+
+        for _ in 0..<count {
+            guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: deleteKey, keyDown: true),
+                  let keyUp = CGEvent(keyboardEventSource: source, virtualKey: deleteKey, keyDown: false) else {
+                Logger.injection.error("Failed to create CGEvents for backspace")
+                return
+            }
+            keyDown.post(tap: .cghidEventTap)
+            keyUp.post(tap: .cghidEventTap)
+            usleep(3_000) // 3ms between deletes preserves ordering in slow apps
+        }
     }
 
     func postTypedText(_ text: String) {

@@ -14,6 +14,12 @@ struct TextProcessorInput {
     let rawTranscript: String
     let targetApp: String?
     let mode: ProcessingMode
+    /// True for dictations that streamed committed text into the target field
+    /// while recording. LLM polish routinely rewrites the whole utterance,
+    /// which would visibly delete and retype words the user already watched
+    /// land — so streaming sessions defer polish and keep only the
+    /// deterministic passes (dictionary, snippets, spoken formatting).
+    var deferPolish: Bool = false
 }
 
 struct TextProcessorOutput {
@@ -26,7 +32,14 @@ protocol TextProcessor {
     func isAvailable() -> Bool
 }
 
-final class RuleBasedTextProcessor: TextProcessor {
+/// Supplies the user's personal vocabulary (dictionary targets and snippet
+/// triggers) for recognizer-level bias conditioning. Snapshotted once per
+/// dictation session — never queried on the audio hot path.
+protocol VocabularyBiasProviding {
+    func vocabularyBiasTerms() -> [String]
+}
+
+final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
     private let databaseManager: DatabaseManager
     private let settings: AppSettings
     private var cachedDictionaryEntries: [DictionaryEntry] = []
@@ -97,6 +110,17 @@ final class RuleBasedTextProcessor: TextProcessor {
 
     func isAvailable() -> Bool {
         true
+    }
+
+    /// Active dictionary targets and snippet triggers, reusing the same
+    /// cached rules the replacement pass keeps warm. Dictionary targets are
+    /// the corrected spellings the recognizer should produce; snippet
+    /// triggers are the phrases the user actually speaks.
+    func vocabularyBiasTerms() -> [String] {
+        guard let rules = try? loadActiveRulesIfNeeded() else { return [] }
+        let targets = rules.dictionaryEntries.filter(\.isActive).map(\.target)
+        let triggers = rules.snippetEntries.filter(\.isActive).map(\.trigger)
+        return targets + triggers
     }
 
     private func loadActiveRulesIfNeeded() throws -> ActivePersonalMemoryRules {

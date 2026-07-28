@@ -12,12 +12,29 @@ nonisolated struct FocusedElementDetails: Equatable, Sendable {
     var roleDescription: String?
 }
 
+/// Selection range of the focused element in UTF-16 units, as AX reports it.
+/// A zero-length range is the caret position.
+nonisolated struct FocusedTextRange: Equatable, Sendable {
+    var location: Int
+    var length: Int
+}
+
 /// Text content of the focused UI element, read for paste verification.
 nonisolated struct FocusedTextSnapshot: Equatable, Sendable {
     /// kAXValueAttribute as a string, nil when the element exposes no value.
     var value: String?
     /// kAXSelectedTextAttribute, nil when unsupported.
     var selectedText: String?
+    /// kAXSelectedTextRangeAttribute, nil when unsupported. Lets streaming
+    /// verify the caret still sits at the end of the streamed span before
+    /// typing or deleting at the caret.
+    var selectedRange: FocusedTextRange?
+
+    init(value: String? = nil, selectedText: String? = nil, selectedRange: FocusedTextRange? = nil) {
+        self.value = value
+        self.selectedText = selectedText
+        self.selectedRange = selectedRange
+    }
 }
 
 /// Result of an accessibility read. `.axError` means the AX API itself failed
@@ -67,6 +84,7 @@ final class SystemAccessibilityInspector: AccessibilityInspecting {
         var snapshot = FocusedTextSnapshot()
         snapshot.value = copyStringAttribute(element, kAXValueAttribute)
         snapshot.selectedText = copyStringAttribute(element, kAXSelectedTextAttribute)
+        snapshot.selectedRange = copyRangeAttribute(element, kAXSelectedTextRangeAttribute)
         return .value(snapshot)
     }
 
@@ -117,5 +135,21 @@ final class SystemAccessibilityInspector: AccessibilityInspecting {
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
         guard result == .success else { return nil }
         return value as? String
+    }
+
+    private func copyRangeAttribute(_ element: AXUIElement, _ attribute: String) -> FocusedTextRange? {
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard result == .success, let axValue = value, CFGetTypeID(axValue) == AXValueGetTypeID() else {
+            return nil
+        }
+        // swiftlint:disable:next force_cast
+        let rangeValue = axValue as! AXValue
+        var range = CFRange()
+        guard AXValueGetType(rangeValue) == .cfRange,
+              AXValueGetValue(rangeValue, .cfRange, &range) else {
+            return nil
+        }
+        return FocusedTextRange(location: range.location, length: range.length)
     }
 }

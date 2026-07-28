@@ -16,6 +16,7 @@ protocol Transcribing: Actor {
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String
     func cancelLiveTranscriptionSession()
     func setLiveTranscriptEventHandler(_ handler: (@Sendable (LiveTranscriptEvent) -> Void)?)
+    func setVocabularyBias(terms: [String])
     func updateSettings(
         language: String,
         computeMode: String,
@@ -50,6 +51,11 @@ actor TranscriptionService: Transcribing {
         var speculativeResult: SpeculativeTailResult?
         var lastQueuedSampleCount: Int = 0
         var speculativeTask: Task<Void, Never>?
+        /// True when the most recent live decode tripped a quality fallback
+        /// (temperature bump, compression-ratio or logprob threshold) or
+        /// degenerated under conditioning. The next decode drops context
+        /// conditioning so a bad prompt can never feed a hallucination loop.
+        var lastDecodeTrippedFallback = false
     }
 
     private static let liveTranscriptionMinSampleCount = 16_000 * 2
@@ -79,6 +85,10 @@ actor TranscriptionService: Transcribing {
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
     private var liveSession: LiveTranscriptionSession?
+    /// Personal-dictionary targets and snippet triggers used to bias decoding.
+    /// Snapshotted by the coordinator at session start — the database is never
+    /// read on the audio hot path. Already normalized/deduped/capped on set.
+    private var vocabularyBiasTerms: [String] = []
     /// Observer for in-progress transcript text (committed clips and
     /// speculative tails) so the UI can show a live transcript. Purely a
     /// side channel: it never influences finalization.
@@ -164,7 +174,11 @@ actor TranscriptionService: Transcribing {
 
     func transcribe(audioSamples: [Float]) async throws -> String {
         Logger.transcription.info("Transcribing \(audioSamples.count) samples")
-        let text = try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+        let text = try await performTranscription(
+            audioSamples: audioSamples,
+            allowCancellation: false,
+            promptTokens: wholeDecodePromptTokens(audioSamples: audioSamples)
+        )
         Logger.transcription.info("Transcription complete: \(text.prefix(50))...")
         return text
     }
@@ -243,7 +257,11 @@ actor TranscriptionService: Transcribing {
         defer { liveSession = nil }
 
         guard liveSession != nil else {
-            return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+            return try await performTranscription(
+                audioSamples: audioSamples,
+                allowCancellation: false,
+                promptTokens: wholeDecodePromptTokens(audioSamples: audioSamples)
+            )
         }
 
         // An in-flight clip commit always advances the committed prefix, so
@@ -268,7 +286,11 @@ actor TranscriptionService: Transcribing {
 
         guard let session = liveSession else {
             // Session was cancelled while awaiting.
-            return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+            return try await performTranscription(
+                audioSamples: audioSamples,
+                allowCancellation: false,
+                promptTokens: wholeDecodePromptTokens(audioSamples: audioSamples)
+            )
         }
 
         let base = min(session.committedSampleCount, audioSamples.count)
@@ -294,7 +316,18 @@ actor TranscriptionService: Transcribing {
 
         if tailText == nil, !tailAudio.isEmpty {
             do {
-                tailText = try await performTranscription(audioSamples: tailAudio, allowCancellation: false)
+                // Condition the tail decode on the committed session text and
+                // bias vocabulary — but only when the tail actually carries
+                // speech energy: conditioning a noise-only tail invites
+                // prompt bleed-through.
+                let tailPromptTokens = Self.containsSpeechEnergy(tailAudio[...])
+                    ? currentLivePromptTokens(session: session)
+                    : nil
+                tailText = try await performTranscription(
+                    audioSamples: tailAudio,
+                    allowCancellation: false,
+                    promptTokens: tailPromptTokens
+                )
             } catch {
                 // The tail may legitimately be silence; committed clips can
                 // still carry the transcript.
@@ -314,6 +347,8 @@ actor TranscriptionService: Transcribing {
 
         // Nothing anywhere — fall back to a full decode (with its relaxed
         // retry) to preserve the previous behavior for quiet recordings.
+        // Unconditioned: this path means the audio is likely near-silent, the
+        // worst case for prompt bleed-through.
         return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
     }
 
@@ -355,14 +390,183 @@ actor TranscriptionService: Transcribing {
         self.decodingPreferences = decodingPreferences.clamped()
     }
 
+    /// Installs the vocabulary-bias term snapshot for subsequent decodes.
+    /// Pass an empty array to disable biasing.
+    func setVocabularyBias(terms: [String]) {
+        vocabularyBiasTerms = Self.normalizedBiasTerms(terms)
+    }
+
+    // MARK: - Decode conditioning
+
+    /// Token budget for the whole conditioning prompt. Kept under WhisperKit's
+    /// own prompt cap (maxTokenContext / 2 - 1 = 111 in the pinned build,
+    /// where maxTokenContext is 224) so WhisperKit never suffix-trims the
+    /// prompt — a suffix trim would silently drop the bias terms, which sit
+    /// at the front.
+    nonisolated static let maxPromptTokenCount = 110
+    /// Cap for the bias-vocabulary portion. Bias terms are fitted FIRST —
+    /// they are the user's explicit vocabulary and must survive even when a
+    /// long session supplies plenty of context text.
+    nonisolated static let maxBiasPromptTokenCount = 70
+    /// Cap for the committed-session-text tail; it also never exceeds
+    /// whatever the bias terms left of the total budget.
+    nonisolated static let maxContextPromptTokenCount = 100
+    nonisolated static let maxBiasTermCount = 40
+
+    /// Trims, drops empties, dedupes case-insensitively (first spelling wins),
+    /// orders longest-first (longer terms are the ones ASR mangles most and
+    /// must survive the cap), and caps the term count.
+    nonisolated static func normalizedBiasTerms(
+        _ terms: [String],
+        maxTerms: Int = maxBiasTermCount
+    ) -> [String] {
+        var seen = Set<String>()
+        var unique: [String] = []
+        for term in terms {
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { continue }
+            unique.append(trimmed)
+        }
+        unique.sort { lhs, rhs in
+            if lhs.count != rhs.count { return lhs.count > rhs.count }
+            return lhs.lowercased() < rhs.lowercased()
+        }
+        return Array(unique.prefix(maxTerms))
+    }
+
+    /// Builds the `promptTokens` for a conditioned decode: bias vocabulary
+    /// first (as a comma-separated previous-context sentence), then the tail
+    /// of the committed session text. Bias terms are fitted FIRST and whole —
+    /// a term that would overflow the bias budget is dropped, never cut in
+    /// half. The context tail takes whatever the bias terms left of the total
+    /// budget, as a token suffix (most recent speech wins).
+    /// `encode` is the tokenizer; ids >= `specialTokenBegin` are filtered so
+    /// budget accounting matches what WhisperKit actually prefills.
+    nonisolated static func conditioningPromptTokens(
+        biasTerms: [String],
+        contextText: String,
+        encode: (String) -> [Int],
+        specialTokenBegin: Int,
+        maxTotalTokens: Int = maxPromptTokenCount,
+        maxBiasTokens: Int = maxBiasPromptTokenCount,
+        maxContextTokens: Int = maxContextPromptTokenCount
+    ) -> [Int]? {
+        func plainTokens(_ text: String) -> [Int] {
+            encode(text).filter { $0 < specialTokenBegin }
+        }
+
+        var biasTokens: [Int] = []
+        let biasBudget = min(maxBiasTokens, maxTotalTokens)
+        var included: [String] = []
+        for term in biasTerms {
+            let candidate = (included + [term]).joined(separator: ", ") + "."
+            let candidateTokens = plainTokens(" " + candidate)
+            guard candidateTokens.count <= biasBudget else { continue }
+            included.append(term)
+            biasTokens = candidateTokens
+        }
+
+        let trimmedContext = contextText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contextBudget = min(maxContextTokens, maxTotalTokens - biasTokens.count)
+        let contextTokens: [Int] = (trimmedContext.isEmpty || contextBudget <= 0)
+            ? []
+            : Array(plainTokens(" " + trimmedContext).suffix(contextBudget))
+
+        let prompt = biasTokens + contextTokens
+        return prompt.isEmpty ? nil : prompt
+    }
+
+    /// Prompt for the next live decode, or nil when conditioning must be
+    /// dropped (previous decode tripped a fallback — hallucination-loop
+    /// protection) or there is nothing to condition on.
+    nonisolated static func livePromptTokens(
+        biasTerms: [String],
+        committedTexts: [String],
+        lastDecodeTrippedFallback: Bool,
+        encode: (String) -> [Int],
+        specialTokenBegin: Int
+    ) -> [Int]? {
+        guard !lastDecodeTrippedFallback else { return nil }
+        return conditioningPromptTokens(
+            biasTerms: biasTerms,
+            contextText: committedTexts.joined(separator: mergedTranscriptSeparator),
+            encode: encode,
+            specialTokenBegin: specialTokenBegin
+        )
+    }
+
+    /// True when any segment shows the decoder fell back or produced output
+    /// past the quality thresholds: a bumped sampling temperature, a
+    /// compression ratio above the configured threshold, or an average
+    /// logprob below it.
+    nonisolated static func decodeTrippedFallback(
+        segments: [TranscriptionSegment],
+        baseTemperature: Float,
+        compressionRatioThreshold: Float?,
+        logProbThreshold: Float?
+    ) -> Bool {
+        for segment in segments {
+            if segment.temperature > baseTemperature + 0.01 { return true }
+            if let threshold = compressionRatioThreshold, segment.compressionRatio > threshold {
+                return true
+            }
+            if let threshold = logProbThreshold, segment.avgLogprob < threshold {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Detects degenerate n-gram loops (the classic conditioned-decode
+    /// failure): a 1-gram repeated 5+ times consecutively, a 2-gram 4+
+    /// times, or a 3/4-gram 3+ times. Deliberate speech like "no no no" or
+    /// "very very very" stays below the thresholds.
+    nonisolated static func hasDegenerateRepetition(in text: String) -> Bool {
+        let words = text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        guard words.count >= 4 else { return false }
+
+        let limits = [1: 5, 2: 4, 3: 3, 4: 3]
+        for (n, limit) in limits {
+            guard words.count >= n * limit else { continue }
+            var start = 0
+            while start + n <= words.count {
+                let gram = Array(words[start..<start + n])
+                var count = 1
+                var next = start + n
+                while next + n <= words.count, Array(words[next..<next + n]) == gram {
+                    count += 1
+                    next += n
+                }
+                if count >= limit { return true }
+                start += 1
+            }
+        }
+        return false
+    }
+
     /// Decodes a committed clip — one or more complete 15s clips, or a
     /// shorter pause-bounded clip — and folds it into the session's committed
     /// prefix. On failure the clip stays uncommitted so finalize re-decodes
     /// it; an empty (silent) clip commits as empty text.
     private func runLiveCommit(clipAudio: [Float], startSample: Int, sessionID: UUID) async {
+        let promptTokens: [Int]? = {
+            guard let session = liveSession, session.id == sessionID else { return nil }
+            return currentLivePromptTokens(session: session)
+        }()
+
         var committed: String?
+        var trippedFallback = true // conservative: an errored decode drops conditioning next time
         do {
-            committed = try await performClipTranscription(audioSamples: clipAudio) ?? ""
+            let outcome = try await performClipTranscription(
+                audioSamples: clipAudio,
+                promptTokens: promptTokens
+            )
+            committed = outcome.text ?? ""
+            trippedFallback = outcome.trippedFallback
         } catch {
             if !Task.isCancelled {
                 Logger.transcription.debug("Live clip commit skipped: \(error.localizedDescription)")
@@ -371,6 +575,7 @@ actor TranscriptionService: Transcribing {
 
         guard var session = liveSession, session.id == sessionID else { return }
         session.commitTask = nil
+        session.lastDecodeTrippedFallback = trippedFallback
         if let committed, session.committedSampleCount == startSample {
             if !committed.isEmpty {
                 session.committedTexts.append(committed)
@@ -391,17 +596,30 @@ actor TranscriptionService: Transcribing {
         base: Int,
         sessionID: UUID
     ) async {
+        let promptTokens: [Int]? = {
+            guard let session = liveSession, session.id == sessionID else { return nil }
+            return currentLivePromptTokens(session: session)
+        }()
+
         var result: SpeculativeTailResult?
+        var trippedFallback: Bool?
         do {
-            let text = try await performTranscription(audioSamples: tailAudio, allowCancellation: true)
+            let outcome = try await performTranscriptionDetailed(
+                audioSamples: tailAudio,
+                allowCancellation: true,
+                promptTokens: promptTokens
+            )
             if !Task.isCancelled {
                 result = SpeculativeTailResult(
                     base: base,
                     coveredSampleCount: base + tailAudio.count,
-                    text: text
+                    text: outcome.text
                 )
+                trippedFallback = outcome.trippedFallback
             }
         } catch {
+            // An empty speculative tail (silence) is not evidence of decode
+            // trouble; leave the conditioning flag untouched.
             if !Task.isCancelled {
                 Logger.transcription.debug("Speculative transcription skipped: \(error.localizedDescription)")
             }
@@ -409,6 +627,9 @@ actor TranscriptionService: Transcribing {
 
         guard var session = liveSession, session.id == sessionID else { return }
         session.speculativeTask = nil
+        if let trippedFallback {
+            session.lastDecodeTrippedFallback = trippedFallback
+        }
         if let result,
            result.base == session.committedSampleCount,
            result.coveredSampleCount >= session.speculativeResult?.coveredSampleCount ?? 0 {
@@ -418,10 +639,59 @@ actor TranscriptionService: Transcribing {
         liveSession = session
     }
 
+    private struct ClipDecodeOutcome {
+        /// nil when the audio decoded successfully but contained no speech.
+        let text: String?
+        let trippedFallback: Bool
+    }
+
+    private struct DecodeOutcome {
+        let text: String
+        let trippedFallback: Bool
+    }
+
+    /// Tokens conditioning the next live decode, or nil when conditioning is
+    /// unavailable (no tokenizer) or must be dropped (previous decode tripped
+    /// a fallback).
+    private func currentLivePromptTokens(session: LiveTranscriptionSession) -> [Int]? {
+        guard let tokenizer = whisperKit?.tokenizer else { return nil }
+        // Committed-context conditioning is disabled: the ASR eval measured
+        // it at 4.4% -> 17.1% live WER (gauntlet/asr_eval, conditioning-only
+        // run) — Whisper prompt-following degrades the decode far more than
+        // the context helps. Vocabulary bias terms alone carried the
+        // hard-vocab recall win and stay on.
+        return Self.livePromptTokens(
+            biasTerms: vocabularyBiasTerms,
+            committedTexts: [],
+            lastDecodeTrippedFallback: session.lastDecodeTrippedFallback,
+            encode: { tokenizer.encode(text: $0) },
+            specialTokenBegin: tokenizer.specialTokens.specialTokenBegin
+        )
+    }
+
+    /// Bias-vocabulary-only prompt for whole-utterance decodes. Skipped when
+    /// there are no terms or the audio carries no speech energy at all —
+    /// conditioning silent audio invites prompt bleed-through.
+    private func wholeDecodePromptTokens(audioSamples: [Float]) -> [Int]? {
+        guard !vocabularyBiasTerms.isEmpty,
+              let tokenizer = whisperKit?.tokenizer,
+              Self.containsSpeechEnergy(audioSamples[...]) else {
+            return nil
+        }
+        return Self.conditioningPromptTokens(
+            biasTerms: vocabularyBiasTerms,
+            contextText: "",
+            encode: { tokenizer.encode(text: $0) },
+            specialTokenBegin: tokenizer.specialTokens.specialTokenBegin
+        )
+    }
+
     /// Decode used for committing live clips: same fixed clip grid as the
-    /// final decode, cancellable, no relaxed retry. Returns nil when the audio
-    /// decoded successfully but contained no speech.
-    private func performClipTranscription(audioSamples: [Float]) async throws -> String? {
+    /// final decode, cancellable, no relaxed retry.
+    private func performClipTranscription(
+        audioSamples: [Float],
+        promptTokens: [Int]?
+    ) async throws -> ClipDecodeOutcome {
         guard let wk = whisperKit else {
             throw OrttaaiError.modelNotLoaded
         }
@@ -430,10 +700,11 @@ actor TranscriptionService: Transcribing {
         let callback: TranscriptionCallback = { _ in
             Task.isCancelled ? false : nil
         }
-        let options = Self.finalTranscriptionOptions(
+        var options = Self.finalTranscriptionOptions(
             from: makeDecodingOptions(),
             sampleCount: audioSamples.count
         )
+        options.promptTokens = promptTokens
 
         let results = try await wk.transcribe(
             audioArray: audioSamples,
@@ -442,13 +713,47 @@ actor TranscriptionService: Transcribing {
         )
 
         try Task.checkCancellation()
-        return Self.mergedTranscriptionText(from: results)
+        var text = Self.mergedTranscriptionText(from: results)
+        var tripped = Self.decodeTrippedFallback(
+            segments: results.flatMap(\.segments),
+            baseTemperature: options.temperature,
+            compressionRatioThreshold: options.compressionRatioThreshold,
+            logProbThreshold: options.logProbThreshold
+        )
+
+        if promptTokens != nil, let conditioned = text, Self.hasDegenerateRepetition(in: conditioned) {
+            Logger.transcription.info("Conditioned clip decode degenerated; retrying without conditioning")
+            options.promptTokens = nil
+            let retried = try await wk.transcribe(
+                audioArray: audioSamples,
+                decodeOptions: options,
+                callback: callback
+            )
+            try Task.checkCancellation()
+            text = Self.mergedTranscriptionText(from: retried)
+            tripped = true
+        }
+
+        return ClipDecodeOutcome(text: text, trippedFallback: tripped)
     }
 
     private func performTranscription(
         audioSamples: [Float],
-        allowCancellation: Bool
+        allowCancellation: Bool,
+        promptTokens: [Int]? = nil
     ) async throws -> String {
+        try await performTranscriptionDetailed(
+            audioSamples: audioSamples,
+            allowCancellation: allowCancellation,
+            promptTokens: promptTokens
+        ).text
+    }
+
+    private func performTranscriptionDetailed(
+        audioSamples: [Float],
+        allowCancellation: Bool,
+        promptTokens: [Int]?
+    ) async throws -> DecodeOutcome {
         guard let wk = whisperKit else {
             throw OrttaaiError.modelNotLoaded
         }
@@ -464,6 +769,7 @@ actor TranscriptionService: Transcribing {
                 sampleCount: audioSamples.count
             )
         }
+        primaryOptions.promptTokens = promptTokens
 
         let results = try await wk.transcribe(
             audioArray: audioSamples,
@@ -472,8 +778,32 @@ actor TranscriptionService: Transcribing {
         )
 
         try Task.checkCancellation()
-        if let text = Self.mergedTranscriptionText(from: results) {
-            return text
+        var mergedText = Self.mergedTranscriptionText(from: results)
+        var tripped = Self.decodeTrippedFallback(
+            segments: results.flatMap(\.segments),
+            baseTemperature: primaryOptions.temperature,
+            compressionRatioThreshold: primaryOptions.compressionRatioThreshold,
+            logProbThreshold: primaryOptions.logProbThreshold
+        )
+
+        // A conditioned decode that degenerates into an n-gram loop is
+        // rejected outright; the same clip is re-decoded without conditioning.
+        if promptTokens != nil, let conditioned = mergedText, Self.hasDegenerateRepetition(in: conditioned) {
+            Logger.transcription.info("Conditioned decode degenerated; retrying without conditioning")
+            var unconditioned = primaryOptions
+            unconditioned.promptTokens = nil
+            let retried = try await wk.transcribe(
+                audioArray: audioSamples,
+                decodeOptions: unconditioned,
+                callback: callback
+            )
+            try Task.checkCancellation()
+            mergedText = Self.mergedTranscriptionText(from: retried)
+            tripped = true
+        }
+
+        if let text = mergedText {
+            return DecodeOutcome(text: text, trippedFallback: tripped)
         }
 
         guard !allowCancellation else {
@@ -501,7 +831,7 @@ actor TranscriptionService: Transcribing {
         guard let retriedText = Self.mergedTranscriptionText(from: retriedResults) else {
             throw Self.noTranscriptionResultError()
         }
-        return retriedText
+        return DecodeOutcome(text: retriedText, trippedFallback: true)
     }
 
     private func makeDecodingOptions() -> DecodingOptions {
@@ -533,6 +863,11 @@ actor TranscriptionService: Transcribing {
 
     nonisolated static func relaxedDecodingOptions(from options: DecodingOptions) -> DecodingOptions {
         var relaxed = options
+        // The relaxed retry is a recovery path — never conditioned: with the
+        // quality thresholds off, a prompt could be freely hallucinated into
+        // the output.
+        relaxed.promptTokens = nil
+        relaxed.prefixTokens = nil
         relaxed.chunkingStrategy = ChunkingStrategy.none
         relaxed.noSpeechThreshold = nil
         relaxed.logProbThreshold = nil

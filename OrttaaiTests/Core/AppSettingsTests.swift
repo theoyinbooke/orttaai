@@ -103,6 +103,7 @@ private actor RecordingTranscriptionService: Transcribing {
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String { "" }
     func cancelLiveTranscriptionSession() {}
     func setLiveTranscriptEventHandler(_ handler: (@Sendable (LiveTranscriptEvent) -> Void)?) {}
+    func setVocabularyBias(terms: [String]) {}
 
     func updateSettings(
         language: String,

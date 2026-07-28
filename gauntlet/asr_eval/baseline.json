@@ -1,0 +1,2606 @@
+{
+  "label": "baseline",
+  "model": "openai_whisper-large-v3",
+  "preset": "balanced",
+  "speedup": 4,
+  "bias_enabled": false,
+  "bias_term_count": 0,
+  "corpus_items": 92,
+  "whole": {
+    "aggregate_wer": 0.0452,
+    "total_errors": 135,
+    "total_ref_words": 2985,
+    "items_scored": 92,
+    "hard_vocab_recall_strict": 0.3924,
+    "hard_vocab_recall_lenient": 0.5949,
+    "hard_vocab_occurrences": 79,
+    "latency_ms_p50": 1985.0,
+    "latency_ms_p90": 9770,
+    "hallucination_item_ids": [],
+    "per_item": {
+      "pn-001": {
+        "wer": 0.3077,
+        "errors": 4,
+        "ref_len": 13,
+        "ms": 2326,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Please forward the design review notes to Alain Rouajou before the stand-up tomorrow morning.",
+        "error": null
+      },
+      "pn-002": {
+        "wer": 0.1667,
+        "errors": 2,
+        "ref_len": 12,
+        "ms": 1782,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Oyinbooke": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Owen Book asked whether the quarterly report is ready for the board meeting.",
+        "error": null
+      },
+      "pn-003": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 16,
+        "ms": 2110,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Adebayo": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "I spoke with Adebayo about the migration plan and he wants a written summary by Monday.",
+        "error": null
+      },
+      "pn-004": {
+        "wer": 0.0833,
+        "errors": 1,
+        "ref_len": 12,
+        "ms": 1909,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Temitope": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Tematope will present the onboarding metrics at the All Hands on Friday.",
+        "error": null
+      },
+      "pn-005": {
+        "wer": 0.0714,
+        "errors": 1,
+        "ref_len": 14,
+        "ms": 2109,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Folasade": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Send the contract draft to FOLOSIDAY and copy the legal team on the thread.",
+        "error": null
+      },
+      "pn-006": {
+        "wer": 0.0714,
+        "errors": 1,
+        "ref_len": 14,
+        "ms": 1907,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Babatunde": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Babaton suggested we move the launch date by two weeks to avoid the holidays.",
+        "error": null
+      },
+      "pn-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1918,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Chimamanda": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Chimamanda is reviewing the manuscript and will share her comments next week.",
+        "error": null
+      },
+      "pn-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1811,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Ngozi": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Ngozi confirmed the venue booking for the Lagos Developer Conference.",
+        "error": null
+      },
+      "pn-009": {
+        "wer": 0.2727,
+        "errors": 3,
+        "ref_len": 11,
+        "ms": 1989,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Oluwaseun": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Alu was soon rewrote the payment integration and the tests are finally green.",
+        "error": null
+      },
+      "pn-010": {
+        "wer": 0.0833,
+        "errors": 1,
+        "ref_len": 12,
+        "ms": 1865,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Yemisi": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Ask Yamasee to update the slide deck with the new revenue projections.",
+        "error": null
+      },
+      "pn-011": {
+        "wer": 0.25,
+        "errors": 3,
+        "ref_len": 12,
+        "ms": 2102,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          },
+          "Oyinbooke": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Ollan Rua Juhoinbook is the founder and he signs off on every release.",
+        "error": null
+      },
+      "pn-012": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1924,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Adebayo": {
+            "strict": true,
+            "lenient": true
+          },
+          "Temitope": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "The mentorship program pairs Adebayo with Temitope for the next cohort.",
+        "error": null
+      },
+      "pn-013": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1980,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Folasade": {
+            "strict": true,
+            "lenient": true
+          },
+          "Ngozi": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Folasade and Ngozi are coordinating the community meetup in Abuja.",
+        "error": null
+      },
+      "pn-014": {
+        "wer": 0.1818,
+        "errors": 2,
+        "ref_len": 11,
+        "ms": 2036,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Babatunde": {
+            "strict": true,
+            "lenient": true
+          },
+          "Oluwaseun": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Babatunde told Alu Wasun that the deployment pipeline needs a rollback plan.",
+        "error": null
+      },
+      "pn-015": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 2050,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Yemisi": {
+            "strict": true,
+            "lenient": true
+          },
+          "Chimamanda": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Yemisi introduced Chimamanda at the book reading and the crowd loved it.",
+        "error": null
+      },
+      "pn-016": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1981,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Every Thursday Alan Muadju hosts Office Hours for the Engineering Mentees.",
+        "error": null
+      },
+      "tech-001": {
+        "wer": 0.25,
+        "errors": 3,
+        "ref_len": 12,
+        "ms": 1970,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "useEffectCallback": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "The use effect callback hook fires twice in strict mode. So guard the subscription.",
+        "error": null
+      },
+      "tech-002": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1908,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "WhisperKit": {
+            "strict": true,
+            "lenient": true
+          },
+          "DecodingOptions": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "WhisperKit exposes a decoding options struct that controls the sampling loop.",
+        "error": null
+      },
+      "tech-003": {
+        "wer": 0.3,
+        "errors": 3,
+        "ref_len": 10,
+        "ms": 1913,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "noSpeechThreshold": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Set the no speech threshold to 0.6 before you benchmark the decoder.",
+        "error": null
+      },
+      "tech-004": {
+        "wer": 0.2857,
+        "errors": 4,
+        "ref_len": 14,
+        "ms": 2053,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "promptTokens": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "The prompt tokens array is trimmed to half the token context by the pre-fill step.",
+        "error": null
+      },
+      "tech-005": {
+        "wer": 0.0909,
+        "errors": 1,
+        "ref_len": 11,
+        "ms": 2045,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "GRDB": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "GRDB migrations run inside a right transaction, so keep them idempotent.",
+        "error": null
+      },
+      "tech-006": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1911,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "kubectl": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Run kubectl get pods to confirm the deployment rolled out cleanly.",
+        "error": null
+      },
+      "tech-007": {
+        "wer": 0.1818,
+        "errors": 2,
+        "ref_len": 11,
+        "ms": 1851,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "PostgreSQL": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "The Postgar SQL replica lagged behind the primary by almost 40 seconds.",
+        "error": null
+      },
+      "tech-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1912,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "TypeScript": {
+            "strict": true,
+            "lenient": true
+          },
+          "npm": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Our TypeScript build breaks when npm installs a mismatched peer dependency.",
+        "error": null
+      },
+      "tech-009": {
+        "wer": 0.1667,
+        "errors": 2,
+        "ref_len": 12,
+        "ms": 1857,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "appcast": {
+            "strict": false,
+            "lenient": true
+          },
+          "Sparkle": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "The app cast feed tells Sparkle which build to offer as an update.",
+        "error": null
+      },
+      "tech-010": {
+        "wer": 0.4167,
+        "errors": 5,
+        "ref_len": 12,
+        "ms": 1924,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Orttaai": {
+            "strict": false,
+            "lenient": false
+          },
+          "committedSampleCount": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Auto E commits audio on a 15 second clip grid tracked by committed sample count.",
+        "error": null
+      },
+      "tech-011": {
+        "wer": 0.3636,
+        "errors": 4,
+        "ref_len": 11,
+        "ms": 2053,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "finalizeLiveTranscription": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "The finalized live transcription call decodes only the uncommitted tale of the recording.",
+        "error": null
+      },
+      "tech-012": {
+        "wer": 0.1667,
+        "errors": 2,
+        "ref_len": 12,
+        "ms": 1977,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "chunkingStrategy": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Switch the chunking strategy to VAD so long recordings split at natural pauses.",
+        "error": null
+      },
+      "tech-013": {
+        "wer": 0.1538,
+        "errors": 2,
+        "ref_len": 13,
+        "ms": 2050,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "SwiftUI": {
+            "strict": false,
+            "lenient": false
+          },
+          "Xcode": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Swift 2i previews crash in Xcode when the model actor touches the main thread.",
+        "error": null
+      },
+      "tech-014": {
+        "wer": 0.2308,
+        "errors": 3,
+        "ref_len": 13,
+        "ms": 1916,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Tauri": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "We ship the Linux port with Tori while the Mac OS app stays native.",
+        "error": null
+      },
+      "tech-015": {
+        "wer": 0.1538,
+        "errors": 2,
+        "ref_len": 13,
+        "ms": 2179,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Ollama": {
+            "strict": false,
+            "lenient": false
+          },
+          "Qwen": {
+            "strict": false,
+            "lenient": false
+          },
+          "WebSocket": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Olima streams the QEN model's tokens to the client over a WebSocket connection.",
+        "error": null
+      },
+      "tech-016": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1910,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Kubernetes": {
+            "strict": true,
+            "lenient": true
+          },
+          "EnergyVAD": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "The Kubernetes cluster runs the transcription workers with EnergyVAD pre-processing.",
+        "error": null
+      },
+      "num-001": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2044,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The invoice total comes to $1,250.50, due on the 15th.",
+        "error": null
+      },
+      "num-002": {
+        "wer": 0.6154,
+        "errors": 8,
+        "ref_len": 13,
+        "ms": 2245,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Our meeting moved from the 3rd of March to the 17th of April at 3.30pm.",
+        "error": null
+      },
+      "num-003": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1952,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Revenue grew 23% quarter over quarter, reaching $2.4 million.",
+        "error": null
+      },
+      "num-004": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 2046,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The apartment is 840 square feet and rents for $2,100 a month.",
+        "error": null
+      },
+      "num-005": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2086,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Version 1.6.1 shipped on July 22, 2026, with 14 bug fixes.",
+        "error": null
+      },
+      "num-006": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1838,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Call me at 555-0182 before 9am on Tuesday.",
+        "error": null
+      },
+      "num-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 14,
+        "ms": 1965,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The marathon is 26.2 miles and I finished in 4 hours and 12 minutes.",
+        "error": null
+      },
+      "num-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2036,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "We onboarded 1,847 users in June, up from 923 in May.",
+        "error": null
+      },
+      "num-009": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 2077,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The server bill dropped from $340 to $212 after we resized the cluster.",
+        "error": null
+      },
+      "num-010": {
+        "wer": 0.25,
+        "errors": 4,
+        "ref_len": 16,
+        "ms": 2385,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Flight 214 departs at 6.45 a.m. and lands in Denver at 8.05 local time.",
+        "error": null
+      },
+      "num-011": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 15,
+        "ms": 2035,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The recipe needs 2 cups of flour, 3 eggs, and half a teaspoon of salt.",
+        "error": null
+      },
+      "num-012": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1912,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Interest rates fell to 4.25% on the 10-year note.",
+        "error": null
+      },
+      "num-013": {
+        "wer": 0.1111,
+        "errors": 1,
+        "ref_len": 9,
+        "ms": 1599,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "My daughter turned seven on the 28th of September.",
+        "error": null
+      },
+      "num-014": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 1907,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The download is 2.9 gigabytes and takes about 6 minutes on our connection.",
+        "error": null
+      },
+      "ev-001": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 8,
+        "ms": 1537,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Hey, are we still on for lunch tomorrow?",
+        "error": null
+      },
+      "ev-002": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 5,
+        "ms": 1340,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Sounds good, see you then.",
+        "error": null
+      },
+      "ev-003": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1660,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Can you pick up milk and eggs on your way home?",
+        "error": null
+      },
+      "ev-004": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1664,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "I think the meeting ran long because nobody prepared the agenda.",
+        "error": null
+      },
+      "ev-005": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 1825,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Let's move the discussion to email so we have a record of it.",
+        "error": null
+      },
+      "ev-006": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1850,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The weather looks rough this weekend, so we might postpone the hike.",
+        "error": null
+      },
+      "ev-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1790,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Thanks so much for the feedback. It genuinely made the essay better.",
+        "error": null
+      },
+      "ev-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1718,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Remind me to water the plants before we leave on Friday.",
+        "error": null
+      },
+      "ev-009": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1713,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Honestly, I just want a quiet weekend with a good book.",
+        "error": null
+      },
+      "ev-010": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1778,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The dishwasher is making that noise again. Can you take a look?",
+        "error": null
+      },
+      "ev-011": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1600,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "We should invite the new neighbors over for dinner sometime.",
+        "error": null
+      },
+      "ev-012": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1779,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Traffic on the bridge was terrible. I sat there for 45 minutes.",
+        "error": null
+      },
+      "ev-013": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1754,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Please leave the package with the doorman if I'm not home.",
+        "error": null
+      },
+      "ev-014": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1765,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "That movie was way too long, but the ending almost saved it.",
+        "error": null
+      },
+      "long-001": {
+        "wer": 0.0309,
+        "errors": 3,
+        "ref_len": 97,
+        "ms": 9904,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          },
+          "Orttaai": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Good morning team, here is the plan for the week. Alenruiju wants the release candidate ready by Thursday, which means the remaining bugs need owners today. The crash on resume is the highest priority because it blocks the beta testers. After that come the memory regression in the history view, which only shows up after about an hour of use. OrtaE should feel faster at the end of this cycle, not slower, so please run the profiler before and after every change. If anything looks risky, flag it in the channel first and we will decide together",
+        "error": null
+      },
+      "long-002": {
+        "wer": 0.0381,
+        "errors": 4,
+        "ref_len": 105,
+        "ms": 10289,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "WhisperKit": {
+            "strict": true,
+            "lenient": true
+          },
+          "promptTokens": {
+            "strict": false,
+            "lenient": true
+          },
+          "DecodingOptions": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Let me explain how the conditioning work is supposed to land. WhisperKit accepts a prompt tokens array inside decoding options, and whatever we pass there becomes the previous context for the decoder. The catch is that the prompt is trimmed to half the token window, so we cannot just dump the whole session transcript into it, we keep the most recent sentences, cap the budget, and drop the prompt entirely whenever the previous decode looked suspicious. That last guard matters because a bad prompt can push the model into a repetition loop, and a repetition loop in a dictation app is far worse than a missing word.",
+        "error": null
+      },
+      "long-003": {
+        "wer": 0.0198,
+        "errors": 2,
+        "ref_len": 101,
+        "ms": 10134,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Thanks everyone for joining the retrospective, overall the launch went smoothly, but there are three things we should do better next time. First, the support documentation went live two days after the feature, which left the help desk answering the same questions. Question over and over. Second, we never agreed on who owns the status page, so updates during the incident were slow. Third, and this is the big one, we shipped on a Friday. Nobody wants to debug a payment issue at 9 in the evening before for a weekend. Let's write these down and actually read them before the next release.",
+        "error": null
+      },
+      "long-004": {
+        "wer": 0.0686,
+        "errors": 7,
+        "ref_len": 102,
+        "ms": 10332,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "PostgreSQL": {
+            "strict": false,
+            "lenient": false
+          },
+          "Kubernetes": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Here is the incident summary for the outage on Tuesday. At around 2.15pm the Postgar SQL primary ran out of connections because a batch job leaked them for over an hour. The Cubanid's autoskeler then made things worse by doubling the number of workers, each of which opened its own pool. Latency climbed past 8 seconds and checkout effectively stopped. We recovered by killing the batch job and cycling the connection pooler, and the whole event lasted 34 minutes. The follow-up items are a connection budget per service and an alert on pools saturation, both assigned and due next sprint.",
+        "error": null
+      },
+      "long-005": {
+        "wer": 0.0606,
+        "errors": 6,
+        "ref_len": 99,
+        "ms": 9953,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Adebayo": {
+            "strict": false,
+            "lenient": false
+          },
+          "Folasade": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "A quick note about the off-site in October: Autobio has volunteered to organize the venue, and Folosaday is handling travel for everyone coming in from outside the city. The agenda is deliberately light: one morning of planning, one afternoon of open open discussion, and the rest is unstructured time to actually talk to each other. Last year we packed the schedule so tight that people left more tired than when they arrived. Please fill in the dietary form by the end of the month, and if you need a visa letter, ask because the embassy has been slow lately.",
+        "error": null
+      },
+      "long-006": {
+        "wer": 0.02,
+        "errors": 2,
+        "ref_len": 100,
+        "ms": 8969,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "I want to dictate some thoughts about the book before I forget them. The first half is a fairly conventional memoir: childhood, school, the move to the city, but the voice is so dry and funny that none of it drags. Then the middle section switches to the mother's letters and the whole thing opens up, you suddenly understand that every story in the first half was second hand, and the letters quietly correct the record. The ending felt rushed to me, maybe 20 pages where it needed 60, but I still think it is the best thing she has written.",
+        "error": null
+      },
+      "long-007": {
+        "wer": 0.0104,
+        "errors": 1,
+        "ref_len": 96,
+        "ms": 9703,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "SwiftUI": {
+            "strict": true,
+            "lenient": true
+          },
+          "Xcode": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Status update on the settings redesign. The new layout is done in SwiftUI and it finally behaves at every window size, including the tiny one people use on laptops. The remaining problem is preview stability in Xcode, which crashes when the preview touches the real settings store. I have worked around it with an in-memory store for previews, which is what we should have done from the start. Accessibility passes are next, keyboard navigation already works, and the labels are in review with the design team. I expect to open the pull request on Wednesday.",
+        "error": null
+      },
+      "long-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 98,
+        "ms": 9646,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Dear residents, this is a reminder about the water maintenance scheduled for Saturday morning. The supply will be off from 8 a.m. until roughly noon while the contractors replace the main valve on the ground floor. Please store enough water for the morning and avoid running appliances that need a constant supply, like the dishwasher or the washing machine, the elevators are not affected. If the work runs long we will post updates in the lobby and in the building group. Thank you for your patience, and apologies for the short notice, the part arrived earlier than expected.",
+        "error": null
+      },
+      "long-009": {
+        "wer": 0.0645,
+        "errors": 6,
+        "ref_len": 93,
+        "ms": 8522,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Babatunde": {
+            "strict": true,
+            "lenient": true
+          },
+          "Ngozi": {
+            "strict": true,
+            "lenient": true
+          },
+          "Temitope": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Meeting notes from the mentorship sync. Babatunde reported that 12 of the 15 pairs met at least twice this month, which is the best rate we have had. Ngozi raised the problem of mentors going quiet after the first few sessions, and we agreed to send a After two weeks of silence rather than waiting for the monthly report, Taimytope will draft the message so it does not read like a warning. The next cohort applications open on the 1st, and we expect around 80 submissions based on last week's report.",
+        "error": null
+      },
+      "long-010": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 100,
+        "ms": 9011,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Here is my honest review of the trip for the travel blog. The old town is genuinely beautiful. Narrow streets, tiled courtyards, and the kind of bakeries that make you plan your day around bread. The catch is the crowds. By 10 in the morning the main square is shoulder to shoulder and the famous viewpoint has a queue like an airport. Go at sunrise or do not go at all. Food was cheaper than I expected. Dinner for two came to about 40 euros with wine, and the seafood place by the harbor deserves every bit of its reputation.",
+        "error": null
+      },
+      "long-011": {
+        "wer": 0.0549,
+        "errors": 5,
+        "ref_len": 91,
+        "ms": 9770,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Oyinbooke": {
+            "strict": false,
+            "lenient": false
+          },
+          "Sparkle": {
+            "strict": true,
+            "lenient": true
+          },
+          "appcast": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Release checklist walkthrough. Please follow along. First, OINbook signs the build and the notarization ticket gets stapled before anything is uploaded. Second, the app cast entry is generated with the new version number and the release notes. and Sparkle picks it up from the same feed we have always used. Do not hand edit the XML, the script exists for a reason. Third, we watch the crash dashboard for two hours after the rollout. If anything spikes we pull the app cast entry, which stops new updates without affecting anyone who already installed.",
+        "error": null
+      },
+      "long-012": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 96,
+        "ms": 8934,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Some notes for the garden this autumn. The tomatoes are done. Pull them out and compost everything that is not diseased. The two plants with the curled leaves go in the bin, not the compost, just to be safe. Garlic goes in before the first frost. Pointy end up. about a hand's width apart. Last year we planted too shallow and half of it heaved out of the ground by February. The roses get one last feed, then nothing until spring, and please label the beds this time, because by March nobody remembers what is where.",
+        "error": null
+      },
+      "long-013": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 96,
+        "ms": 9642,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "TypeScript": {
+            "strict": true,
+            "lenient": true
+          },
+          "npm": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Frontend migration update. We are about 70% of the way through converting the dashboard to TypeScript, and the strictness is already paying for itself. Last week the compiler caught a null flowing into the chart component that would have been a production crash. The NPM workspace split also landed, so the design system builds independently and the main app no longer rebuilds the world on every change. Local build times dropped from 4 minutes to about 90 seconds. Remaining work is the settings pages and the test utilities, both scheduled for the next two sprints.",
+        "error": null
+      },
+      "long-014": {
+        "wer": 0.0213,
+        "errors": 2,
+        "ref_len": 94,
+        "ms": 8708,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Chimamanda": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Notes for the reading group before Thursday. We are discussing the first 10 chapters, so please stop there even if you cannot put it down. Pay attention to how Chimamanda handles the shifts in time. The flashbacks are never announced, you only notice them by the change in the narration. as confidence, there is a passage in chapter 6 about the market that I want to read aloud together. Bring one question each, and if you have opinions about the tea situation from last time, bring a better tea. We start at 7pm sharp.",
+        "error": null
+      },
+      "long-015": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 102,
+        "ms": 9648,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Let me summarize where the kitchen renovation stands. The cabinets arrived on Monday, two of the doors are the wrong shade, and the supplier has agreed to swap them within three weeks. The plumber comes on Thursday to move the water line for the island, which is the last thing blocking the countertop template once the template is done the stone takes about 10 days budget-wise we are roughly 8% over mostly because of the electrical surprises behind the old wall if nothing else goes wrong and I am knocking on wood, we cook in the new kitchen by Thanksgiving.",
+        "error": null
+      },
+      "long-016": {
+        "wer": 0.0211,
+        "errors": 2,
+        "ref_len": 95,
+        "ms": 8532,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Ollama": {
+            "strict": false,
+            "lenient": false
+          },
+          "LM Studio": {
+            "strict": true,
+            "lenient": true
+          },
+          "Qwen": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Here is the local model setup I recommend for the Polish stage. Install Olima for the daily driver because it starts fast and stays out of the way. And keep LM Studio around for experiments where you want to watch the token stream. The Qen models are the sweet spot right now. the small one handles punctuation cleanup easily and fits in memory next to the transcription model. Whatever you pick, pin the exact version in the settings and write it in the runbook, because silent model upgrades have burned us twice already this quarter.",
+        "error": null
+      },
+      "long-017": {
+        "wer": 0.0316,
+        "errors": 3,
+        "ref_len": 95,
+        "ms": 10351,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Yemisi": {
+            "strict": false,
+            "lenient": false
+          },
+          "Oluwaseun": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Board Update Draft. Please review before I send it. Revenue is tracking 12% above plan, driven mostly by the annual tier that Yemesee repriced in the spring. Churn is flat, which given the price change is genuinely good news. On the product side, Alou Wassoun's team shipped the payment integration rewrite and the failed charge rate dropped by a third in the first week. Hiring remains the bottleneck. We closed two of the five open roles, and the senior design position has been open for four months. Recommendations on the search firm question are welcome.",
+        "error": null
+      },
+      "long-018": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 103,
+        "ms": 10320,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Recording my practice talk. Feedback welcome. The talk opens with a story about the first outage I ever caused, which gets a laugh and buys me goodwill for the dry middle section. The middle is three lessons about on-call culture, each with one chart and one concrete change we made, I am worried the second lesson runs long, if you see people checking phones, that is where. The ending circles back to the outage story with the fix we eventually shipped, and lands on the line, the system is allowed to fail, the team is not, total time should be 18 minutes.",
+        "error": null
+      },
+      "long-019": {
+        "wer": 0.0612,
+        "errors": 6,
+        "ref_len": 98,
+        "ms": 9726,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "GRDB": {
+            "strict": true,
+            "lenient": true
+          },
+          "committedSampleCount": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "architecture note for the new contributor welcome aboard persistence goes through grdb and every table has a record struck next to it please do not write raw sql in view code there is a manager for that the transcription site is an actor, and the one invariant you must never break is that committed sample count only moves forward during a live session. Everything else, the clips, the speculative tale, the merge, hangs off that number. Read the tests before the implementation. they are shorter and they tell you what the code promises rather than how it keeps the promise",
+        "error": null
+      },
+      "long-020": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 96,
+        "ms": 8632,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "personal journal, Sunday evening, the week was a blur of small tasks and I want to change that, starting Monday I am blocking the first two hours of the day for the one thing that actually matters, and email can wait until lunch, I also noticed I have not called my parents in three weeks, which is too long, so that goes on the calendar like a real appointment. The run this morning was the best part of the weekend. Cold air, empty park, and for about 40 minutes nothing to optimize. More of that, please.",
+        "error": null
+      },
+      "long-021": {
+        "wer": 0.0515,
+        "errors": 5,
+        "ref_len": 97,
+        "ms": 10198,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "useEffectCallback": {
+            "strict": false,
+            "lenient": true
+          },
+          "camelCase": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Code review notes on the checkout branch. The use effect callback wrapper is doing too much. It fetches, it subscribes, and it writes analytics. And every one of those deserves its own effect with its own dependency list. Naming is drifting again. half the new helpers are in camel case and the other half in snake case copied from the backend client, pick one, the linter config is already in the repo, the state machine for the payment steps is genuinely nice work though, the impossible states are actually impossible now, and the tests read like documentation. Approve with comments.",
+        "error": null
+      },
+      "long-022": {
+        "wer": 0.0722,
+        "errors": 7,
+        "ref_len": 97,
+        "ms": 9929,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Orttaai": {
+            "strict": false,
+            "lenient": false
+          },
+          "noSpeechThreshold": {
+            "strict": false,
+            "lenient": true
+          },
+          "EnergyVAD": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Debug diary for the silence bug. A user reported that Autoi swallowed the first word whenever they started speaking immediately after the hotkey. The trail led to the no speech threshold interacting badly with the energy VAD framing. The first 100 milliseconds were being classified as silence. and the decoder skipped the opening token. The fix pads the detected speech region on both sides instead of trusting the raw frame boundary, and the regression test synthesizes exactly this case, a word starting within the first frame, shipped in the patch release, and the user confirmed the fix the same evening.",
+        "error": null
+      },
+      "adv-001": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 22,
+        "ms": 2399,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The first half of this note is about the budget review. The second half is about the hiring plan for next quarter.",
+        "error": null
+      },
+      "adv-002": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 18,
+        "ms": 2289,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Start the report with the revenue summary. Then add the customer quotes at the end, before the appendix.",
+        "error": null
+      },
+      "adv-003": {
+        "wer": 0.1333,
+        "errors": 2,
+        "ref_len": 15,
+        "ms": 2423,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Alan Ruiju wants the summary by noon. Keep it to one page. Numbers first. Narrative second.",
+        "error": null
+      },
+      "adv-004": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 18,
+        "ms": 2161,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Remember to lock the side door tonight. And the porch light switch is the one on the left.",
+        "error": null
+      },
+      "adv-005": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1603,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Send the updated slides to the whole committee before 5.",
+        "error": null
+      },
+      "adv-006": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1725,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "WhisperKit": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "The Whisper Kit upgrade is scheduled for the next maintenance window.",
+        "error": null
+      },
+      "adv-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 9,
+        "ms": 1631,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "I'll wait for your call after the doctor's appointment.",
+        "error": null
+      },
+      "adv-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1703,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "No no no, that is not what I meant at all.",
+        "error": null
+      },
+      "adv-009": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 9,
+        "ms": 1545,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The demo was very very very slow yesterday afternoon.",
+        "error": null
+      },
+      "adv-010": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 1849,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "We waited and waited and waited for the response, and it never came.",
+        "error": null
+      }
+    }
+  },
+  "live": {
+    "aggregate_wer": 0.0436,
+    "total_errors": 130,
+    "total_ref_words": 2985,
+    "items_scored": 92,
+    "hard_vocab_recall_strict": 0.4051,
+    "hard_vocab_recall_lenient": 0.5949,
+    "hard_vocab_occurrences": 79,
+    "latency_ms_p50": 2024.5,
+    "latency_ms_p90": 4971,
+    "hallucination_item_ids": [],
+    "per_item": {
+      "pn-001": {
+        "wer": 0.3077,
+        "errors": 4,
+        "ref_len": 13,
+        "ms": 2154,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Please forward the design review notes to Alain Rouajou before the stand-up tomorrow morning.",
+        "error": null
+      },
+      "pn-002": {
+        "wer": 0.1667,
+        "errors": 2,
+        "ref_len": 12,
+        "ms": 1978,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Oyinbooke": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Owen Book asked whether the quarterly report is ready for the board meeting.",
+        "error": null
+      },
+      "pn-003": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 16,
+        "ms": 2088,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Adebayo": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "I spoke with Adebayo about the migration plan and he wants a written summary by Monday.",
+        "error": null
+      },
+      "pn-004": {
+        "wer": 0.0833,
+        "errors": 1,
+        "ref_len": 12,
+        "ms": 2039,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Temitope": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Tematope will present the onboarding metrics at the All Hands on Friday.",
+        "error": null
+      },
+      "pn-005": {
+        "wer": 0.0714,
+        "errors": 1,
+        "ref_len": 14,
+        "ms": 2087,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Folasade": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Send the contract draft to FOLOSIDAY and copy the legal team on the thread.",
+        "error": null
+      },
+      "pn-006": {
+        "wer": 0.0714,
+        "errors": 1,
+        "ref_len": 14,
+        "ms": 1910,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Babatunde": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Babaton suggested we move the launch date by two weeks to avoid the holidays.",
+        "error": null
+      },
+      "pn-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1928,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Chimamanda": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Chimamanda is reviewing the manuscript and will share her comments next week.",
+        "error": null
+      },
+      "pn-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1955,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Ngozi": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Ngozi confirmed the venue booking for the Lagos Developer Conference.",
+        "error": null
+      },
+      "pn-009": {
+        "wer": 0.2727,
+        "errors": 3,
+        "ref_len": 11,
+        "ms": 2052,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Oluwaseun": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Alu was soon rewrote the payment integration and the tests are finally green.",
+        "error": null
+      },
+      "pn-010": {
+        "wer": 0.0833,
+        "errors": 1,
+        "ref_len": 12,
+        "ms": 1992,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Yemisi": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Ask Yamasee to update the slide deck with the new revenue projections.",
+        "error": null
+      },
+      "pn-011": {
+        "wer": 0.25,
+        "errors": 3,
+        "ref_len": 12,
+        "ms": 2113,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          },
+          "Oyinbooke": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Ollan Rua Juhoinbook is the founder and he signs off on every release.",
+        "error": null
+      },
+      "pn-012": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1976,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Adebayo": {
+            "strict": true,
+            "lenient": true
+          },
+          "Temitope": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "The mentorship program pairs Adebayo with Temitope for the next cohort.",
+        "error": null
+      },
+      "pn-013": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 2027,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Folasade": {
+            "strict": true,
+            "lenient": true
+          },
+          "Ngozi": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Folasade and Ngozi are coordinating the community meetup in Abuja.",
+        "error": null
+      },
+      "pn-014": {
+        "wer": 0.1818,
+        "errors": 2,
+        "ref_len": 11,
+        "ms": 2036,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Babatunde": {
+            "strict": true,
+            "lenient": true
+          },
+          "Oluwaseun": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Babatunde told Alu Wasun that the deployment pipeline needs a rollback plan.",
+        "error": null
+      },
+      "pn-015": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 2092,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Yemisi": {
+            "strict": true,
+            "lenient": true
+          },
+          "Chimamanda": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Yemisi introduced Chimamanda at the book reading and the crowd loved it.",
+        "error": null
+      },
+      "pn-016": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1979,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Every Thursday Alan Muadju hosts Office Hours for the Engineering Mentees.",
+        "error": null
+      },
+      "tech-001": {
+        "wer": 0.25,
+        "errors": 3,
+        "ref_len": 12,
+        "ms": 1966,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "useEffectCallback": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "The use effect callback hook fires twice in strict mode. So guard the subscription.",
+        "error": null
+      },
+      "tech-002": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1925,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "WhisperKit": {
+            "strict": true,
+            "lenient": true
+          },
+          "DecodingOptions": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "WhisperKit exposes a decoding options struct that controls the sampling loop.",
+        "error": null
+      },
+      "tech-003": {
+        "wer": 0.3,
+        "errors": 3,
+        "ref_len": 10,
+        "ms": 1898,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "noSpeechThreshold": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Set the no speech threshold to 0.6 before you benchmark the decoder.",
+        "error": null
+      },
+      "tech-004": {
+        "wer": 0.2857,
+        "errors": 4,
+        "ref_len": 14,
+        "ms": 2029,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "promptTokens": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "The prompt tokens array is trimmed to half the token context by the pre-fill step.",
+        "error": null
+      },
+      "tech-005": {
+        "wer": 0.0909,
+        "errors": 1,
+        "ref_len": 11,
+        "ms": 2022,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "GRDB": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "GRDB migrations run inside a right transaction, so keep them idempotent.",
+        "error": null
+      },
+      "tech-006": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2045,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "kubectl": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Run kubectl get pods to confirm the deployment rolled out cleanly.",
+        "error": null
+      },
+      "tech-007": {
+        "wer": 0.1818,
+        "errors": 2,
+        "ref_len": 11,
+        "ms": 1850,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "PostgreSQL": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "The Postgar SQL replica lagged behind the primary by almost 40 seconds.",
+        "error": null
+      },
+      "tech-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1917,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "TypeScript": {
+            "strict": true,
+            "lenient": true
+          },
+          "npm": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Our TypeScript build breaks when npm installs a mismatched peer dependency.",
+        "error": null
+      },
+      "tech-009": {
+        "wer": 0.1667,
+        "errors": 2,
+        "ref_len": 12,
+        "ms": 1976,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "appcast": {
+            "strict": false,
+            "lenient": true
+          },
+          "Sparkle": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "The app cast feed tells Sparkle which build to offer as an update.",
+        "error": null
+      },
+      "tech-010": {
+        "wer": 0.4167,
+        "errors": 5,
+        "ref_len": 12,
+        "ms": 1904,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Orttaai": {
+            "strict": false,
+            "lenient": false
+          },
+          "committedSampleCount": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Auto E commits audio on a 15 second clip grid tracked by committed sample count.",
+        "error": null
+      },
+      "tech-011": {
+        "wer": 0.3636,
+        "errors": 4,
+        "ref_len": 11,
+        "ms": 2032,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "finalizeLiveTranscription": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "The finalized live transcription call decodes only the uncommitted tale of the recording.",
+        "error": null
+      },
+      "tech-012": {
+        "wer": 0.1667,
+        "errors": 2,
+        "ref_len": 12,
+        "ms": 1972,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "chunkingStrategy": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Switch the chunking strategy to VAD so long recordings split at natural pauses.",
+        "error": null
+      },
+      "tech-013": {
+        "wer": 0.1538,
+        "errors": 2,
+        "ref_len": 13,
+        "ms": 2025,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "SwiftUI": {
+            "strict": false,
+            "lenient": false
+          },
+          "Xcode": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Swift 2i previews crash in Xcode when the model actor touches the main thread.",
+        "error": null
+      },
+      "tech-014": {
+        "wer": 0.2308,
+        "errors": 3,
+        "ref_len": 13,
+        "ms": 2055,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Tauri": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "We ship the Linux port with Tori while the Mac OS app stays native.",
+        "error": null
+      },
+      "tech-015": {
+        "wer": 0.1538,
+        "errors": 2,
+        "ref_len": 13,
+        "ms": 2165,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Ollama": {
+            "strict": false,
+            "lenient": false
+          },
+          "Qwen": {
+            "strict": false,
+            "lenient": false
+          },
+          "WebSocket": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Olima streams the QEN model's tokens to the client over a WebSocket connection.",
+        "error": null
+      },
+      "tech-016": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1910,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Kubernetes": {
+            "strict": true,
+            "lenient": true
+          },
+          "EnergyVAD": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "The Kubernetes cluster runs the transcription workers with EnergyVAD pre-processing.",
+        "error": null
+      },
+      "num-001": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2024,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The invoice total comes to $1,250.50, due on the 15th.",
+        "error": null
+      },
+      "num-002": {
+        "wer": 0.6154,
+        "errors": 8,
+        "ref_len": 13,
+        "ms": 2217,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Our meeting moved from the 3rd of March to the 17th of April at 3.30pm.",
+        "error": null
+      },
+      "num-003": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1904,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Revenue grew 23% quarter over quarter, reaching $2.4 million.",
+        "error": null
+      },
+      "num-004": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 2036,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The apartment is 840 square feet and rents for $2,100 a month.",
+        "error": null
+      },
+      "num-005": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2063,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Version 1.6.1 shipped on July 22, 2026, with 14 bug fixes.",
+        "error": null
+      },
+      "num-006": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1822,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Call me at 555-0182 before 9am on Tuesday.",
+        "error": null
+      },
+      "num-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 14,
+        "ms": 1975,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The marathon is 26.2 miles and I finished in 4 hours and 12 minutes.",
+        "error": null
+      },
+      "num-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2037,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "We onboarded 1,847 users in June, up from 923 in May.",
+        "error": null
+      },
+      "num-009": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 2081,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The server bill dropped from $340 to $212 after we resized the cluster.",
+        "error": null
+      },
+      "num-010": {
+        "wer": 0.25,
+        "errors": 4,
+        "ref_len": 16,
+        "ms": 2391,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Flight 214 departs at 6.45 a.m. and lands in Denver at 8.05 local time.",
+        "error": null
+      },
+      "num-011": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 15,
+        "ms": 2028,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The recipe needs 2 cups of flour, 3 eggs, and half a teaspoon of salt.",
+        "error": null
+      },
+      "num-012": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1963,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Interest rates fell to 4.25% on the 10-year note.",
+        "error": null
+      },
+      "num-013": {
+        "wer": 0.1111,
+        "errors": 1,
+        "ref_len": 9,
+        "ms": 1861,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "My daughter turned seven on the 28th of September.",
+        "error": null
+      },
+      "num-014": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 1892,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The download is 2.9 gigabytes and takes about 6 minutes on our connection.",
+        "error": null
+      },
+      "ev-001": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 8,
+        "ms": 1928,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Hey, are we still on for lunch tomorrow?",
+        "error": null
+      },
+      "ev-002": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 5,
+        "ms": 1371,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Sounds good, see you then.",
+        "error": null
+      },
+      "ev-003": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1513,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Can you pick up milk and eggs on your way home?",
+        "error": null
+      },
+      "ev-004": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1927,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "I think the meeting ran long because nobody prepared the agenda.",
+        "error": null
+      },
+      "ev-005": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 2022,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Let's move the discussion to email so we have a record of it.",
+        "error": null
+      },
+      "ev-006": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1951,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The weather looks rough this weekend, so we might postpone the hike.",
+        "error": null
+      },
+      "ev-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1836,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Thanks so much for the feedback. It genuinely made the essay better.",
+        "error": null
+      },
+      "ev-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1973,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Remind me to water the plants before we leave on Friday.",
+        "error": null
+      },
+      "ev-009": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 1914,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Honestly, I just want a quiet weekend with a good book.",
+        "error": null
+      },
+      "ev-010": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1993,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The dishwasher is making that noise again. Can you take a look?",
+        "error": null
+      },
+      "ev-011": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 10,
+        "ms": 1855,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "We should invite the new neighbors over for dinner sometime.",
+        "error": null
+      },
+      "ev-012": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1914,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Traffic on the bridge was terrible. I sat there for 45 minutes.",
+        "error": null
+      },
+      "ev-013": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2067,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Please leave the package with the doorman if I'm not home.",
+        "error": null
+      },
+      "ev-014": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 12,
+        "ms": 1920,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "That movie was way too long, but the ending almost saved it.",
+        "error": null
+      },
+      "long-001": {
+        "wer": 0.0309,
+        "errors": 3,
+        "ref_len": 97,
+        "ms": 3752,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          },
+          "Orttaai": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Good morning team, here is the plan for the week. Alunruaju wants the release candidate ready by Thursday, which means the remaining bugs need owners today. The crash on resume is the highest priority because it blocks the beta testers. After that comes the memory regression in the history view, which only shows up after about an hour of use. Orta E should feel faster at the end of this cycle, not slower. So please run the profiler before and after every change. If anything looks risky, flag it in the channel first and we will decide together.",
+        "error": null
+      },
+      "long-002": {
+        "wer": 0.0381,
+        "errors": 4,
+        "ref_len": 105,
+        "ms": 5088,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "WhisperKit": {
+            "strict": true,
+            "lenient": true
+          },
+          "promptTokens": {
+            "strict": false,
+            "lenient": true
+          },
+          "DecodingOptions": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Let me explain how the conditioning work is supposed to land. WhisperKit accepts a prompt tokens array inside decoding options, and whatever we pass there becomes the previous context for the decoder. The catch is that the prompt is trimmed to half the token window, so we cannot just dump the whole session transcript into it. We keep the most recent sentences, cap the budget, and drop the prompt entirely whenever the previous decode looked suspicious. That last guard matters because a bad prompt can push the model into a repetition loop, and a repetition loop in a dictation app is far worse than a missing word.",
+        "error": null
+      },
+      "long-003": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 101,
+        "ms": 4216,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Thanks everyone for joining the retrospective, overall the launch went smoothly, but there are three things we should do better next time. First, the support documentation went live two days after the feature, which left the help desk answering the same question over and over. Second, we never agreed on who owns the status page, so updates during the incident were slow. Third, and this is the big one, we shipped on a Friday. Nobody wants to debug a payment issue at 9 in the evening before a weekend. Let's write these down and actually read them before the next release.",
+        "error": null
+      },
+      "long-004": {
+        "wer": 0.0588,
+        "errors": 6,
+        "ref_len": 102,
+        "ms": 4971,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "PostgreSQL": {
+            "strict": false,
+            "lenient": false
+          },
+          "Kubernetes": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Here is the incident summary for the outage on Tuesday. At around 2.15pm the Postgar SQL primary ran out of connections because a batch job leaked them for over an hour. The Cubanite's autoskiller then made things worse by doubling the number of workers, each of which opened its own pool, latency climbed past 8 seconds and checkout effectively stopped. We recovered by killing the batch job and cycling the connection pooler, and the whole event lasted 34 minutes. The follow-up items are a connection budget per service and an alert on pool saturation, both assigned and due next sprint.",
+        "error": null
+      },
+      "long-005": {
+        "wer": 0.0404,
+        "errors": 4,
+        "ref_len": 99,
+        "ms": 4637,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Adebayo": {
+            "strict": false,
+            "lenient": false
+          },
+          "Folasade": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "A quick note about the off-site in October, Autobio has volunteered to organize the venue, and Foloside is handling travel for everyone coming in from outside the city. The agenda is deliberately light: one morning of planning, one afternoon of open discussion, and the rest is unstructured time to actually talk to each other. Last year we packed the schedule so tight that people left more tired than when they arrived. Please fill in the dietary form by the end of the month. And if you need a visa letter, ask early because the embassy has been slow lately.",
+        "error": null
+      },
+      "long-006": {
+        "wer": 0.01,
+        "errors": 1,
+        "ref_len": 100,
+        "ms": 5135,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "I want to dictate some thoughts about the book before I forget them. The first half is a fairly conventional memoir. Childhood. School. The move to the city. But the voice is so dry and funny that none of it drags. Then the middle section switches to the mother's letters and the whole thing opens up. You suddenly understand that every story in the first half was secondhand, and the letters quietly correct the record. The ending felt rushed to me, maybe 20 pages where it needed 6 But I still think it is the best thing she has written.",
+        "error": null
+      },
+      "long-007": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 96,
+        "ms": 4082,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "SwiftUI": {
+            "strict": true,
+            "lenient": true
+          },
+          "Xcode": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Status update on the settings redesign. The new layout is done in SwiftUI and it finally behaves at every window size, including the tiny one people use on laptops. The remaining problem is preview stability in Xcode, which crashes whenever the preview touches the real settings store. I have worked around it with an in-memory store for previews, which is what we should have done from the start. Accessibility passes are next, keyboard navigation already works, and the labels are in review with the design team. I expect to open the pull request on Wednesday.",
+        "error": null
+      },
+      "long-008": {
+        "wer": 0.0102,
+        "errors": 1,
+        "ref_len": 98,
+        "ms": 5120,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Dear residents, this is a reminder about the water maintenance scheduled for Saturday morning. The supply will be off from 8 a.m. until roughly noon while the contractors replace the main valve on the ground floor. Please store enough water for the morning and avoid running appliances that need a constant supply, like the dishwasher or the washing machine. The elevators are not affected. If the work runs long we will post updates in the lobby and in the building group. Thank you for watching. your patience, and apologies for the short notice, the part arrived earlier than expected.",
+        "error": null
+      },
+      "long-009": {
+        "wer": 0.0108,
+        "errors": 1,
+        "ref_len": 93,
+        "ms": 4777,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Babatunde": {
+            "strict": true,
+            "lenient": true
+          },
+          "Ngozi": {
+            "strict": true,
+            "lenient": true
+          },
+          "Temitope": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Meeting notes from the mentorship sync. Babatunde reported that 12 of the 15 pairs met at least twice this month, which is the best rate we have had. Ngozi raised the problem of mentors going quiet after the first few sessions, and we agreed to send a gentle check-in after two weeks of silence rather than waiting for the monthly report. Taimitope will draft the message so it does not read like a warning. The next cohort applications open on the 1st, and we expect around 80 submissions based on last year.",
+        "error": null
+      },
+      "long-010": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 100,
+        "ms": 5721,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Here is my honest review of the trip for the travel blog. The old town is genuinely beautiful. Narrow streets, tiled courtyards, and the kind of bakeries that make you plan your day around bread. The catch is the crowds. By 10 in the morning the main square is shoulder to shoulder, and the famous viewpoint has a queue like an airport. Go at sunrise or do not go at all. Food was cheaper than I expected, dinner for two came to about 40 euros with wine. and the seafood place by the harbor deserves every bit of its reputation.",
+        "error": null
+      },
+      "long-011": {
+        "wer": 0.033,
+        "errors": 3,
+        "ref_len": 91,
+        "ms": 3852,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Oyinbooke": {
+            "strict": false,
+            "lenient": false
+          },
+          "Sparkle": {
+            "strict": true,
+            "lenient": true
+          },
+          "appcast": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Release checklist walkthrough. Please follow along. First, OINbook signs the build and the notarization ticket gets stapled before anything is uploaded. Second, the app cast entry is generated with the new version number and the release notes, and Sparkle picks it up from the same feed we have always used. Do not hand edit the XML, the script exists for a reason. Third, we watch the crash dashboard for two hours after the rollout. If anything spikes we pull the appcast entry, which stops new updates without affecting anyone who already installed.",
+        "error": null
+      },
+      "long-012": {
+        "wer": 0.0104,
+        "errors": 1,
+        "ref_len": 96,
+        "ms": 5146,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Some notes for the garden this autumn. The tomatoes are done, pull them out and compost everything that is not diseased. The two plants with the curled leaves go in the bin, not the compost, just to be safe. Garlic goes in before the first frost, pointy end up, about a hand's width apart. Last year we planted too shallow and half of it heaved out of the ground by February. The roses get one last feed, then nothing until spring, and please label the bed beds this time, because by March nobody remembers what is where.",
+        "error": null
+      },
+      "long-013": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 96,
+        "ms": 4635,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "TypeScript": {
+            "strict": true,
+            "lenient": true
+          },
+          "npm": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Frontend migration update. We are about 70% of the way through converting the dashboard to TypeScript, and the strictness is already paying for itself. Last week the compiler caught a null flowing into the chart component that would have been a production crash. The NPM workspace split also landed, so the design system builds independently and the main app no longer rebuilds the world on every change. Local build times dropped from 4 minutes to about 90 seconds. Remaining work is the settings pages and the test utilities, both scheduled for the next two sprints.",
+        "error": null
+      },
+      "long-014": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 94,
+        "ms": 5042,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Chimamanda": {
+            "strict": true,
+            "lenient": true
+          }
+        },
+        "text": "Notes for the reading group before Thursday. We are discussing the first 10 chapters, so please stop there even if you cannot put it down. Pay attention to how Chimamanda handles the shifts in time. The flashbacks are never announced. You only notice them by the change in the narrator's confidence. There is a passage in chapter 6 about the market that I want to read aloud together. Bring one question each, and if you have opinions about the tea situation from last time, bring a better tea. We start at 7pm sharp.",
+        "error": null
+      },
+      "long-015": {
+        "wer": 0.0098,
+        "errors": 1,
+        "ref_len": 102,
+        "ms": 4346,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Let me summarize where the kitchen renovation stands. The cabinets arrived on Monday, two of the doors are the wrong shade, and the supplier has agreed to swap them within three weeks. The plumber comes on Thursday to move the water line for the island, which is the last thing blocking the countertop template. Once the template is done, the stone takes about 10 days. Budget-wise we are roughly 8% over most because of the electrical surprises behind the old wall. If nothing else goes wrong, and I am knocking on wood, we cook in the new kitchen by Thanksgiving.",
+        "error": null
+      },
+      "long-016": {
+        "wer": 0.0211,
+        "errors": 2,
+        "ref_len": 95,
+        "ms": 5032,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Ollama": {
+            "strict": false,
+            "lenient": false
+          },
+          "LM Studio": {
+            "strict": true,
+            "lenient": true
+          },
+          "Qwen": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Here is the local model setup I recommend for the Polish stage. Install Olima for the daily driver because it starts fast and stays out of the way. And keep LM Studio around for experiments where you want to watch the token stream. The QN models are the sweet spot right now, the small one handles punctuation cleanup easily and fits in memory next to the transcription model. Whatever you pick, pin the exact version in the settings and write it in the runbook, because silent model upgrades have burned us twice already this quarter.",
+        "error": null
+      },
+      "long-017": {
+        "wer": 0.0421,
+        "errors": 4,
+        "ref_len": 95,
+        "ms": 5227,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Yemisi": {
+            "strict": false,
+            "lenient": false
+          },
+          "Oluwaseun": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Board update draft. Please review before I send it. Revenue is tracking 12% above plan, driven mostly by the annual tier that Yemesee repriced in the spring. Churn is flat, which given the price change is genuinely good news. On the product side, Alu Wasun's team shipped the payment integration rewrite and the failed charge rate dropped by a third in the first week. Hiring remains the bottleneck. We closed two of the five open roles, and the senior design position has been been open for four months. Recommendations on the search firm question are welcome.",
+        "error": null
+      },
+      "long-018": {
+        "wer": 0.0194,
+        "errors": 2,
+        "ref_len": 103,
+        "ms": 5318,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Recording my practice talk. Feedback welcome. The talk opens with a story about the first outage I ever caused, which gets a laugh and buys me goodwill for the dry middle section. The middle is three lessons about on-call culture, each with one chart and one concrete change we made. I am worried the second lesson runs long. If you see people checking phones, that is where. The ending circles back to the outage story with the fix we eventually actually shit and lands on the line. The system is allowed to fail. The team is not. Total time should be 18 minutes.",
+        "error": null
+      },
+      "long-019": {
+        "wer": 0.051,
+        "errors": 5,
+        "ref_len": 98,
+        "ms": 4780,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "GRDB": {
+            "strict": true,
+            "lenient": true
+          },
+          "committedSampleCount": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Architecture note for the new contributor. Welcome aboard. Persistence goes through GRDB and every table has a record struck next to it. Please do not write raw SQL in view code. There is a manager for that. The transcription side is an actor, and the one invariant you must never break is that committed sample count only moves forward during a live session. Everything else, the clips, the speculative tale, the merge, hangs off that number. Read the tests before the implementation, they are shorter and they tell you what the code promises rather than how it keeps the promise.",
+        "error": null
+      },
+      "long-020": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 96,
+        "ms": 4836,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Personal journal, Sunday evening, the week was a blur of small tasks and I want to change that. Starting Monday I am blocking the first two hours of the day for the one thing that actually matters, and email can wait until lunch. I also noticed I have not called my parents in three weeks, which is too long, so that goes on the calendar like a real appointment. The run this morning was the best part of the weekend, cold air, empty park, and for about 40 minutes nothing to optimize more of that please",
+        "error": null
+      },
+      "long-021": {
+        "wer": 0.0515,
+        "errors": 5,
+        "ref_len": 97,
+        "ms": 4279,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "useEffectCallback": {
+            "strict": false,
+            "lenient": true
+          },
+          "camelCase": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Code review notes on the checkout branch. The use effect callback wrapper is doing too much. It fetches, it subscribes, and it writes analytics. And every one of those deserves its own effect with its own dependency list. Naming is drifting again. Half the new helpers are in camel case and the other half in snake case copied from the backend client. Pick one. The linter config is already in the repo. The state machine for the payment steps is genuinely nice work though. The impossible states are actually impossible now, and the tests read like documentation. Approve with comments.",
+        "error": null
+      },
+      "long-022": {
+        "wer": 0.0722,
+        "errors": 7,
+        "ref_len": 97,
+        "ms": 4571,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Orttaai": {
+            "strict": false,
+            "lenient": false
+          },
+          "noSpeechThreshold": {
+            "strict": false,
+            "lenient": true
+          },
+          "EnergyVAD": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "Debug diary for the silence bug. A user reported that Auti swallowed the first word whenever they started speaking immediately after the hotkey. The trail led to the no speech threshold interacting badly with the energy VAD framing. The first 100 milliseconds were being classified as silence and the decoder skipped the opening token. The fix pads the detected speech region on both sides instead of trusting the raw frame boundary, and the regression test synthesizes exactly this case, a word starting within the first frame, shipped in the patch release, and the user confirmed the fix the same evening.",
+        "error": null
+      },
+      "adv-001": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 22,
+        "ms": 1859,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The first half of this note is about the budget review. The second half is about the hiring plan for next quarter.",
+        "error": null
+      },
+      "adv-002": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 18,
+        "ms": 1862,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Start the report with the revenue summary. Then add the customer quotes at the end, before the appendix.",
+        "error": null
+      },
+      "adv-003": {
+        "wer": 0.1333,
+        "errors": 2,
+        "ref_len": 15,
+        "ms": 1806,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "Olanrewaju": {
+            "strict": false,
+            "lenient": false
+          }
+        },
+        "text": "Alan Ruiju wants the summary by noon. Keep it to one page. Numbers first. Narrative second.",
+        "error": null
+      },
+      "adv-004": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 18,
+        "ms": 1867,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Remember to lock the side door tonight. And the porch light switch is the one on the left.",
+        "error": null
+      },
+      "adv-005": {
+        "wer": 0.2,
+        "errors": 2,
+        "ref_len": 10,
+        "ms": 1893,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "Send the updated slides to the whole committee before 5. Thank you.",
+        "error": null
+      },
+      "adv-006": {
+        "wer": 0.4,
+        "errors": 4,
+        "ref_len": 10,
+        "ms": 1929,
+        "hallucination_artifacts": [],
+        "hard_terms": {
+          "WhisperKit": {
+            "strict": false,
+            "lenient": true
+          }
+        },
+        "text": "The Whisper Kit upgrade is scheduled for the next maintenance window. Thank you.",
+        "error": null
+      },
+      "adv-007": {
+        "wer": 0.2222,
+        "errors": 2,
+        "ref_len": 9,
+        "ms": 1946,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "I'll wait for your call after the doctor's appointment. Thank you.",
+        "error": null
+      },
+      "adv-008": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 11,
+        "ms": 2103,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "No no no, that is not what I meant at all.",
+        "error": null
+      },
+      "adv-009": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 9,
+        "ms": 1714,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "The demo was very very very slow yesterday afternoon.",
+        "error": null
+      },
+      "adv-010": {
+        "wer": 0.0,
+        "errors": 0,
+        "ref_len": 13,
+        "ms": 1978,
+        "hallucination_artifacts": [],
+        "hard_terms": {},
+        "text": "We waited and waited and waited for the response, and it never came.",
+        "error": null
+      }
+    }
+  },
+  "live_vs_whole_relative_wer_gap": -0.0354
+}

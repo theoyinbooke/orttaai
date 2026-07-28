@@ -1,0 +1,1182 @@
+{
+  "sample_rate": 16000,
+  "bias_vocabulary": [
+    "Olanrewaju",
+    "Oyinbooke",
+    "Adebayo",
+    "Temitope",
+    "Folasade",
+    "Babatunde",
+    "Chimamanda",
+    "Ngozi",
+    "Oluwaseun",
+    "Yemisi",
+    "Orttaai",
+    "WhisperKit",
+    "GRDB",
+    "Ollama",
+    "Qwen",
+    "SwiftUI",
+    "Xcode",
+    "Tauri",
+    "Sparkle",
+    "LM Studio",
+    "promptTokens",
+    "committedSampleCount",
+    "finalizeLiveTranscription",
+    "useEffectCallback",
+    "noSpeechThreshold",
+    "chunkingStrategy",
+    "DecodingOptions",
+    "EnergyVAD",
+    "kubectl",
+    "PostgreSQL",
+    "TypeScript",
+    "npm",
+    "appcast",
+    "WebSocket",
+    "Kubernetes",
+    "camelCase"
+  ],
+  "items": [
+    {
+      "id": "pn-001",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Olanrewaju"
+      ],
+      "reference": "Please forward the design review notes to Olanrewaju before the standup tomorrow morning.",
+      "wav": "pn-001.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 4.87
+    },
+    {
+      "id": "pn-002",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Oyinbooke"
+      ],
+      "reference": "Oyinbooke asked whether the quarterly report is ready for the board meeting.",
+      "wav": "pn-002.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 3.42
+    },
+    {
+      "id": "pn-003",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Adebayo"
+      ],
+      "reference": "I spoke with Adebayo about the migration plan and he wants a written summary by Monday.",
+      "wav": "pn-003.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 4.84
+    },
+    {
+      "id": "pn-004",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Temitope"
+      ],
+      "reference": "Temitope will present the onboarding metrics at the all hands on Friday.",
+      "wav": "pn-004.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.67
+    },
+    {
+      "id": "pn-005",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Folasade"
+      ],
+      "reference": "Send the contract draft to Folasade and copy the legal team on the thread.",
+      "wav": "pn-005.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 4.17
+    },
+    {
+      "id": "pn-006",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Babatunde"
+      ],
+      "reference": "Babatunde suggested we move the launch date by two weeks to avoid the holidays.",
+      "wav": "pn-006.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 4.18
+    },
+    {
+      "id": "pn-007",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Chimamanda"
+      ],
+      "reference": "Chimamanda is reviewing the manuscript and will share her comments next week.",
+      "wav": "pn-007.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 4.25
+    },
+    {
+      "id": "pn-008",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Ngozi"
+      ],
+      "reference": "Ngozi confirmed the venue booking for the Lagos developer conference.",
+      "wav": "pn-008.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.61
+    },
+    {
+      "id": "pn-009",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Oluwaseun"
+      ],
+      "reference": "Oluwaseun rewrote the payment integration and the tests are finally green.",
+      "wav": "pn-009.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 3.94
+    },
+    {
+      "id": "pn-010",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Yemisi"
+      ],
+      "reference": "Ask Yemisi to update the slide deck with the new revenue projections.",
+      "wav": "pn-010.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 3.66
+    },
+    {
+      "id": "pn-011",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Olanrewaju",
+        "Oyinbooke"
+      ],
+      "reference": "Olanrewaju Oyinbooke is the founder and he signs off on every release.",
+      "wav": "pn-011.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 4.12
+    },
+    {
+      "id": "pn-012",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Adebayo",
+        "Temitope"
+      ],
+      "reference": "The mentorship program pairs Adebayo with Temitope for the next cohort.",
+      "wav": "pn-012.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.93
+    },
+    {
+      "id": "pn-013",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Folasade",
+        "Ngozi"
+      ],
+      "reference": "Folasade and Ngozi are coordinating the community meetup in Abuja.",
+      "wav": "pn-013.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 3.98
+    },
+    {
+      "id": "pn-014",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Babatunde",
+        "Oluwaseun"
+      ],
+      "reference": "Babatunde told Oluwaseun that the deployment pipeline needs a rollback plan.",
+      "wav": "pn-014.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 4.23
+    },
+    {
+      "id": "pn-015",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Yemisi",
+        "Chimamanda"
+      ],
+      "reference": "Yemisi introduced Chimamanda at the book reading and the crowd loved it.",
+      "wav": "pn-015.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 3.89
+    },
+    {
+      "id": "pn-016",
+      "category": "proper_nouns",
+      "adversarial": null,
+      "hard_terms": [
+        "Olanrewaju"
+      ],
+      "reference": "Every Thursday Olanrewaju hosts office hours for the engineering mentees.",
+      "wav": "pn-016.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 4.03
+    },
+    {
+      "id": "tech-001",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "useEffectCallback"
+      ],
+      "reference": "The useEffectCallback hook fires twice in strict mode, so guard the subscription.",
+      "wav": "tech-001.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 4.85
+    },
+    {
+      "id": "tech-002",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "WhisperKit",
+        "DecodingOptions"
+      ],
+      "reference": "WhisperKit exposes a DecodingOptions struct that controls the sampling loop.",
+      "wav": "tech-002.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 4.15
+    },
+    {
+      "id": "tech-003",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "noSpeechThreshold"
+      ],
+      "reference": "Set the noSpeechThreshold to 0.6 before you benchmark the decoder.",
+      "wav": "tech-003.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 4.65
+    },
+    {
+      "id": "tech-004",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "promptTokens"
+      ],
+      "reference": "The promptTokens array is trimmed to half the token context by the prefill step.",
+      "wav": "tech-004.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 4.28
+    },
+    {
+      "id": "tech-005",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "GRDB"
+      ],
+      "reference": "GRDB migrations run inside a write transaction, so keep them idempotent.",
+      "wav": "tech-005.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 5.18
+    },
+    {
+      "id": "tech-006",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "kubectl"
+      ],
+      "reference": "Run kubectl get pods to confirm the deployment rolled out cleanly.",
+      "wav": "tech-006.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 3.52
+    },
+    {
+      "id": "tech-007",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "PostgreSQL"
+      ],
+      "reference": "The PostgreSQL replica lagged behind the primary by almost 40 seconds.",
+      "wav": "tech-007.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 4.88
+    },
+    {
+      "id": "tech-008",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "TypeScript",
+        "npm"
+      ],
+      "reference": "Our TypeScript build breaks when npm installs a mismatched peer dependency.",
+      "wav": "tech-008.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 4.45
+    },
+    {
+      "id": "tech-009",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "appcast",
+        "Sparkle"
+      ],
+      "reference": "The appcast feed tells Sparkle which build to offer as an update.",
+      "wav": "tech-009.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 3.57
+    },
+    {
+      "id": "tech-010",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "Orttaai",
+        "committedSampleCount"
+      ],
+      "reference": "Orttaai commits audio on a 15 second clip grid tracked by committedSampleCount.",
+      "wav": "tech-010.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 4.56
+    },
+    {
+      "id": "tech-011",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "finalizeLiveTranscription"
+      ],
+      "reference": "The finalizeLiveTranscription call decodes only the uncommitted tail of the recording.",
+      "wav": "tech-011.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 4.83
+    },
+    {
+      "id": "tech-012",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "chunkingStrategy"
+      ],
+      "reference": "Switch the chunkingStrategy to VAD so long recordings split at natural pauses.",
+      "wav": "tech-012.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 4.44
+    },
+    {
+      "id": "tech-013",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "SwiftUI",
+        "Xcode"
+      ],
+      "reference": "SwiftUI previews crash in Xcode when the model actor touches the main thread.",
+      "wav": "tech-013.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 4.53
+    },
+    {
+      "id": "tech-014",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "Tauri"
+      ],
+      "reference": "We ship the Linux port with Tauri while the macOS app stays native.",
+      "wav": "tech-014.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 3.57
+    },
+    {
+      "id": "tech-015",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "Ollama",
+        "Qwen",
+        "WebSocket"
+      ],
+      "reference": "Ollama streams the Qwen model's tokens to the client over a WebSocket connection.",
+      "wav": "tech-015.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 4.57
+    },
+    {
+      "id": "tech-016",
+      "category": "technical",
+      "adversarial": null,
+      "hard_terms": [
+        "Kubernetes",
+        "EnergyVAD"
+      ],
+      "reference": "The Kubernetes cluster runs the transcription workers with EnergyVAD preprocessing.",
+      "wav": "tech-016.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 4.29
+    },
+    {
+      "id": "num-001",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The invoice total comes to $1,250.50, due on the 15th.",
+      "wav": "num-001.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 5.99
+    },
+    {
+      "id": "num-002",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Our meeting moved from March 3rd to April 17th at 3:30 pm.",
+      "wav": "num-002.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 4.45
+    },
+    {
+      "id": "num-003",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Revenue grew 23% quarter over quarter, reaching $2.4 million.",
+      "wav": "num-003.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 5.37
+    },
+    {
+      "id": "num-004",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The apartment is 840 square feet and rents for $2,100 a month.",
+      "wav": "num-004.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 5.12
+    },
+    {
+      "id": "num-005",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Version 1.6.1 shipped on July 22nd, 2026, with 14 bug fixes.",
+      "wav": "num-005.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 6.71
+    },
+    {
+      "id": "num-006",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Call me at 555-0182 before 9 am on Tuesday.",
+      "wav": "num-006.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 4.7
+    },
+    {
+      "id": "num-007",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The marathon is 26.2 miles and I finished in 4 hours and 12 minutes.",
+      "wav": "num-007.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 5.05
+    },
+    {
+      "id": "num-008",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "We onboarded 1,847 users in June, up from 923 in May.",
+      "wav": "num-008.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 5.64
+    },
+    {
+      "id": "num-009",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The server bill dropped from $340 to $212 after we resized the cluster.",
+      "wav": "num-009.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 5.96
+    },
+    {
+      "id": "num-010",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Flight 214 departs at 6:45 am and lands in Denver at 8:05 local time.",
+      "wav": "num-010.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 5.68
+    },
+    {
+      "id": "num-011",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The recipe needs 2 cups of flour, 3 eggs, and half a teaspoon of salt.",
+      "wav": "num-011.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 5.0
+    },
+    {
+      "id": "num-012",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Interest rates fell to 4.25% on the 10 year note.",
+      "wav": "num-012.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.86
+    },
+    {
+      "id": "num-013",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "My daughter turns 7 on the 28th of September.",
+      "wav": "num-013.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 3.02
+    },
+    {
+      "id": "num-014",
+      "category": "numbers",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The download is 2.9 gigabytes and takes about 6 minutes on our connection.",
+      "wav": "num-014.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 4.29
+    },
+    {
+      "id": "ev-001",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Hey, are we still on for lunch tomorrow?",
+      "wav": "ev-001.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 2.64
+    },
+    {
+      "id": "ev-002",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Sounds good, see you then.",
+      "wav": "ev-002.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 1.72
+    },
+    {
+      "id": "ev-003",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Can you pick up milk and eggs on your way home?",
+      "wav": "ev-003.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 2.48
+    },
+    {
+      "id": "ev-004",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "I think the meeting ran long because nobody prepared the agenda.",
+      "wav": "ev-004.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 3.24
+    },
+    {
+      "id": "ev-005",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Let's move the discussion to email so we have a record of it.",
+      "wav": "ev-005.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 3.45
+    },
+    {
+      "id": "ev-006",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The weather looks rough this weekend, so we might postpone the hike.",
+      "wav": "ev-006.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.51
+    },
+    {
+      "id": "ev-007",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Thanks so much for the feedback, it genuinely made the essay better.",
+      "wav": "ev-007.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 3.86
+    },
+    {
+      "id": "ev-008",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Remind me to water the plants before we leave on Friday.",
+      "wav": "ev-008.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 3.03
+    },
+    {
+      "id": "ev-009",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Honestly, I just want a quiet weekend with a good book.",
+      "wav": "ev-009.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 3.49
+    },
+    {
+      "id": "ev-010",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "The dishwasher is making that noise again, can you take a look?",
+      "wav": "ev-010.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.34
+    },
+    {
+      "id": "ev-011",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "We should invite the new neighbors over for dinner sometime.",
+      "wav": "ev-011.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 3.01
+    },
+    {
+      "id": "ev-012",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Traffic on the bridge was terrible, I sat there for 45 minutes.",
+      "wav": "ev-012.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 3.72
+    },
+    {
+      "id": "ev-013",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Please leave the package with the doorman if I'm not home.",
+      "wav": "ev-013.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 2.8
+    },
+    {
+      "id": "ev-014",
+      "category": "everyday",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "That movie was way too long, but the ending almost saved it.",
+      "wav": "ev-014.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.55
+    },
+    {
+      "id": "long-001",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Olanrewaju",
+        "Orttaai"
+      ],
+      "reference": "Good morning team, here is the plan for the week. Olanrewaju wants the release candidate ready by Thursday, which means the remaining bugs need owners today. The crash on resume is the highest priority because it blocks the beta testers. After that comes the memory regression in the history view, which only shows up after about an hour of use. Orttaai should feel faster at the end of this cycle, not slower, so please run the profiler before and after every change. If anything looks risky, flag it in the channel first and we will decide together.",
+      "wav": "long-001.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 32.65
+    },
+    {
+      "id": "long-002",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "WhisperKit",
+        "promptTokens",
+        "DecodingOptions"
+      ],
+      "reference": "Let me explain how the conditioning work is supposed to land. WhisperKit accepts a promptTokens array inside DecodingOptions, and whatever we pass there becomes the previous context for the decoder. The catch is that the prompt is trimmed to half the token window, so we cannot just dump the whole session transcript into it. We keep the most recent sentences, cap the budget, and drop the prompt entirely whenever the previous decode looked suspicious. That last guard matters because a bad prompt can push the model into a repetition loop, and a repetition loop in a dictation app is far worse than a missing word.",
+      "wav": "long-002.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 33.32
+    },
+    {
+      "id": "long-003",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Thanks everyone for joining the retrospective. Overall the launch went smoothly, but there are three things we should do better next time. First, the support documentation went live two days after the feature, which left the help desk answering the same question over and over. Second, we never agreed on who owns the status page, so updates during the incident were slow. Third, and this is the big one, we shipped on a Friday. Nobody wants to debug a payment issue at nine in the evening before a weekend. Let's write these down and actually read them before the next release.",
+      "wav": "long-003.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 34.7
+    },
+    {
+      "id": "long-004",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "PostgreSQL",
+        "Kubernetes"
+      ],
+      "reference": "Here is the incident summary for the outage on Tuesday. At around 2:15 pm the PostgreSQL primary ran out of connections because a batch job leaked them for over an hour. The Kubernetes autoscaler then made things worse by doubling the number of workers, each of which opened its own pool. Latency climbed past eight seconds and checkout effectively stopped. We recovered by killing the batch job and cycling the connection pooler, and the whole event lasted 34 minutes. The follow up items are a connection budget per service and an alert on pool saturation, both assigned and due next sprint.",
+      "wav": "long-004.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 33.04
+    },
+    {
+      "id": "long-005",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Adebayo",
+        "Folasade"
+      ],
+      "reference": "A quick note about the offsite in October. Adebayo has volunteered to organize the venue, and Folasade is handling travel for everyone coming in from outside the city. The agenda is deliberately light, one morning of planning, one afternoon of open discussion, and the rest is unstructured time to actually talk to each other. Last year we packed the schedule so tight that people left more tired than when they arrived. Please fill in the dietary form by the end of the month, and if you need a visa letter, ask early because the embassy has been slow lately.",
+      "wav": "long-005.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 32.61
+    },
+    {
+      "id": "long-006",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "I want to dictate some thoughts about the book before I forget them. The first half is a fairly conventional memoir, childhood, school, the move to the city, but the voice is so dry and funny that none of it drags. Then the middle section switches to the mother's letters and the whole thing opens up. You suddenly understand that every story in the first half was secondhand, and the letters quietly correct the record. The ending felt rushed to me, maybe twenty pages where it needed sixty, but I still think it is the best thing she has written.",
+      "wav": "long-006.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 29.4
+    },
+    {
+      "id": "long-007",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "SwiftUI",
+        "Xcode"
+      ],
+      "reference": "Status update on the settings redesign. The new layout is done in SwiftUI and it finally behaves at every window size, including the tiny one people use on laptops. The remaining problem is preview stability in Xcode, which crashes whenever the preview touches the real settings store. I have worked around it with an in memory store for previews, which is what we should have done from the start. Accessibility passes are next, keyboard navigation already works, and the labels are in review with the design team. I expect to open the pull request on Wednesday.",
+      "wav": "long-007.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 33.87
+    },
+    {
+      "id": "long-008",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Dear residents, this is a reminder about the water maintenance scheduled for Saturday morning. The supply will be off from 8 am until roughly noon while the contractors replace the main valve on the ground floor. Please store enough water for the morning and avoid running appliances that need a constant supply, like the dishwasher or the washing machine. The elevators are not affected. If the work runs long we will post updates in the lobby and in the building group. Thank you for your patience, and apologies for the short notice, the part arrived earlier than expected.",
+      "wav": "long-008.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 31.08
+    },
+    {
+      "id": "long-009",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Babatunde",
+        "Ngozi",
+        "Temitope"
+      ],
+      "reference": "Meeting notes from the mentorship sync. Babatunde reported that twelve of the fifteen pairs met at least twice this month, which is the best rate we have had. Ngozi raised the problem of mentors going quiet after the first few sessions, and we agreed to send a gentle check in after two weeks of silence rather than waiting for the monthly report. Temitope will draft the message so it does not read like a warning. The next cohort applications open on the 1st, and we expect around 80 submissions based on last year.",
+      "wav": "long-009.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 30.69
+    },
+    {
+      "id": "long-010",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Here is my honest review of the trip for the travel blog. The old town is genuinely beautiful, narrow streets, tiled courtyards, and the kind of bakeries that make you plan your day around bread. The catch is the crowds. By ten in the morning the main square is shoulder to shoulder, and the famous viewpoint has a queue like an airport. Go at sunrise or do not go at all. Food was cheaper than I expected, dinner for two came to about 40 euros with wine, and the seafood place by the harbor deserves every bit of its reputation.",
+      "wav": "long-010.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 29.4
+    },
+    {
+      "id": "long-011",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Oyinbooke",
+        "Sparkle",
+        "appcast"
+      ],
+      "reference": "Release checklist walkthrough, please follow along. First, Oyinbooke signs the build and the notarization ticket gets stapled before anything is uploaded. Second, the appcast entry is generated with the new version number and the release notes, and Sparkle picks it up from the same feed we have always used. Do not hand edit the XML, the script exists for a reason. Third, we watch the crash dashboard for two hours after the rollout. If anything spikes we pull the appcast entry, which stops new updates without affecting anyone who already installed.",
+      "wav": "long-011.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 34.37
+    },
+    {
+      "id": "long-012",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Some notes for the garden this autumn. The tomatoes are done, pull them out and compost everything that is not diseased. The two plants with the curled leaves go in the bin, not the compost, just to be safe. Garlic goes in before the first frost, pointy end up, about a hand's width apart. Last year we planted too shallow and half of it heaved out of the ground by February. The roses get one last feed, then nothing until spring. And please label the beds this time, because by March nobody remembers what is where.",
+      "wav": "long-012.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 29.51
+    },
+    {
+      "id": "long-013",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "TypeScript",
+        "npm"
+      ],
+      "reference": "Frontend migration update. We are about 70% of the way through converting the dashboard to TypeScript, and the strictness is already paying for itself. Last week the compiler caught a null flowing into the chart component that would have been a production crash. The npm workspace split also landed, so the design system builds independently and the main app no longer rebuilds the world on every change. Local build times dropped from four minutes to about 90 seconds. Remaining work is the settings pages and the test utilities, both scheduled for the next two sprints.",
+      "wav": "long-013.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 33.82
+    },
+    {
+      "id": "long-014",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Chimamanda"
+      ],
+      "reference": "Notes for the reading group before Thursday. We are discussing the first ten chapters, so please stop there even if you cannot put it down. Pay attention to how Chimamanda handles the shifts in time, the flashbacks are never announced, you only notice them by the change in the narrator's confidence. There is a passage in chapter six about the market that I want to read aloud together. Bring one question each, and if you have opinions about the tea situation from last time, bring a better tea. We start at 7 pm sharp.",
+      "wav": "long-014.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 29.06
+    },
+    {
+      "id": "long-015",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Let me summarize where the kitchen renovation stands. The cabinets arrived on Monday, two of the doors are the wrong shade, and the supplier has agreed to swap them within three weeks. The plumber comes on Thursday to move the water line for the island, which is the last thing blocking the countertop template. Once the template is done, the stone takes about ten days. Budget wise we are roughly 8% over, mostly because of the electrical surprises behind the old wall. If nothing else goes wrong, and I am knocking on wood, we cook in the new kitchen by Thanksgiving.",
+      "wav": "long-015.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 34.07
+    },
+    {
+      "id": "long-016",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Ollama",
+        "LM Studio",
+        "Qwen"
+      ],
+      "reference": "Here is the local model setup I recommend for the polish stage. Install Ollama for the daily driver because it starts fast and stays out of the way, and keep LM Studio around for experiments where you want to watch the token stream. The Qwen models are the sweet spot right now, the small one handles punctuation cleanup easily and fits in memory next to the transcription model. Whatever you pick, pin the exact version in the settings and write it in the runbook, because silent model upgrades have burned us twice already this quarter.",
+      "wav": "long-016.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 29.14
+    },
+    {
+      "id": "long-017",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Yemisi",
+        "Oluwaseun"
+      ],
+      "reference": "Board update draft, please review before I send it. Revenue is tracking 12% above plan, driven mostly by the annual tier that Yemisi repriced in the spring. Churn is flat, which given the price change is genuinely good news. On the product side, Oluwaseun's team shipped the payment integration rewrite and the failed charge rate dropped by a third in the first week. Hiring remains the bottleneck. We closed two of the five open roles, and the senior design position has been open for four months. Recommendations on the search firm question are welcome.",
+      "wav": "long-017.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 33.66
+    },
+    {
+      "id": "long-018",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Recording my practice talk, feedback welcome. The talk opens with a story about the first outage I ever caused, which gets a laugh and buys me goodwill for the dry middle section. The middle is three lessons about on call culture, each with one chart and one concrete change we made. I am worried the second lesson runs long, if you see people checking phones, that is where. The ending circles back to the outage story with the fix we eventually shipped, and lands on the line, the system is allowed to fail, the team is not. Total time should be 18 minutes.",
+      "wav": "long-018.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 31.41
+    },
+    {
+      "id": "long-019",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "GRDB",
+        "committedSampleCount"
+      ],
+      "reference": "Architecture note for the new contributor, welcome aboard. Persistence goes through GRDB and every table has a record struct next to it, please do not write raw SQL in view code, there is a manager for that. The transcription side is an actor, and the one invariant you must never break is that committedSampleCount only moves forward during a live session. Everything else, the clips, the speculative tail, the merge, hangs off that number. Read the tests before the implementation, they are shorter and they tell you what the code promises rather than how it keeps the promise.",
+      "wav": "long-019.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 35.14
+    },
+    {
+      "id": "long-020",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [],
+      "reference": "Personal journal, Sunday evening. The week was a blur of small tasks and I want to change that. Starting Monday I am blocking the first two hours of the day for the one thing that actually matters, and email can wait until lunch. I also noticed I have not called my parents in three weeks, which is too long, so that goes on the calendar like a real appointment. The run this morning was the best part of the weekend, cold air, empty park, and for about forty minutes nothing to optimize. More of that, please.",
+      "wav": "long-020.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 29.79
+    },
+    {
+      "id": "long-021",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "useEffectCallback",
+        "camelCase"
+      ],
+      "reference": "Code review notes on the checkout branch. The useEffectCallback wrapper is doing too much, it fetches, it subscribes, and it writes analytics, and every one of those deserves its own effect with its own dependency list. Naming is drifting again, half the new helpers are in camelCase and the other half in snake case copied from the backend client. Pick one, the linter config is already in the repo. The state machine for the payment steps is genuinely nice work though, the impossible states are actually impossible now, and the tests read like documentation. Approve with comments.",
+      "wav": "long-021.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 35.75
+    },
+    {
+      "id": "long-022",
+      "category": "long",
+      "adversarial": null,
+      "hard_terms": [
+        "Orttaai",
+        "noSpeechThreshold",
+        "EnergyVAD"
+      ],
+      "reference": "Debug diary for the silence bug. A user reported that Orttaai swallowed the first word whenever they started speaking immediately after the hotkey. The trail led to the noSpeechThreshold interacting badly with the EnergyVAD framing, the first hundred milliseconds were being classified as silence and the decoder skipped the opening token. The fix pads the detected speech region on both sides instead of trusting the raw frame boundary, and the regression test synthesizes exactly this case, a word starting within the first frame. Shipped in the patch release, and the user confirmed the fix the same evening.",
+      "wav": "long-022.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 32.37
+    },
+    {
+      "id": "adv-001",
+      "category": "adversarial",
+      "adversarial": "silence_gap",
+      "hard_terms": [],
+      "reference": "The first half of this note is about the budget review. The second half is about the hiring plan for next quarter.",
+      "wav": "adv-001.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 9.7
+    },
+    {
+      "id": "adv-002",
+      "category": "adversarial",
+      "adversarial": "silence_gap",
+      "hard_terms": [],
+      "reference": "Start the report with the revenue summary. Then add the customer quotes at the end, before the appendix.",
+      "wav": "adv-002.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 9.14
+    },
+    {
+      "id": "adv-003",
+      "category": "adversarial",
+      "adversarial": "silence_gap",
+      "hard_terms": [
+        "Olanrewaju"
+      ],
+      "reference": "Olanrewaju wants the summary by noon. Keep it to one page. Numbers first, narrative second.",
+      "wav": "adv-003.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 12.01
+    },
+    {
+      "id": "adv-004",
+      "category": "adversarial",
+      "adversarial": "silence_gap",
+      "hard_terms": [],
+      "reference": "Remember to lock the side door tonight. And the porch light switch is the one on the left.",
+      "wav": "adv-004.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 8.72
+    },
+    {
+      "id": "adv-005",
+      "category": "adversarial",
+      "adversarial": "noise_tail",
+      "hard_terms": [],
+      "reference": "Send the updated slides to the whole committee before five.",
+      "wav": "adv-005.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 7.19
+    },
+    {
+      "id": "adv-006",
+      "category": "adversarial",
+      "adversarial": "noise_tail",
+      "hard_terms": [
+        "WhisperKit"
+      ],
+      "reference": "The WhisperKit upgrade is scheduled for the next maintenance window.",
+      "wav": "adv-006.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 7.49
+    },
+    {
+      "id": "adv-007",
+      "category": "adversarial",
+      "adversarial": "noise_tail",
+      "hard_terms": [],
+      "reference": "I'll wait for your call after the doctor's appointment.",
+      "wav": "adv-007.wav",
+      "voice": "Samantha",
+      "rate_wpm": 170,
+      "duration_seconds": 6.79
+    },
+    {
+      "id": "adv-008",
+      "category": "adversarial",
+      "adversarial": "repeated_words",
+      "hard_terms": [],
+      "reference": "No no no, that is not what I meant at all.",
+      "wav": "adv-008.wav",
+      "voice": "Daniel",
+      "rate_wpm": 205,
+      "duration_seconds": 2.56
+    },
+    {
+      "id": "adv-009",
+      "category": "adversarial",
+      "adversarial": "repeated_words",
+      "hard_terms": [],
+      "reference": "The demo was very very very slow yesterday afternoon.",
+      "wav": "adv-009.wav",
+      "voice": "Karen",
+      "rate_wpm": 170,
+      "duration_seconds": 3.31
+    },
+    {
+      "id": "adv-010",
+      "category": "adversarial",
+      "adversarial": "repeated_words",
+      "hard_terms": [],
+      "reference": "We waited and waited and waited for the response, and it never came.",
+      "wav": "adv-010.wav",
+      "voice": "Moira",
+      "rate_wpm": 205,
+      "duration_seconds": 3.61
+    }
+  ]
+}

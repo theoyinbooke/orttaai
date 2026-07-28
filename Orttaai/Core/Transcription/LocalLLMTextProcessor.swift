@@ -32,7 +32,7 @@ final class LocalLLMTextProcessor: TextProcessor {
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
         let baseOutput = try await baseProcessor.process(input)
 
-        guard settings.localLLMPolishEnabled else {
+        guard settings.localLLMPolishEnabled, !input.deferPolish else {
             return baseOutput
         }
 

@@ -53,6 +53,7 @@ struct MemoryView: View {
 
     @AppStorage("dictionaryEnabled") private var dictionaryEnabled = true
     @AppStorage("snippetsEnabled") private var snippetsEnabled = true
+    @AppStorage("vocabularyBiasEnabled") private var vocabularyBiasEnabled = true
     @AppStorage("aiSuggestionsEnabled") private var aiSuggestionsEnabled = false
 
     var body: some View {
@@ -234,6 +235,8 @@ struct MemoryView: View {
             Toggle("Enable dictionary replacements", isOn: $dictionaryEnabled)
                 .toggleStyle(OrttaaiToggleStyle())
             Toggle("Enable snippet expansions", isOn: $snippetsEnabled)
+                .toggleStyle(OrttaaiToggleStyle())
+            Toggle("Bias recognition toward my vocabulary", isOn: $vocabularyBiasEnabled)
                 .toggleStyle(OrttaaiToggleStyle())
             Toggle("Prefer Apple AI for suggestions", isOn: $aiSuggestionsEnabled)
                 .toggleStyle(OrttaaiToggleStyle())

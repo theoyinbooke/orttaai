@@ -56,7 +56,7 @@ final class AppleIntelligencePolishProcessor: TextProcessor {
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
         let baseOutput = try await baseProcessor.process(input)
 
-        guard settings.appleIntelligencePolishEnabled else {
+        guard settings.appleIntelligencePolishEnabled, !input.deferPolish else {
             return baseOutput
         }
 

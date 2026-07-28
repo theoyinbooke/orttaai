@@ -666,6 +666,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         handleStateChange(coordinator.state, previousState: nil)
     }
 
+    /// The transcript the pill should render. Nil while committed words are
+    /// streaming into the target field — the pill keeps its compact
+    /// waveform/duration/stop layout and the words appear where they belong.
+    /// Everywhere streaming is unavailable (setting off, terminal, secure
+    /// field, focus change, unreadable element) this returns the accumulated
+    /// live transcript and the pill transcript remains the fallback UI.
+    private var pillLiveTranscript: LiveTranscript? {
+        guard let coordinator else { return nil }
+        return coordinator.isStreamingToField ? nil : coordinator.liveTranscript
+    }
+
     private func handleStateChange(_ state: DictationCoordinator.State, previousState: DictationCoordinator.State?) {
         playDictationCueIfNeeded(state, previousState: previousState)
 
@@ -692,7 +703,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     audioLevel: coordinator?.audioLevel ?? 0,
                     elapsedSeconds: coordinator?.recordingElapsedSeconds ?? 0,
                     countdownSeconds: coordinator?.countdownSeconds,
-                    liveTranscript: coordinator?.liveTranscript,
+                    liveTranscript: pillLiveTranscript,
                     isHandsFree: isHandsFree,
                     isEditMode: isEditSession,
                     onStop: { [weak self] in
@@ -750,7 +761,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastRecordingCountdown = coordinator?.countdownSeconds
         lastRecordingElapsedSeconds = coordinator?.recordingElapsedSeconds
         lastRecordingTargetAppName = coordinator?.targetAppName
-        lastRecordingLiveTranscript = coordinator?.liveTranscript
+        lastRecordingLiveTranscript = pillLiveTranscript
         lastRecordingIsHandsFree = coordinator?.isHandsFreeRecording
         waveformUpdateTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -761,7 +772,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let elapsedSeconds = coordinator.recordingElapsedSeconds ?? 0
                 let countdownSeconds = coordinator.countdownSeconds
                 let targetAppName = coordinator.targetAppName
-                let liveTranscript = coordinator.liveTranscript
+                // While words stream into the target field the pill stays
+                // compact (waveform/elapsed/stop); any streaming fallback
+                // makes the accumulated transcript reappear here.
+                let liveTranscript = self.pillLiveTranscript
                 let isHandsFree = coordinator.isHandsFreeRecording
                 let bucket = Int((level * 24).rounded())
                 let didWaveformChange = bucket != self.lastWaveformLevelBucket

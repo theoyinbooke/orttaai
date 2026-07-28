@@ -70,8 +70,19 @@ final class DictationCoordinator {
     private(set) var recordingMode: RecordingMode = .pushToTalk
     /// In-progress transcript assembled from the live session's clip commits
     /// and speculative tail decodes, for display while recording. Nil when no
-    /// partial text is available (UI falls back to waveform-only).
+    /// partial text is available (UI falls back to waveform-only). Kept up to
+    /// date even while streaming into the field, so a mid-session fallback
+    /// can show the full transcript accumulated so far.
     private(set) var liveTranscript: LiveTranscript?
+    /// In-field streaming session for the recording in progress. Created only
+    /// for dictation sessions when the setting is on; nil for edit sessions.
+    private(set) var streamingSession: InFieldStreamingSession?
+    /// True while committed words are being typed into the target field. The
+    /// pill shows its compact waveform layout in this mode; any fallback
+    /// flips this off and the pill transcript takes over.
+    var isStreamingToField: Bool {
+        streamingSession?.isStreaming ?? false
+    }
     /// Kind of the session in progress. Only meaningful while a session is
     /// active (recording/processing/injecting); reset to `.dictation` when the
     /// session ends.
@@ -100,6 +111,10 @@ final class DictationCoordinator {
     private var pendingEditGestureAction: HotkeyGestureInterpreter.ReleaseAction?
     private let selectionCapture: any SelectionCapturing
     private let editProcessor: any EditCommandProcessing
+    /// Builds the in-field streaming session for a dictation recording.
+    /// Injectable so tests can supply sessions backed by mock AX/keystroke
+    /// seams; production uses the live seams.
+    private let makeStreamingSession: (NSRunningApplication?) -> InFieldStreamingSession
 
     /// Push-to-talk is bounded by the user-set max duration; hands-free gets
     /// its own, much more generous cap.
@@ -143,6 +158,7 @@ final class DictationCoordinator {
         settings: AppSettings,
         selectionCapture: (any SelectionCapturing)? = nil,
         editProcessor: (any EditCommandProcessing)? = nil,
+        streamingSessionFactory: ((NSRunningApplication?) -> InFieldStreamingSession)? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.audioService = audioService
@@ -153,6 +169,9 @@ final class DictationCoordinator {
         self.settings = settings
         self.selectionCapture = selectionCapture ?? SelectionCaptureService()
         self.editProcessor = editProcessor ?? EditCommandProcessor(settings: settings)
+        self.makeStreamingSession = streamingSessionFactory ?? { targetApp in
+            InFieldStreamingSession(targetApp: targetApp)
+        }
         self.now = now
     }
 
@@ -396,6 +415,10 @@ final class DictationCoordinator {
         recordingMode = .pushToTalk
         sessionKind = kind
         editSelection = selection
+        // Edit sessions replace the selection at the end and never stream.
+        streamingSession = (kind == .dictation && settings.inFieldStreamingEnabled)
+            ? makeStreamingSession(frontmostApp)
+            : nil
 
         do {
             // Capture the target app NOW, before the floating panel appears
@@ -541,23 +564,47 @@ final class DictationCoordinator {
                 return
             }
 
-            // Process through text processor
+            // Process through text processor. Sessions that streamed text
+            // into the field defer LLM polish: polish rewrites the whole
+            // utterance, which would visibly delete and retype words the user
+            // already watched land. Deterministic passes still apply and are
+            // reconciled exactly at finalize.
+            let didStreamText = !(streamingSession?.streamedText.isEmpty ?? true)
             let textProcessStart = CFAbsoluteTimeGetCurrent()
             let input = TextProcessorInput(
                 rawTranscript: transcript,
                 targetApp: appName,
-                mode: .raw
+                mode: .raw,
+                deferPolish: didStreamText
             )
             let output = try await textProcessor.process(input)
             textProcessingMs = Int((CFAbsoluteTimeGetCurrent() - textProcessStart) * 1000)
 
-            // Inject into the app that was focused when the user started recording
+            // Inject into the app that was focused when the user started
+            // recording. Sessions that streamed reconcile the streamed span
+            // to the final text instead of pasting the whole transcript.
             state = .injecting
             injectionService.lowLatencyModeEnabled = settings.lowLatencyModeEnabled
             let injectionStart = CFAbsoluteTimeGetCurrent()
-            let result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
+            let result: InjectionResult
+            if didStreamText, let streamingSession {
+                switch await streamingSession.finalize(finalText: output.text) {
+                case .completed:
+                    injectionService.recordDeliveredTranscript(output.text)
+                    result = .success(method: .streamed)
+                case .failedNeedsManualPaste:
+                    // The session left the final transcript on the clipboard;
+                    // the streamed text stays untouched in the field.
+                    result = .failedAllMethods
+                case .notStreamed:
+                    result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
+                    injectionTelemetry = injectionService.lastInjectionTelemetry
+                }
+            } else {
+                result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
+                injectionTelemetry = injectionService.lastInjectionTelemetry
+            }
             injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
-            injectionTelemetry = injectionService.lastInjectionTelemetry
 
             let processingMs = Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000)
 
@@ -646,6 +693,7 @@ final class DictationCoordinator {
         targetApp = nil
         editSelection = nil
         sessionKind = .dictation
+        streamingSession = nil
     }
 
     /// Applies the spoken instruction to the captured selection through the
@@ -958,7 +1006,12 @@ final class DictationCoordinator {
         liveEventContinuation = continuation
         liveEventTask = Task { @MainActor [weak self] in
             for await event in stream {
-                self?.applyLiveTranscriptEvent(event)
+                guard let self else { break }
+                self.applyLiveTranscriptEvent(event)
+                // Streaming rides the same FIFO: each event is fully handled
+                // (typed + verified) before the next, so increments can never
+                // land out of order.
+                await self.dispatchLiveEventToStreamingSession(event)
             }
         }
 
@@ -966,6 +1019,10 @@ final class DictationCoordinator {
             guard let self = self else { return }
 
             await self.syncTranscriptionSettings()
+            // Snapshot the personal vocabulary once per session, before any
+            // audio is decoded — the database is never touched from the
+            // decode loop below.
+            await self.transcriptionService.setVocabularyBias(terms: self.sessionVocabularyBiasTerms())
             guard !Task.isCancelled else { return }
             // Handler installed before the session begins so no early commit
             // or speculative result is missed.
@@ -1059,6 +1116,24 @@ final class DictationCoordinator {
         }
     }
 
+    /// Routes live events to the in-field streaming session. Commits stream
+    /// their text at the caret; speculative events double as a cheap focus
+    /// re-check so an app switch stops streaming within sub-second cadence.
+    /// Events after recording ended are dropped — text committed but not yet
+    /// streamed is delivered by finalize reconciliation instead.
+    @MainActor
+    private func dispatchLiveEventToStreamingSession(_ event: LiveTranscriptEvent) async {
+        guard case .recording = state, let streamingSession else { return }
+        switch event {
+        case .committed(let text):
+            await streamingSession.ingestCommit(text)
+        case .speculative:
+            streamingSession.refreshFocusGate()
+        case .sessionBegan:
+            break
+        }
+    }
+
     /// Folds a live transcript event into the display model. Events landing
     /// after recording ended (in-flight commits) are ignored — the final
     /// transcript comes from finalizeLiveTranscription, never from here.
@@ -1072,6 +1147,15 @@ final class DictationCoordinator {
 
     private func syncTranscriptionSettings() async {
         await settings.syncTranscriptionSettings(to: transcriptionService)
+    }
+
+    /// The vocabulary-bias snapshot for the session that is starting: active
+    /// dictionary targets and snippet triggers, or nothing when the user has
+    /// turned recognizer biasing off.
+    private func sessionVocabularyBiasTerms() -> [String] {
+        guard settings.vocabularyBiasEnabled else { return [] }
+        guard let provider = textProcessor as? VocabularyBiasProviding else { return [] }
+        return provider.vocabularyBiasTerms()
     }
 
     func estimateProcessingTime(_ recordingDuration: TimeInterval) -> TimeInterval {

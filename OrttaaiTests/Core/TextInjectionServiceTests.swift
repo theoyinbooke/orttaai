@@ -14,6 +14,8 @@ final class MockAccessibilityInspector: AccessibilityInspecting {
     /// Simulated focused-element text; snapshot reads reflect this.
     var simulatedFieldValue: String?
     var simulatedSelectedText: String?
+    /// Simulated kAXSelectedTextRangeAttribute (caret when length == 0).
+    var simulatedSelectedRange: FocusedTextRange?
     /// When true, snapshot reads report an AX API failure.
     var snapshotErrors = false
     /// When true, the element exposes no value/selectedText attributes.
@@ -38,7 +40,11 @@ final class MockAccessibilityInspector: AccessibilityInspecting {
         if fieldExposesNoText {
             return .value(FocusedTextSnapshot(value: nil, selectedText: nil))
         }
-        return .value(FocusedTextSnapshot(value: simulatedFieldValue, selectedText: simulatedSelectedText))
+        return .value(FocusedTextSnapshot(
+            value: simulatedFieldValue,
+            selectedText: simulatedSelectedText,
+            selectedRange: simulatedSelectedRange
+        ))
     }
 
     func insertTextAtFocus(_ text: String, processIdentifier: pid_t?) -> Bool {
@@ -54,6 +60,8 @@ final class MockKeyEventPoster: KeyEventPosting {
     private(set) var pasteChordCount = 0
     private(set) var copyChordCount = 0
     private(set) var typedTexts: [String] = []
+    private(set) var backspaceCounts: [Int] = []
+    var onBackspaces: ((Int) -> Void)?
     /// Runs on each paste chord with the 1-based attempt number.
     var onPasteChord: ((Int) -> Void)?
     /// Runs on each copy chord with the 1-based attempt number.
@@ -73,6 +81,11 @@ final class MockKeyEventPoster: KeyEventPosting {
     func postTypedText(_ text: String) {
         typedTexts.append(text)
         onTypedText?(text)
+    }
+
+    func postBackspaces(count: Int) {
+        backspaceCounts.append(count)
+        onBackspaces?(count)
     }
 }
 

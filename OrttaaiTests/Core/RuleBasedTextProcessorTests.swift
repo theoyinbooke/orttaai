@@ -380,4 +380,19 @@ final class RuleBasedTextProcessorTests: XCTestCase {
 
         XCTAssertEqual(output.text, "here is the plan\n1. Review the budget\n2. Send the report")
     }
+
+    func testVocabularyBiasTermsSnapshotsActiveTargetsAndTriggers() throws {
+        _ = try db.upsertDictionaryEntry(source: "olan rewaju", target: "Olanrewaju")
+        _ = try db.upsertDictionaryEntry(source: "wisper kit", target: "WhisperKit")
+        _ = try db.upsertDictionaryEntry(source: "old term", target: "Retired", isActive: false)
+        _ = try db.upsertSnippetEntry(trigger: "my email sig", expansion: "Best,\nTheo")
+
+        let terms = processor.vocabularyBiasTerms()
+
+        XCTAssertTrue(terms.contains("Olanrewaju"))
+        XCTAssertTrue(terms.contains("WhisperKit"))
+        XCTAssertTrue(terms.contains("my email sig"))
+        XCTAssertFalse(terms.contains("Retired"), "inactive entries must not bias decoding")
+        XCTAssertFalse(terms.contains("Best,\nTheo"), "expansions are typed, not spoken — only triggers bias")
+    }
 }

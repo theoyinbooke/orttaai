@@ -10,6 +10,9 @@ enum InjectionMethod: String, Equatable, Sendable {
     case paste
     case axInsert = "ax"
     case typed
+    /// Delivered incrementally while the user was speaking (in-field
+    /// streaming), reconciled to the final pipeline text at finalize.
+    case streamed
     case failed
 }
 
@@ -77,9 +80,14 @@ protocol TextInjecting: AnyObject {
     var lowLatencyModeEnabled: Bool { get set }
     func inject(text: String, targetApp: NSRunningApplication?) async -> InjectionResult
     func pasteLastTranscript(targetApp: NSRunningApplication?) async -> InjectionResult
+    /// Records a transcript that was delivered outside `inject` (in-field
+    /// streaming) so paste-last-transcript keeps working.
+    func recordDeliveredTranscript(_ text: String)
 }
 
 extension TextInjecting {
+    func recordDeliveredTranscript(_ text: String) {}
+
     var lastInjectionTelemetry: InjectionTelemetry? { nil }
     var lowLatencyModeEnabled: Bool {
         get { false }
@@ -116,6 +124,10 @@ final class TextInjectionService: TextInjecting {
         self.clipboard = clipboard
         self.inspector = inspector
         self.keyPoster = keyPoster
+    }
+
+    func recordDeliveredTranscript(_ text: String) {
+        lastTranscript = text
     }
 
     // MARK: - Secure-field policy (pure decision logic)

@@ -46,6 +46,7 @@ actor MockTranscriptionService: Transcribing {
     var finalizeLiveTranscriptionCallCount = 0
     var cancelLiveSessionCallCount = 0
     var liveTranscriptEventHandler: (@Sendable (LiveTranscriptEvent) -> Void)?
+    var vocabularyBiasTermsHistory: [[String]] = []
 
     func loadedModelID() -> String? {
         mockLoadedModelID
@@ -95,6 +96,10 @@ actor MockTranscriptionService: Transcribing {
         liveTranscriptEventHandler = handler
     }
 
+    func setVocabularyBias(terms: [String]) {
+        vocabularyBiasTermsHistory.append(terms)
+    }
+
     func emitLiveTranscriptEventForTest(_ event: LiveTranscriptEvent) {
         liveTranscriptEventHandler?(event)
     }
@@ -113,12 +118,18 @@ actor MockTranscriptionService: Transcribing {
     }
 }
 
-final class MockTextProcessor: TextProcessor {
+final class MockTextProcessor: TextProcessor, VocabularyBiasProviding {
+    var mockVocabularyBiasTerms: [String] = []
+
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
         TextProcessorOutput(text: input.rawTranscript, changes: [])
     }
 
     func isAvailable() -> Bool { true }
+
+    func vocabularyBiasTerms() -> [String] {
+        mockVocabularyBiasTerms
+    }
 }
 
 final class MockInjectionService: TextInjecting {
@@ -239,6 +250,15 @@ final class DictationCoordinatorTests: XCTestCase {
     var selectionCapture: MockSelectionCapture!
     var editProcessor: MockEditProcessor!
     var coordinator: DictationCoordinator!
+    // In-field streaming seams. The coordinator is always built with a mock
+    // streaming factory so no unit test can ever reach live AX or post real
+    // keystrokes. The default AX error makes every session fall back to the
+    // pill transcript unless a test configures the field explicitly.
+    var streamingInspector: MockAccessibilityInspector!
+    var streamingKeyPoster: MockKeyEventPoster!
+    var streamingClipboard: MockClipboard!
+    var streamingTargetFrontmost = true
+    var streamingFactoryCallCount = 0
     /// Deterministic gesture clock. Recording durations still use real time;
     /// only tap/hold disambiguation reads this.
     var gestureNow = Date()
@@ -256,6 +276,12 @@ final class DictationCoordinatorTests: XCTestCase {
         databaseManager = try DatabaseManager(dbQueue: dbQueue)
         settings = AppSettings()
 
+        streamingInspector = MockAccessibilityInspector()
+        streamingKeyPoster = MockKeyEventPoster()
+        streamingClipboard = MockClipboard()
+        streamingTargetFrontmost = true
+        streamingFactoryCallCount = 0
+
         gestureNow = Date()
         coordinator = DictationCoordinator(
             audioService: audioService,
@@ -266,8 +292,38 @@ final class DictationCoordinatorTests: XCTestCase {
             settings: settings,
             selectionCapture: selectionCapture,
             editProcessor: editProcessor,
+            streamingSessionFactory: { [weak self] _ in
+                self?.streamingFactoryCallCount += 1
+                return InFieldStreamingSession(
+                    targetApp: nil,
+                    inspector: self?.streamingInspector ?? MockAccessibilityInspector(),
+                    keyPoster: self?.streamingKeyPoster ?? MockKeyEventPoster(),
+                    clipboard: self?.streamingClipboard ?? MockClipboard(),
+                    settleNanoseconds: 0,
+                    isTargetFrontmost: { [weak self] in self?.streamingTargetFrontmost ?? false }
+                )
+            },
             now: { [weak self] in self?.gestureNow ?? Date() }
         )
+    }
+
+    /// Configures the streaming seams as a well-behaved editable text area so
+    /// a session passes the start gates and typed keystrokes land in the
+    /// simulated field.
+    @MainActor
+    private func configureStreamableField(value: String = "doc: ") {
+        streamingInspector.detailsResult = .value(
+            FocusedElementDetails(role: "AXTextArea", subrole: nil, roleDescription: "text entry area")
+        )
+        streamingInspector.simulatedFieldValue = value
+        streamingKeyPoster.onTypedText = { [weak self] text in
+            guard let inspector = self?.streamingInspector else { return }
+            inspector.simulatedFieldValue = (inspector.simulatedFieldValue ?? "") + text
+        }
+        streamingKeyPoster.onBackspaces = { [weak self] count in
+            guard let inspector = self?.streamingInspector else { return }
+            inspector.simulatedFieldValue = String((inspector.simulatedFieldValue ?? "").dropLast(count))
+        }
     }
 
     override func tearDownWithError() throws {
@@ -279,7 +335,8 @@ final class DictationCoordinatorTests: XCTestCase {
             "handsFreeSilenceStopEnabled",
             "handsFreeSilenceStopSeconds",
             "handsFreeMaxRecordingDuration",
-            "editCommandsEnabled"
+            "editCommandsEnabled",
+            "inFieldStreamingEnabled"
         ] {
             defaults.removeObject(forKey: key)
         }
@@ -417,6 +474,36 @@ final class DictationCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testStartRecordingSnapshotsVocabularyBiasTermsBeforeSession() async {
+        textProcessor.mockVocabularyBiasTerms = ["Olanrewaju", "WhisperKit"]
+        settings.vocabularyBiasEnabled = true
+        defer { UserDefaults.standard.removeObject(forKey: "vocabularyBiasEnabled") }
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        let history = await transcriptionService.vocabularyBiasTermsHistory
+        XCTAssertEqual(history, [["Olanrewaju", "WhisperKit"]])
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testStartRecordingSendsEmptyBiasSnapshotWhenToggleIsOff() async {
+        textProcessor.mockVocabularyBiasTerms = ["Olanrewaju", "WhisperKit"]
+        settings.vocabularyBiasEnabled = false
+        defer { UserDefaults.standard.removeObject(forKey: "vocabularyBiasEnabled") }
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        let history = await transcriptionService.vocabularyBiasTermsHistory
+        XCTAssertEqual(history, [[]], "toggle off must clear the snapshot, not skip the call")
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
     func testStopRecordingFinalizesThroughLiveTranscriptionPath() async {
         audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
         coordinator.startRecording()
@@ -502,6 +589,160 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(injectionService.lastTranscript, "Hello world")
         XCTAssertEqual(settings.activeModelId, selectedModelId)
     }
+    // MARK: - In-field streaming
+
+    @MainActor
+    func testStreamingTypesCommitsIntoFieldAndKeepsPillCompact() async throws {
+        configureStreamableField()
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("Hello world"))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(streamingKeyPoster.typedTexts, ["Hello world"], "Committed text streams into the field")
+        XCTAssertTrue(coordinator.isStreamingToField, "Pill must render compact while streaming")
+        XCTAssertNotNil(coordinator.liveTranscript, "Fallback transcript still accumulates while streaming")
+        XCTAssertEqual(streamingClipboard.saveCount, 0, "Streaming increments never touch the clipboard")
+
+        coordinator.stopRecording()
+        let saved = try await waitForTranscription()
+
+        XCTAssertEqual(saved.injectionMethod, "streamed")
+        XCTAssertEqual(saved.text, "Hello world")
+        XCTAssertEqual(injectionService.injectedTexts, [], "Streamed sessions reconcile in place, never re-paste")
+        XCTAssertEqual(streamingKeyPoster.backspaceCounts, [], "Identical final text needs no reconciliation edit")
+    }
+
+    @MainActor
+    func testStreamingSpeculativeTailIsNeverTyped() async {
+        configureStreamableField()
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        await transcriptionService.emitLiveTranscriptEventForTest(.speculative("maybe wrong words"))
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("stable words"))
+        await transcriptionService.emitLiveTranscriptEventForTest(.speculative("still guessing"))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(streamingKeyPoster.typedTexts, ["stable words"], "Only committed text may reach the field")
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testStreamingDisabledSettingUsesPillTranscriptAndNormalInjection() async throws {
+        settings.inFieldStreamingEnabled = false
+        configureStreamableField()
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("Hello world"))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(streamingFactoryCallCount, 0, "Setting off must not create a streaming session")
+        XCTAssertFalse(coordinator.isStreamingToField)
+        XCTAssertEqual(streamingKeyPoster.typedTexts, [])
+        XCTAssertNotNil(coordinator.liveTranscript, "Pill transcript remains the primary display")
+
+        coordinator.stopRecording()
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.injectionMethod, "paste")
+        XCTAssertEqual(injectionService.injectedTexts, ["Hello world"], "Finalize injects normally")
+    }
+
+    @MainActor
+    func testEditSessionsNeverCreateStreamingSession() async {
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+        coordinator.startEditCommand()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        if case .recording = coordinator.state {
+            XCTAssertEqual(streamingFactoryCallCount, 0, "Edit sessions replace the selection at the end; they never stream")
+            XCTAssertFalse(coordinator.isStreamingToField)
+        } else {
+            XCTFail("Edit recording should have started, got \(coordinator.state)")
+        }
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testStreamingGateFailureFallsBackToPillAndNormalInjection() async throws {
+        // Default streamingInspector reports .axError — the unreadable-field
+        // gate rejects streaming at the first commit.
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("Hello world"))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertFalse(coordinator.isStreamingToField)
+        XCTAssertEqual(streamingKeyPoster.typedTexts, [], "Gate failure must not type anything")
+        XCTAssertNotNil(coordinator.liveTranscript, "Pill transcript is the fallback UI")
+
+        coordinator.stopRecording()
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.injectionMethod, "paste", "Nothing streamed, so finalize behaves exactly like today")
+        XCTAssertEqual(injectionService.injectedTexts, ["Hello world"])
+    }
+
+    @MainActor
+    func testStreamingFocusLossFallsBackWithoutTypingIntoWrongApp() async {
+        configureStreamableField()
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("first part"))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(coordinator.isStreamingToField)
+
+        streamingTargetFrontmost = false
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("second part"))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertFalse(coordinator.isStreamingToField, "Focus change pauses streaming for the session")
+        XCTAssertEqual(streamingKeyPoster.typedTexts, ["first part"], "No text may land in the wrong app")
+        XCTAssertNotNil(coordinator.liveTranscript)
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testStreamingUserTypedMidStreamProducesHonestErrorAndClipboardFallback() async throws {
+        configureStreamableField()
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        await transcriptionService.emitLiveTranscriptEventForTest(.committed("Hello world"))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(streamingKeyPoster.typedTexts, ["Hello world"])
+
+        // The user types into the field mid-dictation: reconciliation must
+        // not guess.
+        streamingInspector.simulatedFieldValue! += "!"
+        coordinator.stopRecording()
+
+        var sawHonestError = false
+        for _ in 0..<40 {
+            if case .error(let message) = coordinator.state {
+                XCTAssertEqual(message, "Couldn't insert text. Press Cmd+V to paste it.")
+                sawHonestError = true
+                break
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(sawHonestError, "Reconciliation mismatch must surface the honest clipboard error")
+        XCTAssertEqual(streamingKeyPoster.backspaceCounts, [], "Never delete around user-typed text")
+        XCTAssertEqual(streamingClipboard.setStrings.last, "Hello world", "Final transcript goes to the clipboard")
+
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.injectionMethod, "failed")
+    }
+
     // MARK: - Injection outcome handling
 
     @MainActor

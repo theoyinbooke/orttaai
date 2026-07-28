@@ -109,9 +109,19 @@ final class AppSettings: ObservableObject {
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
+    /// In-field streaming: committed words are typed at the caret while the
+    /// user is still speaking, and the pill stays compact. Falls back to the
+    /// pill transcript wherever streaming is unsafe (terminals, secure
+    /// fields, unreadable elements, focus changes). Streamed sessions defer
+    /// LLM polish so finished words are never rewritten in front of the user.
+    @AppStorage("inFieldStreamingEnabled") var inFieldStreamingEnabled: Bool = true
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
     @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
     @AppStorage("snippetsEnabled") var snippetsEnabled: Bool = true
+    /// Feeds active dictionary targets and snippet triggers to the recognizer
+    /// as decoding bias context so hard vocabulary is transcribed correctly
+    /// in the first place (post-hoc replacement still applies either way).
+    @AppStorage("vocabularyBiasEnabled") var vocabularyBiasEnabled: Bool = true
     @AppStorage("aiSuggestionsEnabled") var aiSuggestionsEnabled: Bool = false
     @AppStorage("fastFirstOnboardingEnabled") var fastFirstOnboardingEnabled: Bool = false
     @AppStorage("fastFirstRecommendedModelId") var fastFirstRecommendedModelId: String = ""
