@@ -69,17 +69,18 @@ final class DictationCoordinator {
     /// `.recording`; reset to `.pushToTalk` whenever a new recording starts.
     private(set) var recordingMode: RecordingMode = .pushToTalk
     /// In-progress transcript assembled from the live session's clip commits
-    /// and speculative tail decodes, for display while recording. Nil when no
-    /// partial text is available (UI falls back to waveform-only). Kept up to
-    /// date even while streaming into the field, so a mid-session fallback
-    /// can show the full transcript accumulated so far.
+    /// and speculative tail decodes. Never rendered in the pill (the pill
+    /// shows no transcript text in any mode) — this model exists for
+    /// observers and tests of the live event plumbing, and is cleared when
+    /// recording stops.
     private(set) var liveTranscript: LiveTranscript?
     /// In-field streaming session for the recording in progress. Created only
     /// for dictation sessions when the setting is on; nil for edit sessions.
     private(set) var streamingSession: InFieldStreamingSession?
-    /// True while committed words are being typed into the target field. The
-    /// pill shows its compact waveform layout in this mode; any fallback
-    /// flips this off and the pill transcript takes over.
+    /// True while committed words are being typed into the target — either
+    /// verified in-field streaming (readable fields) or blind typed streaming
+    /// (terminals, unreadable elements). Any stop (secure field, focus loss,
+    /// field mismatch) flips this off silently.
     var isStreamingToField: Bool {
         streamingSession?.isStreaming ?? false
     }
@@ -1134,7 +1135,8 @@ final class DictationCoordinator {
         }
     }
 
-    /// Folds a live transcript event into the display model. Events landing
+    /// Folds a live transcript event into the `liveTranscript` model (never
+    /// displayed in the pill; consumed by observers and tests). Events landing
     /// after recording ended (in-flight commits) are ignored — the final
     /// transcript comes from finalizeLiveTranscription, never from here.
     @MainActor

@@ -17,7 +17,10 @@ final class FloatingPanelController: NSObject {
     private var hostingView: NSHostingView<AnyView>?
     private var handleLayer: CALayer!
     private var backgroundView: NSVisualEffectView!
-    private var currentSize: CGSize = WindowSize.floatingPanelHandle
+    /// Target size of the last requested transition (settable only from
+    /// within; readable so tests can assert the pill never resizes
+    /// mid-recording).
+    private(set) var currentSize: CGSize = WindowSize.floatingPanelHandle
     private var isShowingHint = false
 
     // The panel frame stays at hint size in handle state so the tracking area
@@ -158,25 +161,15 @@ final class FloatingPanelController: NSObject {
         }
     }
 
+    /// The recording pill has exactly one size for the whole recording —
+    /// there is no transcript display in the pill, so no content-driven
+    /// resizing exists. Mid-recording changes go through `updateContent`.
     func transitionToRecording(content view: some View) {
         panelState = .recording
         isShowingHint = false
         let size = WindowSize.floatingPanelRecording
         updateContent(view)
         hostingView?.isHidden = false
-        animateTransition(to: size) { [weak self] in
-            self?.applyExpandedAppearance()
-        }
-    }
-
-    /// Grows or shrinks the recording pill to make room for the live
-    /// transcript line. No-op outside the recording state.
-    func setRecordingTranscriptVisible(_ visible: Bool) {
-        guard panelState == .recording else { return }
-        let size = visible
-            ? WindowSize.floatingPanelRecordingTranscript
-            : WindowSize.floatingPanelRecording
-        guard size != currentSize else { return }
         animateTransition(to: size) { [weak self] in
             self?.applyExpandedAppearance()
         }

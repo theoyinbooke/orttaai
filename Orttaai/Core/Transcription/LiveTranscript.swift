@@ -20,15 +20,15 @@ enum LiveTranscriptEvent: Equatable, Sendable {
     case speculative(String)
 }
 
-/// Display model for the in-progress transcript shown in the floating pill.
-/// Assembles `LiveTranscriptEvent`s with the same semantics the
-/// transcription session uses internally: commits append (and invalidate
-/// the speculative tail), speculative decodes replace one another, and a
-/// new session clears everything.
+/// In-progress transcript assembled from `LiveTranscriptEvent`s with the
+/// same semantics the transcription session uses internally: commits append
+/// (and invalidate the speculative tail), speculative decodes replace one
+/// another, and a new session clears everything. Feeds the in-field
+/// streaming machinery; it is never rendered in the floating pill (the pill
+/// shows no dictated text by design).
 struct LiveTranscript: Equatable, Sendable {
-    /// Committed text kept in memory for display. Only the trailing portion
-    /// is ever visible in the pill, so trimming the head is invisible and
-    /// keeps long dictations bounded.
+    /// Committed text kept in memory. Head-trimming keeps long dictations
+    /// bounded; consumers only ever need the trailing portion.
     static let maxCommittedDisplayCharacters = 2_000
 
     private(set) var committedText: String = ""

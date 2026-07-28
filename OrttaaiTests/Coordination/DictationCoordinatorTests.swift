@@ -252,8 +252,9 @@ final class DictationCoordinatorTests: XCTestCase {
     var coordinator: DictationCoordinator!
     // In-field streaming seams. The coordinator is always built with a mock
     // streaming factory so no unit test can ever reach live AX or post real
-    // keystrokes. The default AX error makes every session fall back to the
-    // pill transcript unless a test configures the field explicitly.
+    // keystrokes. The default AX error makes every session stream BLIND
+    // (typed increments into the mock key poster, count-based
+    // reconciliation) unless a test configures a readable field explicitly.
     var streamingInspector: MockAccessibilityInspector!
     var streamingKeyPoster: MockKeyEventPoster!
     var streamingClipboard: MockClipboard!
@@ -592,7 +593,7 @@ final class DictationCoordinatorTests: XCTestCase {
     // MARK: - In-field streaming
 
     @MainActor
-    func testStreamingTypesCommitsIntoFieldAndKeepsPillCompact() async throws {
+    func testStreamingTypesCommitsIntoField() async throws {
         configureStreamableField()
         audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
 
@@ -603,8 +604,8 @@ final class DictationCoordinatorTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 200_000_000)
 
         XCTAssertEqual(streamingKeyPoster.typedTexts, ["Hello world"], "Committed text streams into the field")
-        XCTAssertTrue(coordinator.isStreamingToField, "Pill must render compact while streaming")
-        XCTAssertNotNil(coordinator.liveTranscript, "Fallback transcript still accumulates while streaming")
+        XCTAssertTrue(coordinator.isStreamingToField)
+        XCTAssertNotNil(coordinator.liveTranscript, "The live transcript model still accumulates (never displayed)")
         XCTAssertEqual(streamingClipboard.saveCount, 0, "Streaming increments never touch the clipboard")
 
         coordinator.stopRecording()
@@ -633,7 +634,7 @@ final class DictationCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testStreamingDisabledSettingUsesPillTranscriptAndNormalInjection() async throws {
+    func testStreamingDisabledSettingUsesNormalInjectionOnly() async throws {
         settings.inFieldStreamingEnabled = false
         configureStreamableField()
         audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
@@ -646,7 +647,7 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(streamingFactoryCallCount, 0, "Setting off must not create a streaming session")
         XCTAssertFalse(coordinator.isStreamingToField)
         XCTAssertEqual(streamingKeyPoster.typedTexts, [])
-        XCTAssertNotNil(coordinator.liveTranscript, "Pill transcript remains the primary display")
+        XCTAssertNotNil(coordinator.liveTranscript, "The live transcript model still accumulates (never displayed)")
 
         coordinator.stopRecording()
         let saved = try await waitForTranscription()
@@ -670,27 +671,30 @@ final class DictationCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testStreamingGateFailureFallsBackToPillAndNormalInjection() async throws {
+    func testUnreadableFieldStreamsBlindAndReconcilesInPlace() async throws {
         // Default streamingInspector reports .axError — the unreadable-field
-        // gate rejects streaming at the first commit.
+        // gate switches the session to BLIND streaming instead of suppressing
+        // it: increments are typed, nothing is ever read back, and finalize
+        // reconciles by count.
         audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
         coordinator.startRecording()
         try? await Task.sleep(nanoseconds: 400_000_000)
         await transcriptionService.emitLiveTranscriptEventForTest(.committed("Hello world"))
         try? await Task.sleep(nanoseconds: 200_000_000)
 
-        XCTAssertFalse(coordinator.isStreamingToField)
-        XCTAssertEqual(streamingKeyPoster.typedTexts, [], "Gate failure must not type anything")
-        XCTAssertNotNil(coordinator.liveTranscript, "Pill transcript is the fallback UI")
+        XCTAssertTrue(coordinator.isStreamingToField, "Unreadable fields stream blind, never fall back")
+        XCTAssertEqual(streamingKeyPoster.typedTexts, ["Hello world"], "Committed text types into the blind target")
+        XCTAssertNotNil(coordinator.liveTranscript, "The live transcript model still accumulates (never displayed)")
 
         coordinator.stopRecording()
         let saved = try await waitForTranscription()
-        XCTAssertEqual(saved.injectionMethod, "paste", "Nothing streamed, so finalize behaves exactly like today")
-        XCTAssertEqual(injectionService.injectedTexts, ["Hello world"])
+        XCTAssertEqual(saved.injectionMethod, "streamed", "Blind sessions reconcile in place")
+        XCTAssertEqual(injectionService.injectedTexts, [], "No end-of-session paste after blind streaming")
+        XCTAssertEqual(streamingKeyPoster.backspaceCounts, [], "Identical final text needs no reconciliation edit")
     }
 
     @MainActor
-    func testStreamingFocusLossFallsBackWithoutTypingIntoWrongApp() async {
+    func testStreamingFocusLossStopsTypingSilently() async {
         configureStreamableField()
         coordinator.startRecording()
         try? await Task.sleep(nanoseconds: 400_000_000)
@@ -703,9 +707,9 @@ final class DictationCoordinatorTests: XCTestCase {
         await transcriptionService.emitLiveTranscriptEventForTest(.committed("second part"))
         try? await Task.sleep(nanoseconds: 200_000_000)
 
-        XCTAssertFalse(coordinator.isStreamingToField, "Focus change pauses streaming for the session")
+        XCTAssertFalse(coordinator.isStreamingToField, "Focus change stops streaming for the session")
         XCTAssertEqual(streamingKeyPoster.typedTexts, ["first part"], "No text may land in the wrong app")
-        XCTAssertNotNil(coordinator.liveTranscript)
+        XCTAssertNotNil(coordinator.liveTranscript, "The live transcript model still accumulates (never displayed)")
 
         coordinator.stopRecording()
     }

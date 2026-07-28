@@ -48,9 +48,9 @@ enum WindowSize {
     /// Wide enough for the hover hint's "Hold or tap …" copy when hands-free
     /// mode is enabled.
     static let floatingPanelHandle = CGSize(width: 372, height: 32)
+    /// The one and only recording-pill size: the pill never displays
+    /// transcript text and never resizes while recording.
     static let floatingPanelRecording = CGSize(width: 286, height: 42)
-    /// Recording pill grown to fit the live transcript line under the waveform.
-    static let floatingPanelRecordingTranscript = CGSize(width: 460, height: 66)
     static let floatingPanelProcessing = CGSize(width: 140, height: 28)
     static let floatingPanelError = CGSize(width: 200, height: 28)
 }

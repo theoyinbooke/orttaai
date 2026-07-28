@@ -4,11 +4,15 @@
 import SwiftUI
 import Foundation
 
+/// The recording pill. It never displays transcript text — dictated words
+/// appear only at the insertion point (streamed in-field, blind-typed into
+/// terminals, or injected at the end); the pill keeps this one compact
+/// shape (waveform, elapsed time, countdown, stop button) for the whole
+/// recording.
 struct WaveformView: View {
     let audioLevel: Float
     let elapsedSeconds: Int
     var countdownSeconds: Int? = nil
-    var liveTranscript: LiveTranscript? = nil
     /// Hands-free (tap-to-toggle) recordings show a distinct glyph so the
     /// pill never lies about whether releasing a key will stop anything.
     var isHandsFree: Bool = false
@@ -25,11 +29,6 @@ struct WaveformView: View {
 
     private var isCountingDown: Bool { countdownSeconds != nil }
 
-    private var hasTranscript: Bool {
-        guard let liveTranscript else { return false }
-        return !liveTranscript.isEmpty
-    }
-
     private var activeTint: Color {
         isCountingDown ? Color.Orttaai.error : Color.Orttaai.accent
     }
@@ -37,14 +36,7 @@ struct WaveformView: View {
     var body: some View {
         ZStack {
             waveBannerBackground
-
-            VStack(spacing: Spacing.xs) {
-                controlsRow
-                if hasTranscript, let liveTranscript {
-                    transcriptRow(liveTranscript)
-                }
-            }
-            .padding(.vertical, hasTranscript ? Spacing.sm : 0)
+            controlsRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(Capsule())
@@ -58,7 +50,6 @@ struct WaveformView: View {
         .animation(.easeInOut(duration: 0.18), value: elapsedSeconds)
         .animation(.easeInOut(duration: 0.3), value: isCountingDown)
         .animation(.easeInOut(duration: 0.18), value: countdownSeconds)
-        .animation(.easeInOut(duration: 0.18), value: hasTranscript)
         .animation(.easeInOut(duration: 0.18), value: isHandsFree)
         .animation(.easeInOut(duration: 0.18), value: isEditMode)
     }
@@ -155,28 +146,6 @@ struct WaveformView: View {
             }
         }
         .padding(.horizontal, Spacing.md)
-    }
-
-    /// One line of in-progress transcript: committed text is stable and
-    /// full-strength; the speculative tail is dimmed because it may still be
-    /// revised. Head truncation keeps the most recent words visible.
-    private func transcriptRow(_ transcript: LiveTranscript) -> some View {
-        transcriptText(transcript)
-            .font(.Orttaai.secondary)
-            .lineLimit(1)
-            .truncationMode(.head)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Spacing.lg)
-            .accessibilityLabel("Live transcript")
-    }
-
-    private func transcriptText(_ transcript: LiveTranscript) -> Text {
-        let committed = Text(transcript.committedText)
-            .foregroundStyle(Color.Orttaai.textPrimary)
-        guard !transcript.speculativeText.isEmpty else { return committed }
-        let separator = transcript.committedText.isEmpty ? "" : " "
-        return committed + Text(separator + transcript.speculativeText)
-            .foregroundStyle(Color.Orttaai.textSecondary)
     }
 
     private var waveBannerBackground: some View {

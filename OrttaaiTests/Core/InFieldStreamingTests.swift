@@ -150,7 +150,7 @@ final class InFieldStreamingTests: XCTestCase {
         .value(FocusedTextSnapshot(value: value, selectedText: nil))
     }
 
-    func testGateBlocksKnownTerminalBundlesCaseInsensitively() {
+    func testGateStreamsKnownTerminalBundlesBlindCaseInsensitively() {
         for bundleID in ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "NET.KOVIDGOYAL.KITTY"] {
             XCTAssertEqual(
                 InFieldStreamingGate.assessStart(
@@ -159,13 +159,13 @@ final class InFieldStreamingTests: XCTestCase {
                     details: normalDetails(),
                     snapshot: snapshot(value: "prompt$ ")
                 ),
-                .terminalBundle,
-                "\(bundleID) must never receive streamed keystrokes"
+                .streamBlind(.terminalBundle),
+                "\(bundleID) must stream blind — keystrokes land but can never be read back"
             )
         }
     }
 
-    func testGateBlocksEmptyValueTextAreaAsTerminalHeuristic() {
+    func testGateStreamsEmptyValueTextAreaBlindAsTerminalHeuristic() {
         // Terminals like cmux/Ghostty expose their grid as an AXTextArea with
         // an empty-string value (see the paste-verification history).
         XCTAssertEqual(
@@ -175,22 +175,23 @@ final class InFieldStreamingTests: XCTestCase {
                 details: normalDetails(role: "AXTextArea"),
                 snapshot: snapshot(value: "")
             ),
-            .terminalHeuristic
+            .streamBlind(.terminalHeuristic)
         )
     }
 
     func testGateAllowsEmptyValueSingleLineTextField() {
-        XCTAssertNil(
+        XCTAssertEqual(
             InFieldStreamingGate.assessStart(
                 bundleID: "com.apple.Notes",
                 targetFrontmost: true,
                 details: normalDetails(role: "AXTextField"),
                 snapshot: snapshot(value: "")
-            )
+            ),
+            .streamReadable
         )
     }
 
-    func testGateBlocksSecureField() {
+    func testGateRefusesSecureFieldInEveryMode() {
         let secureDetails = AXInspection<FocusedElementDetails>.value(
             FocusedElementDetails(role: "AXTextField", subrole: "AXSecureTextField", roleDescription: "secure text field")
         )
@@ -201,11 +202,12 @@ final class InFieldStreamingTests: XCTestCase {
                 details: secureDetails,
                 snapshot: snapshot(value: "")
             ),
-            .secureField
+            .refuse(.secureField),
+            "Secure fields are never streamed and never typed — not even blind"
         )
     }
 
-    func testGateBlocksWhenAXFailsOrFieldExposesNoValue() {
+    func testGateStreamsBlindWhenAXFailsOrFieldExposesNoValue() {
         XCTAssertEqual(
             InFieldStreamingGate.assessStart(
                 bundleID: "com.example.app",
@@ -213,7 +215,7 @@ final class InFieldStreamingTests: XCTestCase {
                 details: .axError,
                 snapshot: snapshot(value: "text")
             ),
-            .unreadableField
+            .streamBlind(.unreadableField)
         )
         XCTAssertEqual(
             InFieldStreamingGate.assessStart(
@@ -222,7 +224,7 @@ final class InFieldStreamingTests: XCTestCase {
                 details: normalDetails(),
                 snapshot: snapshot(value: nil)
             ),
-            .unreadableField
+            .streamBlind(.unreadableField)
         )
         XCTAssertEqual(
             InFieldStreamingGate.assessStart(
@@ -231,11 +233,11 @@ final class InFieldStreamingTests: XCTestCase {
                 details: normalDetails(),
                 snapshot: .axError
             ),
-            .unreadableField
+            .streamBlind(.unreadableField)
         )
     }
 
-    func testGateBlocksWhenTargetNotFrontmost() {
+    func testGateRefusesWhenTargetNotFrontmost() {
         XCTAssertEqual(
             InFieldStreamingGate.assessStart(
                 bundleID: "com.example.app",
@@ -243,18 +245,19 @@ final class InFieldStreamingTests: XCTestCase {
                 details: normalDetails(),
                 snapshot: snapshot(value: "text")
             ),
-            .focusLost
+            .refuse(.focusLost)
         )
     }
 
     func testGateAllowsNormalReadableTextArea() {
-        XCTAssertNil(
+        XCTAssertEqual(
             InFieldStreamingGate.assessStart(
                 bundleID: "com.apple.TextEdit",
                 targetFrontmost: true,
                 details: normalDetails(),
                 snapshot: snapshot(value: "existing document text")
-            )
+            ),
+            .streamReadable
         )
     }
 
@@ -332,11 +335,11 @@ final class InFieldStreamingTests: XCTestCase {
         targetFrontmost = false
         await session.ingestCommit("second clip")
 
-        XCTAssertEqual(session.phase, .fallback(.focusLost))
+        XCTAssertEqual(session.phase, .stopped(.focusLost))
         XCTAssertFalse(session.isStreaming)
         XCTAssertEqual(keyPoster.typedTexts, ["first clip"], "No keystrokes may reach a different app")
 
-        // Focus returning does not resume streaming — fallback is one-way.
+        // Focus returning does not resume streaming — stopping is one-way.
         targetFrontmost = true
         await session.ingestCommit("third clip")
         XCTAssertEqual(keyPoster.typedTexts, ["first clip"])
@@ -350,7 +353,7 @@ final class InFieldStreamingTests: XCTestCase {
         targetFrontmost = false
         session.refreshFocusGate()
 
-        XCTAssertEqual(session.phase, .fallback(.focusLost))
+        XCTAssertEqual(session.phase, .stopped(.focusLost))
     }
 
     func testSessionStopsWhenFieldBecomesSecureMidSession() async {
@@ -362,18 +365,19 @@ final class InFieldStreamingTests: XCTestCase {
         )
         await session.ingestCommit("secret words")
 
-        XCTAssertEqual(session.phase, .fallback(.secureField))
+        XCTAssertEqual(session.phase, .stopped(.secureField))
         XCTAssertEqual(keyPoster.typedTexts, ["email body"])
     }
 
-    func testSessionFallsBackWhenElementSwallowsKeystrokes() async {
-        // Field value never changes (terminal-like grid): the visibility
-        // check after the first increment must stop the stream.
+    func testReadableSessionStopsWhenElementSwallowsKeystrokes() async {
+        // A readable field whose value never changes swallowed the
+        // keystrokes: the visibility check after the first increment must
+        // stop the stream.
         let session = makeSession(fieldValue: "prompt$ ", keystrokesLand: false)
 
         await session.ingestCommit("ls -la")
 
-        XCTAssertEqual(session.phase, .fallback(.fieldMismatch))
+        XCTAssertEqual(session.phase, .stopped(.fieldMismatch))
         await session.ingestCommit("rm -rf things")
         XCTAssertEqual(keyPoster.typedTexts, ["ls -la"], "After the mismatch nothing more may be typed")
     }
@@ -393,13 +397,16 @@ final class InFieldStreamingTests: XCTestCase {
         XCTAssertEqual(inspector.simulatedFieldValue, "memo: don\u{2019}t stop now")
     }
 
-    func testSessionNeverCreatesStreamingSessionGateOnEmptyTextArea() async {
+    func testEmptyValueTextAreaStreamsBlindInsteadOfFallingBack() async {
+        // cmux/Ghostty expose their grid as an empty-string AXTextArea:
+        // increments must still reach the field, blind.
         let session = makeSession(fieldValue: "")
 
         await session.ingestCommit("hello")
 
-        XCTAssertEqual(session.phase, .fallback(.terminalHeuristic))
-        XCTAssertEqual(keyPoster.typedTexts, [])
+        XCTAssertTrue(session.isStreaming)
+        XCTAssertEqual(session.mode, .blind(.terminalHeuristic))
+        XCTAssertEqual(keyPoster.typedTexts, ["hello"])
     }
 
     // MARK: - Finalize reconciliation
@@ -562,7 +569,7 @@ final class InFieldStreamingTests: XCTestCase {
         inspector.simulatedSelectedRange = FocusedTextRange(location: 1, length: 0)
         await session.ingestCommit("second clip")
 
-        XCTAssertEqual(session.phase, .fallback(.fieldMismatch))
+        XCTAssertEqual(session.phase, .stopped(.fieldMismatch))
         XCTAssertEqual(keyPoster.typedTexts, ["first clip"], "Second increment must not be typed at a moved caret")
     }
 
@@ -585,13 +592,13 @@ final class InFieldStreamingTests: XCTestCase {
         XCTAssertEqual(clipboard.setStrings, [])
     }
 
-    func testFinalizeAfterFocusFallbackStillReconcilesTheStreamedSpan() async {
+    func testFinalizeAfterFocusStopStillReconcilesTheStreamedSpan() async {
         let session = makeSession()
         await session.ingestCommit("hello")
 
         targetFrontmost = false
         await session.ingestCommit("world")
-        XCTAssertEqual(session.phase, .fallback(.focusLost))
+        XCTAssertEqual(session.phase, .stopped(.focusLost))
 
         // Finalize reconciles the partial streamed span against the full
         // final transcript: the missing words are appended, not re-pasted.
@@ -599,5 +606,213 @@ final class InFieldStreamingTests: XCTestCase {
 
         XCTAssertEqual(outcome, .completed)
         XCTAssertEqual(keyPoster.typedTexts, ["hello", " world"])
+    }
+
+    // MARK: - Blind reconciliation planner (pure)
+
+    func testBlindPlanIsExactWhenFinalMatchesStreamed() {
+        XCTAssertEqual(
+            BlindStreamingReconciliation.plan(streamedText: "hello world", finalText: "hello world"),
+            .alreadyExact
+        )
+    }
+
+    func testBlindPlanAppendsOnlyTheRemainderWhenFinalExtendsStreamed() {
+        XCTAssertEqual(
+            BlindStreamingReconciliation.plan(streamedText: "hello world", finalText: "hello world today"),
+            .appendRemainder(" today")
+        )
+    }
+
+    func testBlindPlanReplacesExactlyTheDivergentTail() {
+        XCTAssertEqual(
+            BlindStreamingReconciliation.plan(streamedText: "helo world", finalText: "hello world"),
+            .replaceDivergentTail(deleteCharacters: 7, replacement: "lo world")
+        )
+    }
+
+    func testBlindPlanNeverDeletesMoreThanTheSessionTyped() {
+        // Totally divergent final text: the plan may delete at most every
+        // character this session streamed, and nothing else.
+        let streamed = "wrong words"
+        let plan = BlindStreamingReconciliation.plan(streamedText: streamed, finalText: "different entirely")
+        guard case .replaceDivergentTail(let deleteCharacters, let replacement) = plan else {
+            return XCTFail("Expected a divergent-tail replacement, got \(plan)")
+        }
+        XCTAssertEqual(deleteCharacters, streamed.count, "Delete bound is the streamed span itself")
+        XCTAssertLessThanOrEqual(deleteCharacters, streamed.count)
+        XCTAssertEqual(replacement, "different entirely")
+
+        // Nothing streamed yet: there is nothing to delete, only an append.
+        XCTAssertEqual(
+            BlindStreamingReconciliation.plan(streamedText: "", finalText: "anything"),
+            .appendRemainder("anything")
+        )
+        XCTAssertEqual(
+            BlindStreamingReconciliation.plan(streamedText: "", finalText: ""),
+            .alreadyExact
+        )
+    }
+
+    func testBlindPlanFlattensNewlinesInEveryReconciliationText() {
+        // Spoken formatting produced a real line break: blind mode compares
+        // and types the flattened rendition instead (a typed Return would
+        // submit or execute).
+        XCTAssertEqual(
+            BlindStreamingReconciliation.plan(
+                streamedText: "first line second line",
+                finalText: "first line\nsecond line"
+            ),
+            .alreadyExact
+        )
+        let plan = BlindStreamingReconciliation.plan(
+            streamedText: "alpha",
+            finalText: "alpha\r\n\r\nbeta\u{2028}gamma"
+        )
+        XCTAssertEqual(plan, .appendRemainder(" beta gamma"))
+        if case .appendRemainder(let remainder) = plan {
+            XCTAssertFalse(remainder.contains(where: \.isNewline))
+        }
+    }
+
+    func testBlindFlatteningCollapsesLineBreakRunsToASingleSpace() {
+        XCTAssertEqual(BlindStreamingReconciliation.flattenedForBlindTyping("a\nb"), "a b")
+        XCTAssertEqual(BlindStreamingReconciliation.flattenedForBlindTyping("a \n\t\r\n b"), "a b")
+        XCTAssertEqual(BlindStreamingReconciliation.flattenedForBlindTyping("no breaks"), "no breaks")
+    }
+
+    // MARK: - Blind-mode sessions (terminals and unreadable fields)
+
+    /// Session whose focused element is completely unreadable over AX —
+    /// details and snapshot both error, and nothing typed can be read back.
+    private func makeBlindSession(bundleID: String? = nil) -> InFieldStreamingSession {
+        inspector.detailsResult = .axError
+        inspector.snapshotErrors = true
+        return InFieldStreamingSession(
+            targetApp: nil,
+            targetBundleID: bundleID,
+            inspector: inspector,
+            keyPoster: keyPoster,
+            clipboard: clipboard,
+            settleNanoseconds: 0,
+            isTargetFrontmost: { [weak self] in self?.targetFrontmost ?? false }
+        )
+    }
+
+    func testUnreadableElementStreamsIncrementsBlind() async {
+        let session = makeBlindSession()
+
+        await session.ingestCommit("echo hello")
+        await session.ingestCommit("and more")
+
+        XCTAssertTrue(session.isStreaming)
+        XCTAssertEqual(session.mode, .blind(.unreadableField))
+        XCTAssertEqual(keyPoster.typedTexts, ["echo hello", " and more"],
+                       "Increments must keep typing even though nothing can be read back")
+        XCTAssertEqual(clipboard.saveCount, 0, "Blind streaming never touches the clipboard")
+        XCTAssertEqual(clipboard.setStrings, [])
+    }
+
+    func testTerminalBundleStreamsBlindInsteadOfFallingBack() async {
+        let session = makeBlindSession(bundleID: "com.cmuxterm.app")
+
+        await session.ingestCommit("git status")
+
+        XCTAssertTrue(session.isStreaming)
+        XCTAssertEqual(session.mode, .blind(.terminalBundle))
+        XCTAssertEqual(keyPoster.typedTexts, ["git status"])
+        XCTAssertFalse(keyPoster.typedTexts.contains(where: { $0.contains(where: \.isNewline) }),
+                       "A streamed newline could execute a command")
+    }
+
+    func testBlindSessionRefusesSecureFieldOnEveryCommit() async {
+        // Terminal bundle would stream blind, but the focused element reports
+        // secure: nothing may ever be typed.
+        let session = makeBlindSession(bundleID: "com.apple.terminal")
+        inspector.detailsResult = .value(
+            FocusedElementDetails(role: "AXTextField", subrole: "AXSecureTextField", roleDescription: "secure text field")
+        )
+
+        await session.ingestCommit("hunter2")
+
+        XCTAssertEqual(session.phase, .stopped(.secureField))
+        XCTAssertEqual(keyPoster.typedTexts, [], "Secure fields are never typed into, in any mode")
+    }
+
+    func testBlindSessionStopsSilentlyOnFocusLossWithoutTyping() async {
+        let session = makeBlindSession()
+        await session.ingestCommit("first")
+
+        targetFrontmost = false
+        await session.ingestCommit("second")
+
+        XCTAssertEqual(session.phase, .stopped(.focusLost))
+        XCTAssertEqual(keyPoster.typedTexts, ["first"], "No keystrokes may reach a different app in blind mode")
+    }
+
+    func testBlindFinalizeIsNoOpWhenStreamedMatchesFlattenedFinal() async {
+        let session = makeBlindSession()
+        await session.ingestCommit("first line second line")
+
+        let outcome = await session.finalize(finalText: "first line\nsecond line")
+
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertEqual(keyPoster.backspaceCounts, [])
+        XCTAssertEqual(keyPoster.typedTexts, ["first line second line"])
+        XCTAssertEqual(keyPoster.pasteChordCount, 0, "Blind reconciliation never pastes")
+    }
+
+    func testBlindFinalizeAppendsOnlyTheFlattenedRemainder() async {
+        let session = makeBlindSession()
+        await session.ingestCommit("hello world")
+
+        let outcome = await session.finalize(finalText: "hello world\nsecond line")
+
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertEqual(keyPoster.backspaceCounts, [])
+        XCTAssertEqual(keyPoster.typedTexts, ["hello world", " second line"])
+        XCTAssertEqual(keyPoster.pasteChordCount, 0)
+        XCTAssertFalse(keyPoster.typedTexts.contains(where: { $0.contains(where: \.isNewline) }),
+                       "Blind reconciliation text must never contain a typed Return")
+    }
+
+    func testBlindFinalizeBackspacesExactlyTheDivergentTailThenTypes() async {
+        let session = makeBlindSession()
+        await session.ingestCommit("helo world")
+
+        let outcome = await session.finalize(finalText: "hello world")
+
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertEqual(keyPoster.backspaceCounts, [7], "Delete exactly the divergent streamed tail, never more")
+        XCTAssertEqual(keyPoster.typedTexts, ["helo world", "lo world"])
+        XCTAssertEqual(clipboard.setStrings, [])
+    }
+
+    func testBlindFinalizeAbortsToClipboardWhenTargetNotFrontmost() async {
+        let session = makeBlindSession()
+        await session.ingestCommit("hello world")
+
+        targetFrontmost = false
+        let outcome = await session.finalize(finalText: "hello world today")
+
+        XCTAssertEqual(outcome, .failedNeedsManualPaste)
+        XCTAssertEqual(keyPoster.typedTexts, ["hello world"], "No reconciliation text may land in another app")
+        XCTAssertEqual(keyPoster.backspaceCounts, [])
+        XCTAssertEqual(clipboard.setStrings, ["hello world today"], "Final text goes to the clipboard for Cmd+V")
+    }
+
+    func testBlindFinalizeRefusesSecureFieldAndLeavesFinalOnClipboard() async {
+        let session = makeBlindSession()
+        await session.ingestCommit("hello world")
+
+        inspector.detailsResult = .value(
+            FocusedElementDetails(role: "AXTextField", subrole: "AXSecureTextField", roleDescription: "secure text field")
+        )
+        let outcome = await session.finalize(finalText: "hello world today")
+
+        XCTAssertEqual(outcome, .failedNeedsManualPaste)
+        XCTAssertEqual(keyPoster.typedTexts, ["hello world"])
+        XCTAssertEqual(keyPoster.backspaceCounts, [])
+        XCTAssertEqual(clipboard.setStrings, ["hello world today"])
     }
 }

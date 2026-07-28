@@ -195,29 +195,110 @@ enum StreamingReconciliation {
     }
 }
 
+// MARK: - Blind reconciliation planning (pure)
+
+/// Count-based finalize planning for blind-mode sessions (terminals and
+/// unreadable fields), where no AX read-back exists to verify anything.
+///
+/// The plan is append-biased: compute the common prefix between the streamed
+/// span and the final pipeline text; when the final text extends the streamed
+/// span, type only the remainder; when it diverges, backspace exactly the
+/// divergent-tail character count of the streamed span, then type the
+/// replacement. By construction the plan never deletes more characters than
+/// this session itself typed, immediately after its own last increment — if
+/// nothing was streamed, there is nothing to delete.
+///
+/// All reconciliation text is compared and delivered with newlines flattened
+/// to single spaces — never pasted, never a raw Return: a streamed Return
+/// submits chat inputs and executes shell commands. Blind-mode dictation
+/// therefore trades exact multi-line formatting for in-place delivery; the
+/// streamed increments (already newline-free) plus this flattening keep the
+/// delivered text equal to the final pipeline text modulo line breaks.
+enum BlindStreamingReconciliation {
+    /// The final pipeline text as blind mode is allowed to type it: every
+    /// whitespace run that contains at least one line break (\r, \n, or the
+    /// Unicode line/paragraph separators) becomes exactly one space; text
+    /// without line breaks is untouched. The greedy `\s*` on both sides of
+    /// the single anchored line-break character swallows the whole mixed run
+    /// in one match. `\u{2028}`/`\u{2029}` are Swift string escapes (not a
+    /// raw string), so ICU sees the literal characters.
+    static func flattenedForBlindTyping(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: "\\s*[\r\n\u{2028}\u{2029}]\\s*",
+            with: " ",
+            options: .regularExpression
+        )
+    }
+
+    /// Plans the finalize edit from character counts alone. Never produces
+    /// `.abortFieldMismatch` — with no field to read there is no mismatch to
+    /// detect; the delete bound above is the safety story.
+    static func plan(streamedText: String, finalText: String) -> StreamingReconciliationPlan {
+        let flattenedFinal = flattenedForBlindTyping(finalText)
+        guard !streamedText.isEmpty else {
+            return flattenedFinal.isEmpty ? .alreadyExact : .appendRemainder(flattenedFinal)
+        }
+        if flattenedFinal == streamedText {
+            return .alreadyExact
+        }
+        let commonPrefixCount = StreamingReconciliation.commonPrefixCharacterCount(streamedText, flattenedFinal)
+        let remainder = String(flattenedFinal.dropFirst(commonPrefixCount))
+        if commonPrefixCount == streamedText.count {
+            return .appendRemainder(remainder)
+        }
+        return .replaceDivergentTail(
+            deleteCharacters: streamedText.count - commonPrefixCount,
+            replacement: remainder
+        )
+    }
+}
+
 // MARK: - Safety gates (pure)
 
-/// Why a session is not streaming into the field. Every reason falls back to
-/// the pill-transcript display; none of them fails the dictation.
-enum InFieldStreamingFallbackReason: String, Equatable, Sendable {
-    /// The target app is a known terminal — streamed keystrokes could reach a
-    /// shell prompt.
+/// Why a session stopped typing into the field. Stopping is silent — the
+/// pill never displays transcript text in any mode — and one-way for the
+/// rest of the session; whatever was already streamed is reconciled at
+/// finalize. None of these fails the dictation itself.
+enum InFieldStreamingStopReason: String, Equatable, Sendable {
+    /// The focused element is (or became) a secure/password field. Never
+    /// streamed, never typed, in any mode.
+    case secureField
+    /// The target app is no longer frontmost — keystrokes would land in the
+    /// wrong app. Streaming never re-activates the target mid-recording.
+    case focusLost
+    /// Readable mode only: the field's text stopped matching the streamed
+    /// span (the element swallowed the keystrokes, the user edited
+    /// mid-stream, or the caret moved).
+    case fieldMismatch
+}
+
+/// Why a session streams blind: typed keystrokes verifiably land in these
+/// targets (measured live against cmux/Ghostty), but their text can never be
+/// read back over AX, so no mid-stream visibility check or exact finalize
+/// reconciliation is possible.
+enum InFieldStreamingBlindReason: String, Equatable, Sendable {
+    /// The target app is a known terminal emulator — its screen text is not
+    /// exposed to AX.
     case terminalBundle
     /// The focused element looks like a terminal screen: an AXTextArea whose
     /// value reads as the empty string (how Ghostty/cmux expose their grid;
     /// see the paste-verification history).
     case terminalHeuristic
-    /// The focused element is a secure/password field.
-    case secureField
-    /// AX cannot read the focused element's text, so neither mid-stream
-    /// verification nor finalize reconciliation could ever be judged.
+    /// AX cannot read the focused element's details or text at all.
     case unreadableField
-    /// The target app is no longer frontmost — keystrokes would land in the
-    /// wrong app. Streaming never re-activates the target mid-recording.
-    case focusLost
-    /// The field's text stopped matching the streamed span (the element
-    /// swallowed the keystrokes, or the user edited mid-stream).
-    case fieldMismatch
+}
+
+/// How a session may deliver dictated text into the focused element.
+enum InFieldStreamingStartDecision: Equatable, Sendable {
+    /// AX can read the field: stream with mid-stream visibility checks, the
+    /// caret guard, and exact finalize reconciliation (C7 — unchanged).
+    case streamReadable
+    /// The field cannot be read back (terminal, unreadable element): stream
+    /// typed increments blind and reconcile by count at finalize.
+    case streamBlind(InFieldStreamingBlindReason)
+    /// Never type into this target: secure fields and lost focus stop the
+    /// session silently before the first keystroke.
+    case refuse(InFieldStreamingStopReason)
 }
 
 enum InFieldStreamingGate {
@@ -245,41 +326,44 @@ enum InFieldStreamingGate {
         return terminalBundleIDs.contains(bundleID.lowercased())
     }
 
-    /// Decides whether a session may start streaming into the focused
-    /// element. Returns nil when streaming is allowed. Deliberately
-    /// conservative: anything unverifiable falls back to the pill transcript,
-    /// which works everywhere.
+    /// Decides how a session may start delivering into the focused element.
+    /// Readable fields get the fully verified C7 path; unreadable fields and
+    /// terminals stream blind (typed increments, count-based reconciliation);
+    /// secure fields and lost focus refuse outright — nothing is ever typed.
     static func assessStart(
         bundleID: String?,
         targetFrontmost: Bool,
         details: AXInspection<FocusedElementDetails>,
         snapshot: AXInspection<FocusedTextSnapshot>
-    ) -> InFieldStreamingFallbackReason? {
+    ) -> InFieldStreamingStartDecision {
         if isTerminalBundleID(bundleID) {
-            return .terminalBundle
+            // Typed unicode keystrokes verifiably land in terminals, but
+            // their screens can't be read back — stream blind.
+            return .streamBlind(.terminalBundle)
         }
         guard targetFrontmost else {
-            return .focusLost
+            return .refuse(.focusLost)
         }
         guard case .value(let elementDetails) = details else {
-            // Unlike plain injection (which fails open on AX errors and pastes
-            // once), streaming types keystrokes it may later need to revise —
-            // it must be able to see the element it is editing.
-            return .unreadableField
+            // AX cannot see the element at all. Plain injection fails open
+            // here and pastes once; blind streaming is the streaming
+            // equivalent of that policy.
+            return .streamBlind(.unreadableField)
         }
         if TextInjectionService.assessSecureField(details) == .blocked {
-            return .secureField
+            return .refuse(.secureField)
         }
         guard case .value(let textSnapshot) = snapshot, let value = textSnapshot.value else {
-            return .unreadableField
+            return .streamBlind(.unreadableField)
         }
         if value.isEmpty, elementDetails.role == (kAXTextAreaRole as String) {
             // Terminals expose their whole grid as an AXTextArea with an
             // empty-string value even when text is visibly present. An empty
-            // genuine document falls back too — the pill transcript covers it.
-            return .terminalHeuristic
+            // genuine document streams blind too — increments still land and
+            // the count-based reconciliation stays within what was typed.
+            return .streamBlind(.terminalHeuristic)
         }
-        return nil
+        return .streamReadable
     }
 }
 
@@ -291,23 +375,37 @@ enum InFieldStreamingGate {
 ///
 /// Lifecycle (states × events):
 ///
-///   pending    --commit, gates pass-->   streaming (types first increment)
-///   pending    --commit, gate fails-->   fallback(reason)   [pill transcript]
-///   streaming  --commit, target frontmost & field intact--> streaming (types increment)
-///   streaming  --commit/speculative, target not frontmost--> fallback(.focusLost)
-///   streaming  --commit, field became secure-->             fallback(.secureField)
-///   streaming  --commit, streamed span not visible-->       fallback(.fieldMismatch)
-///   any        --finalize-->             finished (reconciles if anything streamed)
+///   pending             --commit, readable gate-->            streaming[readable] (types first increment)
+///   pending             --commit, terminal/unreadable gate--> streaming[blind]    (types first increment)
+///   pending             --commit, secure field/focus lost-->  stopped(reason)     (nothing typed, silent)
+///   streaming[readable] --commit, frontmost & field intact--> streaming (types increment)
+///   streaming[blind]    --commit, frontmost & not secure-->   streaming (types increment; no AX checks — they cannot work)
+///   streaming[any]      --commit/speculative, target not frontmost--> stopped(.focusLost)
+///   streaming[any]      --commit, field became secure-->            stopped(.secureField)
+///   streaming[readable] --commit, streamed span not visible/caret moved--> stopped(.fieldMismatch)
+///   any                 --finalize--> finished (readable: exact reconciliation with caret guard;
+///                                     blind: count-based, append-biased, newline-flattened)
 ///
-/// Fallback is one-way: once a session stops streaming it never resumes, and
-/// the pill transcript (which accumulates regardless) takes over. Text
-/// already streamed stays in the field and is reconciled at finalize.
+/// Stopping is one-way and silent: once a session stops streaming it never
+/// resumes, and the pill shows nothing in any mode (only the compact
+/// waveform). Text already streamed stays in the field and is reconciled at
+/// finalize.
 final class InFieldStreamingSession {
     enum Phase: Equatable {
         case pending
         case streaming
-        case fallback(InFieldStreamingFallbackReason)
+        case stopped(InFieldStreamingStopReason)
         case finished
+    }
+
+    /// How increments are delivered and reconciled once streaming starts.
+    enum Mode: Equatable {
+        /// AX-readable field: mid-stream visibility checks, caret guard, and
+        /// exact finalize reconciliation (C7 — byte-for-byte unchanged).
+        case readable
+        /// Terminal or unreadable field: typed increments with no AX
+        /// read-back, count-based reconciliation at finalize.
+        case blind(InFieldStreamingBlindReason)
     }
 
     enum FinalizeOutcome: Equatable {
@@ -321,15 +419,22 @@ final class InFieldStreamingSession {
     }
 
     private(set) var phase: Phase = .pending
+    /// Meaningful once streaming has started; readable until the start gate
+    /// says otherwise.
+    private(set) var mode: Mode = .readable
     private var planner = StreamingIncrementPlanner()
     /// Field value captured right before the first increment, the baseline
-    /// for detecting mid-stream edits at finalize.
+    /// for detecting mid-stream edits at finalize (readable mode only).
     private(set) var preStreamFieldValue: String?
 
     var isStreaming: Bool { phase == .streaming }
     var streamedText: String { planner.streamedText }
 
     private let targetApp: NSRunningApplication?
+    /// Bundle ID used by the terminal gate. Injectable so unit tests can
+    /// exercise the terminal-bundle path without a real NSRunningApplication;
+    /// production passes nothing and the target app's own ID is used.
+    private let targetBundleID: String?
     private let inspector: any AccessibilityInspecting
     private let keyPoster: any KeyEventPosting
     private let clipboard: any ClipboardManaging
@@ -343,6 +448,7 @@ final class InFieldStreamingSession {
 
     init(
         targetApp: NSRunningApplication?,
+        targetBundleID: String? = nil,
         inspector: any AccessibilityInspecting = SystemAccessibilityInspector(),
         keyPoster: any KeyEventPosting = CGKeyEventPoster(),
         clipboard: any ClipboardManaging = ClipboardManager(),
@@ -350,6 +456,7 @@ final class InFieldStreamingSession {
         isTargetFrontmost: (() -> Bool)? = nil
     ) {
         self.targetApp = targetApp
+        self.targetBundleID = targetBundleID ?? targetApp?.bundleIdentifier
         self.inspector = inspector
         self.keyPoster = keyPoster
         self.clipboard = clipboard
@@ -361,57 +468,71 @@ final class InFieldStreamingSession {
 
     /// Handles one committed clip while recording. Evaluates the start gates
     /// on the first commit, re-checks the cheap per-increment gates on every
-    /// commit, and types the increment at the caret. Any gate failure flips
-    /// the session to fallback (pill transcript) without typing.
+    /// commit, and types the increment at the caret. Any gate failure stops
+    /// the session silently without typing — nothing is ever shown in the
+    /// pill.
     func ingestCommit(_ text: String) async {
         switch phase {
-        case .fallback, .finished:
+        case .stopped, .finished:
             return
         case .pending:
-            if let reason = evaluateStartGate() {
-                fallBack(reason)
+            switch evaluateStartGate() {
+            case .refuse(let reason):
+                stop(reason)
                 return
+            case .streamBlind(let reason):
+                mode = .blind(reason)
+                phase = .streaming
+                Logger.injection.info(
+                    "In-field streaming started blind: \(reason.rawValue, privacy: .public)"
+                )
+            case .streamReadable:
+                mode = .readable
+                phase = .streaming
             }
-            phase = .streaming
         case .streaming:
             break
         }
 
-        // Per-increment gates: never type into a different app, never type
-        // into a field that became secure mid-session.
+        // Per-increment gates, both modes: never type into a different app,
+        // never type into a field that became secure mid-session.
         guard isTargetFrontmost() else {
-            fallBack(.focusLost)
+            stop(.focusLost)
             return
         }
         if TextInjectionService.assessSecureField(
             inspector.focusedElementDetails(processIdentifier: targetPid)
         ) == .blocked {
-            fallBack(.secureField)
+            stop(.secureField)
             return
         }
 
-        // Caret guard for non-first increments: if the user clicked elsewhere
-        // (no keystrokes, so the field-content check can't see it), typing
-        // would land mid-document. A readable caret must sit at the end of
-        // the streamed span; unreadable carets keep the status quo (the
-        // post-type visibility check plus finalize verification stay the
-        // honest backstop).
-        if !planner.streamedText.isEmpty,
+        // Caret guard for non-first increments (readable mode only — blind
+        // targets expose no caret): if the user clicked elsewhere (no
+        // keystrokes, so the field-content check can't see it), typing would
+        // land mid-document. A readable caret must sit at the end of the
+        // streamed span; unreadable carets keep the status quo (the post-type
+        // visibility check plus finalize verification stay the honest
+        // backstop).
+        if mode == .readable,
+           !planner.streamedText.isEmpty,
            case .value(let preTypeSnapshot) = inspector.focusedElementTextSnapshot(processIdentifier: targetPid),
            let caret = preTypeSnapshot.selectedRange,
            let fieldValue = preTypeSnapshot.value,
            !caretSitsAtStreamedSpanEnd(caret, currentValue: fieldValue) {
-            fallBack(.fieldMismatch)
+            stop(.fieldMismatch)
             return
         }
 
         guard let increment = planner.increment(forCommittedText: text) else { return }
         keyPoster.postTypedText(increment)
 
-        // Visibility check: if the element exposes readable text and the
+        // Visibility check (readable mode only — blind targets cannot echo
+        // anything back): if the element exposes readable text and the
         // streamed span is not in it, the element swallowed the keystrokes
         // (terminal-like) or the user rewrote the field. Stop streaming; the
         // finalize reconciliation will detect the mismatch and stay honest.
+        guard mode == .readable else { return }
         if settleNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: settleNanoseconds)
         }
@@ -419,37 +540,37 @@ final class InFieldStreamingSession {
            let value = snapshot.value,
            !StreamingReconciliation.typographicallyNormalized(value)
                 .contains(StreamingReconciliation.typographicallyNormalized(planner.streamedText)) {
-            fallBack(.fieldMismatch)
+            stop(.fieldMismatch)
         }
     }
 
     /// Cheap focus re-check ridden by speculative events (~sub-second cadence)
-    /// so an app switch flips the pill back to the transcript quickly instead
-    /// of waiting for the next commit.
+    /// so an app switch stops the typing quickly instead of waiting for the
+    /// next commit.
     func refreshFocusGate() {
         guard phase == .streaming, !isTargetFrontmost() else { return }
-        fallBack(.focusLost)
+        stop(.focusLost)
     }
 
-    private func evaluateStartGate() -> InFieldStreamingFallbackReason? {
+    private func evaluateStartGate() -> InFieldStreamingStartDecision {
         let details = inspector.focusedElementDetails(processIdentifier: targetPid)
         let snapshot = inspector.focusedElementTextSnapshot(processIdentifier: targetPid)
-        let reason = InFieldStreamingGate.assessStart(
-            bundleID: targetApp?.bundleIdentifier,
+        let decision = InFieldStreamingGate.assessStart(
+            bundleID: targetBundleID,
             targetFrontmost: isTargetFrontmost(),
             details: details,
             snapshot: snapshot
         )
-        if reason == nil, case .value(let textSnapshot) = snapshot {
+        if decision == .streamReadable, case .value(let textSnapshot) = snapshot {
             preStreamFieldValue = textSnapshot.value
         }
-        return reason
+        return decision
     }
 
-    private func fallBack(_ reason: InFieldStreamingFallbackReason) {
-        phase = .fallback(reason)
+    private func stop(_ reason: InFieldStreamingStopReason) {
+        phase = .stopped(reason)
         Logger.injection.info(
-            "In-field streaming fell back to pill transcript: \(reason.rawValue, privacy: .public)"
+            "In-field streaming stopped silently: \(reason.rawValue, privacy: .public)"
         )
     }
 
@@ -462,9 +583,14 @@ final class InFieldStreamingSession {
     /// or delete only the divergent tail and insert the replacement. Any
     /// unverifiable or failed step leaves the field alone (or as-edited),
     /// puts the final text on the clipboard, and reports failure honestly.
+    /// Blind-mode sessions take the count-based path instead.
     func finalize(finalText: String) async -> FinalizeOutcome {
         defer { phase = .finished }
         guard !planner.streamedText.isEmpty else { return .notStreamed }
+
+        if case .blind = mode {
+            return await finalizeBlind(finalText: finalText)
+        }
 
         await activateTargetOnce()
 
@@ -531,6 +657,66 @@ final class InFieldStreamingSession {
             await deliverReconciliationText(replacement)
             return await verifyReconciliation(finalText: finalText)
         }
+    }
+
+    /// Blind-mode finalize: no AX read-back exists, so the edit is planned
+    /// from character counts alone (`BlindStreamingReconciliation.plan`) and
+    /// applied unverified. The readable-mode caret guard cannot apply — blind
+    /// mode's protection is that it only ever backspaces at most the
+    /// character count this session itself typed, immediately after its own
+    /// last increment, and every character it types has newlines flattened to
+    /// spaces (never pasted, never a raw Return — Enter submits chat inputs
+    /// and executes shell commands). Blind dictation trades exact multi-line
+    /// formatting for in-place delivery.
+    private func finalizeBlind(finalText: String) async -> FinalizeOutcome {
+        await activateTargetOnce()
+
+        // The only checks blind mode can run: the keystrokes must go to the
+        // target app, and never into a field that became secure.
+        guard isTargetFrontmost() else {
+            clipboard.setString(finalText)
+            Logger.injection.warning(
+                "Blind streaming reconciliation aborted — target app not frontmost; final text left on clipboard"
+            )
+            return .failedNeedsManualPaste
+        }
+        if TextInjectionService.assessSecureField(
+            inspector.focusedElementDetails(processIdentifier: targetPid)
+        ) == .blocked {
+            clipboard.setString(finalText)
+            Logger.injection.warning(
+                "Blind streaming reconciliation aborted — focused element is a secure field; final text left on clipboard"
+            )
+            return .failedNeedsManualPaste
+        }
+
+        switch BlindStreamingReconciliation.plan(streamedText: planner.streamedText, finalText: finalText) {
+        case .alreadyExact:
+            Logger.injection.info("Blind streaming reconciliation: streamed span already matches the flattened final text")
+            return .completed
+
+        case .appendRemainder(let remainder):
+            keyPoster.postTypedText(remainder)
+
+        case .replaceDivergentTail(let deleteCharacters, let replacement):
+            // deleteCharacters is bounded by the streamed span's length by
+            // construction — never more than this session itself typed.
+            keyPoster.postBackspaces(count: deleteCharacters)
+            if settleNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: settleNanoseconds)
+            }
+            keyPoster.postTypedText(replacement)
+
+        case .abortFieldMismatch:
+            // Unreachable: the blind planner never produces this case (there
+            // is no field to mismatch). Kept exhaustive and honest anyway.
+            clipboard.setString(finalText)
+            return .failedNeedsManualPaste
+        }
+        if settleNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: settleNanoseconds)
+        }
+        return .completed
     }
 
     /// True when the caret is readable but NOT at a valid streamed-span end.

@@ -110,10 +110,12 @@ final class AppSettings: ObservableObject {
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
     /// In-field streaming: committed words are typed at the caret while the
-    /// user is still speaking, and the pill stays compact. Falls back to the
-    /// pill transcript wherever streaming is unsafe (terminals, secure
-    /// fields, unreadable elements, focus changes). Streamed sessions defer
-    /// LLM polish so finished words are never rewritten in front of the user.
+    /// user is still speaking, and the pill stays compact (it never displays
+    /// dictated text). Terminals and unreadable elements stream BLIND (typed
+    /// increments, count-based reconciliation, newlines flattened); secure
+    /// fields refuse outright; focus loss stops typing. Streamed sessions
+    /// defer LLM polish so finished words are never rewritten in front of
+    /// the user.
     @AppStorage("inFieldStreamingEnabled") var inFieldStreamingEnabled: Bool = true
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
     @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
