@@ -12,6 +12,10 @@ struct GeneralSettingsView: View {
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
     @AppStorage("spokenFormattingEnabled") private var spokenFormattingEnabled = true
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 90
+    @AppStorage("handsFreeModeEnabled") private var handsFreeModeEnabled = true
+    @AppStorage("handsFreeSilenceStopEnabled") private var handsFreeSilenceStopEnabled = true
+    @AppStorage("handsFreeSilenceStopSeconds") private var handsFreeSilenceStopSeconds = 2.0
+    @AppStorage("handsFreeMaxRecordingDuration") private var handsFreeMaxRecordingDuration = 600
     @State private var showClearConfirmation = false
     @State private var showResetConfirmation = false
 
@@ -90,6 +94,8 @@ struct GeneralSettingsView: View {
             .padding(Spacing.lg)
             .dashboardCard()
 
+            handsFreeCard
+
             CloudSyncSettingsView()
 
             VStack(alignment: .leading, spacing: Spacing.md) {
@@ -101,7 +107,9 @@ struct GeneralSettingsView: View {
                     shortcutRow(
                         name: .pushToTalk,
                         title: "Push to Talk",
-                        subtitle: "Hold to start and release to transcribe."
+                        subtitle: handsFreeModeEnabled
+                            ? "Hold to talk, or tap to start hands-free."
+                            : "Hold to start and release to transcribe."
                     )
 
                     divider
@@ -170,6 +178,80 @@ struct GeneralSettingsView: View {
         }
         .padding(Spacing.xxl)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Hands-free (tap-to-toggle) dictation: enable/disable, silence
+    /// auto-stop window, and the hands-free duration cap.
+    private var handsFreeCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            toggleRow(
+                title: "Hands-Free Dictation",
+                subtitle: "Tap the dictation shortcut to start without holding it. Tap again to stop. Holding still works as push to talk.",
+                isOn: $handsFreeModeEnabled
+            )
+
+            if handsFreeModeEnabled {
+                divider
+
+                toggleRow(
+                    title: "Stop After Silence",
+                    subtitle: "Automatically finish hands-free dictation after a pause in speech.",
+                    isOn: $handsFreeSilenceStopEnabled
+                )
+
+                if handsFreeSilenceStopEnabled {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        HStack {
+                            Text("Silence Before Stopping")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
+
+                            Spacer()
+
+                            Text(String(format: "%.1fs", handsFreeSilenceStopSeconds))
+                                .font(.Orttaai.mono)
+                                .foregroundStyle(Color.Orttaai.accent)
+                        }
+
+                        Slider(value: $handsFreeSilenceStopSeconds, in: 1...5, step: 0.5)
+                            .tint(Color.Orttaai.accent)
+                    }
+                    .padding(.top, Spacing.md)
+                }
+
+                divider
+
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack {
+                        Text("Hands-Free Max Duration")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+
+                        Spacer()
+
+                        Text("\(handsFreeMaxRecordingDuration / 60) min")
+                            .font(.Orttaai.mono)
+                            .foregroundStyle(Color.Orttaai.accent)
+                    }
+
+                    Slider(
+                        value: Binding(
+                            get: { Double(handsFreeMaxRecordingDuration) },
+                            set: { handsFreeMaxRecordingDuration = Int($0) }
+                        ),
+                        in: 120...1800,
+                        step: 60
+                    )
+                    .tint(Color.Orttaai.accent)
+
+                    Text("Hands-free recordings get their own cap, separate from push to talk. The final 20 seconds show a countdown.")
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .dashboardCard()
     }
 
     private func updateLoginItem(enabled: Bool) {

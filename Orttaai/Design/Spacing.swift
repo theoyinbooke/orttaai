@@ -45,7 +45,9 @@ enum WindowSize {
     static let settings = CGSize(width: 920, height: 720)
     static let history = CGSize(width: 480, height: 600)
     static let historyMin = CGSize(width: 480, height: 300)
-    static let floatingPanelHandle = CGSize(width: 332, height: 32)
+    /// Wide enough for the hover hint's "Hold or tap …" copy when hands-free
+    /// mode is enabled.
+    static let floatingPanelHandle = CGSize(width: 372, height: 32)
     static let floatingPanelRecording = CGSize(width: 286, height: 42)
     /// Recording pill grown to fit the live transcript line under the waveform.
     static let floatingPanelRecordingTranscript = CGSize(width: 460, height: 66)

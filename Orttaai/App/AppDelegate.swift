@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastRecordingElapsedSeconds: Int?
     private var lastRecordingTargetAppName: String?
     private var lastRecordingLiveTranscript: LiveTranscript?
+    private var lastRecordingIsHandsFree: Bool?
     private var runtimeServicesStarted = false
     private var shortcutObserver: NSObjectProtocol?
     private var audioResetObserver: NSObjectProtocol?
@@ -68,7 +69,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager = WindowManager()
         floatingPanel = FloatingPanelController()
         floatingPanel?.onStartRecording = { [weak self] in
-            self?.coordinator?.startRecording()
+            // No key is held when starting from the mic button, so the
+            // session is hands-free from the outset (when enabled).
+            self?.coordinator?.startHandsFreeRecording()
         }
         floatingPanel?.onStopRecording = { [weak self] in
             self?.coordinator?.stopRecording()
@@ -121,7 +124,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             guard let self, let settings = self.appState?.settings else { return }
             self.statusBarMenu?.updatePolishMode(isOn: settings.localLLMPolishEnabled)
+            self.floatingPanel?.handsFreeHintEnabled = settings.handsFreeModeEnabled
         }
+        floatingPanel?.handsFreeHintEnabled = state.settings.handsFreeModeEnabled
         statusBarMenu?.setHomePreviewMode(!isHomeWorkspaceAutoOpenEnabled)
 
         statusItem.menu = statusBarMenu?.menu
@@ -345,18 +350,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         isPushToTalkPressed = false
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
 
+        // Recording starts on key-down immediately. The coordinator's gesture
+        // interpreter classifies the matching key-up: quick tap = hands-free
+        // toggle, hold = classic push-to-talk release.
         KeyboardShortcuts.onKeyDown(for: .pushToTalk) { [weak self] in
             guard let self = self, !self.isPushToTalkPressed else { return }
             self.isPushToTalkPressed = true
             Logger.hotkey.info("Push-to-talk key down")
-            self.coordinator?.startRecording()
+            self.coordinator?.handleHotkeyDown()
         }
 
         KeyboardShortcuts.onKeyUp(for: .pushToTalk) { [weak self] in
             guard let self = self, self.isPushToTalkPressed else { return }
             self.isPushToTalkPressed = false
             Logger.hotkey.info("Push-to-talk key up")
-            self.coordinator?.stopRecording()
+            self.coordinator?.handleHotkeyUp()
         }
 
         Logger.hotkey.info("Hotkey handlers registered")
@@ -632,15 +640,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             postDictationSignal(.idle, message: "Ready")
 
         case .recording:
+            let isHandsFree = coordinator?.isHandsFreeRecording ?? false
             startWaveformUpdates()
             statusBarController?.updateIcon(state: .recording)
-            statusBarMenu?.updateStatusLine("Recording...")
+            statusBarMenu?.updateStatusLine(isHandsFree ? "Recording (hands-free)..." : "Recording...")
             floatingPanel?.transitionToRecording(
                 content: WaveformView(
                     audioLevel: coordinator?.audioLevel ?? 0,
                     elapsedSeconds: coordinator?.recordingElapsedSeconds ?? 0,
                     countdownSeconds: coordinator?.countdownSeconds,
                     liveTranscript: coordinator?.liveTranscript,
+                    isHandsFree: isHandsFree,
                     onStop: { [weak self] in
                         self?.coordinator?.stopRecording()
                     }
@@ -652,12 +662,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             lastRecordingTargetAppName = targetAppName
             lastRecordingCountdown = countdownSeconds
             lastRecordingElapsedSeconds = elapsedSeconds
+            lastRecordingIsHandsFree = isHandsFree
             postDictationSignal(
                 .recording,
                 message: "Listening... Speak now.",
                 targetAppName: targetAppName,
                 countdownSeconds: countdownSeconds,
-                elapsedRecordingSeconds: elapsedSeconds
+                elapsedRecordingSeconds: elapsedSeconds,
+                isHandsFree: isHandsFree
             )
 
         case .processing(let estimate):
@@ -695,6 +707,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastRecordingElapsedSeconds = coordinator?.recordingElapsedSeconds
         lastRecordingTargetAppName = coordinator?.targetAppName
         lastRecordingLiveTranscript = coordinator?.liveTranscript
+        lastRecordingIsHandsFree = coordinator?.isHandsFreeRecording
         waveformUpdateTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self = self, let coordinator = self.coordinator else { break }
@@ -705,21 +718,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let countdownSeconds = coordinator.countdownSeconds
                 let targetAppName = coordinator.targetAppName
                 let liveTranscript = coordinator.liveTranscript
+                let isHandsFree = coordinator.isHandsFreeRecording
                 let bucket = Int((level * 24).rounded())
                 let didWaveformChange = bucket != self.lastWaveformLevelBucket
                 let didElapsedChange = elapsedSeconds != self.lastRecordingElapsedSeconds
                 let didCountdownChange = countdownSeconds != self.lastRecordingCountdown
                 let didTranscriptChange = liveTranscript != self.lastRecordingLiveTranscript
+                let didModeChange = isHandsFree != self.lastRecordingIsHandsFree
                 let didSignalChange = didCountdownChange ||
                     targetAppName != self.lastRecordingTargetAppName ||
-                    didElapsedChange
+                    didElapsedChange ||
+                    didModeChange
 
                 if didTranscriptChange {
                     self.lastRecordingLiveTranscript = liveTranscript
                     self.floatingPanel?.setRecordingTranscriptVisible(liveTranscript?.isEmpty == false)
                 }
 
-                if didWaveformChange || didElapsedChange || didCountdownChange || didTranscriptChange {
+                if didModeChange {
+                    // Tap promotion happens mid-recording without a state
+                    // transition; keep the menu bar honest here.
+                    self.lastRecordingIsHandsFree = isHandsFree
+                    self.statusBarMenu?.updateStatusLine(
+                        isHandsFree ? "Recording (hands-free)..." : "Recording..."
+                    )
+                }
+
+                if didWaveformChange || didElapsedChange || didCountdownChange || didTranscriptChange || didModeChange {
                     self.lastWaveformLevelBucket = bucket
                     self.floatingPanel?.updateContent(
                         WaveformView(
@@ -727,6 +752,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             elapsedSeconds: elapsedSeconds,
                             countdownSeconds: countdownSeconds,
                             liveTranscript: liveTranscript,
+                            isHandsFree: isHandsFree,
                             onStop: { [weak self] in
                                 self?.coordinator?.stopRecording()
                             }
@@ -743,7 +769,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         targetAppName: targetAppName,
                         countdownSeconds: countdownSeconds,
                         elapsedRecordingSeconds: elapsedSeconds,
-                        audioLevel: level
+                        audioLevel: level,
+                        isHandsFree: isHandsFree
                     )
                 }
 
@@ -762,6 +789,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastRecordingElapsedSeconds = nil
         lastRecordingTargetAppName = nil
         lastRecordingLiveTranscript = nil
+        lastRecordingIsHandsFree = nil
     }
 
     private func postDictationSignal(
@@ -770,12 +798,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         targetAppName: String? = nil,
         countdownSeconds: Int? = nil,
         elapsedRecordingSeconds: Int? = nil,
-        audioLevel: Float? = nil
+        audioLevel: Float? = nil,
+        isHandsFree: Bool? = nil
     ) {
         var userInfo: [String: Any] = [
             DictationNotificationKey.state: state.rawValue,
             DictationNotificationKey.message: message
         ]
+        if let isHandsFree {
+            userInfo[DictationNotificationKey.isHandsFree] = isHandsFree
+        }
         if let targetAppName, !targetAppName.isEmpty {
             userInfo[DictationNotificationKey.targetAppName] = targetAppName
         }

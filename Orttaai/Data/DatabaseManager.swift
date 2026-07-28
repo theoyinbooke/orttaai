@@ -2744,3 +2744,46 @@ private extension Array where Element == Int64 {
         return "(" + [String](repeating: "?", count: count).joined(separator: ",") + ")"
     }
 }
+
+// MARK: - Transcription history seam
+
+/// Coordinator-facing seam over transcription history persistence so the
+/// bounded-retry failure path (and its user-visible breadcrumb) can be
+/// exercised in tests without a real database.
+protocol TranscriptionHistoryStoring: AnyObject {
+    func saveTranscriptionEntry(
+        text: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingMs: Int,
+        modelId: String,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String
+    ) throws
+    func logSkippedRecording(duration: TimeInterval)
+}
+
+extension DatabaseManager: TranscriptionHistoryStoring {
+    func saveTranscriptionEntry(
+        text: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingMs: Int,
+        modelId: String,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String
+    ) throws {
+        try saveTranscription(
+            text: text,
+            appName: appName,
+            bundleID: bundleID,
+            recordingMs: recordingMs,
+            processingMs: processingMs,
+            modelId: modelId,
+            latency: latency,
+            injectionMethod: injectionMethod
+        )
+    }
+}

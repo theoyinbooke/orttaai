@@ -35,6 +35,9 @@ actor MockTranscriptionService: Transcribing {
     var isLoaded: Bool = true
     var mockResult: String = "Hello world"
     var shouldFail = false
+    /// Artificial transcription latency so tests can observe the coordinator
+    /// while it is genuinely in the processing state.
+    var transcribeDelayNs: UInt64 = 0
     var shouldFailModelLoad = false
     var mockLoadedModelID: String? = "test-model"
     var loadedModelNames: [String] = []
@@ -58,6 +61,9 @@ actor MockTranscriptionService: Transcribing {
     }
 
     func transcribe(audioSamples: [Float]) async throws -> String {
+        if transcribeDelayNs > 0 {
+            try? await Task.sleep(nanoseconds: transcribeDelayNs)
+        }
         if shouldFail {
             throw OrttaaiError.transcriptionFailed(underlying: NSError(
                 domain: "test",
@@ -137,6 +143,39 @@ final class MockInjectionService: TextInjecting {
     }
 }
 
+/// History store whose writes always fail, for exercising the bounded-retry
+/// failure path end to end.
+final class FailingHistoryStore: TranscriptionHistoryStoring {
+    struct WriteError: Error {}
+
+    private let lock = NSLock()
+    private var _saveAttempts = 0
+
+    var saveAttempts: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _saveAttempts
+    }
+
+    func saveTranscriptionEntry(
+        text: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingMs: Int,
+        modelId: String,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String
+    ) throws {
+        lock.lock()
+        _saveAttempts += 1
+        lock.unlock()
+        throw WriteError()
+    }
+
+    func logSkippedRecording(duration: TimeInterval) {}
+}
+
 // MARK: - Tests
 
 final class DictationCoordinatorTests: XCTestCase {
@@ -147,6 +186,9 @@ final class DictationCoordinatorTests: XCTestCase {
     var databaseManager: DatabaseManager!
     var settings: AppSettings!
     var coordinator: DictationCoordinator!
+    /// Deterministic gesture clock. Recording durations still use real time;
+    /// only tap/hold disambiguation reads this.
+    var gestureNow = Date()
 
     @MainActor
     override func setUpWithError() throws {
@@ -159,14 +201,30 @@ final class DictationCoordinatorTests: XCTestCase {
         databaseManager = try DatabaseManager(dbQueue: dbQueue)
         settings = AppSettings()
 
+        gestureNow = Date()
         coordinator = DictationCoordinator(
             audioService: audioService,
             transcriptionService: transcriptionService,
             textProcessor: textProcessor,
             injectionService: injectionService,
             databaseManager: databaseManager,
-            settings: settings
+            settings: settings,
+            now: { [weak self] in self?.gestureNow ?? Date() }
         )
+    }
+
+    override func tearDownWithError() throws {
+        // Hands-free settings write through @AppStorage to standard defaults;
+        // remove them so tests never leak state into each other or the host.
+        let defaults = UserDefaults.standard
+        for key in [
+            "handsFreeModeEnabled",
+            "handsFreeSilenceStopEnabled",
+            "handsFreeSilenceStopSeconds",
+            "handsFreeMaxRecordingDuration"
+        ] {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     @MainActor
@@ -510,7 +568,347 @@ final class DictationCoordinatorTests: XCTestCase {
         coordinator.stopRecording()
     }
 
+    // MARK: - Tap vs hold (hands-free toggle)
+
+    @MainActor
+    func testHotkeyDownStartsRecordingImmediately() {
+        settings.handsFreeModeEnabled = true
+        coordinator.handleHotkeyDown()
+
+        guard case .recording = coordinator.state else {
+            return XCTFail("Recording must start on key-down, never waiting for tap/hold disambiguation")
+        }
+        XCTAssertFalse(coordinator.isHandsFreeRecording, "A press always begins as push-to-talk")
+
+        gestureNow.addTimeInterval(1.0)
+        coordinator.handleHotkeyUp()
+    }
+
+    @MainActor
+    func testTapPromotesToHandsFree() {
+        settings.handsFreeModeEnabled = true
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+
+        guard case .recording = coordinator.state else {
+            return XCTFail("A tap must keep the recording running")
+        }
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testHoldReleaseStopsRecording() {
+        settings.handsFreeModeEnabled = true
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.5)
+        coordinator.handleHotkeyUp()
+
+        if case .recording = coordinator.state {
+            XCTFail("Releasing a hold must stop recording — push-to-talk semantics unchanged")
+        }
+        XCTAssertFalse(coordinator.isHandsFreeRecording)
+    }
+
+    @MainActor
+    func testReleaseAtTapThresholdBoundaryIsHold() {
+        settings.handsFreeModeEnabled = true
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(HotkeyGestureInterpreter.tapMaxDuration)
+        coordinator.handleHotkeyUp()
+
+        if case .recording = coordinator.state {
+            XCTFail("A release exactly at the threshold classifies as a hold and must stop")
+        }
+    }
+
+    @MainActor
+    func testReleaseJustUnderTapThresholdPromotes() {
+        settings.handsFreeModeEnabled = true
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(HotkeyGestureInterpreter.tapMaxDuration - 0.01)
+        coordinator.handleHotkeyUp()
+
+        XCTAssertTrue(
+            coordinator.isHandsFreeRecording,
+            "A hold shorter than the threshold is a tap by definition and goes hands-free"
+        )
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testSecondTapStopsHandsFreeRecording() async {
+        settings.handsFreeModeEnabled = true
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        // Real time must pass the 0.5s minimum so the stop finalizes.
+        try? await Task.sleep(nanoseconds: 700_000_000)
+
+        gestureNow.addTimeInterval(2.0)
+        coordinator.handleHotkeyDown()
+        if case .recording = coordinator.state {
+            XCTFail("Second tap must stop the hands-free recording")
+        }
+
+        // The key-up that follows the stopping tap must not start anything.
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        if case .recording = coordinator.state {
+            XCTFail("The release after a stopping tap must be inert")
+        }
+
+        let becameIdle = await waitUntil { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle, "The stopped hands-free recording must finalize back to idle")
+        let finalizeCount = await transcriptionService.finalizeLiveTranscriptionCallCount
+        XCTAssertEqual(finalizeCount, 1)
+    }
+
+    @MainActor
+    func testHotkeyEventsIgnoredWhileProcessing() async {
+        settings.handsFreeModeEnabled = true
+        await transcriptionService.setTranscribeDelayNsForTest(1_500_000_000)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        guard case .processing = coordinator.state else {
+            return XCTFail("Expected processing state, got \(coordinator.state)")
+        }
+
+        // A tap while processing must neither start a recording nor disturb
+        // the in-flight pipeline.
+        coordinator.handleHotkeyDown()
+        guard case .processing = coordinator.state else {
+            return XCTFail("Key-down while processing must be ignored, got \(coordinator.state)")
+        }
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        guard case .processing = coordinator.state else {
+            return XCTFail("Key-up while processing must be ignored, got \(coordinator.state)")
+        }
+
+        let becameIdle = await waitUntil(timeoutSeconds: 5) { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle)
+    }
+
+    @MainActor
+    func testHotkeyEventsInErrorStateAreHandled() {
+        audioService.shouldFail = true
+        coordinator.handleHotkeyDown()
+        guard case .error = coordinator.state else {
+            return XCTFail("Mic failure should land in error state")
+        }
+
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        guard case .error = coordinator.state else {
+            return XCTFail("Key-up in error state must be inert")
+        }
+
+        coordinator.handleHotkeyDown()
+        guard case .error = coordinator.state else {
+            return XCTFail("Key-down in error state must be inert")
+        }
+    }
+
+    @MainActor
+    func testTapStopsRecordingWhenHandsFreeDisabled() {
+        settings.handsFreeModeEnabled = false
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+
+        if case .recording = coordinator.state {
+            XCTFail("With hands-free disabled, every release stops — pure push-to-talk")
+        }
+        XCTAssertFalse(coordinator.isHandsFreeRecording)
+    }
+
+    @MainActor
+    func testStartHandsFreeRecordingFromPanelButton() {
+        settings.handsFreeModeEnabled = true
+        coordinator.startHandsFreeRecording()
+        XCTAssertTrue(coordinator.isHandsFreeRecording, "Mic-button sessions hold no key and are hands-free")
+        coordinator.stopRecording()
+
+        settings.handsFreeModeEnabled = false
+        coordinator.startHandsFreeRecording()
+        if case .recording = coordinator.state {
+            XCTAssertFalse(coordinator.isHandsFreeRecording, "Disabled setting reverts to a plain recording")
+        }
+        coordinator.stopRecording()
+    }
+
+    // MARK: - Hands-free silence auto-stop
+
+    @MainActor
+    func testHandsFreeSilenceAutoStops() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        // 1s of speech followed by 1.25s of dead silence.
+        audioService.mockSamples =
+            Array(repeating: 0.1, count: 16_000) + Array(repeating: 0, count: 20_000)
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        let stopped = await waitUntil(timeoutSeconds: 4) {
+            if case .recording = self.coordinator.state { return false }
+            return true
+        }
+        XCTAssertTrue(stopped, "Sustained trailing silence must auto-stop a hands-free recording")
+
+        // Let processing complete so the finalize call has landed.
+        let becameIdle = await waitUntil(timeoutSeconds: 4) { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle)
+        let finalizeCount = await transcriptionService.finalizeLiveTranscriptionCallCount
+        XCTAssertEqual(finalizeCount, 1, "Auto-stop must finalize, not skip, the recording")
+    }
+
+    @MainActor
+    func testHandsFreeSilenceDoesNotStopWhenSpeechResumes() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        // Speech, a 1.2s pause, then speech again at the tail: the trailing
+        // silence window never fills.
+        audioService.mockSamples =
+            Array(repeating: 0.1, count: 16_000)
+            + Array(repeating: 0, count: 19_200)
+            + Array(repeating: 0.1, count: 3_200)
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        guard case .recording = coordinator.state else {
+            return XCTFail("Speech resuming before the silence threshold must keep recording")
+        }
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testHandsFreeSilenceStopDisabledKeepsRecording() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopEnabled = false
+        audioService.mockSamples =
+            Array(repeating: 0.1, count: 16_000) + Array(repeating: 0, count: 32_000)
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        guard case .recording = coordinator.state else {
+            return XCTFail("With silence auto-stop off, only tap/stop/cap end a hands-free recording")
+        }
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testPushToTalkIsNeverSilenceAutoStopped() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        audioService.mockSamples =
+            Array(repeating: 0.1, count: 16_000) + Array(repeating: 0, count: 32_000)
+
+        coordinator.startRecording() // hold, never promoted
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+        guard case .recording = coordinator.state else {
+            return XCTFail("Silence auto-stop must never apply to push-to-talk")
+        }
+        XCTAssertFalse(coordinator.isHandsFreeRecording)
+        coordinator.stopRecording()
+    }
+
+    // MARK: - Hands-free duration cap
+
+    @MainActor
+    func testHandsFreeCapCountsDownAndStops() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopEnabled = false
+        settings.handsFreeMaxRecordingDuration = 3
+        settings.maxRecordingDuration = 90
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        let sawCountdown = await waitUntil(timeoutSeconds: 2) {
+            self.coordinator.countdownSeconds != nil
+        }
+        XCTAssertTrue(sawCountdown, "The hands-free cap reuses the countdown warning UX")
+
+        let stopped = await waitUntil(timeoutSeconds: 6) {
+            if case .recording = self.coordinator.state { return false }
+            return true
+        }
+        XCTAssertTrue(stopped, "The hands-free cap must stop the recording — not the push-to-talk cap")
+    }
+
+    // MARK: - History persistence failure
+
+    @MainActor
+    func testHistorySaveFailurePostsBreadcrumbNotification() async {
+        let failingStore = FailingHistoryStore()
+        coordinator = DictationCoordinator(
+            audioService: audioService,
+            transcriptionService: transcriptionService,
+            textProcessor: textProcessor,
+            injectionService: injectionService,
+            databaseManager: failingStore,
+            settings: settings,
+            now: { [weak self] in self?.gestureNow ?? Date() }
+        )
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        let notified = XCTNSNotificationExpectation(name: .transcriptionHistorySaveDidFail)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        await fulfillment(of: [notified], timeout: 5)
+        XCTAssertEqual(
+            failingStore.saveAttempts,
+            DictationCoordinator.historySaveAttempts,
+            "The store must be retried the full bounded-retry budget before failing loudly"
+        )
+    }
+
     // MARK: - Helpers
+
+    /// Polls `condition` on the main actor until it holds or the timeout passes.
+    @MainActor
+    private func waitUntil(
+        timeoutSeconds: Double = 3,
+        _ condition: @escaping () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return condition()
+    }
 
     private struct PersistenceTimeout: Error {}
 
@@ -534,5 +932,9 @@ private extension MockTranscriptionService {
         self.isLoaded = isLoaded
         loadedModelNames = []
         mockLoadedModelID = nil
+    }
+
+    func setTranscribeDelayNsForTest(_ delayNs: UInt64) {
+        transcribeDelayNs = delayNs
     }
 }

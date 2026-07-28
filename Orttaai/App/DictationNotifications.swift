@@ -30,6 +30,7 @@ enum DictationNotificationKey {
     static let countdownSeconds = "countdownSeconds"
     static let elapsedRecordingSeconds = "elapsedRecordingSeconds"
     static let audioLevel = "audioLevel"
+    static let isHandsFree = "isHandsFree"
 }
 
 enum AudioPipelineResetNotificationKey {

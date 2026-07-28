@@ -9,6 +9,9 @@ final class FloatingPanelController: NSObject {
     var onStartRecording: (() -> Void)?
     var onStopRecording: (() -> Void)?
     var shortcutHintLabel: String = "Ctrl + Shift + Space"
+    /// Mirrors the hands-free setting so the hover hint teaches the tap
+    /// gesture only when it actually works.
+    var handsFreeHintEnabled: Bool = true
 
     private var panel: NSPanel!
     private var hostingView: NSHostingView<AnyView>?
@@ -222,6 +225,7 @@ final class FloatingPanelController: NSObject {
 
         let hintView = FloatingPanelHintView(
             shortcutLabel: shortcutHintLabel,
+            handsFreeEnabled: handsFreeHintEnabled,
             onStart: { [weak self] in
                 self?.onStartRecording?()
             }

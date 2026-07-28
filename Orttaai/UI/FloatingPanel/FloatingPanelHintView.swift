@@ -5,6 +5,8 @@ import SwiftUI
 
 struct FloatingPanelHintView: View {
     let shortcutLabel: String
+    /// When hands-free mode is on, the hint also teaches the tap gesture.
+    var handsFreeEnabled: Bool = false
     let onStart: () -> Void
 
     var body: some View {
@@ -17,7 +19,7 @@ struct FloatingPanelHintView: View {
                     .foregroundStyle(Color.Orttaai.accent)
 
                 HStack(spacing: 4) {
-                    Text("Hold")
+                    Text(handsFreeEnabled ? "Hold or tap" : "Hold")
                         .foregroundStyle(Color.Orttaai.textSecondary)
 
                     Text(shortcutLabel)
@@ -35,6 +37,11 @@ struct FloatingPanelHintView: View {
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
+                .help(
+                    handsFreeEnabled
+                        ? "Hold to talk, or tap to go hands-free — tap again or pause to stop."
+                        : "Hold the shortcut and speak; release to insert the text."
+                )
 
                 Spacer(minLength: 0)
 

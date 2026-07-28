@@ -31,6 +31,15 @@ final class DictationCoordinator {
         }
     }
 
+    /// How the active recording is being driven. Push-to-talk is the classic
+    /// hold-the-hotkey mode; hands-free keeps recording after the key is
+    /// released (started by a tap) and stops on tap, stop button, sustained
+    /// silence, or its own duration cap.
+    enum RecordingMode: Equatable {
+        case pushToTalk
+        case handsFree
+    }
+
     var onStateChange: ((State, State?) -> Void)?
 
     static func resolvedInputDeviceID(from selectedAudioDeviceID: String?) -> AudioDeviceID? {
@@ -48,6 +57,9 @@ final class DictationCoordinator {
         }
     }
     private(set) var countdownSeconds: Int?
+    /// Mode of the recording in progress. Only meaningful while `state` is
+    /// `.recording`; reset to `.pushToTalk` whenever a new recording starts.
+    private(set) var recordingMode: RecordingMode = .pushToTalk
     /// In-progress transcript assembled from the live session's clip commits
     /// and speculative tail decodes, for display while recording. Nil when no
     /// partial text is available (UI falls back to waveform-only).
@@ -57,11 +69,22 @@ final class DictationCoordinator {
     private let transcriptionService: any Transcribing
     private let textProcessor: TextProcessor
     private let injectionService: any TextInjecting
-    private let databaseManager: DatabaseManager
+    private let historyStore: any TranscriptionHistoryStoring
     private let settings: AppSettings
+    /// Injectable clock for the tap/hold gesture logic so disambiguation is
+    /// deterministic under test. Recording timing itself still uses `Date()`.
+    private let now: () -> Date
+    private var hotkeyGesture = HotkeyGestureInterpreter()
 
+    /// Push-to-talk is bounded by the user-set max duration; hands-free gets
+    /// its own, much more generous cap.
     private var maxDuration: TimeInterval {
-        TimeInterval(settings.maxRecordingDuration)
+        switch recordingMode {
+        case .pushToTalk:
+            return TimeInterval(settings.maxRecordingDuration)
+        case .handsFree:
+            return TimeInterval(settings.handsFreeMaxRecordingDuration)
+        }
     }
     /// The countdown (and its red warning treatment in the UI) covers the final
     /// 20 seconds of the recording window.
@@ -91,15 +114,17 @@ final class DictationCoordinator {
         transcriptionService: any Transcribing,
         textProcessor: TextProcessor,
         injectionService: any TextInjecting,
-        databaseManager: DatabaseManager,
-        settings: AppSettings
+        databaseManager: any TranscriptionHistoryStoring,
+        settings: AppSettings,
+        now: @escaping () -> Date = Date.init
     ) {
         self.audioService = audioService
         self.transcriptionService = transcriptionService
         self.textProcessor = textProcessor
         self.injectionService = injectionService
-        self.databaseManager = databaseManager
+        self.historyStore = databaseManager
         self.settings = settings
+        self.now = now
     }
 
     var audioLevel: Float {
@@ -117,6 +142,71 @@ final class DictationCoordinator {
         return max(0, Int(Date().timeIntervalSince(startTime)))
     }
 
+    /// True only while a hands-free recording is in progress.
+    var isHandsFreeRecording: Bool {
+        guard case .recording = state else { return false }
+        return recordingMode == .handsFree
+    }
+
+    // MARK: - Hotkey gestures (tap vs hold)
+
+    /// Key-down on the push-to-talk hotkey. Recording starts immediately on
+    /// key-down in idle — tap/hold disambiguation never delays capture. While
+    /// a hands-free recording is active, a key-down stops it (second tap).
+    /// In processing/injecting/error the event is ignored.
+    func handleHotkeyDown() {
+        switch state {
+        case .idle:
+            hotkeyGesture.recordPress(at: now().timeIntervalSinceReferenceDate)
+            startRecording()
+            if case .recording = state {
+                // Press armed; the matching key-up classifies tap vs hold.
+            } else {
+                // Recording failed to start — nothing for key-up to classify.
+                hotkeyGesture.reset()
+            }
+
+        case .recording:
+            if recordingMode == .handsFree {
+                // Second tap ends the hands-free session. The key-up that
+                // follows finds no recorded press and is ignored.
+                hotkeyGesture.reset()
+                Logger.dictation.info("Hands-free recording stopped by hotkey tap")
+                stopRecording()
+            }
+            // Push-to-talk key repeats are filtered by the caller; a stray
+            // key-down while already recording push-to-talk is a no-op.
+
+        case .processing, .injecting, .error:
+            hotkeyGesture.reset()
+            Logger.dictation.info("Ignoring hotkey down — busy (state: \(String(describing: self.state)))")
+        }
+    }
+
+    /// Key-up on the push-to-talk hotkey. A quick release (tap) promotes the
+    /// already-running recording to hands-free; a hold release stops it.
+    func handleHotkeyUp() {
+        let action = hotkeyGesture.evaluateRelease(
+            at: now().timeIntervalSinceReferenceDate,
+            handsFreeEnabled: settings.handsFreeModeEnabled
+        )
+
+        guard case .recording = state, recordingMode == .pushToTalk else {
+            // Recording already ended (error, cap, stop button) or the key-up
+            // belongs to a hands-free stop tap — nothing to do.
+            return
+        }
+
+        switch action {
+        case .promoteToHandsFree:
+            promoteToHandsFree()
+        case .stopRecording:
+            stopRecording()
+        case .ignore:
+            break
+        }
+    }
+
     // MARK: - Public API
 
     func startRecording() {
@@ -124,6 +214,8 @@ final class DictationCoordinator {
             Logger.dictation.info("Ignoring startRecording — not idle (state: \(String(describing: self.state)))")
             return
         }
+
+        recordingMode = .pushToTalk
 
         do {
             // Capture the target app NOW, before the floating panel appears
@@ -152,6 +244,28 @@ final class DictationCoordinator {
             autoDismissError()
             Logger.dictation.error("Failed to start recording: \(error.localizedDescription)")
         }
+    }
+
+    /// Starts a recording that is hands-free from the outset (no key is held
+    /// to release later). Used by the floating panel's mic button. Falls back
+    /// to a plain recording when hands-free is disabled in settings.
+    func startHandsFreeRecording() {
+        startRecording()
+        guard settings.handsFreeModeEnabled else { return }
+        promoteToHandsFree()
+    }
+
+    /// Switches an in-progress push-to-talk recording to hands-free (tap
+    /// gesture). Audio capture continues untouched; only the stop conditions
+    /// change: the cap timer restarts against the hands-free budget and the
+    /// silence auto-stop begins evaluating.
+    private func promoteToHandsFree() {
+        guard case .recording(let startTime) = state, recordingMode == .pushToTalk else { return }
+        recordingMode = .handsFree
+        capTimerTask?.cancel()
+        countdownSeconds = nil
+        startCapTimer(alreadyElapsed: Date().timeIntervalSince(startTime))
+        Logger.dictation.info("Hands-free mode engaged")
     }
 
     func stopRecording() {
@@ -185,7 +299,7 @@ final class DictationCoordinator {
             Task {
                 await transcriptionService.cancelLiveTranscriptionSession()
             }
-            databaseManager.logSkippedRecording(duration: duration)
+            historyStore.logSkippedRecording(duration: duration)
             Logger.dictation.info("Recording too short (\(duration, format: .fixed(precision: 2))s), skipping")
             return
         }
@@ -344,13 +458,13 @@ final class DictationCoordinator {
         latency: DictationLatencyTelemetry,
         injectionMethod: InjectionMethod
     ) {
-        let databaseManager = self.databaseManager
+        let historyStore = self.historyStore
         Task.detached(priority: .utility) {
             let failure = await BoundedRetry.run(
                 attempts: Self.historySaveAttempts,
                 delayNs: Self.historySaveRetryDelayNs
             ) {
-                try databaseManager.saveTranscription(
+                try historyStore.saveTranscriptionEntry(
                     text: text,
                     appName: appName,
                     bundleID: bundleID,
@@ -457,16 +571,22 @@ final class DictationCoordinator {
         }
     }
 
-    private func startCapTimer() {
+    /// Bounds the recording at the mode-appropriate max duration, surfacing
+    /// the countdown for the final warning window. `alreadyElapsed` accounts
+    /// for recording time spent before a mode switch (tap promotion restarts
+    /// the timer against the hands-free budget mid-recording).
+    private func startCapTimer(alreadyElapsed: TimeInterval = 0) {
         capTimerTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
 
             // Wait until the warning window begins
-            try? await Task.sleep(nanoseconds: UInt64(self.countdownStart * 1_000_000_000))
+            let warningDelay = max(0, self.countdownStart - alreadyElapsed)
+            try? await Task.sleep(nanoseconds: UInt64(warningDelay * 1_000_000_000))
 
             guard !Task.isCancelled else { return }
 
-            let remainingSeconds = Int(self.maxDuration - self.countdownStart)
+            let countdownFrom = max(self.countdownStart, alreadyElapsed)
+            let remainingSeconds = Int((self.maxDuration - countdownFrom).rounded())
             for i in stride(from: remainingSeconds, through: 1, by: -1) {
                 guard !Task.isCancelled else { return }
                 self.countdownSeconds = i
@@ -513,9 +633,31 @@ final class DictationCoordinator {
             while !Task.isCancelled {
                 let snapshot = self.audioService.currentSamplesSnapshot()
                 await self.transcriptionService.processLiveAudioSnapshot(snapshot)
+                // Hands-free silence auto-stop rides the same snapshot the
+                // live decode already takes — no second audio analysis path.
+                await MainActor.run {
+                    self.evaluateHandsFreeAutoStopIfNeeded(samples: snapshot)
+                }
                 try? await Task.sleep(nanoseconds: self.liveDecodePollIntervalNs)
             }
         }
+    }
+
+    /// Stops a hands-free recording once the trailing silence reaches the
+    /// user's configured window. Push-to-talk recordings are never affected.
+    @MainActor
+    private func evaluateHandsFreeAutoStopIfNeeded(samples: [Float]) {
+        guard case .recording(let startTime) = state, recordingMode == .handsFree else { return }
+        guard let silenceStop = settings.effectiveHandsFreeSilenceStopSeconds else { return }
+        // Never race the minimum-duration guard: an auto-stop should always
+        // produce a real finalization, not a skipped recording.
+        guard Date().timeIntervalSince(startTime) >= minDuration else { return }
+        guard HandsFreeAutoStop.shouldAutoStop(samples: samples, silenceDuration: silenceStop) else { return }
+
+        Logger.dictation.info(
+            "Hands-free auto-stop after \(silenceStop, format: .fixed(precision: 1))s of trailing silence"
+        )
+        stopRecording()
     }
 
     /// Ends the live event pipeline. The consumer task drains any buffered

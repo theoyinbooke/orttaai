@@ -9,6 +9,9 @@ struct WaveformView: View {
     let elapsedSeconds: Int
     var countdownSeconds: Int? = nil
     var liveTranscript: LiveTranscript? = nil
+    /// Hands-free (tap-to-toggle) recordings show a distinct glyph so the
+    /// pill never lies about whether releasing a key will stop anything.
+    var isHandsFree: Bool = false
     var onStop: (() -> Void)? = nil
 
     private let barCount = 16
@@ -53,6 +56,7 @@ struct WaveformView: View {
         .animation(.easeInOut(duration: 0.3), value: isCountingDown)
         .animation(.easeInOut(duration: 0.18), value: countdownSeconds)
         .animation(.easeInOut(duration: 0.18), value: hasTranscript)
+        .animation(.easeInOut(duration: 0.18), value: isHandsFree)
     }
 
     private var controlsRow: some View {
@@ -67,6 +71,17 @@ struct WaveformView: View {
             .shadow(color: activeTint.opacity(Double(audioLevel) * 0.5), radius: 6, y: 0)
 
             Spacer(minLength: 0)
+
+            if isHandsFree {
+                Image(systemName: "infinity")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(activeTint)
+                    .frame(width: 18, height: 18)
+                    .background(activeTint.opacity(0.14))
+                    .clipShape(Circle())
+                    .help("Hands-free — tap the shortcut, press stop, or pause to finish")
+                    .accessibilityLabel("Hands-free recording")
+            }
 
             HStack(spacing: Spacing.xs) {
                 Text(formattedElapsed)

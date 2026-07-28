@@ -47,7 +47,13 @@ final class AudioCaptureService: AudioCapturing {
     }
 
     private static let targetSampleRate = 16_000
-    private static let maxSupportedRecordingDurationSeconds = 120
+    /// Initial capacity reservation for the sample buffer. Recordings are NOT
+    /// truncated at this length: hands-free sessions routinely exceed it and
+    /// the array grows beyond the reservation with amortized O(1) appends,
+    /// bounded by the hands-free duration cap (the live transcription session
+    /// commits 15s clips as it goes, so finalize never re-decodes the whole
+    /// buffer regardless of length).
+    private static let preallocatedRecordingDurationSeconds = 120
     private static let startupRetryDelays: [TimeInterval] = [0.0, 0.2, 0.5]
     private static let postWakeStartupRetryDelays: [TimeInterval] = [0.0, 0.25, 0.6, 1.0]
     private static let callbackHandshakeTimeout: TimeInterval = 0.55
@@ -92,7 +98,7 @@ final class AudioCaptureService: AudioCapturing {
     private let captureSessionID = OSAllocatedUnfairLock(initialState: UUID())
     private var levelTimer: DispatchSourceTimer?
     private let captureBufferSize: AVAudioFrameCount = 1024
-    private let reservedSampleCapacity = AudioCaptureService.targetSampleRate * AudioCaptureService.maxSupportedRecordingDurationSeconds
+    private let reservedSampleCapacity = AudioCaptureService.targetSampleRate * AudioCaptureService.preallocatedRecordingDurationSeconds
     private var audioSystemMayBeStale = false
     private var tapInstalled = false
     private var captureBackend: CaptureBackend = .idle
