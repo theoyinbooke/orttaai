@@ -321,7 +321,7 @@ final class DictationCoordinator {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let selection = await self.selectionCapture.captureSelection(
+            let captureResult = await self.selectionCapture.captureSelection(
                 processIdentifier: frontmostApp?.processIdentifier
             )
             self.isCapturingEditSelection = false
@@ -331,7 +331,16 @@ final class DictationCoordinator {
                 return
             }
 
-            guard let selection,
+            if case .blockedSecureField = captureResult {
+                self.pendingEditGestureAction = nil
+                self.editHotkeyGesture.reset()
+                self.state = .error(message: "Can't edit password fields")
+                self.autoDismissError()
+                Logger.dictation.info("Edit command aborted — focused element is a secure field")
+                return
+            }
+
+            guard case .captured(let selection) = captureResult,
                   !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 self.pendingEditGestureAction = nil
                 self.editHotkeyGesture.reset()

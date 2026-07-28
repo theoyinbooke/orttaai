@@ -16,11 +16,19 @@ struct CapturedSelection: Equatable, Sendable {
     let method: SelectionCaptureMethod
 }
 
+enum SelectionCaptureResult: Equatable, Sendable {
+    case captured(CapturedSelection)
+    case noSelection
+    /// The focused element is a password/secure field. Its contents must
+    /// never be read — not even to hand to a local model.
+    case blockedSecureField
+}
+
 /// Coordinator-facing seam over selection capture so the edit-command flow
 /// (AX read first, Cmd+C-into-saved-clipboard fallback, no-selection error)
 /// can be exercised in unit tests without live AX or the real pasteboard.
 protocol SelectionCapturing: AnyObject {
-    func captureSelection(processIdentifier: pid_t?) async -> CapturedSelection?
+    func captureSelection(processIdentifier: pid_t?) async -> SelectionCaptureResult
 }
 
 /// Reads the selected text of the frontmost app:
@@ -49,13 +57,24 @@ final class SelectionCaptureService: SelectionCapturing {
         self.keyPoster = keyPoster
     }
 
-    func captureSelection(processIdentifier: pid_t?) async -> CapturedSelection? {
+    func captureSelection(processIdentifier: pid_t?) async -> SelectionCaptureResult {
+        // Step 0: secure-field guard, BEFORE any read. Injection re-checks at
+        // paste time, but by then the field's contents would already have
+        // reached the LLM — the same policy must gate capture itself.
+        // Same fail-open-on-AX-error semantics as TextInjectionService.
+        if TextInjectionService.assessSecureField(
+            inspector.focusedElementDetails(processIdentifier: processIdentifier)
+        ) == .blocked {
+            Logger.injection.info("Selection capture blocked: focused element is a secure text field")
+            return .blockedSecureField
+        }
+
         // Step 1: AX read — no side effects, works in most native apps.
         if case .value(let snapshot) = inspector.focusedElementTextSnapshot(processIdentifier: processIdentifier),
            let selected = snapshot.selectedText,
            !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Logger.injection.info("Selection captured via AX (\(selected.count) chars)")
-            return CapturedSelection(text: selected, method: .axRead)
+            return .captured(CapturedSelection(text: selected, method: .axRead))
         }
 
         // Step 2: Cmd+C fallback into a saved-and-restored clipboard.
@@ -75,9 +94,9 @@ final class SelectionCaptureService: SelectionCapturing {
 
         guard let copied, !copied.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             Logger.injection.info("Selection capture found no selection (AX empty, copy produced nothing)")
-            return nil
+            return .noSelection
         }
         Logger.injection.info("Selection captured via clipboard fallback (\(copied.count) chars)")
-        return CapturedSelection(text: copied, method: .clipboardCopy)
+        return .captured(CapturedSelection(text: copied, method: .clipboardCopy))
     }
 }

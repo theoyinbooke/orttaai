@@ -196,16 +196,20 @@ final class FailingHistoryStore: TranscriptionHistoryStoring {
 /// Scripted selection capture so edit-command orchestration is deterministic.
 final class MockSelectionCapture: SelectionCapturing {
     var result: CapturedSelection?
+    /// When set, wins over `result` — scripts non-captured outcomes
+    /// (e.g. .blockedSecureField) without churning existing call sites.
+    var scriptedResult: SelectionCaptureResult?
     /// Extra delay before returning, to exercise the capture-in-flight window.
     var delayNs: UInt64 = 0
     private(set) var captureCallCount = 0
 
-    func captureSelection(processIdentifier: pid_t?) async -> CapturedSelection? {
+    func captureSelection(processIdentifier: pid_t?) async -> SelectionCaptureResult {
         captureCallCount += 1
         if delayNs > 0 {
             try? await Task.sleep(nanoseconds: delayNs)
         }
-        return result
+        if let scriptedResult { return scriptedResult }
+        return result.map { .captured($0) } ?? .noSelection
     }
 }
 
@@ -968,6 +972,25 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(selectionCapture.captureCallCount, 1)
         let beginCallCount = await transcriptionService.beginLiveSessionCallCount
         XCTAssertEqual(beginCallCount, 0, "No recording may start without a selection")
+    }
+
+    @MainActor
+    func testEditCommandOnSecureFieldShowsHonestErrorAndNeverRecords() async {
+        settings.editCommandsEnabled = true
+        selectionCapture.scriptedResult = .blockedSecureField
+
+        coordinator.handleEditHotkeyDown()
+        let errored = await waitUntil {
+            if case .error = self.coordinator.state { return true }
+            return false
+        }
+
+        XCTAssertTrue(errored, "A secure focused field must surface a pill error")
+        if case .error(let message) = coordinator.state {
+            XCTAssertEqual(message, "Can't edit password fields")
+        }
+        let beginCallCount = await transcriptionService.beginLiveSessionCallCount
+        XCTAssertEqual(beginCallCount, 0, "No recording may start on a secure field")
     }
 
     @MainActor
