@@ -173,7 +173,54 @@ final class FailingHistoryStore: TranscriptionHistoryStoring {
         throw WriteError()
     }
 
+    func saveEditCommandEntry(
+        text: String,
+        instruction: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingMs: Int,
+        modelId: String,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String
+    ) throws {
+        lock.lock()
+        _saveAttempts += 1
+        lock.unlock()
+        throw WriteError()
+    }
+
     func logSkippedRecording(duration: TimeInterval) {}
+}
+
+/// Scripted selection capture so edit-command orchestration is deterministic.
+final class MockSelectionCapture: SelectionCapturing {
+    var result: CapturedSelection?
+    /// Extra delay before returning, to exercise the capture-in-flight window.
+    var delayNs: UInt64 = 0
+    private(set) var captureCallCount = 0
+
+    func captureSelection(processIdentifier: pid_t?) async -> CapturedSelection? {
+        captureCallCount += 1
+        if delayNs > 0 {
+            try? await Task.sleep(nanoseconds: delayNs)
+        }
+        return result
+    }
+}
+
+/// Scripted edit processor so the coordinator's edit pipeline is exercised
+/// without a live LLM.
+final class MockEditProcessor: EditCommandProcessing {
+    var outcome: EditCommandOutcome = .edited(text: "EDITED")
+    private(set) var receivedSelections: [String] = []
+    private(set) var receivedInstructions: [String] = []
+
+    func performEdit(selection: String, instruction: String) async -> EditCommandOutcome {
+        receivedSelections.append(selection)
+        receivedInstructions.append(instruction)
+        return outcome
+    }
 }
 
 // MARK: - Tests
@@ -185,6 +232,8 @@ final class DictationCoordinatorTests: XCTestCase {
     var injectionService: MockInjectionService!
     var databaseManager: DatabaseManager!
     var settings: AppSettings!
+    var selectionCapture: MockSelectionCapture!
+    var editProcessor: MockEditProcessor!
     var coordinator: DictationCoordinator!
     /// Deterministic gesture clock. Recording durations still use real time;
     /// only tap/hold disambiguation reads this.
@@ -196,6 +245,8 @@ final class DictationCoordinatorTests: XCTestCase {
         transcriptionService = MockTranscriptionService()
         textProcessor = MockTextProcessor()
         injectionService = MockInjectionService()
+        selectionCapture = MockSelectionCapture()
+        editProcessor = MockEditProcessor()
 
         let dbQueue = try DatabaseQueue(path: ":memory:")
         databaseManager = try DatabaseManager(dbQueue: dbQueue)
@@ -209,6 +260,8 @@ final class DictationCoordinatorTests: XCTestCase {
             injectionService: injectionService,
             databaseManager: databaseManager,
             settings: settings,
+            selectionCapture: selectionCapture,
+            editProcessor: editProcessor,
             now: { [weak self] in self?.gestureNow ?? Date() }
         )
     }
@@ -221,7 +274,8 @@ final class DictationCoordinatorTests: XCTestCase {
             "handsFreeModeEnabled",
             "handsFreeSilenceStopEnabled",
             "handsFreeSilenceStopSeconds",
-            "handsFreeMaxRecordingDuration"
+            "handsFreeMaxRecordingDuration",
+            "editCommandsEnabled"
         ] {
             defaults.removeObject(forKey: key)
         }
@@ -894,6 +948,251 @@ final class DictationCoordinatorTests: XCTestCase {
         )
     }
 
+    // MARK: - Voice edit commands
+
+    @MainActor
+    func testEditCommandWithNoSelectionShowsErrorAndNeverRecords() async {
+        settings.editCommandsEnabled = true
+        selectionCapture.result = nil
+
+        coordinator.handleEditHotkeyDown()
+        let errored = await waitUntil {
+            if case .error = self.coordinator.state { return true }
+            return false
+        }
+
+        XCTAssertTrue(errored, "No selection must surface a pill error")
+        if case .error(let message) = coordinator.state {
+            XCTAssertEqual(message, "Select text first")
+        }
+        XCTAssertEqual(selectionCapture.captureCallCount, 1)
+        let beginCallCount = await transcriptionService.beginLiveSessionCallCount
+        XCTAssertEqual(beginCallCount, 0, "No recording may start without a selection")
+    }
+
+    @MainActor
+    func testEditCommandDisabledIgnoresTheShortcut() async {
+        settings.editCommandsEnabled = false
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+
+        coordinator.handleEditHotkeyDown()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(selectionCapture.captureCallCount, 0)
+    }
+
+    @MainActor
+    func testEditCommandRecordsInstructionAndReplacesSelection() async throws {
+        settings.editCommandsEnabled = true
+        settings.handsFreeModeEnabled = true
+        selectionCapture.result = CapturedSelection(text: "teh original selektion", method: .axRead)
+        editProcessor.outcome = .edited(text: "the original selection")
+        await transcriptionService.setMockResultForTest("fix the spelling")
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.handleEditHotkeyDown()
+        let recording = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        XCTAssertTrue(recording, "Edit recording must start once the selection is captured")
+        XCTAssertTrue(coordinator.isEditSession)
+
+        // Tap release promotes to hands-free just like dictation.
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleEditHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        let becameIdle = await waitUntil(timeoutSeconds: 5) { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle)
+
+        XCTAssertEqual(editProcessor.receivedSelections, ["teh original selektion"])
+        XCTAssertEqual(editProcessor.receivedInstructions, ["fix the spelling"])
+        XCTAssertEqual(injectionService.injectedTexts, ["the original selection"], "The edit result replaces the selection via verified injection")
+
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.entryKind, "edit")
+        XCTAssertEqual(saved.editInstruction, "fix the spelling")
+        XCTAssertEqual(saved.text, "the original selection")
+        XCTAssertEqual(saved.injectionMethod, "paste")
+        XCTAssertFalse(coordinator.isEditSession, "Session context resets after completion")
+    }
+
+    @MainActor
+    func testEditFailureLeavesSelectionUntouchedWithHonestError() async {
+        settings.editCommandsEnabled = true
+        selectionCapture.result = CapturedSelection(text: "original words", method: .clipboardCopy)
+        editProcessor.outcome = .failed(reason: "Couldn't apply the edit")
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.handleEditHotkeyDown()
+        _ = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        let errored = await waitUntil(timeoutSeconds: 5) {
+            if case .error(let message) = self.coordinator.state {
+                return message == "Couldn't apply the edit"
+            }
+            return false
+        }
+        XCTAssertTrue(errored, "A failed edit must show an honest pill error")
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty, "Nothing may be injected when the edit fails")
+    }
+
+    // MARK: - Mode collision matrix
+
+    @MainActor
+    func testEditShortcutIgnoredWhileDictationIsRecording() async {
+        settings.editCommandsEnabled = true
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+
+        coordinator.startRecording()
+        guard case .recording = coordinator.state else { return XCTFail("Expected dictation recording") }
+        XCTAssertFalse(coordinator.isEditSession)
+
+        coordinator.handleEditHotkeyDown()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(selectionCapture.captureCallCount, 0, "Edit capture must not start during a dictation")
+        guard case .recording = coordinator.state else { return XCTFail("Dictation must keep recording") }
+        XCTAssertFalse(coordinator.isEditSession)
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testEditShortcutIgnoredWhileProcessing() async {
+        settings.editCommandsEnabled = true
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+        await transcriptionService.setTranscribeDelayNsForTest(1_500_000_000)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        guard case .processing = coordinator.state else {
+            return XCTFail("Expected processing state, got \(coordinator.state)")
+        }
+
+        coordinator.handleEditHotkeyDown()
+        XCTAssertEqual(selectionCapture.captureCallCount, 0)
+        guard case .processing = coordinator.state else {
+            return XCTFail("Edit key while processing must be inert")
+        }
+
+        let becameIdle = await waitUntil(timeoutSeconds: 5) { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle)
+    }
+
+    @MainActor
+    func testDictationKeyDoesNotStopHandsFreeEditRecording() async {
+        settings.editCommandsEnabled = true
+        settings.handsFreeModeEnabled = true
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.handleEditHotkeyDown()
+        _ = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleEditHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+        XCTAssertTrue(coordinator.isEditSession)
+
+        // The push-to-talk key must not hijack or stop the edit session.
+        gestureNow.addTimeInterval(1.0)
+        coordinator.handleHotkeyDown()
+        guard case .recording = coordinator.state else {
+            return XCTFail("Dictation key-down must not stop an edit recording")
+        }
+        XCTAssertTrue(coordinator.isEditSession)
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        guard case .recording = coordinator.state else {
+            return XCTFail("Dictation key-up must not stop an edit recording")
+        }
+
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testSecondEditTapStopsHandsFreeEditRecording() async {
+        settings.editCommandsEnabled = true
+        settings.handsFreeModeEnabled = true
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+        editProcessor.outcome = .edited(text: "edited text")
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.handleEditHotkeyDown()
+        _ = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleEditHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        gestureNow.addTimeInterval(2.0)
+        coordinator.handleEditHotkeyDown()
+        if case .recording = coordinator.state {
+            XCTFail("Second edit tap must stop the hands-free edit recording")
+        }
+
+        let becameIdle = await waitUntil(timeoutSeconds: 5) { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle)
+    }
+
+    @MainActor
+    func testDictationCannotStartWhileEditCaptureIsInFlight() async {
+        settings.editCommandsEnabled = true
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+        selectionCapture.delayNs = 400_000_000
+
+        coordinator.handleEditHotkeyDown()
+        XCTAssertTrue(coordinator.isCapturingEditSelection)
+
+        coordinator.startRecording()
+        XCTAssertEqual(coordinator.state, .idle, "Dictation must not start under an in-flight edit capture")
+
+        let recording = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        XCTAssertTrue(recording, "The edit session still starts once capture completes")
+        XCTAssertTrue(coordinator.isEditSession)
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testEditKeyReleasedDuringCaptureStillPromotesToHandsFree() async {
+        settings.editCommandsEnabled = true
+        settings.handsFreeModeEnabled = true
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+        selectionCapture.delayNs = 300_000_000
+
+        coordinator.handleEditHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleEditHotkeyUp() // released before capture finished
+
+        let recording = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        XCTAssertTrue(recording)
+        XCTAssertTrue(coordinator.isHandsFreeRecording, "The deferred tap must promote the edit recording to hands-free")
+        coordinator.stopRecording()
+    }
+
     // MARK: - Helpers
 
     /// Polls `condition` on the main actor until it holds or the timeout passes.
@@ -936,5 +1235,9 @@ private extension MockTranscriptionService {
 
     func setTranscribeDelayNsForTest(_ delayNs: UInt64) {
         transcribeDelayNs = delayNs
+    }
+
+    func setMockResultForTest(_ result: String) {
+        mockResult = result
     }
 }

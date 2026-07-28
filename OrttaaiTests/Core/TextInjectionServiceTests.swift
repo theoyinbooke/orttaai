@@ -52,14 +52,22 @@ final class MockAccessibilityInspector: AccessibilityInspecting {
 
 final class MockKeyEventPoster: KeyEventPosting {
     private(set) var pasteChordCount = 0
+    private(set) var copyChordCount = 0
     private(set) var typedTexts: [String] = []
     /// Runs on each paste chord with the 1-based attempt number.
     var onPasteChord: ((Int) -> Void)?
+    /// Runs on each copy chord with the 1-based attempt number.
+    var onCopyChord: ((Int) -> Void)?
     var onTypedText: ((String) -> Void)?
 
     func postPasteChord() {
         pasteChordCount += 1
         onPasteChord?(pasteChordCount)
+    }
+
+    func postCopyChord() {
+        copyChordCount += 1
+        onCopyChord?(copyChordCount)
     }
 
     func postTypedText(_ text: String) {
@@ -73,6 +81,10 @@ final class MockClipboard: ClipboardManaging {
     private(set) var saveCount = 0
     private(set) var restoreCount = 0
     private(set) var setStrings: [String] = []
+    /// Simulated plain-string contents and change counter (bumped by
+    /// setString and by tests simulating an app's Cmd+C landing).
+    var stringToReturn: String?
+    var changeCount: Int = 0
 
     func save() -> [ClipboardManager.SavedItem] {
         saveCount += 1
@@ -85,6 +97,12 @@ final class MockClipboard: ClipboardManaging {
 
     func setString(_ string: String) {
         setStrings.append(string)
+        stringToReturn = string
+        changeCount += 1
+    }
+
+    func getString() -> String? {
+        stringToReturn
     }
 }
 

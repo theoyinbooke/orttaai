@@ -294,12 +294,31 @@ struct HistoryView: View {
                 .truncationMode(.tail)
                 .frame(width: appColumnWidth, alignment: .leading)
 
-            Text(entry.previewText)
-                .font(.Orttaai.body)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: Spacing.xs) {
+                if entry.isEditCommand {
+                    HStack(spacing: 2) {
+                        Image(systemName: "pencil.line")
+                            .font(.system(size: 8, weight: .bold))
+                        Text("EDIT")
+                            .font(.Orttaai.caption)
+                            .fontWeight(.bold)
+                    }
+                    .foregroundStyle(Color.Orttaai.accent)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, 2)
+                    .background(Color.Orttaai.accent.opacity(0.14))
+                    .clipShape(Capsule())
+                    .help(entry.editInstruction.map { "Voice edit: \($0)" } ?? "Voice edit")
+                    .accessibilityLabel("Voice edit command")
+                }
+
+                Text(entry.previewText)
+                    .font(.Orttaai.body)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if showDuration {
                 Text(HistoryDurationFormatter.string(fromMilliseconds: entry.recordingMs))
@@ -548,7 +567,9 @@ struct HistoryView: View {
                 wordCount: normalizedText.split(whereSeparator: \.isWhitespace).count,
                 recordingMs: max(0, record.recordingDurationMs),
                 processingMs: max(0, record.processingDurationMs),
-                modelId: modelId
+                modelId: modelId,
+                isEditCommand: record.isEditCommand,
+                editInstruction: record.editInstruction?.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
     }
@@ -564,6 +585,8 @@ private struct HistoryTableEntry: Identifiable {
     let recordingMs: Int
     let processingMs: Int
     let modelId: String
+    var isEditCommand: Bool = false
+    var editInstruction: String?
 }
 
 private enum HistoryDurationFormatter {
@@ -618,6 +641,23 @@ private struct HistoryTranscriptDetailModal: View {
                     dismiss()
                 }
                 .buttonStyle(OrttaaiButtonStyle(.secondary))
+            }
+
+            if entry.isEditCommand, let instruction = entry.editInstruction, !instruction.isEmpty {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "pencil.line")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.Orttaai.accent)
+
+                    Text("Voice edit: \u{201C}\(instruction)\u{201D}")
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .textSelection(.enabled)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.Orttaai.accent.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
             }
 
             ScrollView(showsIndicators: false) {

@@ -12,6 +12,9 @@ struct WaveformView: View {
     /// Hands-free (tap-to-toggle) recordings show a distinct glyph so the
     /// pill never lies about whether releasing a key will stop anything.
     var isHandsFree: Bool = false
+    /// Voice edit sessions get an explicit EDIT badge so the pill never looks
+    /// like a plain dictation while an instruction is being recorded.
+    var isEditMode: Bool = false
     var onStop: (() -> Void)? = nil
 
     private let barCount = 16
@@ -57,6 +60,7 @@ struct WaveformView: View {
         .animation(.easeInOut(duration: 0.18), value: countdownSeconds)
         .animation(.easeInOut(duration: 0.18), value: hasTranscript)
         .animation(.easeInOut(duration: 0.18), value: isHandsFree)
+        .animation(.easeInOut(duration: 0.18), value: isEditMode)
     }
 
     private var controlsRow: some View {
@@ -71,6 +75,23 @@ struct WaveformView: View {
             .shadow(color: activeTint.opacity(Double(audioLevel) * 0.5), radius: 6, y: 0)
 
             Spacer(minLength: 0)
+
+            if isEditMode {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "pencil.line")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("EDIT")
+                        .font(.Orttaai.caption)
+                        .fontWeight(.bold)
+                }
+                .foregroundStyle(activeTint)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .background(activeTint.opacity(0.14))
+                .clipShape(Capsule())
+                .help("Voice edit — speak how to change the selected text")
+                .accessibilityLabel("Recording edit instruction")
+            }
 
             if isHandsFree {
                 Image(systemName: "infinity")

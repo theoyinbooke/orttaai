@@ -135,6 +135,14 @@ final class AppSettings: ObservableObject {
     /// from the push-to-talk max duration.
     @AppStorage("handsFreeMaxRecordingDuration") var handsFreeMaxRecordingDuration: Int = 600
 
+    // Voice edit commands (select text, speak an instruction, selection is
+    // transformed in place). Rides the polish LLM provider/model; when no
+    // local provider is reachable the edit fails honestly and the selection
+    // stays untouched, so the default is safe.
+    @AppStorage("editCommandsEnabled") var editCommandsEnabled: Bool = true
+    @AppStorage("editCommandTimeoutMs") var editCommandTimeoutMs: Int = 6_000
+    @AppStorage("editCommandMaxChars") var editCommandMaxChars: Int = 1_500
+
     // Advanced / Compute
     @AppStorage("computeMode") var computeMode: String = "cpuAndNeuralEngine"
     @AppStorage("decodingPreset") var decodingPresetRaw: String = DecodingPreset.fast.rawValue
@@ -363,6 +371,14 @@ final class AppSettings: ObservableObject {
             return 400
         }
         return max(80, min(2_000, localLLMPolishMaxChars))
+    }
+
+    var clampedEditCommandTimeoutMs: Int {
+        max(1_000, min(12_000, editCommandTimeoutMs))
+    }
+
+    var clampedEditCommandMaxChars: Int {
+        max(200, min(6_000, editCommandMaxChars))
     }
 
     var clampedLocalLLMInsightsContextTokens: Int {

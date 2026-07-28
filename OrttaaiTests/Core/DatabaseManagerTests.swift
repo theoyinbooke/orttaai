@@ -32,6 +32,51 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(records.first?.targetAppName, "TextEdit")
     }
 
+    func testSaveEditCommandEntryPersistsKindAndInstruction() throws {
+        try db.saveEditCommandEntry(
+            text: "The edited replacement text.",
+            instruction: "make this more formal",
+            appName: "Notes",
+            bundleID: "com.apple.Notes",
+            recordingMs: 2_000,
+            processingMs: 900,
+            modelId: "openai_whisper-small",
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: 1,
+                transcriptionMs: 2,
+                textProcessingMs: 3,
+                injectionMs: 4,
+                appActivationMs: 5,
+                clipboardRestoreDelayMs: 6
+            ),
+            injectionMethod: "paste"
+        )
+
+        let records = try db.fetchRecent()
+        XCTAssertEqual(records.count, 1)
+        let record = try XCTUnwrap(records.first)
+        XCTAssertEqual(record.entryKind, "edit")
+        XCTAssertTrue(record.isEditCommand)
+        XCTAssertEqual(record.editInstruction, "make this more formal")
+        XCTAssertEqual(record.text, "The edited replacement text.")
+        XCTAssertEqual(record.injectionMethod, "paste")
+    }
+
+    func testPlainDictationRowsHaveNilEntryKind() throws {
+        try db.saveTranscription(
+            text: "Hello world",
+            appName: "TextEdit",
+            recordingMs: 3_000,
+            processingMs: 1_500,
+            modelId: "test"
+        )
+
+        let record = try XCTUnwrap(try db.fetchRecent().first)
+        XCTAssertNil(record.entryKind, "Dictation rows keep NULL entryKind (append-only migration)")
+        XCTAssertNil(record.editInstruction)
+        XCTAssertFalse(record.isEditCommand)
+    }
+
     func testFetchRecentOrdering() throws {
         try db.saveTranscription(
             text: "First",

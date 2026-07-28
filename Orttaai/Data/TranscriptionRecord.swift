@@ -26,8 +26,20 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     // How the text landed in the target app ("paste", "ax", "typed",
     // "failed"). NULL on rows written before verified injection shipped.
     var injectionMethod: String?
+    // "edit" for voice edit commands; NULL means a plain dictation (rows
+    // written before edit commands shipped included).
+    var entryKind: String?
+    // The spoken instruction that produced an edit entry; NULL on dictations.
+    var editInstruction: String?
 
     static let databaseTableName = "transcription"
+
+    /// entryKind value for voice edit command rows.
+    static let editEntryKind = "edit"
+
+    var isEditCommand: Bool {
+        entryKind == Self.editEntryKind
+    }
 }
 
 extension Transcription {

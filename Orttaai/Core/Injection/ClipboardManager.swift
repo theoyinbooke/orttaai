@@ -10,6 +10,11 @@ protocol ClipboardManaging: AnyObject {
     func save() -> [ClipboardManager.SavedItem]
     func restore(_ savedItems: [ClipboardManager.SavedItem])
     func setString(_ string: String)
+    /// Current plain-string contents, nil when the pasteboard holds none.
+    func getString() -> String?
+    /// Pasteboard change counter — bumps whenever any app writes to it, so a
+    /// synthetic Cmd+C landing can be detected without polling contents.
+    var changeCount: Int { get }
 }
 
 final class ClipboardManager: ClipboardManaging {
@@ -60,5 +65,13 @@ final class ClipboardManager: ClipboardManaging {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(string, forType: .string)
+    }
+
+    func getString() -> String? {
+        NSPasteboard.general.string(forType: .string)
+    }
+
+    var changeCount: Int {
+        NSPasteboard.general.changeCount
     }
 }

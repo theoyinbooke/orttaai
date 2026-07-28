@@ -16,6 +16,7 @@ struct GeneralSettingsView: View {
     @AppStorage("handsFreeSilenceStopEnabled") private var handsFreeSilenceStopEnabled = true
     @AppStorage("handsFreeSilenceStopSeconds") private var handsFreeSilenceStopSeconds = 2.0
     @AppStorage("handsFreeMaxRecordingDuration") private var handsFreeMaxRecordingDuration = 600
+    @AppStorage("editCommandsEnabled") private var editCommandsEnabled = true
     @State private var showClearConfirmation = false
     @State private var showResetConfirmation = false
 
@@ -96,6 +97,8 @@ struct GeneralSettingsView: View {
 
             handsFreeCard
 
+            editCommandsCard
+
             CloudSyncSettingsView()
 
             VStack(alignment: .leading, spacing: Spacing.md) {
@@ -119,6 +122,16 @@ struct GeneralSettingsView: View {
                         title: "Paste Last Transcript",
                         subtitle: "Insert your most recent dictation instantly."
                     )
+
+                    if editCommandsEnabled {
+                        divider
+
+                        shortcutRow(
+                            name: .editCommand,
+                            title: "Edit Selection with Voice",
+                            subtitle: "Select text anywhere, press, and speak how to change it."
+                        )
+                    }
                 }
             }
             .padding(Spacing.lg)
@@ -249,6 +262,20 @@ struct GeneralSettingsView: View {
                         .foregroundStyle(Color.Orttaai.textSecondary)
                 }
             }
+        }
+        .padding(Spacing.lg)
+        .dashboardCard()
+    }
+
+    /// Voice edit commands: select text, speak an instruction, the selection
+    /// is transformed in place through the local polish model.
+    private var editCommandsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            toggleRow(
+                title: "Edit Selection with Voice",
+                subtitle: "Select text in any app, press the edit shortcut, and speak an instruction like \"make this shorter\". The selection is replaced in place using your local polish model.",
+                isOn: $editCommandsEnabled
+            )
         }
         .padding(Spacing.lg)
         .dashboardCard()

@@ -536,6 +536,17 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v14_edit_commands") { db in
+            try db.alter(table: "transcription") { t in
+                // "edit" for voice edit commands; NULL means a plain
+                // dictation (rows written before edit commands shipped
+                // included). Append-only, like injectionMethod.
+                t.add(column: "entryKind", .text)
+                // The spoken instruction that produced an edit entry.
+                t.add(column: "editInstruction", .text)
+            }
+        }
+
         return migrator
     }
 
@@ -751,6 +762,8 @@ final class DatabaseManager {
         audioDevice: String? = nil,
         latency: DictationLatencyTelemetry? = nil,
         injectionMethod: String? = nil,
+        entryKind: String? = nil,
+        editInstruction: String? = nil,
         createdAt: Date = Date(),
         sourceDeviceID: String = DeviceIdentity.currentID
     ) throws {
@@ -771,7 +784,9 @@ final class DatabaseManager {
                 modelId: modelId,
                 audioDevice: audioDevice,
                 sourceDeviceID: sourceDeviceID,
-                injectionMethod: injectionMethod
+                injectionMethod: injectionMethod,
+                entryKind: entryKind,
+                editInstruction: editInstruction
             )
             try record.insert(db)
             try Self.touchSyncMetadata(
@@ -2761,6 +2776,19 @@ protocol TranscriptionHistoryStoring: AnyObject {
         latency: DictationLatencyTelemetry,
         injectionMethod: String
     ) throws
+    /// Persists a voice edit command: `text` is the edited replacement,
+    /// `instruction` the spoken command that produced it.
+    func saveEditCommandEntry(
+        text: String,
+        instruction: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingMs: Int,
+        modelId: String,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String
+    ) throws
     func logSkippedRecording(duration: TimeInterval)
 }
 
@@ -2784,6 +2812,31 @@ extension DatabaseManager: TranscriptionHistoryStoring {
             modelId: modelId,
             latency: latency,
             injectionMethod: injectionMethod
+        )
+    }
+
+    func saveEditCommandEntry(
+        text: String,
+        instruction: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingMs: Int,
+        modelId: String,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String
+    ) throws {
+        try saveTranscription(
+            text: text,
+            appName: appName,
+            bundleID: bundleID,
+            recordingMs: recordingMs,
+            processingMs: processingMs,
+            modelId: modelId,
+            latency: latency,
+            injectionMethod: injectionMethod,
+            entryKind: Transcription.editEntryKind,
+            editInstruction: instruction
         )
     }
 }

@@ -39,6 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
     private let hasCompletedSetupKey = "hasCompletedSetup"
     private var isPushToTalkPressed = false
+    private var isEditCommandPressed = false
     private let recordingStartCue = NSSound.Name("Glass")
     private let recordingStopCue = NSSound.Name("Pop")
     private let errorCue = NSSound.Name("Funk")
@@ -153,6 +154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
         KeyboardShortcuts.removeHandler(for: .pasteLastTranscript)
+        KeyboardShortcuts.removeHandler(for: .editCommand)
         stopWaveformUpdates()
         if let shortcutObserver {
             NotificationCenter.default.removeObserver(shortcutObserver)
@@ -382,6 +384,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Wires the recordable "Edit Selection with Voice" shortcut. Same
+    /// tap/hold gesture semantics as push-to-talk; the coordinator captures
+    /// the selection, records the spoken instruction, and replaces the
+    /// selection through the verified injection path. The enabled-setting
+    /// check lives in the coordinator so toggling it needs no re-wiring.
+    private func startEditCommandShortcut() {
+        isEditCommandPressed = false
+        KeyboardShortcuts.removeHandler(for: .editCommand)
+
+        KeyboardShortcuts.onKeyDown(for: .editCommand) { [weak self] in
+            guard let self = self, !self.isEditCommandPressed else { return }
+            self.isEditCommandPressed = true
+            Logger.hotkey.info("Edit-command key down")
+            self.coordinator?.handleEditHotkeyDown()
+        }
+
+        KeyboardShortcuts.onKeyUp(for: .editCommand) { [weak self] in
+            guard let self = self, self.isEditCommandPressed else { return }
+            self.isEditCommandPressed = false
+            Logger.hotkey.info("Edit-command key up")
+            self.coordinator?.handleEditHotkeyUp()
+        }
+    }
+
     private func observeSystemWake() {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -411,6 +437,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             KeyboardShortcuts.setShortcut(
                 KeyboardShortcuts.Shortcut(.v, modifiers: [.command, .shift]),
                 for: .pasteLastTranscript
+            )
+        }
+
+        // Ctrl+Shift+E: same modifier family as push-to-talk (Ctrl+Shift+
+        // Space), no collision with it, Cmd+Shift+V, or common system
+        // shortcuts (Cmd+E is "Use Selection for Find"; Ctrl+Shift+E is
+        // unclaimed by macOS defaults).
+        if KeyboardShortcuts.getShortcut(for: .editCommand) == nil {
+            KeyboardShortcuts.setShortcut(
+                KeyboardShortcuts.Shortcut(.e, modifiers: [.control, .shift]),
+                for: .editCommand
             )
         }
 
@@ -512,6 +549,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         startPasteLastTranscriptShortcut()
+        startEditCommandShortcut()
         runtimeServicesStarted = true
         floatingPanel?.show()
         warmUpModel()
@@ -641,9 +679,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .recording:
             let isHandsFree = coordinator?.isHandsFreeRecording ?? false
+            let isEditSession = coordinator?.isEditSession ?? false
             startWaveformUpdates()
             statusBarController?.updateIcon(state: .recording)
-            statusBarMenu?.updateStatusLine(isHandsFree ? "Recording (hands-free)..." : "Recording...")
+            statusBarMenu?.updateStatusLine(
+                isEditSession
+                    ? "Recording edit instruction..."
+                    : (isHandsFree ? "Recording (hands-free)..." : "Recording...")
+            )
             floatingPanel?.transitionToRecording(
                 content: WaveformView(
                     audioLevel: coordinator?.audioLevel ?? 0,
@@ -651,6 +694,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     countdownSeconds: coordinator?.countdownSeconds,
                     liveTranscript: coordinator?.liveTranscript,
                     isHandsFree: isHandsFree,
+                    isEditMode: isEditSession,
                     onStop: { [weak self] in
                         self?.coordinator?.stopRecording()
                     }
@@ -753,6 +797,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             countdownSeconds: countdownSeconds,
                             liveTranscript: liveTranscript,
                             isHandsFree: isHandsFree,
+                            isEditMode: coordinator.isEditSession,
                             onStop: { [weak self] in
                                 self?.coordinator?.stopRecording()
                             }

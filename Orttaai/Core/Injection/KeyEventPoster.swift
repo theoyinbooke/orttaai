@@ -9,6 +9,9 @@ import os
 protocol KeyEventPosting: AnyObject {
     /// Posts a synthetic Cmd+V chord to the HID event tap.
     func postPasteChord()
+    /// Posts a synthetic Cmd+C chord to the HID event tap (selection capture
+    /// fallback for apps whose AX tree hides the selected text).
+    func postCopyChord()
     /// Types `text` as ordered unicode keystrokes, chunked so long transcripts
     /// stay within CGEvent's per-event unicode payload limits.
     func postTypedText(_ text: String)
@@ -45,12 +48,19 @@ final class CGKeyEventPoster: KeyEventPosting {
     }
 
     func postPasteChord() {
+        postCommandChord(virtualKey: 0x09, name: "paste") // 0x09 = V key
+    }
+
+    func postCopyChord() {
+        postCommandChord(virtualKey: 0x08, name: "copy") // 0x08 = C key
+    }
+
+    private func postCommandChord(virtualKey: CGKeyCode, name: String) {
         let source = CGEventSource(stateID: .hidSystemState)
 
-        // Key code 0x09 = V key
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
-            Logger.injection.error("Failed to create CGEvents for paste simulation")
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false) else {
+            Logger.injection.error("Failed to create CGEvents for \(name, privacy: .public) simulation")
             return
         }
 
