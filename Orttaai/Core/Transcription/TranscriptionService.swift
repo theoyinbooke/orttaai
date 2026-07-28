@@ -407,7 +407,13 @@ actor TranscriptionService: Transcribing {
     /// Cap for the bias-vocabulary portion. Bias terms are fitted FIRST —
     /// they are the user's explicit vocabulary and must survive even when a
     /// long session supplies plenty of context text.
-    nonisolated static let maxBiasPromptTokenCount = 70
+    // Prefill runs the decoder sequentially over every prompt token
+    // (~35ms/token on cpuAndNeuralEngine, measured via gauntlet/asr_eval:
+    // a ~130-token 36-term prompt added ~4.5s p50). 32 tokens bounds the
+    // worst case near ~1.1s and covers ~8-10 typical dictionary terms;
+    // vocabularyBiasTerms() orders by usage so an overflowing dictionary
+    // keeps the names the user actually dictates.
+    nonisolated static let maxBiasPromptTokenCount = 32
     /// Cap for the committed-session-text tail; it also never exceeds
     /// whatever the bias terms left of the total budget.
     nonisolated static let maxContextPromptTokenCount = 100
@@ -554,7 +560,8 @@ actor TranscriptionService: Transcribing {
     /// it; an empty (silent) clip commits as empty text.
     private func runLiveCommit(clipAudio: [Float], startSample: Int, sessionID: UUID) async {
         let promptTokens: [Int]? = {
-            guard let session = liveSession, session.id == sessionID else { return nil }
+            guard let session = liveSession, session.id == sessionID,
+                  Self.containsSpeechEnergy(clipAudio[...]) else { return nil }
             return currentLivePromptTokens(session: session)
         }()
 
@@ -597,7 +604,8 @@ actor TranscriptionService: Transcribing {
         sessionID: UUID
     ) async {
         let promptTokens: [Int]? = {
-            guard let session = liveSession, session.id == sessionID else { return nil }
+            guard let session = liveSession, session.id == sessionID,
+                  Self.containsSpeechEnergy(tailAudio[...]) else { return nil }
             return currentLivePromptTokens(session: session)
         }()
 
@@ -669,12 +677,23 @@ actor TranscriptionService: Transcribing {
         )
     }
 
+    /// Longest audio a bias prompt may condition: one Whisper window. On
+    /// multi-window decodes the prompt is re-applied to every window, where
+    /// the per-item ASR eval measured it compounding into temperature-fallback
+    /// cascades: net +159 errors and +6-13s latency concentrated entirely in
+    /// the long-* corpus items (gauntlet/asr_eval, bias-only run). Short
+    /// decodes — every live clip, tail, and typical dictation — keep the
+    /// recall win at negligible cost.
+    static let biasPromptMaxSampleCount = 28 * transcriptionSampleRate
+
     /// Bias-vocabulary-only prompt for whole-utterance decodes. Skipped when
-    /// there are no terms or the audio carries no speech energy at all —
-    /// conditioning silent audio invites prompt bleed-through.
+    /// there are no terms, the audio carries no speech energy at all
+    /// (conditioning silent audio invites prompt bleed-through), or the audio
+    /// spans more than one Whisper window (see biasPromptMaxSampleCount).
     private func wholeDecodePromptTokens(audioSamples: [Float]) -> [Int]? {
         guard !vocabularyBiasTerms.isEmpty,
               let tokenizer = whisperKit?.tokenizer,
+              audioSamples.count <= Self.biasPromptMaxSampleCount,
               Self.containsSpeechEnergy(audioSamples[...]) else {
             return nil
         }

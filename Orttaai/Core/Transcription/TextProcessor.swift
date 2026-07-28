@@ -118,8 +118,16 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
     /// triggers are the phrases the user actually speaks.
     func vocabularyBiasTerms() -> [String] {
         guard let rules = try? loadActiveRulesIfNeeded() else { return [] }
-        let targets = rules.dictionaryEntries.filter(\.isActive).map(\.target)
-        let triggers = rules.snippetEntries.filter(\.isActive).map(\.trigger)
+        // Most-used terms first: the bias prompt has a tight token budget
+        // (prefill costs ~35ms/token on the ANE — measured in
+        // gauntlet/asr_eval), so when a large dictionary overflows it, the
+        // names the user actually dictates must be the ones that fit.
+        let targets = rules.dictionaryEntries.filter(\.isActive)
+            .sorted { $0.usageCount > $1.usageCount }
+            .map(\.target)
+        let triggers = rules.snippetEntries.filter(\.isActive)
+            .sorted { $0.usageCount > $1.usageCount }
+            .map(\.trigger)
         return targets + triggers
     }
 
