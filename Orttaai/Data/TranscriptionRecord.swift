@@ -23,6 +23,9 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     // NULL on rows created before device tagging or synced from older app
     // versions; readers treat NULL as belonging to this device.
     var sourceDeviceID: String?
+    // How the text landed in the target app ("paste", "ax", "typed",
+    // "failed"). NULL on rows written before verified injection shipped.
+    var injectionMethod: String?
 
     static let databaseTableName = "transcription"
 }

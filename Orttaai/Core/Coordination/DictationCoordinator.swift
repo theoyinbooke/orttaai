@@ -77,6 +77,14 @@ final class DictationCoordinator {
     private var processingTask: Task<Void, Never>?
     private var audioHealthTask: Task<Void, Never>?
     private var targetApp: NSRunningApplication?
+    /// Single FIFO pipeline for live transcript events: the transcription
+    /// actor yields into the stream (ordered), one MainActor task consumes.
+    private var liveEventTask: Task<Void, Never>?
+    private var liveEventContinuation: AsyncStream<LiveTranscriptEvent>.Continuation?
+
+    /// History persistence policy: bounded retries, then a loud failure.
+    static let historySaveAttempts = 3
+    static let historySaveRetryDelayNs: UInt64 = 250_000_000 // 250ms
 
     init(
         audioService: any AudioCapturing,
@@ -161,6 +169,7 @@ final class DictationCoordinator {
         audioHealthTask?.cancel()
         audioHealthTask = nil
         liveTranscript = nil
+        finishLiveEventStream()
         Task { [transcriptionService] in
             await transcriptionService.setLiveTranscriptEventHandler(nil)
         }
@@ -241,8 +250,17 @@ final class DictationCoordinator {
 
             let processingMs = Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000)
 
+            let latency = DictationLatencyTelemetry(
+                settingsSyncMs: settingsSyncMs,
+                transcriptionMs: transcriptionMs,
+                textProcessingMs: textProcessingMs,
+                injectionMs: injectionMs,
+                appActivationMs: injectionTelemetry?.appActivationMs,
+                clipboardRestoreDelayMs: injectionTelemetry?.clipboardRestoreDelayMs
+            )
+
             switch result {
-            case .success:
+            case .success(let method):
                 let runtimeModelID = await transcriptionService.loadedModelID()
                 let resolvedModelID: String = {
                     if let runtimeModelID, !runtimeModelID.isEmpty {
@@ -256,34 +274,41 @@ final class DictationCoordinator {
                 }()
                 settings.activeModelId = resolvedModelID
 
-                let textToSave = output.text
-                let databaseManager = self.databaseManager
-                let latency = DictationLatencyTelemetry(
-                    settingsSyncMs: settingsSyncMs,
-                    transcriptionMs: transcriptionMs,
-                    textProcessingMs: textProcessingMs,
-                    injectionMs: injectionMs,
-                    appActivationMs: injectionTelemetry?.appActivationMs,
-                    clipboardRestoreDelayMs: injectionTelemetry?.clipboardRestoreDelayMs
+                persistTranscription(
+                    text: output.text,
+                    appName: appName,
+                    bundleID: appBundleID,
+                    recordingMs: recordingDurationMs,
+                    processingMs: processingMs,
+                    modelId: resolvedModelID,
+                    latency: latency,
+                    injectionMethod: method
                 )
-                DispatchQueue.global(qos: .utility).async {
-                    try? databaseManager.saveTranscription(
-                        text: textToSave,
-                        appName: appName,
-                        bundleID: appBundleID,
-                        recordingMs: recordingDurationMs,
-                        processingMs: processingMs,
-                        modelId: resolvedModelID,
-                        latency: latency
-                    )
-                }
                 maybeStartFastFirstPrefetch(afterSuccessfulDictationWith: resolvedModelID)
                 state = .idle
                 targetApp = nil
                 Logger.dictation.info(
-                    "Latency telemetry (ms): settings=\(settingsSyncMs ?? -1), transcribe=\(transcriptionMs ?? -1), process=\(textProcessingMs ?? -1), inject=\(injectionMs ?? -1), activate=\(injectionTelemetry?.appActivationMs ?? -1), restoreDelay=\(injectionTelemetry?.clipboardRestoreDelayMs ?? -1), pipeline=\(processingMs)"
+                    "Latency telemetry (ms): settings=\(settingsSyncMs ?? -1), transcribe=\(transcriptionMs ?? -1), process=\(textProcessingMs ?? -1), inject=\(injectionMs ?? -1), activate=\(injectionTelemetry?.appActivationMs ?? -1), restoreDelay=\(injectionTelemetry?.clipboardRestoreDelayMs ?? -1), pipeline=\(processingMs), method=\(method.rawValue)"
                 )
                 Logger.dictation.info("Dictation complete: \(output.text.prefix(50))... (\(processingMs)ms)")
+
+            case .failedAllMethods:
+                // Injection verifiably failed everywhere. The transcript is
+                // already on the clipboard; record an honest failed entry and
+                // tell the user instead of reporting silent success.
+                persistTranscription(
+                    text: output.text,
+                    appName: appName,
+                    bundleID: appBundleID,
+                    recordingMs: recordingDurationMs,
+                    processingMs: processingMs,
+                    modelId: settings.activeModelId.isEmpty ? settings.selectedModelId : settings.activeModelId,
+                    latency: latency,
+                    injectionMethod: .failed
+                )
+                state = .error(message: "Couldn't insert text. Press Cmd+V to paste it.")
+                targetApp = nil
+                autoDismissError()
 
             case .blockedSecureField:
                 state = .error(message: "Can't dictate into password fields")
@@ -302,6 +327,84 @@ final class DictationCoordinator {
             state = .error(message: "Couldn't transcribe. Try again.")
             targetApp = nil
             autoDismissError()
+        }
+    }
+
+    /// Persists a history entry with bounded retries. History persistence
+    /// must never affect injection (the text is already delivered/on the
+    /// clipboard) but must not vanish silently either: final failure logs an
+    /// error and posts a user-visible breadcrumb.
+    private func persistTranscription(
+        text: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingMs: Int,
+        modelId: String,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: InjectionMethod
+    ) {
+        let databaseManager = self.databaseManager
+        Task.detached(priority: .utility) {
+            let failure = await BoundedRetry.run(
+                attempts: Self.historySaveAttempts,
+                delayNs: Self.historySaveRetryDelayNs
+            ) {
+                try databaseManager.saveTranscription(
+                    text: text,
+                    appName: appName,
+                    bundleID: bundleID,
+                    recordingMs: recordingMs,
+                    processingMs: processingMs,
+                    modelId: modelId,
+                    latency: latency,
+                    injectionMethod: injectionMethod.rawValue
+                )
+            }
+            guard let failure else { return }
+            Logger.dictation.error(
+                "History save failed after \(failure.attempts) attempts: \(failure.lastError.localizedDescription, privacy: .public)"
+            )
+            await MainActor.run {
+                NotificationCenter.default.post(name: .transcriptionHistorySaveDidFail, object: nil)
+            }
+        }
+    }
+
+    // MARK: - Paste Last Transcript
+
+    /// Re-injects the most recent transcript through the same verified
+    /// injection path used for live dictation. Wired to the
+    /// `.pasteLastTranscript` keyboard shortcut.
+    func pasteLastTranscript() {
+        guard case .idle = state else {
+            Logger.dictation.info("Ignoring pasteLastTranscript — not idle (state: \(String(describing: self.state)))")
+            return
+        }
+
+        // Capture the frontmost app now, matching how dictation targets the
+        // app that was focused when the user acted.
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        state = .injecting
+        injectionService.lowLatencyModeEnabled = settings.lowLatencyModeEnabled
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await self.injectionService.pasteLastTranscript(targetApp: frontmostApp)
+            switch result {
+            case .success(let method):
+                Logger.dictation.info("Paste-last-transcript succeeded via \(method.rawValue)")
+                self.state = .idle
+            case .noTranscript:
+                self.state = .error(message: "No transcript available to paste")
+                self.autoDismissError()
+            case .blockedSecureField:
+                self.state = .error(message: "Can't dictate into password fields")
+                self.autoDismissError()
+            case .failedAllMethods:
+                self.state = .error(message: "Couldn't insert text. Press Cmd+V to paste it.")
+                self.autoDismissError()
+            }
         }
     }
 
@@ -380,6 +483,20 @@ final class DictationCoordinator {
 
     private func startLiveDecodeLoop() {
         liveDecodeTask?.cancel()
+
+        // Events flow through a single AsyncStream so delivery order is
+        // guaranteed FIFO: the transcription actor yields synchronously in
+        // emission order and one MainActor task consumes sequentially. (The
+        // previous per-event `Task { @MainActor }` had no ordering guarantee.)
+        finishLiveEventStream()
+        let (stream, continuation) = AsyncStream.makeStream(of: LiveTranscriptEvent.self)
+        liveEventContinuation = continuation
+        liveEventTask = Task { @MainActor [weak self] in
+            for await event in stream {
+                self?.applyLiveTranscriptEvent(event)
+            }
+        }
+
         liveDecodeTask = Task(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
 
@@ -387,10 +504,8 @@ final class DictationCoordinator {
             guard !Task.isCancelled else { return }
             // Handler installed before the session begins so no early commit
             // or speculative result is missed.
-            await self.transcriptionService.setLiveTranscriptEventHandler { [weak self] event in
-                Task { @MainActor [weak self] in
-                    self?.applyLiveTranscriptEvent(event)
-                }
+            await self.transcriptionService.setLiveTranscriptEventHandler { event in
+                continuation.yield(event)
             }
             guard !Task.isCancelled else { return }
             await self.transcriptionService.beginLiveTranscriptionSession()
@@ -401,6 +516,15 @@ final class DictationCoordinator {
                 try? await Task.sleep(nanoseconds: self.liveDecodePollIntervalNs)
             }
         }
+    }
+
+    /// Ends the live event pipeline. The consumer task drains any buffered
+    /// events and exits; events arriving after recording stops are dropped by
+    /// `applyLiveTranscriptEvent`'s recording-state guard as before.
+    private func finishLiveEventStream() {
+        liveEventContinuation?.finish()
+        liveEventContinuation = nil
+        liveEventTask = nil
     }
 
     /// Checks that the audio tap is actually producing samples shortly after
@@ -438,6 +562,7 @@ final class DictationCoordinator {
                     self.countdownSeconds = nil
                     self.liveDecodeTask?.cancel()
                     self.liveDecodeTask = nil
+                    self.finishLiveEventStream()
                     self.liveTranscript = nil
                     self.state = .error(message: "Microphone unavailable. Try again.")
                     self.targetApp = nil

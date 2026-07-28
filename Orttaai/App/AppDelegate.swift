@@ -33,6 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var shortcutObserver: NSObjectProtocol?
     private var audioResetObserver: NSObjectProtocol?
     private var polishSettingObserver: NSObjectProtocol?
+    private var historySaveFailureObserver: NSObjectProtocol?
     private var isResettingAudioPipeline = false
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
     private let hasCompletedSetupKey = "hasCompletedSetup"
@@ -141,16 +142,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         observeShortcutChanges()
         observeAudioPipelineResetRequests()
+        observeHistorySaveFailures()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
+        KeyboardShortcuts.removeHandler(for: .pasteLastTranscript)
         stopWaveformUpdates()
         if let shortcutObserver {
             NotificationCenter.default.removeObserver(shortcutObserver)
         }
         if let audioResetObserver {
             NotificationCenter.default.removeObserver(audioResetObserver)
+        }
+        if let historySaveFailureObserver {
+            NotificationCenter.default.removeObserver(historySaveFailureObserver)
         }
         CloudProfileChangeTracker.shared.stop()
         CloudSyncScheduler.stop()
@@ -220,8 +226,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let transcription = TranscriptionService()
         let injection = TextInjectionService()
 
-        do {
-            let db = try DatabaseManager()
+        // The database must never fail silently at launch: retry transient
+        // failures, sideline a corrupt store (kept on disk) and start fresh,
+        // and if all of that fails, tell the user instead of leaving the
+        // coordinator nil with a healthy-looking menu bar icon.
+        let outcome = DatabaseBootstrap.bootstrap(
+            create: { try DatabaseManager() },
+            sidelineStore: { error in
+                Logger.database.error(
+                    "Database init failed twice (\(error.localizedDescription, privacy: .public)); attempting store recovery"
+                )
+                return DatabaseBootstrap.sidelineDefaultDatabase()
+            }
+        )
+
+        switch outcome {
+        case .ready(let db, let recoveryApplied):
+            if let recoveryApplied {
+                Logger.database.warning("Database recovered at launch via \(recoveryApplied.rawValue, privacy: .public)")
+            }
+
             let baseTextProcessor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
             let localLLMProcessor = LocalLLMTextProcessor(
                 baseProcessor: baseTextProcessor,
@@ -253,8 +277,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             observeCoordinatorState()
 
             Logger.ui.info("Core services initialized")
-        } catch {
-            Logger.ui.error("Failed to initialize database: \(error.localizedDescription)")
+
+        case .failed(let message):
+            Logger.ui.error("Failed to initialize core services: \(message, privacy: .public)")
+            presentCoreServicesFailure(message: message)
+        }
+    }
+
+    /// Visible, actionable startup failure: menu-bar error state plus an
+    /// alert explaining what failed and what to try.
+    private func presentCoreServicesFailure(message: String) {
+        statusBarController?.updateIcon(state: .error)
+        statusBarMenu?.updateStatusLine("Startup failed — dictation unavailable")
+
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            alert.messageText = "Orttaai couldn't start its local database"
+            alert.informativeText = """
+            Dictation is unavailable because the transcription database failed to open, \
+            even after automatic recovery.
+
+            \(message)
+
+            Try restarting Orttaai. If this keeps happening, free up disk space or \
+            reinstall the app. Your previous database was preserved next to the original file.
+            """
+            alert.addButton(withTitle: "Quit Orttaai")
+            alert.addButton(withTitle: "Continue Anyway")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSApplication.shared.terminate(nil)
+            }
         }
     }
 
@@ -309,6 +363,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Wires the recordable "Paste Last Transcript" shortcut to the same
+    /// verified injection path dictation uses. This is what makes the
+    /// "Use Cmd+Shift+V to paste the last transcription" advice true.
+    private func startPasteLastTranscriptShortcut() {
+        KeyboardShortcuts.removeHandler(for: .pasteLastTranscript)
+        KeyboardShortcuts.onKeyDown(for: .pasteLastTranscript) { [weak self] in
+            Logger.hotkey.info("Paste-last-transcript shortcut pressed")
+            self?.coordinator?.pasteLastTranscript()
+        }
+    }
+
     private func observeSystemWake() {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -330,6 +395,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             KeyboardShortcuts.setShortcut(defaultShortcut, for: .pushToTalk)
         } else if KeyboardShortcuts.getShortcut(for: .pushToTalk) == nil {
             KeyboardShortcuts.setShortcut(defaultShortcut, for: .pushToTalk)
+        }
+
+        // Default matches the long-standing "Use Cmd+Shift+V to paste the
+        // last transcription" recovery advice in Errors.swift.
+        if KeyboardShortcuts.getShortcut(for: .pasteLastTranscript) == nil {
+            KeyboardShortcuts.setShortcut(
+                KeyboardShortcuts.Shortcut(.v, modifiers: [.command, .shift]),
+                for: .pasteLastTranscript
+            )
         }
 
         floatingPanel?.shortcutHintLabel = currentPushToTalkLabel()
@@ -412,6 +486,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func activateRuntimeServicesIfNeeded() {
         guard !runtimeServicesStarted else { return }
+
+        // Core services failing to start is already surfaced by an alert;
+        // keep the menu bar honest instead of proceeding to a "Ready" state.
+        guard coordinator != nil else {
+            statusBarController?.updateIcon(state: .error)
+            statusBarMenu?.updateStatusLine("Startup failed — dictation unavailable")
+            return
+        }
+
         let hotkeyStarted = startHotkeyService()
         guard hotkeyStarted else {
             statusBarController?.updateIcon(state: .error)
@@ -420,6 +503,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        startPasteLastTranscriptShortcut()
         runtimeServicesStarted = true
         floatingPanel?.show()
         warmUpModel()
@@ -452,6 +536,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.windowManager?.showSetupWindow()
                 }
             }
+        }
+    }
+
+    /// User-visible breadcrumb when a history write is lost after retries.
+    /// The transcript itself was already delivered, so this only marks the
+    /// menu bar rather than interrupting the user.
+    private func observeHistorySaveFailures() {
+        historySaveFailureObserver = NotificationCenter.default.addObserver(
+            forName: .transcriptionHistorySaveDidFail,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.statusBarMenu?.updateStatusLine("Text delivered — history save failed")
         }
     }
 

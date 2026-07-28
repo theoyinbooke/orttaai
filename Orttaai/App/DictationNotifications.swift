@@ -9,6 +9,10 @@ extension Notification.Name {
     static let audioPipelineResetRequested = Notification.Name("Orttaai.audioPipelineResetRequested")
     static let audioPipelineResetDidComplete = Notification.Name("Orttaai.audioPipelineResetDidComplete")
     static let cloudSyncDidComplete = Notification.Name("Orttaai.cloudSyncDidComplete")
+    /// Posted after a transcription history write exhausted its bounded
+    /// retries. The transcript itself was already delivered (or left on the
+    /// clipboard) — this is the user-visible breadcrumb for the lost entry.
+    static let transcriptionHistorySaveDidFail = Notification.Name("Orttaai.transcriptionHistorySaveDidFail")
 }
 
 enum DictationStateSignal: String {

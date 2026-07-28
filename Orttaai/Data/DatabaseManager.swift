@@ -528,6 +528,14 @@ final class DatabaseManager {
             )
         }
 
+        migrator.registerMigration("v13_injection_method") { db in
+            try db.alter(table: "transcription") { t in
+                // How the text landed: paste, ax, typed, or failed. NULL on
+                // rows written before verified injection shipped.
+                t.add(column: "injectionMethod", .text)
+            }
+        }
+
         return migrator
     }
 
@@ -742,6 +750,7 @@ final class DatabaseManager {
         modelId: String,
         audioDevice: String? = nil,
         latency: DictationLatencyTelemetry? = nil,
+        injectionMethod: String? = nil,
         createdAt: Date = Date(),
         sourceDeviceID: String = DeviceIdentity.currentID
     ) throws {
@@ -761,7 +770,8 @@ final class DatabaseManager {
                 clipboardRestoreDelayMs: latency?.clipboardRestoreDelayMs,
                 modelId: modelId,
                 audioDevice: audioDevice,
-                sourceDeviceID: sourceDeviceID
+                sourceDeviceID: sourceDeviceID,
+                injectionMethod: injectionMethod
             )
             try record.insert(db)
             try Self.touchSyncMetadata(

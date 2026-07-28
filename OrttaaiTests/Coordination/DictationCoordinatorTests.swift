@@ -118,10 +118,12 @@ final class MockTextProcessor: TextProcessor {
 final class MockInjectionService: TextInjecting {
     var lastTranscript: String?
     var lowLatencyModeEnabled: Bool = false
-    var mockResult: InjectionResult = .success
+    var mockResult: InjectionResult = .success(method: .paste)
+    private(set) var injectedTexts: [String] = []
 
     func inject(text: String, targetApp: NSRunningApplication? = nil) async -> InjectionResult {
-        if mockResult == .success {
+        injectedTexts.append(text)
+        if case .success = mockResult {
             lastTranscript = text
         }
         return mockResult
@@ -383,6 +385,147 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(finalizeCallCount, 1)
         XCTAssertEqual(injectionService.lastTranscript, "Hello world")
         XCTAssertEqual(settings.activeModelId, selectedModelId)
+    }
+    // MARK: - Injection outcome handling
+
+    @MainActor
+    func testSuccessfulDictationPersistsInjectionMethod() async throws {
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.injectionMethod, "paste")
+        XCTAssertEqual(saved.text, "Hello world")
+    }
+
+    @MainActor
+    func testFailedInjectionShowsErrorAndMarksHistoryEntryFailed() async throws {
+        injectionService.mockResult = .failedAllMethods
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        // Wait for processing to finish and the error state to land.
+        var sawClipboardError = false
+        for _ in 0..<40 {
+            if case .error(let message) = coordinator.state {
+                XCTAssertEqual(message, "Couldn't insert text. Press Cmd+V to paste it.")
+                sawClipboardError = true
+                break
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(sawClipboardError, "Total injection failure must surface an error, never a silent success")
+
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.injectionMethod, "failed", "Failed injection keeps its history entry, marked failed")
+    }
+
+    // MARK: - Paste last transcript
+
+    @MainActor
+    func testPasteLastTranscriptReinjectsThroughInjectionService() async {
+        injectionService.lastTranscript = "Hello again"
+
+        coordinator.pasteLastTranscript()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(injectionService.injectedTexts, ["Hello again"])
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    @MainActor
+    func testPasteLastTranscriptWithNoTranscriptShowsError() async {
+        XCTAssertNil(injectionService.lastTranscript)
+
+        coordinator.pasteLastTranscript()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty)
+        if case .error(let message) = coordinator.state {
+            XCTAssertEqual(message, "No transcript available to paste")
+        } else {
+            XCTFail("Expected error state, got \(coordinator.state)")
+        }
+    }
+
+    @MainActor
+    func testPasteLastTranscriptIgnoredWhileRecording() async {
+        injectionService.lastTranscript = "Hello again"
+        coordinator.startRecording()
+
+        coordinator.pasteLastTranscript()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty, "Paste-last must not interrupt an active recording")
+        if case .recording = coordinator.state {
+            // OK
+        } else {
+            XCTFail("Expected to remain recording")
+        }
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testPasteLastTranscriptFailureShowsClipboardAdvice() async {
+        injectionService.lastTranscript = "Hello again"
+        injectionService.mockResult = .failedAllMethods
+
+        coordinator.pasteLastTranscript()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        if case .error(let message) = coordinator.state {
+            XCTAssertEqual(message, "Couldn't insert text. Press Cmd+V to paste it.")
+        } else {
+            XCTFail("Expected error state, got \(coordinator.state)")
+        }
+    }
+
+    // MARK: - Live event ordering
+
+    @MainActor
+    func testLiveTranscriptEventsApplyInEmissionOrder() async {
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let handlerInstalled = await transcriptionService.hasLiveTranscriptEventHandler()
+        XCTAssertTrue(handlerInstalled)
+
+        // Burst of commits with no pause: FIFO delivery means the assembled
+        // committed text preserves emission order exactly.
+        let words = (0..<40).map { "word\($0)" }
+        for word in words {
+            await transcriptionService.emitLiveTranscriptEventForTest(.committed(word))
+        }
+        // A trailing speculative tail must land after every commit.
+        await transcriptionService.emitLiveTranscriptEventForTest(.speculative("tail"))
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(coordinator.liveTranscript?.committedText, words.joined(separator: " "))
+        XCTAssertEqual(coordinator.liveTranscript?.speculativeText, "tail")
+
+        coordinator.stopRecording()
+    }
+
+    // MARK: - Helpers
+
+    private struct PersistenceTimeout: Error {}
+
+    /// Polls the database for the transcription written by the detached
+    /// persistence task.
+    private func waitForTranscription(timeoutSeconds: Double = 5) async throws -> Transcription {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let record = try databaseManager.fetchRecent(limit: 1).first {
+                return record
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTFail("Transcription was not persisted within \(timeoutSeconds)s")
+        throw PersistenceTimeout()
     }
 }
 

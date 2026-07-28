@@ -4,7 +4,15 @@
 import AppKit
 import os
 
-final class ClipboardManager {
+/// Testable seam over pasteboard save/set/restore so injection tests can
+/// assert clipboard semantics without touching the real system pasteboard.
+protocol ClipboardManaging: AnyObject {
+    func save() -> [ClipboardManager.SavedItem]
+    func restore(_ savedItems: [ClipboardManager.SavedItem])
+    func setString(_ string: String)
+}
+
+final class ClipboardManager: ClipboardManaging {
 
     struct SavedItem {
         let types: [NSPasteboard.PasteboardType]
