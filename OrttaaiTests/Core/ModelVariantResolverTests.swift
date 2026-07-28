@@ -51,18 +51,18 @@ final class ModelVariantResolverTests: XCTestCase {
 
     // MARK: - Variant resolution: not downloaded
 
-    func testNotDownloadedRowUsesCuratedEstimateWithoutPrecisionClaim() {
+    func testNotDownloadedRowShowsExactFullPrecisionChoice() {
         let row = ModelVariantResolver.resolveRow(
-            family: makeFamily(id: "openai_whisper-small_216MB", sizeMB: 216),
+            family: makeFamily(id: "openai_whisper-small", sizeMB: 465),
             downloadedVariants: [],
             activeModelID: nil
         )
 
-        XCTAssertEqual(row.displayVariantID, "openai_whisper-small_216MB")
+        XCTAssertEqual(row.displayVariantID, "openai_whisper-small")
         XCTAssertNil(row.measuredBytes)
         XCTAssertFalse(row.isSizeMeasured)
-        XCTAssertEqual(row.estimatedSizeMB, 216)
-        XCTAssertNil(row.precision, "A row with nothing on disk must not claim a precision")
+        XCTAssertEqual(row.estimatedSizeMB, 465)
+        XCTAssertEqual(row.precision, .fullPrecision)
         XCTAssertFalse(row.isDownloaded)
         XCTAssertNil(row.migrationOffer)
     }

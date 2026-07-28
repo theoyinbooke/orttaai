@@ -67,3 +67,21 @@ committed-context tail takes the remainder.
 
 Model: `openai_whisper-large-v3` (the user's active model, already on disk);
 preset `balanced` (the user's active preset); language `en`.
+
+## Full-precision model comparison
+
+`model_comparison.json` records the 2026-07-28 run of the same 92-item
+corpus against full-precision `openai_whisper-large-v3` and
+`openai_whisper-small.en`.
+
+For the production live path, `small.en` measured 4.76% WER versus 4.36% for
+`large-v3`, while median finalization fell from 2,042 ms to 241 ms. That makes
+`small.en` a defensible English Quick Start model. It is not a universal
+replacement: on the whole-utterance path it measured 9.68% WER and one
+long-item hallucination. Capable Macs therefore upgrade to full-precision
+`large-v3-turbo`, and normal dictation must continue to use the segmented live
+session.
+
+The macOS XCTest host is deliberately inert: unit tests and ASR evaluations
+must never register Orttaai's global hotkeys, capture a live microphone, open
+application UI, synchronize user data, or inject text.

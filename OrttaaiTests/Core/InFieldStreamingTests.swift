@@ -39,6 +39,27 @@ final class InFieldStreamingTests: XCTestCase {
         XCTAssertEqual(planner.streamedText, "")
     }
 
+    func testLivePlannerShowsRevisesAndCommitsSpeculativeText() {
+        var planner = LiveStreamingTextPlanner()
+
+        XCTAssertEqual(planner.editForSpeculativeText("hello there"), .append("hello there"))
+        XCTAssertEqual(planner.visibleText, "hello there")
+
+        XCTAssertEqual(
+            planner.editForSpeculativeText("hello world"),
+            .replaceTail(deleteCharacters: 5, replacement: "world")
+        )
+        XCTAssertEqual(planner.visibleText, "hello world")
+
+        // The commit can stabilize the same visible text without another edit.
+        XCTAssertNil(planner.editForCommittedText("hello world"))
+        XCTAssertEqual(planner.committedText, "hello world")
+        XCTAssertEqual(planner.speculativeText, "")
+
+        XCTAssertEqual(planner.editForSpeculativeText("today"), .append(" today"))
+        XCTAssertEqual(planner.visibleText, "hello world today")
+    }
+
     // MARK: - Reconciliation planner
 
     func testPlanAlreadyExactWhenFinalEqualsStreamed() {
@@ -161,6 +182,21 @@ final class InFieldStreamingTests: XCTestCase {
                 ),
                 .streamBlind(.terminalBundle),
                 "\(bundleID) must stream blind — keystrokes land but can never be read back"
+            )
+        }
+    }
+
+    func testGateRefusesCodexSyntheticStreamingCaseInsensitively() {
+        for bundleID in ["com.openai.codex", "COM.OPENAI.CODEX"] {
+            XCTAssertEqual(
+                InFieldStreamingGate.assessStart(
+                    bundleID: bundleID,
+                    targetFrontmost: true,
+                    details: .axError,
+                    snapshot: .axError
+                ),
+                .refuse(.unsafeBlindTarget),
+                "Codex's unreadable editor has a confirmed NSTextInputContext crash under blind synthetic streaming"
             )
         }
     }
@@ -328,6 +364,38 @@ final class InFieldStreamingTests: XCTestCase {
         XCTAssertEqual(clipboard.setStrings, [])
     }
 
+    func testSessionStreamsAndRevisesSpeculativeTailBeforeFirstCommit() async {
+        let session = makeSession()
+
+        await session.ingestSpeculative("hello there")
+        XCTAssertEqual(inspector.simulatedFieldValue, "doc: hello there")
+
+        await session.ingestSpeculative("hello world")
+        XCTAssertEqual(keyPoster.backspaceCounts, [5])
+        XCTAssertEqual(inspector.simulatedFieldValue, "doc: hello world")
+
+        // Stabilizing the exact speculative text must not type it twice.
+        await session.ingestCommit("hello world")
+        XCTAssertEqual(inspector.simulatedFieldValue, "doc: hello world")
+        XCTAssertEqual(keyPoster.typedTexts, ["hello there", "world"])
+
+        await session.ingestSpeculative("today")
+        XCTAssertEqual(inspector.simulatedFieldValue, "doc: hello world today")
+        XCTAssertEqual(session.streamedText, "hello world today")
+    }
+
+    func testBlindSessionKeepsSpeculativeTextOutOfUnreadableTargets() async {
+        let session = makeBlindSession(bundleID: "com.apple.terminal")
+
+        await session.ingestSpeculative("provisional command")
+        XCTAssertEqual(keyPoster.typedTexts, [])
+        XCTAssertEqual(session.streamedText, "")
+
+        await session.ingestCommit("stable command")
+        XCTAssertEqual(keyPoster.typedTexts, ["stable command"])
+        XCTAssertEqual(session.streamedText, "stable command")
+    }
+
     func testSessionFallsBackWhenTargetLosesFocusAndNeverResumes() async {
         let session = makeSession()
         await session.ingestCommit("first clip")
@@ -478,6 +546,25 @@ final class InFieldStreamingTests: XCTestCase {
         XCTAssertEqual(keyPoster.backspaceCounts, [], "Never delete when the field stopped matching the streamed span")
         XCTAssertEqual(keyPoster.typedTexts, ["hello world"], "No new text may be inserted after a mismatch")
         XCTAssertEqual(clipboard.setStrings, ["hello world, friend"], "Final text goes to the clipboard for Cmd+V")
+    }
+
+    func testFinalizeRecoversCosmeticTransformWhenFieldStartedEmpty() async {
+        let session = makeSession(fieldValue: "")
+        inspector.detailsResult = normalDetails(role: "AXTextField")
+
+        await session.ingestSpeculative("hello world")
+        inspector.simulatedFieldValue = "HELLO\u{00A0}WORLD\u{200B}"
+        inspector.simulatedSelectedRange = FocusedTextRange(
+            location: inspector.simulatedFieldValue?.utf16.count ?? 0,
+            length: 0
+        )
+
+        let outcome = await session.finalize(finalText: "Hello, world.")
+
+        XCTAssertEqual(outcome, .completed)
+        XCTAssertEqual(keyPoster.backspaceCounts.last, "HELLO\u{00A0}WORLD\u{200B}".count)
+        XCTAssertEqual(inspector.simulatedFieldValue, "Hello, world.")
+        XCTAssertEqual(clipboard.setStrings, [])
     }
 
     func testFinalizeAbortsWhenFieldBecameUnreadable() async {
@@ -723,6 +810,24 @@ final class InFieldStreamingTests: XCTestCase {
         XCTAssertEqual(keyPoster.typedTexts, ["git status"])
         XCTAssertFalse(keyPoster.typedTexts.contains(where: { $0.contains(where: \.isNewline) }),
                        "A streamed newline could execute a command")
+    }
+
+    func testCodexSessionNeverPostsStreamingKeysAndFallsBackToFinalInjection() async {
+        let session = makeBlindSession(bundleID: "com.openai.codex")
+
+        await session.ingestSpeculative("words appearing live")
+        await session.ingestCommit("words appearing live")
+
+        XCTAssertEqual(session.phase, .stopped(.unsafeBlindTarget))
+        XCTAssertEqual(session.streamedText, "")
+        XCTAssertEqual(keyPoster.typedTexts, [])
+        XCTAssertEqual(keyPoster.backspaceCounts, [])
+        let outcome = await session.finalize(finalText: "Words appearing live.")
+        XCTAssertEqual(
+            outcome,
+            .notStreamed,
+            "The coordinator must use its normal one-paste final injection path for Codex"
+        )
     }
 
     func testBlindSessionRefusesSecureFieldOnEveryCommit() async {

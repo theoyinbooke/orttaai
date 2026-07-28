@@ -31,6 +31,68 @@ struct StreamingIncrementPlanner: Equatable, Sendable {
     }
 }
 
+/// Plans the text that should be visible in the target field while recording.
+/// Unlike `StreamingIncrementPlanner`, this includes the speculative tail so a
+/// normal short dictation becomes visible after the first live decode instead
+/// of waiting for a pause commit or the 15-second commit boundary.
+struct LiveStreamingTextPlanner: Equatable, Sendable {
+    enum Edit: Equatable, Sendable {
+        case append(String)
+        case replaceTail(deleteCharacters: Int, replacement: String)
+    }
+
+    private(set) var committedText = ""
+    private(set) var speculativeText = ""
+
+    var visibleText: String {
+        Self.joined(committed: committedText, speculative: speculativeText)
+    }
+
+    mutating func editForCommittedText(_ text: String) -> Edit? {
+        let oldVisible = visibleText
+        let normalized = Self.flattened(text)
+        if !normalized.isEmpty {
+            committedText = committedText.isEmpty
+                ? normalized
+                : committedText + " " + normalized
+        }
+        // A commit covers the speculative tail decoded against the old base.
+        speculativeText = ""
+        return Self.edit(from: oldVisible, to: visibleText)
+    }
+
+    mutating func editForSpeculativeText(_ text: String) -> Edit? {
+        let oldVisible = visibleText
+        speculativeText = Self.flattened(text)
+        return Self.edit(from: oldVisible, to: visibleText)
+    }
+
+    private static func joined(committed: String, speculative: String) -> String {
+        if committed.isEmpty { return speculative }
+        if speculative.isEmpty { return committed }
+        return committed + " " + speculative
+    }
+
+    private static func flattened(_ text: String) -> String {
+        TranscriptionService.normalizedTranscriptionText(text)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func edit(from oldText: String, to newText: String) -> Edit? {
+        guard oldText != newText else { return nil }
+        let commonPrefixCount = StreamingReconciliation.commonPrefixCharacterCount(oldText, newText)
+        let replacement = String(newText.dropFirst(commonPrefixCount))
+        if commonPrefixCount == oldText.count {
+            return .append(replacement)
+        }
+        return .replaceTail(
+            deleteCharacters: oldText.count - commonPrefixCount,
+            replacement: replacement
+        )
+    }
+}
+
 // MARK: - Reconciliation planning (pure)
 
 /// What finalize must do so the target field ends up containing exactly the
@@ -155,7 +217,7 @@ enum StreamingReconciliation {
 
     /// Quote folding only (1:1 character swaps) — safe for offset math,
     /// unlike line-ending normalization which changes lengths.
-    static func quoteFolded(_ text: String) -> String {
+    nonisolated static func quoteFolded(_ text: String) -> String {
         text.replacingOccurrences(of: "\u{2018}", with: "'")
             .replacingOccurrences(of: "\u{2019}", with: "'")
             .replacingOccurrences(of: "\u{201C}", with: "\"")
@@ -176,7 +238,7 @@ enum StreamingReconciliation {
 
     /// Same line-ending normalization as paste verification, so AX values
     /// from apps that report \r\n compare cleanly.
-    static func normalized(_ text: String) -> String {
+    nonisolated static func normalized(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
     }
@@ -186,12 +248,49 @@ enum StreamingReconciliation {
     /// character swaps, so folding them keeps every count-based decision
     /// valid while stopping cosmetic substitutions from reading as
     /// user-typed-mid-stream mismatches.
-    static func typographicallyNormalized(_ text: String) -> String {
+    nonisolated static func typographicallyNormalized(_ text: String) -> String {
         normalized(text)
             .replacingOccurrences(of: "\u{2018}", with: "'")
             .replacingOccurrences(of: "\u{2019}", with: "'")
             .replacingOccurrences(of: "\u{201C}", with: "\"")
             .replacingOccurrences(of: "\u{201D}", with: "\"")
+    }
+
+    /// Some controlled editors echo synthetic typing through their document
+    /// model and expose a cosmetically transformed AX value (capitalization,
+    /// non-breaking spaces, or invisible markers). If the field was empty at
+    /// session start, the caret is still at the end, and the whole current
+    /// value loosely equals the text Orttaai streamed, replacing that entire
+    /// value is both safe and more truthful than leaving provisional text
+    /// behind while putting the final result on the clipboard.
+    static func canReplaceTransformedEmptyField(
+        preStreamFieldValue: String?,
+        streamedText: String,
+        currentFieldValue: String,
+        caret: FocusedTextRange?
+    ) -> Bool {
+        guard preStreamFieldValue == "",
+              !streamedText.isEmpty,
+              !currentFieldValue.isEmpty,
+              let caret,
+              caret.length == 0,
+              caret.location == currentFieldValue.utf16.count else {
+            return false
+        }
+        return looseFieldComparisonText(streamedText) == looseFieldComparisonText(currentFieldValue)
+    }
+
+    nonisolated private static func looseFieldComparisonText(_ text: String) -> String {
+        typographicallyNormalized(text)
+            .precomposedStringWithCanonicalMapping
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{200B}", with: "")
+            .replacingOccurrences(of: "\u{200C}", with: "")
+            .replacingOccurrences(of: "\u{200D}", with: "")
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }
 
@@ -270,6 +369,10 @@ enum InFieldStreamingStopReason: String, Equatable, Sendable {
     /// span (the element swallowed the keystrokes, the user edited
     /// mid-stream, or the caret moved).
     case fieldMismatch
+    /// The destination has a confirmed crash or corruption path when it
+    /// receives synthetic per-chunk key events. Final delivery must fall back
+    /// to the normal single-paste injection path.
+    case unsafeBlindTarget
 }
 
 /// Why a session streams blind: typed keystrokes verifiably land in these
@@ -302,6 +405,14 @@ enum InFieldStreamingStartDecision: Equatable, Sendable {
 }
 
 enum InFieldStreamingGate {
+    /// Apps whose editors have a confirmed crash path under synthetic
+    /// per-chunk key events. Codex exposes its composer as unreadable over AX;
+    /// blind Unicode streaming crashed its NSTextInputContext on 2026-07-28.
+    /// Keep these targets on the normal one-paste final delivery path.
+    static let unsafeStreamingBundleIDs: Set<String> = [
+        "com.openai.codex"
+    ]
+
     /// Known terminal emulators by bundle ID. Streaming keystrokes into a
     /// shell is never safe regardless of what AX reports.
     static let terminalBundleIDs: Set<String> = [
@@ -326,6 +437,11 @@ enum InFieldStreamingGate {
         return terminalBundleIDs.contains(bundleID.lowercased())
     }
 
+    static func isUnsafeStreamingBundleID(_ bundleID: String?) -> Bool {
+        guard let bundleID else { return false }
+        return unsafeStreamingBundleIDs.contains(bundleID.lowercased())
+    }
+
     /// Decides how a session may start delivering into the focused element.
     /// Readable fields get the fully verified C7 path; unreadable fields and
     /// terminals stream blind (typed increments, count-based reconciliation);
@@ -336,13 +452,16 @@ enum InFieldStreamingGate {
         details: AXInspection<FocusedElementDetails>,
         snapshot: AXInspection<FocusedTextSnapshot>
     ) -> InFieldStreamingStartDecision {
+        guard targetFrontmost else {
+            return .refuse(.focusLost)
+        }
+        if isUnsafeStreamingBundleID(bundleID) {
+            return .refuse(.unsafeBlindTarget)
+        }
         if isTerminalBundleID(bundleID) {
             // Typed unicode keystrokes verifiably land in terminals, but
             // their screens can't be read back — stream blind.
             return .streamBlind(.terminalBundle)
-        }
-        guard targetFrontmost else {
-            return .refuse(.focusLost)
         }
         guard case .value(let elementDetails) = details else {
             // AX cannot see the element at all. Plain injection fails open
@@ -422,13 +541,18 @@ final class InFieldStreamingSession {
     /// Meaningful once streaming has started; readable until the start gate
     /// says otherwise.
     private(set) var mode: Mode = .readable
-    private var planner = StreamingIncrementPlanner()
+    private enum LiveTextUpdate {
+        case committed(String)
+        case speculative(String)
+    }
+
+    private var planner = LiveStreamingTextPlanner()
     /// Field value captured right before the first increment, the baseline
     /// for detecting mid-stream edits at finalize (readable mode only).
     private(set) var preStreamFieldValue: String?
 
     var isStreaming: Bool { phase == .streaming }
-    var streamedText: String { planner.streamedText }
+    var streamedText: String { planner.visibleText }
 
     private let targetApp: NSRunningApplication?
     /// Bundle ID used by the terminal gate. Injectable so unit tests can
@@ -466,16 +590,42 @@ final class InFieldStreamingSession {
 
     // MARK: Streaming
 
-    /// Handles one committed clip while recording. Evaluates the start gates
-    /// on the first commit, re-checks the cheap per-increment gates on every
-    /// commit, and types the increment at the caret. Any gate failure stops
-    /// the session silently without typing — nothing is ever shown in the
-    /// pill.
+    /// Handles one committed clip while recording. A commit supersedes the
+    /// provisional tail and becomes the stable visible prefix.
     func ingestCommit(_ text: String) async {
+        await ingestLiveTextUpdate(.committed(text))
+    }
+
+    /// Shows and revises the speculative tail in the target field. This is the
+    /// path that makes ordinary sub-15-second dictations visibly live.
+    func ingestSpeculative(_ text: String) async {
+        await ingestLiveTextUpdate(.speculative(text))
+    }
+
+    private func ingestLiveTextUpdate(_ update: LiveTextUpdate) async {
         switch phase {
         case .stopped, .finished:
             return
-        case .pending:
+        case .pending, .streaming:
+            break
+        }
+
+        var candidatePlanner = planner
+        let edit: LiveStreamingTextPlanner.Edit?
+        switch update {
+        case .committed(let text):
+            edit = candidatePlanner.editForCommittedText(text)
+        case .speculative(let text):
+            edit = candidatePlanner.editForSpeculativeText(text)
+        }
+        guard let edit else {
+            // The visible text can stay identical while a commit moves the
+            // speculative text into the stable prefix.
+            planner = candidatePlanner
+            return
+        }
+
+        if phase == .pending {
             switch evaluateStartGate() {
             case .refuse(let reason):
                 stop(reason)
@@ -490,8 +640,14 @@ final class InFieldStreamingSession {
                 mode = .readable
                 phase = .streaming
             }
-        case .streaming:
-            break
+        }
+
+        // Unreadable targets (notably terminals) cannot prove where their
+        // caret sits or whether the user edited the command. Keep their
+        // established commit-only behavior; speculative backspace/retype
+        // revisions require a readable field.
+        if case .speculative = update, case .blind = mode {
+            return
         }
 
         // Per-increment gates, both modes: never type into a different app,
@@ -515,7 +671,7 @@ final class InFieldStreamingSession {
         // visibility check plus finalize verification stay the honest
         // backstop).
         if mode == .readable,
-           !planner.streamedText.isEmpty,
+           !planner.visibleText.isEmpty,
            case .value(let preTypeSnapshot) = inspector.focusedElementTextSnapshot(processIdentifier: targetPid),
            let caret = preTypeSnapshot.selectedRange,
            let fieldValue = preTypeSnapshot.value,
@@ -524,8 +680,19 @@ final class InFieldStreamingSession {
             return
         }
 
-        guard let increment = planner.increment(forCommittedText: text) else { return }
-        keyPoster.postTypedText(increment)
+        switch edit {
+        case .append(let text):
+            keyPoster.postTypedText(text)
+        case .replaceTail(let deleteCharacters, let replacement):
+            keyPoster.postBackspaces(count: deleteCharacters)
+            if settleNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: settleNanoseconds)
+            }
+            if !replacement.isEmpty {
+                keyPoster.postTypedText(replacement)
+            }
+        }
+        planner = candidatePlanner
 
         // Visibility check (readable mode only — blind targets cannot echo
         // anything back): if the element exposes readable text and the
@@ -539,7 +706,7 @@ final class InFieldStreamingSession {
         if case .value(let snapshot) = inspector.focusedElementTextSnapshot(processIdentifier: targetPid),
            let value = snapshot.value,
            !StreamingReconciliation.typographicallyNormalized(value)
-                .contains(StreamingReconciliation.typographicallyNormalized(planner.streamedText)) {
+                .contains(StreamingReconciliation.typographicallyNormalized(planner.visibleText)) {
             stop(.fieldMismatch)
         }
     }
@@ -586,7 +753,7 @@ final class InFieldStreamingSession {
     /// Blind-mode sessions take the count-based path instead.
     func finalize(finalText: String) async -> FinalizeOutcome {
         defer { phase = .finished }
-        guard !planner.streamedText.isEmpty else { return .notStreamed }
+        guard !planner.visibleText.isEmpty else { return .notStreamed }
 
         if case .blind = mode {
             return await finalizeBlind(finalText: finalText)
@@ -602,7 +769,7 @@ final class InFieldStreamingSession {
         }
 
         let plan = StreamingReconciliation.plan(
-            streamedText: planner.streamedText,
+            streamedText: planner.visibleText,
             finalText: finalText,
             preStreamFieldValue: preStreamFieldValue,
             currentFieldValue: currentValue
@@ -610,9 +777,26 @@ final class InFieldStreamingSession {
 
         switch plan {
         case .abortFieldMismatch:
+            if let currentValue,
+               StreamingReconciliation.canReplaceTransformedEmptyField(
+                   preStreamFieldValue: preStreamFieldValue,
+                   streamedText: planner.visibleText,
+                   currentFieldValue: currentValue,
+                   caret: caretRange
+               ) {
+                Logger.injection.info(
+                    "Recovering transformed empty-field stream with a verified whole-span replacement"
+                )
+                keyPoster.postBackspaces(count: currentValue.count)
+                if settleNanoseconds > 0 {
+                    try? await Task.sleep(nanoseconds: settleNanoseconds)
+                }
+                await deliverReconciliationText(finalText)
+                return await verifyReconciliation(finalText: finalText)
+            }
             clipboard.setString(finalText)
             Logger.injection.warning(
-                "Streaming reconciliation aborted — field no longer matches the streamed span; final text left on clipboard"
+                "Streaming reconciliation aborted — field no longer matches the streamed span [preChars=\(self.preStreamFieldValue?.count ?? -1), streamedChars=\(self.planner.visibleText.count), currentChars=\(currentValue?.count ?? -1)]; final text left on clipboard"
             )
             return .failedNeedsManualPaste
 
@@ -690,7 +874,7 @@ final class InFieldStreamingSession {
             return .failedNeedsManualPaste
         }
 
-        switch BlindStreamingReconciliation.plan(streamedText: planner.streamedText, finalText: finalText) {
+        switch BlindStreamingReconciliation.plan(streamedText: planner.visibleText, finalText: finalText) {
         case .alreadyExact:
             Logger.injection.info("Blind streaming reconciliation: streamed span already matches the flattened final text")
             return .completed
@@ -731,7 +915,7 @@ final class InFieldStreamingSession {
         guard caret.length == 0 else { return false }
         let validOffsets = StreamingReconciliation.validCaretUTF16Offsets(
             pre: preStreamFieldValue,
-            streamed: planner.streamedText,
+            streamed: planner.visibleText,
             current: currentValue
         )
         return validOffsets.contains(caret.location)

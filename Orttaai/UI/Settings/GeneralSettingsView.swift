@@ -63,7 +63,7 @@ struct GeneralSettingsView: View {
 
                 toggleRow(
                     title: "Stream Words Into the App",
-                    subtitle: "Type your words at the cursor while you speak. AI polish is skipped for streamed dictations so finished words aren't rewritten. In terminals and other fields Orttaai can't read back, words are still typed at the cursor (with line breaks flattened to spaces). Password fields are never typed into, and the recording pill never displays dictated text.",
+                    subtitle: "Show provisional words at the cursor while you speak in apps with readable text fields, then reconcile them to the polished final text. Apps whose editors cannot safely accept live synthetic typing, including Codex, receive the polished text once when recording ends. Terminals retain commit-only streaming with line breaks flattened to spaces. Password fields are never typed into, and the recording pill never displays dictated text.",
                     isOn: $inFieldStreamingEnabled
                 )
             }

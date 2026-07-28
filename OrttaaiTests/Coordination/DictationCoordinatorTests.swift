@@ -120,9 +120,11 @@ actor MockTranscriptionService: Transcribing {
 
 final class MockTextProcessor: TextProcessor, VocabularyBiasProviding {
     var mockVocabularyBiasTerms: [String] = []
+    private(set) var inputs: [TextProcessorInput] = []
 
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
-        TextProcessorOutput(text: input.rawTranscript, changes: [])
+        inputs.append(input)
+        return TextProcessorOutput(text: input.rawTranscript, changes: [])
     }
 
     func isAvailable() -> Bool { true }
@@ -615,10 +617,11 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(saved.text, "Hello world")
         XCTAssertEqual(injectionService.injectedTexts, [], "Streamed sessions reconcile in place, never re-paste")
         XCTAssertEqual(streamingKeyPoster.backspaceCounts, [], "Identical final text needs no reconciliation edit")
+        XCTAssertEqual(textProcessor.inputs.last?.deferPolish, false, "Streaming is only a preview; the final text must still use the full cleanup pipeline")
     }
 
     @MainActor
-    func testStreamingSpeculativeTailIsNeverTyped() async {
+    func testStreamingSpeculativeTailIsVisibleAndRevisedInPlace() async {
         configureStreamableField()
         coordinator.startRecording()
         try? await Task.sleep(nanoseconds: 400_000_000)
@@ -628,7 +631,16 @@ final class DictationCoordinatorTests: XCTestCase {
         await transcriptionService.emitLiveTranscriptEventForTest(.speculative("still guessing"))
         try? await Task.sleep(nanoseconds: 200_000_000)
 
-        XCTAssertEqual(streamingKeyPoster.typedTexts, ["stable words"], "Only committed text may reach the field")
+        XCTAssertEqual(
+            streamingKeyPoster.typedTexts,
+            ["maybe wrong words", "stable words", " still guessing"],
+            "The speculative tail appears immediately and is safely revised when a commit arrives"
+        )
+        XCTAssertEqual(
+            streamingKeyPoster.backspaceCounts,
+            ["maybe wrong words".count],
+            "Only the provisional span is replaced"
+        )
 
         coordinator.stopRecording()
     }

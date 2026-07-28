@@ -4,11 +4,12 @@
 // Pure resolution of what a model-family row must display so the list never
 // contradicts what is on disk or loaded. A family row (deduplicated by
 // `ModelManager.canonicalModelListID`) can stand for several concrete builds:
-//   - the curated quantized variant we prefer for new downloads,
+//   - the full-precision variant preferred for new downloads,
+//   - an explicitly chosen quantized build,
 //   - a full-precision build already on disk,
 //   - the variant actually loaded right now.
 // The resolver picks the truthful one: loaded variant first, then what is
-// downloaded, and only for not-yet-downloaded rows the curated estimate.
+// downloaded, and only for not-yet-downloaded rows the selected estimate.
 
 import Foundation
 
@@ -43,16 +44,16 @@ struct QuantizedMigrationOffer: Equatable, Sendable {
 struct ResolvedModelRow: Equatable {
     let familyID: String
     /// The concrete build the row represents: the loaded variant when this
-    /// family is current, otherwise the downloaded build, otherwise the
-    /// curated download target.
+    /// family is current, otherwise the preferred downloaded build, otherwise
+    /// the row's exact download target.
     let displayVariantID: String
     /// Measured on-disk bytes of `displayVariantID`, when it is downloaded.
     let measuredBytes: Int64?
     /// Estimate for `displayVariantID` (not the curated alias) — used only
     /// when no measurement exists.
     let estimatedSizeMB: Int
-    /// Set only when the display variant is downloaded or loaded; rows for
-    /// models that are not on this Mac carry no precision claim.
+    /// Precision of the exact build represented by the row, including before
+    /// download so the choice is explicit.
     let precision: ModelVariantPrecision?
     let isDownloaded: Bool
     let migrationOffer: QuantizedMigrationOffer?
@@ -62,8 +63,8 @@ struct ResolvedModelRow: Equatable {
 
 enum ModelVariantResolver {
     /// - Parameters:
-    ///   - family: the deduplicated family row (its id is the preferred /
-    ///     curated download variant).
+    ///   - family: the deduplicated family row (its id is the preferred
+    ///     full-precision download variant).
     ///   - downloadedVariants: full on-disk inventory
     ///     (`DownloadedModelMetrics.variants`); the resolver filters to this
     ///     family itself.
@@ -93,14 +94,15 @@ enum ModelVariantResolver {
             return trimmed
         }()
 
-        // Display variant: loaded > downloaded-curated > largest downloaded
-        // build > the curated download target for not-yet-downloaded rows.
+        // Display variant: loaded > the row's exact downloaded build > the
+        // largest downloaded build (normally full precision) > the row's
+        // exact download target. A dormant quantized sibling must not make a
+        // full-precision row look quantized.
         let displayVariantID: String
         if let loadedVariantID {
             displayVariantID = loadedVariantID
-        } else if let curatedVariantID,
-                  familyRecords.contains(where: { $0.variantID == curatedVariantID }) {
-            displayVariantID = curatedVariantID
+        } else if familyRecords.contains(where: { $0.variantID == family.id }) {
+            displayVariantID = family.id
         } else if let largestRecord = familyRecords.max(by: { $0.bytes < $1.bytes }) {
             displayVariantID = largestRecord.variantID
         } else {
@@ -112,12 +114,7 @@ enum ModelVariantResolver {
         // size stand in for a full-precision one, which is the original bug.
         let matchingRecord = familyRecords.first { $0.variantID == displayVariantID }
 
-        let precision: ModelVariantPrecision?
-        if matchingRecord != nil || loadedVariantID != nil {
-            precision = ModelVariantPrecision.forVariantID(displayVariantID)
-        } else {
-            precision = nil
-        }
+        let precision = ModelVariantPrecision.forVariantID(displayVariantID)
 
         var migrationOffer: QuantizedMigrationOffer?
         if let curatedVariantID,

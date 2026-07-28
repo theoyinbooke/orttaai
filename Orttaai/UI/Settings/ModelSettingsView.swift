@@ -1494,8 +1494,8 @@ struct ModelSettingsView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.86)
 
-                    // Measured on-disk size for downloaded builds; the
-                    // curated estimate only for models not on this Mac.
+                    // Measured on-disk size for downloaded builds; the exact
+                    // selected variant's estimate for models not on this Mac.
                     Text(ModelSizeFormatter.text(for: resolved))
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
@@ -1577,7 +1577,7 @@ struct ModelSettingsView: View {
 
     /// Resolves what this family row must show so it never contradicts the
     /// disk or the loaded model: loaded variant first, then the downloaded
-    /// build with its measured size, then the curated download estimate.
+    /// build with its measured size, then the exact download estimate.
     private func resolvedRow(for model: ModelInfo) -> ResolvedModelRow {
         ModelVariantResolver.resolveRow(
             family: model,
@@ -2244,12 +2244,12 @@ struct ModelSettingsView: View {
             "openai_whisper-tiny.en",
             "openai_whisper-base",
             "openai_whisper-base.en",
-            "openai_whisper-small_216MB",
-            "openai_whisper-small.en_217MB",
+            "openai_whisper-small",
+            "openai_whisper-small.en",
             "openai_whisper-medium",
             "openai_whisper-medium.en",
-            "openai_whisper-large-v3-v20240930_626MB",
-            "openai_whisper-large-v3_947MB",
+            "openai_whisper-large-v3-v20240930",
+            "openai_whisper-large-v3",
         ]
     }
 

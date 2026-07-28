@@ -25,6 +25,8 @@ actor CodexClient: LocalLLMServing {
     private let connection: CodexAppServerConnection
     private var cachedModelNames: [String] = []
     private var cachedModelNamesAt: Date?
+    private var cachedModelDetails: [CodexModelInfo] = []
+    private var cachedModelDetailsAt: Date?
     private static let modelCacheLifetime: TimeInterval = 30
     private static let defaultTurnTimeoutMs = 300_000
     /// Prompt-size cap for the single retry after ContextWindowExceeded.
@@ -102,34 +104,34 @@ actor CodexClient: LocalLLMServing {
             let id = (entry["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (id?.isEmpty ?? true) ? nil : id
         }
+        let details = Self.modelDetails(from: entries)
         cachedModelNames = names
         cachedModelNamesAt = Date()
+        if !details.isEmpty {
+            cachedModelDetails = details
+            cachedModelDetailsAt = Date()
+        }
         return names
     }
 
     /// Full model metadata for the Settings picker (display name, description,
     /// supported reasoning efforts). Not part of `LocalLLMServing`.
     func fetchModelDetails(timeoutMs: Int = 15_000) async throws -> [CodexModelInfo] {
+        if let cachedAt = cachedModelDetailsAt,
+           Date().timeIntervalSince(cachedAt) < Self.modelCacheLifetime,
+           !cachedModelDetails.isEmpty {
+            return cachedModelDetails
+        }
         let result = try await connection.request(
             method: "model/list",
             params: ["limit": 50],
             timeoutMs: timeoutMs
         )
         let entries = result["data"] as? [[String: Any]] ?? []
-        return entries.compactMap { entry -> CodexModelInfo? in
-            guard let id = entry["id"] as? String, !id.isEmpty,
-                  (entry["hidden"] as? Bool) != true else { return nil }
-            let efforts = (entry["supportedReasoningEfforts"] as? [[String: Any]])?
-                .compactMap { $0["reasoningEffort"] as? String } ?? []
-            return CodexModelInfo(
-                id: id,
-                displayName: entry["displayName"] as? String ?? id,
-                summary: entry["description"] as? String ?? "",
-                supportedReasoningEfforts: efforts,
-                defaultReasoningEffort: entry["defaultReasoningEffort"] as? String,
-                isDefault: entry["isDefault"] as? Bool ?? false
-            )
-        }
+        let details = Self.modelDetails(from: entries)
+        cachedModelDetails = details
+        cachedModelDetailsAt = Date()
+        return details
     }
 
     // MARK: - Generation
@@ -253,6 +255,7 @@ actor CodexClient: LocalLLMServing {
             throw OllamaClientError.requestFailed(message: "Missing Codex model name.")
         }
         let effectiveTimeoutMs = timeoutMs ?? Self.defaultTurnTimeoutMs
+        let reasoningEffort = resolvedReasoningEffort(for: normalizedModel)
 
         do {
             return try await performTurn(
@@ -260,6 +263,7 @@ actor CodexClient: LocalLLMServing {
                 prompt: prompt,
                 formatJSONSchema: formatJSONSchema,
                 timeoutMs: effectiveTimeoutMs,
+                reasoningEffort: reasoningEffort,
                 onDelta: onDelta
             )
         } catch let error as CodexTurnFailure {
@@ -293,6 +297,7 @@ actor CodexClient: LocalLLMServing {
         prompt: String,
         formatJSONSchema: String?,
         timeoutMs: Int,
+        reasoningEffort: String?,
         onDelta: (@Sendable (String) -> Void)? = nil
     ) async throws -> String {
         // Ephemeral + read-only + never-approve: pure inference, no history,
@@ -323,9 +328,8 @@ actor CodexClient: LocalLLMServing {
         if let schemaObject = try Self.schemaObject(fromJSONSchema: formatJSONSchema) {
             turnParams["outputSchema"] = schemaObject
         }
-        let effort = Self.storedReasoningEffort()
-        if !effort.isEmpty {
-            turnParams["effort"] = effort
+        if let reasoningEffort {
+            turnParams["effort"] = reasoningEffort
         }
 
         do {
@@ -388,10 +392,26 @@ actor CodexClient: LocalLLMServing {
                 )
                 throw CodexError.timeout(method: "turn/start")
             }
-            defer { group.cancelAll() }
-            guard let first = try await group.next() else { throw CodexError.invalidResponse }
-            return first
+            guard let first = await group.nextResult() else {
+                throw CodexError.invalidResponse
+            }
+            group.cancelAll()
+            while await group.nextResult() != nil {}
+            return try first.get()
         }
+    }
+
+    private func resolvedReasoningEffort(for model: String) -> String? {
+        let requested = Self.storedReasoningEffort()
+        guard let info = cachedModelDetails.first(where: {
+            $0.id.caseInsensitiveCompare(model) == .orderedSame
+        }) else {
+            // Model metadata is the compatibility contract. If it cannot be
+            // read, let the server use its model-specific default instead of
+            // risking a failed turn with a stale global preference.
+            return nil
+        }
+        return Self.compatibleReasoningEffort(requested: requested, model: info)
     }
 
     private func readPrimaryResetDate() async -> Date? {
@@ -417,6 +437,54 @@ actor CodexClient: LocalLLMServing {
         let stored = UserDefaults.standard.string(forKey: reasoningEffortKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         return stored.isEmpty ? "medium" : stored
+    }
+
+    nonisolated static func modelDetails(from entries: [[String: Any]]) -> [CodexModelInfo] {
+        entries.compactMap { entry -> CodexModelInfo? in
+            guard let id = entry["id"] as? String, !id.isEmpty,
+                  (entry["hidden"] as? Bool) != true else { return nil }
+            let efforts = (entry["supportedReasoningEfforts"] as? [[String: Any]])?
+                .compactMap { $0["reasoningEffort"] as? String } ?? []
+            return CodexModelInfo(
+                id: id,
+                displayName: entry["displayName"] as? String ?? id,
+                summary: entry["description"] as? String ?? "",
+                supportedReasoningEfforts: efforts,
+                defaultReasoningEffort: entry["defaultReasoningEffort"] as? String,
+                isDefault: entry["isDefault"] as? Bool ?? false
+            )
+        }
+    }
+
+    nonisolated static func compatibleReasoningEffort(
+        requested: String,
+        model: CodexModelInfo
+    ) -> String? {
+        let supported = model.supportedReasoningEfforts.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }.filter { !$0.isEmpty }
+        guard !supported.isEmpty else { return nil }
+
+        let normalized = requested.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if supported.contains(normalized) { return normalized }
+
+        let ordered = ["minimal", "low", "medium", "high", "xhigh", "max"]
+        if let requestedIndex = ordered.firstIndex(of: normalized),
+           let nearest = supported
+            .compactMap({ effort -> (String, Int)? in
+                guard let index = ordered.firstIndex(of: effort), index <= requestedIndex else { return nil }
+                return (effort, index)
+            })
+            .max(by: { $0.1 < $1.1 })?.0 {
+            return nearest
+        }
+
+        if let defaultEffort = model.defaultReasoningEffort?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           supported.contains(defaultEffort) {
+            return defaultEffort
+        }
+        return supported.first
     }
 
     nonisolated static func schemaObject(fromJSONSchema formatJSONSchema: String?) throws -> Any? {

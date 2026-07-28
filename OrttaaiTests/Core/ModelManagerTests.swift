@@ -91,7 +91,7 @@ final class ModelManagerTests: XCTestCase {
         )
     }
 
-    func testDeduplicationPrefersCuratedQuantizedVariant() {
+    func testDeduplicationPrefersFullPrecisionVariant() {
         let deduplicated = ModelManager.deduplicateModelsByNormalizedID([
             makeModel(id: "openai_whisper-large-v3_turbo", name: "Whisper Large V3 Turbo", sizeMB: 3_047),
             makeModel(id: "openai_whisper-large-v3-v20240930", name: "Whisper Large V3 Turbo", sizeMB: 1_544),
@@ -99,8 +99,8 @@ final class ModelManagerTests: XCTestCase {
         ])
 
         XCTAssertEqual(deduplicated.count, 1)
-        XCTAssertEqual(deduplicated.first?.id, "openai_whisper-large-v3-v20240930_626MB")
-        XCTAssertEqual(deduplicated.first?.downloadSizeMB, 626)
+        XCTAssertEqual(deduplicated.first?.id, "openai_whisper-large-v3-v20240930")
+        XCTAssertEqual(deduplicated.first?.downloadSizeMB, 1_544)
     }
 
     func testDeduplicationShowsPreferredVariantSizeNotMinimum() {
@@ -168,6 +168,13 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(metrics.downloadedModelIDs.contains("openai_whisper-tiny.en"))
         XCTAssertFalse(metrics.downloadedModelIDs.contains("openai_whisper-base"))
         XCTAssertGreaterThan(metrics.totalBytes, 0)
+
+        let fastIDs = ModelManager.detectDownloadedModelIDs(in: [tempRoot])
+        XCTAssertEqual(fastIDs, ["openai_whisper-tiny.en"])
+        XCTAssertEqual(
+            ModelManager.detectDownloadedVariantIDs(in: [tempRoot]),
+            ["openai_whisper-tiny.en"]
+        )
     }
 
     func testDetectDownloadedModelMetricsDeduplicatesDuplicateModelIds() throws {
@@ -202,6 +209,11 @@ final class ModelManagerTests: XCTestCase {
 
         let metrics = ModelManager.detectDownloadedModelMetrics(in: [tempRoot])
         XCTAssertTrue(metrics.downloadedModelIDs.contains("openai_whisper-large-v3_turbo"))
+        XCTAssertEqual(
+            ModelManager.detectDownloadedVariantIDs(in: [tempRoot]),
+            ["openai_whisper-large-v3_turbo_954MB"],
+            "Precision-sensitive checks retain the exact downloaded build"
+        )
     }
 
     func testDetectDownloadedModelMetricsKeepsFullAndQuantizedVariantsSeparate() throws {

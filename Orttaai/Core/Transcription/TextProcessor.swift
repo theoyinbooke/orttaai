@@ -14,11 +14,9 @@ struct TextProcessorInput {
     let rawTranscript: String
     let targetApp: String?
     let mode: ProcessingMode
-    /// True for dictations that streamed committed text into the target field
-    /// while recording. LLM polish routinely rewrites the whole utterance,
-    /// which would visibly delete and retype words the user already watched
-    /// land — so streaming sessions defer polish and keep only the
-    /// deterministic passes (dictionary, snippets, spoken formatting).
+    /// Allows specialized callers to skip the optional polish providers.
+    /// Normal dictation, including in-field streaming, keeps this false:
+    /// streamed text is provisional and must not lower final output quality.
     var deferPolish: Bool = false
 }
 

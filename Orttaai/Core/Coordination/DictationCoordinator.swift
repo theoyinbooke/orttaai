@@ -565,18 +565,16 @@ final class DictationCoordinator {
                 return
             }
 
-            // Process through text processor. Sessions that streamed text
-            // into the field defer LLM polish: polish rewrites the whole
-            // utterance, which would visibly delete and retype words the user
-            // already watched land. Deterministic passes still apply and are
-            // reconciled exactly at finalize.
+            // Streaming is a provisional preview, never the source of truth.
+            // Always run the configured polish pipeline, then reconcile the
+            // visible provisional span to the better final result.
             let didStreamText = !(streamingSession?.streamedText.isEmpty ?? true)
             let textProcessStart = CFAbsoluteTimeGetCurrent()
             let input = TextProcessorInput(
                 rawTranscript: transcript,
                 targetApp: appName,
                 mode: .raw,
-                deferPolish: didStreamText
+                deferPolish: false
             )
             let output = try await textProcessor.process(input)
             textProcessingMs = Int((CFAbsoluteTimeGetCurrent() - textProcessStart) * 1000)
@@ -1117,9 +1115,9 @@ final class DictationCoordinator {
         }
     }
 
-    /// Routes live events to the in-field streaming session. Commits stream
-    /// their text at the caret; speculative events double as a cheap focus
-    /// re-check so an app switch stops streaming within sub-second cadence.
+    /// Routes live events to the in-field streaming session. Commits provide
+    /// the stable prefix; speculative events visibly revise the provisional
+    /// tail so short dictations do not appear inert until finalization.
     /// Events after recording ended are dropped — text committed but not yet
     /// streamed is delivered by finalize reconciliation instead.
     @MainActor
@@ -1128,8 +1126,8 @@ final class DictationCoordinator {
         switch event {
         case .committed(let text):
             await streamingSession.ingestCommit(text)
-        case .speculative:
-            streamingSession.refreshFocusGate()
+        case .speculative(let text):
+            await streamingSession.ingestSpeculative(text)
         case .sessionBegan:
             break
         }

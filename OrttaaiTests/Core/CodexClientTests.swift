@@ -188,6 +188,65 @@ final class CodexClientTests: XCTestCase {
         XCTAssertNotNil(turnParams["outputSchema"], "formatJSONSchema should map to outputSchema")
     }
 
+    /// Regression: a real app-server acknowledges turn/start before it emits
+    /// the eventual item/turn completion notifications. The notification
+    /// consumer therefore remains suspended while the timeout sibling is
+    /// active; canceling that sibling after success must not leak
+    /// CancellationError to the caller.
+    func testGenerateWithDelayedCompletionDoesNotLeakTimeoutCancellation() async throws {
+        let threadID = "thread-delayed"
+        let (transport, _, client) = makeStack { method, id, _ in
+            switch method {
+            case "thread/start":
+                return [["id": id ?? 0, "result": ["thread": ["id": threadID]]]]
+            case "turn/start":
+                return [["id": id ?? 0, "result": ["turn": ["id": "turn-delayed", "status": "inProgress"]]]]
+            default:
+                return []
+            }
+        }
+
+        let generation = Task {
+            try await client.generate(
+                baseURLString: "",
+                model: "gpt-5.4-mini",
+                prompt: "Answer with JSON.",
+                timeoutMs: 5_000,
+                think: nil,
+                format: nil,
+                formatJSONSchema: nil,
+                temperature: 0,
+                numPredict: 100,
+                numContext: nil,
+                keepAlive: "5m"
+            )
+        }
+
+        for _ in 0..<100 {
+            if !transport.sentFrames(method: "turn/start").isEmpty { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(transport.sentFrames(method: "turn/start").isEmpty)
+
+        transport.emit([
+            "method": "item/completed",
+            "params": [
+                "threadId": threadID,
+                "item": ["type": "agentMessage", "id": "i-delayed", "text": "{\"answer\":42}"],
+            ],
+        ])
+        transport.emit([
+            "method": "turn/completed",
+            "params": [
+                "threadId": threadID,
+                "turn": ["id": "turn-delayed", "status": "completed"],
+            ],
+        ])
+
+        let result = try await generation.value
+        XCTAssertEqual(result, "{\"answer\":42}")
+    }
+
     /// The spawn arguments must disable the plugin/app layers: with them on,
     /// the app-server boots every configured MCP server before each turn's
     /// model request (measured 2-3s of latency per chat message).
@@ -535,6 +594,43 @@ final class CodexClientTests: XCTestCase {
             CodexClient.turnFailure(fromErrorParams: ["error": ["message": "Something else"]]).kind,
             .other
         )
+    }
+
+    func testReasoningEffortClampsToSelectedModelCapabilities() {
+        let mini = CodexModelInfo(
+            id: "gpt-5.4-mini",
+            displayName: "GPT-5.4 mini",
+            summary: "",
+            supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+            defaultReasoningEffort: "medium",
+            isDefault: false
+        )
+
+        XCTAssertEqual(
+            CodexClient.compatibleReasoningEffort(requested: "max", model: mini),
+            "xhigh"
+        )
+        XCTAssertEqual(
+            CodexClient.compatibleReasoningEffort(requested: "high", model: mini),
+            "high"
+        )
+        XCTAssertEqual(
+            CodexClient.compatibleReasoningEffort(requested: "unknown", model: mini),
+            "medium"
+        )
+    }
+
+    func testReasoningEffortIsOmittedWithoutACompatibilityContract() {
+        let unspecified = CodexModelInfo(
+            id: "future-model",
+            displayName: "Future model",
+            summary: "",
+            supportedReasoningEfforts: [],
+            defaultReasoningEffort: nil,
+            isDefault: false
+        )
+
+        XCTAssertNil(CodexClient.compatibleReasoningEffort(requested: "max", model: unspecified))
     }
 
     func testTruncatedPromptKeepsHeadAndMarksTruncation() {

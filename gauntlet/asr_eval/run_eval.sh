@@ -29,5 +29,7 @@ env "${ENV_ARGS[@]}" xcodebuild \
   -scheme Orttaai \
   -configuration Debug \
   -destination 'platform=macOS' \
+  -parallel-testing-enabled NO \
+  -skip-testing:OrttaaiUITests \
   -only-testing:OrttaaiTests/ASREvalRunnerTests \
   test 2>&1 | grep -E "ASR-EVAL|Test (case|session|Suite)|TEST|error:" | tail -120

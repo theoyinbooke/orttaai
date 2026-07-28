@@ -48,6 +48,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A macOS unit-test bundle runs inside an Orttaai app host. Starting
+        // the real menu-bar runtime here would register global hotkeys, open
+        // windows, capture the microphone, warm models, and potentially inject
+        // text while a developer (or another Orttaai process) is working.
+        // Tests construct the services they exercise directly; keep their host
+        // inert. UI-test app launches do not carry this XCTest host variable.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            Logger.ui.info("Unit-test host detected; application runtime startup disabled")
+            return
+        }
+
         AppResetService.handleLaunchArguments()
 
         // Create status bar item

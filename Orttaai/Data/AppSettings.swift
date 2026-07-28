@@ -109,20 +109,18 @@ final class AppSettings: ObservableObject {
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
-    /// In-field streaming: committed words are typed at the caret while the
-    /// user is still speaking, and the pill stays compact (it never displays
-    /// dictated text). Terminals and unreadable elements stream BLIND (typed
-    /// increments, count-based reconciliation, newlines flattened); secure
-    /// fields refuse outright; focus loss stops typing. Streamed sessions
-    /// defer LLM polish so finished words are never rewritten in front of
-    /// the user.
+    /// In-field streaming: speculative words appear at the caret while the
+    /// user is still speaking, committed words become the stable prefix, and
+    /// the configured cleanup pipeline replaces the provisional span at
+    /// finalization. The pill stays compact and secure fields still refuse.
     @AppStorage("inFieldStreamingEnabled") var inFieldStreamingEnabled: Bool = true
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
     @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
     @AppStorage("snippetsEnabled") var snippetsEnabled: Bool = true
-    /// Feeds active dictionary targets and snippet triggers to the recognizer
-    /// as decoding bias context so hard vocabulary is transcribed correctly
-    /// in the first place (post-hoc replacement still applies either way).
+    /// Feeds active dictionary targets and snippet triggers to short,
+    /// whole-utterance recognizer decodes. Live clip bias is disabled because
+    /// the ASR corpus measured worse WER, latency, and prompt hallucinations;
+    /// post-hoc dictionary replacement still applies to every path.
     @AppStorage("vocabularyBiasEnabled") var vocabularyBiasEnabled: Bool = true
     @AppStorage("aiSuggestionsEnabled") var aiSuggestionsEnabled: Bool = false
     @AppStorage("fastFirstOnboardingEnabled") var fastFirstOnboardingEnabled: Bool = false

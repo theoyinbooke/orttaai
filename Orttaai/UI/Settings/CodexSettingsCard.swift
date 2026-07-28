@@ -62,6 +62,9 @@ struct CodexSettingsCard: View {
         .onChange(of: account.state) { _, _ in
             Task { await loadModelsIfPossible() }
         }
+        .onChange(of: codexModel) { _, _ in
+            normalizeReasoningEffort()
+        }
     }
 
     // MARK: - Sections
@@ -296,7 +299,7 @@ struct CodexSettingsCard: View {
             ? selected!.supportedReasoningEfforts
             : ["low", "medium", "high"]
         var options = efforts.map { OrttaaiDropdown<String>.Option($0, $0.capitalized) }
-        if !efforts.contains(codexReasoningEffort) {
+        if selected == nil, !efforts.contains(codexReasoningEffort) {
             options.insert(.init(codexReasoningEffort, codexReasoningEffort.capitalized), at: 0)
         }
         return options
@@ -312,8 +315,19 @@ struct CodexSettingsCard: View {
                let fallback = details.first(where: { $0.isDefault }) ?? details.first {
                 codexModel = fallback.id
             }
+            normalizeReasoningEffort()
         }
         await account.refreshRateLimits()
+    }
+
+    private func normalizeReasoningEffort() {
+        guard let selected = modelDetails.first(where: { $0.id == codexModel }),
+              let compatible = CodexClient.compatibleReasoningEffort(
+                requested: codexReasoningEffort,
+                model: selected
+              ),
+              compatible != codexReasoningEffort else { return }
+        codexReasoningEffort = compatible
     }
 
     private func windowLabel(minutes: Int?, fallback: String) -> String {

@@ -10,9 +10,9 @@ enum QuickStartModelSelector {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         if language == "en" || language.hasPrefix("en-") {
-            return "openai_whisper-small.en_217MB"
+            return "openai_whisper-small.en"
         }
-        return "openai_whisper-small_216MB"
+        return "openai_whisper-small"
     }
 }
 

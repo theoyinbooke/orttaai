@@ -178,8 +178,8 @@ final class ModelManager {
     // MARK: - Model Operations
 
     func download(model: ModelInfo) async throws {
-        let normalizedModelID = Self.normalizedModelID(model.id)
-        let isAlreadyDownloaded = Self.detectDownloadedModelMetrics().downloadedModelIDs.contains(normalizedModelID)
+        let exactModelID = model.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isAlreadyDownloaded = Self.detectDownloadedVariantIDs().contains(exactModelID)
         state = isAlreadyDownloaded ? .loading : .downloading(progress: 0)
 
         if isAlreadyDownloaded {
@@ -235,12 +235,12 @@ final class ModelManager {
     }
 
     func switchModel(toModelId modelId: String) async throws {
-        // Keep the exact variant id for the download target; the normalized
-        // id (size suffix stripped) is only for matching existing entries.
+        // Keep the exact variant id for the download target. Family matching
+        // must never substitute a quantized sibling when the caller selected
+        // a full-precision id (or vice versa).
         let exactModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedModelId = Self.normalizedModelID(exactModelId)
 
-        if let available = availableModels.first(where: { Self.normalizedModelID($0.id) == normalizedModelId }) {
+        if let available = availableModels.first(where: { $0.id == exactModelId }) {
             try await switchModel(to: available)
             return
         }
@@ -322,9 +322,9 @@ final class ModelManager {
 
         availableModels = Self.sortModelsBySize([
             ModelInfo(
-                id: "openai_whisper-large-v3-v20240930_626MB",
+                id: "openai_whisper-large-v3-v20240930",
                 name: "Whisper Large V3 Turbo",
-                downloadSizeMB: 626,
+                downloadSizeMB: 1_550,
                 description: "Best accuracy, recommended for 16GB+ RAM",
                 minimumTier: .m1_16gb,
                 speedLabel: .moderate,
@@ -334,9 +334,9 @@ final class ModelManager {
                 isEnglishOnly: false
             ),
             ModelInfo(
-                id: "openai_whisper-large-v3_947MB",
+                id: "openai_whisper-large-v3",
                 name: "Whisper Large V3",
-                downloadSizeMB: 947,
+                downloadSizeMB: 2_950,
                 description: "Highest accuracy, slowest",
                 minimumTier: .m3_16gb,
                 speedLabel: .slow,
@@ -346,9 +346,9 @@ final class ModelManager {
                 isEnglishOnly: false
             ),
             ModelInfo(
-                id: "openai_whisper-small_216MB",
+                id: "openai_whisper-small",
                 name: "Whisper Small",
-                downloadSizeMB: 216,
+                downloadSizeMB: 465,
                 description: "Good accuracy, works on 8GB RAM",
                 minimumTier: .m1_8gb,
                 speedLabel: .fast,
@@ -361,7 +361,7 @@ final class ModelManager {
     }
 
     private func checkExistingModels() {
-        state = Self.detectDownloadedModelMetrics().downloadedModelIDs.isEmpty ? .notDownloaded : .downloaded
+        state = Self.detectDownloadedVariantIDs().isEmpty ? .notDownloaded : .downloaded
     }
 
     nonisolated static func sortModelsBySize(_ models: [ModelInfo]) -> [ModelInfo] {
@@ -418,8 +418,8 @@ final class ModelManager {
     }
 
     /// Quantized (mixed-bit palettized) variants Argmax publishes alongside
-    /// each full-precision model. Preferring these keeps accuracy within ~1%
-    /// WER while cutting download size, RAM, and load time by 2-5x.
+    /// each full-precision model. These remain explicit opt-in migration
+    /// targets; they are never substituted for a full-precision selection.
     nonisolated static let curatedDownloadVariants: [String: String] = [
         "openai_whisper-large-v3_turbo": "openai_whisper-large-v3-v20240930_626MB",
         "openai_whisper-large-v3": "openai_whisper-large-v3_947MB",
@@ -431,11 +431,36 @@ final class ModelManager {
         curatedDownloadVariants[familyID]
     }
 
+    /// Full-precision build preferred for each family in the main model list.
+    /// Smaller full-precision models are the default quality/speed trade-off;
+    /// quantized builds remain available only through an explicit user action.
+    nonisolated static let preferredFullPrecisionVariants: [String: String] = [
+        "openai_whisper-large-v3_turbo": "openai_whisper-large-v3-v20240930",
+        "openai_whisper-large-v3": "openai_whisper-large-v3",
+        "openai_whisper-small": "openai_whisper-small",
+        "openai_whisper-small.en": "openai_whisper-small.en",
+    ]
+
     nonisolated private static func preferredModelVariant(for variants: [ModelInfo]) -> ModelInfo {
         if let familyID = variants.first.map({ canonicalModelListID($0.id) }),
-           let curatedID = curatedDownloadVariants[familyID],
-           let curated = variants.first(where: { $0.id == curatedID }) {
-            return curated
+           let fullPrecisionID = preferredFullPrecisionVariants[familyID],
+           let fullPrecision = variants.first(where: { $0.id == fullPrecisionID }) {
+            return fullPrecision
+        }
+
+        if let fullPrecision = variants
+            .filter({ parsedSizeSuffixMB($0.id) == nil })
+            .sorted(by: { lhs, rhs in
+                if lhs.isDeviceRecommended != rhs.isDeviceRecommended {
+                    return lhs.isDeviceRecommended
+                }
+                if lhs.id.count != rhs.id.count {
+                    return lhs.id.count < rhs.id.count
+                }
+                return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
+            })
+            .first {
+            return fullPrecision
         }
 
         return variants.sorted { a, b in
@@ -531,6 +556,26 @@ final class ModelManager {
         )
     }
 
+    /// Fast availability check used on startup and before loading. Unlike the
+    /// model-management footer, these paths do not need recursive disk-usage
+    /// totals, so avoid statting every Core ML artifact before dictation can
+    /// become ready.
+    nonisolated static func detectDownloadedModelIDs(in roots: [URL]? = nil) -> Set<String> {
+        return Set(
+            detectDownloadedVariantIDs(in: roots)
+                .map(normalizedModelID)
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    /// Exact build ids on disk. Precision-sensitive load and prefetch paths
+    /// must use this inventory so a quantized sibling never makes a requested
+    /// full-precision build look already available.
+    nonisolated static func detectDownloadedVariantIDs(in roots: [URL]? = nil) -> Set<String> {
+        let modelRoots = roots ?? modelStorageRoots()
+        return Set(detectDownloadedVariantDirectories(in: modelRoots).keys)
+    }
+
     /// Removes exactly one downloaded build (matched by its on-disk directory
     /// name) and leaves every other variant of the family untouched — the
     /// quantized-migration counterpart to `deleteModel(named:)`, which removes
@@ -549,17 +594,14 @@ final class ModelManager {
     }
 
     nonisolated static func prefetchModelIfNeeded(_ modelId: String) async -> ModelPrefetchOutcome {
-        // Normalization strips quantized-variant size suffixes ("_626MB"), so
-        // it is only safe for the already-downloaded check — downloading must
-        // use the exact variant id or it silently fetches the full-size model.
+        // Availability and download both use the exact id. Normalization would
+        // let a quantized sibling suppress a requested full-precision prefetch.
         let exactModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedModelId = normalizedModelID(exactModelId)
-        guard !normalizedModelId.isEmpty else {
+        guard !exactModelId.isEmpty else {
             return .failed(message: "Missing model id.")
         }
 
-        let downloadedModelIDs = Set(detectDownloadedModelMetrics().modelDirectories.keys)
-        if downloadedModelIDs.contains(normalizedModelId) {
+        if detectDownloadedVariantIDs().contains(exactModelId) {
             return .alreadyAvailable
         }
 
@@ -582,16 +624,27 @@ final class ModelManager {
             appSupport?
                 .appendingPathComponent(AppStoragePaths.applicationSupportFolderName)
                 .appendingPathComponent("Models"),
-            documents?.appendingPathComponent("huggingface"),
-            home.appendingPathComponent(".cache/huggingface"),
-            home.appendingPathComponent("Library/Caches/huggingface"),
+            // Swift Transformers' repository layout. Point directly at
+            // WhisperKit instead of recursively walking the user's entire
+            // Hugging Face cache (which may contain many unrelated LLMs).
+            documents?
+                .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml"),
+            home
+                .appendingPathComponent(".cache/huggingface/hub/models--argmaxinc--whisperkit-coreml/snapshots"),
+            home
+                .appendingPathComponent("Library/Caches/huggingface/hub/models--argmaxinc--whisperkit-coreml/snapshots"),
         ].compactMap { $0 }
 
         if let hfHome = env["HF_HOME"], !hfHome.isEmpty {
-            roots.append(URL(fileURLWithPath: hfHome))
+            let root = URL(fileURLWithPath: hfHome)
+            roots.append(root.appendingPathComponent("models/argmaxinc/whisperkit-coreml"))
+            roots.append(root.appendingPathComponent("hub/models--argmaxinc--whisperkit-coreml/snapshots"))
         }
         if let hfHubCache = env["HF_HUB_CACHE"], !hfHubCache.isEmpty {
-            roots.append(URL(fileURLWithPath: hfHubCache))
+            roots.append(
+                URL(fileURLWithPath: hfHubCache)
+                    .appendingPathComponent("models--argmaxinc--whisperkit-coreml/snapshots")
+            )
         }
 
         var dedupedRoots: [URL] = []

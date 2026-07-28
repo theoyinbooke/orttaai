@@ -1,0 +1,49 @@
+{
+  "evaluated_at": "2026-07-28",
+  "corpus_items": 92,
+  "preset": "balanced",
+  "speedup": 4,
+  "models": {
+    "large_v3_full": {
+      "model": "openai_whisper-large-v3",
+      "whole": {
+        "wer": 0.0385,
+        "latency_ms_p50": 4141.5,
+        "latency_ms_p90": 9795,
+        "hallucination_items": 0
+      },
+      "live": {
+        "wer": 0.0436,
+        "latency_ms_p50": 2042.0,
+        "latency_ms_p90": 4820,
+        "hallucination_items": 0
+      }
+    },
+    "small_en_full": {
+      "model": "openai_whisper-small.en",
+      "whole": {
+        "wer": 0.0968,
+        "latency_ms_p50": 632.5,
+        "latency_ms_p90": 1383,
+        "hallucination_items": 1
+      },
+      "live": {
+        "wer": 0.0476,
+        "latency_ms_p50": 241.0,
+        "latency_ms_p90": 396,
+        "hallucination_items": 0
+      }
+    }
+  },
+  "small_en_vs_large_v3_live": {
+    "wer_absolute_change": 0.004,
+    "wer_relative_change": 0.0917,
+    "latency_p50_relative_change": -0.882,
+    "latency_p90_relative_change": -0.9178
+  },
+  "decision": {
+    "quick_start_english": "openai_whisper-small.en",
+    "quality_upgrade_16gb": "openai_whisper-large-v3-v20240930",
+    "rationale": "Full-precision small.en is an 8.5x lower-latency live quick start with a 0.40 percentage-point WER cost. Long single-pass whole decoding is materially worse, so production dictation must retain the segmented live path and upgrade capable Macs to full-precision large-v3-turbo."
+  }
+}

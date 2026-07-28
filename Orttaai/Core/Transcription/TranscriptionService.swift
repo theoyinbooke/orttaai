@@ -658,23 +658,14 @@ actor TranscriptionService: Transcribing {
         let trippedFallback: Bool
     }
 
-    /// Tokens conditioning the next live decode, or nil when conditioning is
-    /// unavailable (no tokenizer) or must be dropped (previous decode tripped
-    /// a fallback).
+    /// Live decodes deliberately run without prompt tokens. The checked-in ASR
+    /// corpus shows that applying the vocabulary prompt independently to live
+    /// clips increases live WER from 4.36% to 6.60%, doubles median latency,
+    /// and can hallucinate dictionary terms into unrelated speech. Whole,
+    /// short-utterance decoding keeps the measured-safe bias path below.
     private func currentLivePromptTokens(session: LiveTranscriptionSession) -> [Int]? {
-        guard let tokenizer = whisperKit?.tokenizer else { return nil }
-        // Committed-context conditioning is disabled: the ASR eval measured
-        // it at 4.4% -> 17.1% live WER (gauntlet/asr_eval, conditioning-only
-        // run) — Whisper prompt-following degrades the decode far more than
-        // the context helps. Vocabulary bias terms alone carried the
-        // hard-vocab recall win and stay on.
-        return Self.livePromptTokens(
-            biasTerms: vocabularyBiasTerms,
-            committedTexts: [],
-            lastDecodeTrippedFallback: session.lastDecodeTrippedFallback,
-            encode: { tokenizer.encode(text: $0) },
-            specialTokenBegin: tokenizer.specialTokens.specialTokenBegin
-        )
+        _ = session
+        return nil
     }
 
     /// Longest audio a bias prompt may condition: one Whisper window. On
