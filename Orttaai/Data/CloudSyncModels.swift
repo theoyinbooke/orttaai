@@ -125,6 +125,9 @@ struct CloudSyncTranscription: Codable, Equatable, Sendable {
     var audioDevice: String?
     // Optional for backward compatibility with payloads from older app versions.
     var sourceDeviceID: String?
+    var injectionMethod: String? = nil
+    var entryKind: String? = nil
+    var editInstruction: String? = nil
 }
 
 struct CloudSyncDictionaryEntry: Codable, Equatable, Sendable {

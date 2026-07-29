@@ -11,12 +11,57 @@ protocol AudioCapturing: AnyObject {
     var activeInputDeviceID: AudioDeviceID? { get }
     func startCapture(deviceID: AudioDeviceID?) throws
     func stopCapture() -> [Float]
-    func currentSamplesSnapshot() -> [Float]
+    func currentSamplesSnapshot(maxSamples: Int?) -> [Float]
 }
 
 extension AudioCapturing {
     func startCapture() throws {
         try startCapture(deviceID: nil)
+    }
+
+    func currentSamplesSnapshot() -> [Float] {
+        currentSamplesSnapshot(maxSamples: nil)
+    }
+}
+
+struct AudioCaptureBackendPreferences {
+    private static let preferredCaptureSessionDeviceUIDsKey =
+        "preferredCaptureSessionAudioDeviceUIDs"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func prefersCaptureSession(forDeviceUID deviceUID: String?) -> Bool {
+        guard let deviceUID = normalized(deviceUID) else { return false }
+        return preferredDeviceUIDs.contains(deviceUID)
+    }
+
+    func rememberCaptureSession(forDeviceUID deviceUID: String?) {
+        guard let deviceUID = normalized(deviceUID) else { return }
+        var values = preferredDeviceUIDs
+        values.insert(deviceUID)
+        defaults.set(Array(values).sorted(), forKey: Self.preferredCaptureSessionDeviceUIDsKey)
+    }
+
+    func forgetCaptureSession(forDeviceUID deviceUID: String?) {
+        guard let deviceUID = normalized(deviceUID) else { return }
+        var values = preferredDeviceUIDs
+        values.remove(deviceUID)
+        defaults.set(Array(values).sorted(), forKey: Self.preferredCaptureSessionDeviceUIDsKey)
+    }
+
+    private var preferredDeviceUIDs: Set<String> {
+        Set(defaults.stringArray(forKey: Self.preferredCaptureSessionDeviceUIDsKey) ?? [])
+    }
+
+    private func normalized(_ deviceUID: String?) -> String? {
+        guard let value = deviceUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
 
@@ -105,6 +150,11 @@ final class AudioCaptureService: AudioCapturing {
     private var captureSession: AVCaptureSession?
     private var captureSessionDelegate: CaptureSessionOutputDelegate?
     private let captureOutputQueue = DispatchQueue(label: "com.orttaai.capture-session-output")
+    private let backendPreferences: AudioCaptureBackendPreferences
+
+    init(defaults: UserDefaults = .standard) {
+        backendPreferences = AudioCaptureBackendPreferences(defaults: defaults)
+    }
 
     /// Target format for WhisperKit: 16kHz mono Float32
     nonisolated private static let whisperFormat = AVAudioFormat(
@@ -170,14 +220,38 @@ final class AudioCaptureService: AudioCapturing {
                 throw OrttaaiError.noAudioInput
             }
 
+            let deviceUID = Self.deviceUID(for: requestedDeviceID)
+            if backendPreferences.prefersCaptureSession(forDeviceUID: deviceUID) {
+                do {
+                    Logger.audio.info(
+                        "Using remembered AVCaptureSession path for selected input \(requestedDeviceID)"
+                    )
+                    try configureAndStartCaptureSession(deviceID: requestedDeviceID)
+                    return
+                } catch {
+                    // Hardware, drivers, and macOS routing can change. Do not
+                    // pin a device permanently to a backend that stopped
+                    // working; retry the engine and relearn from the result.
+                    backendPreferences.forgetCaptureSession(forDeviceUID: deviceUID)
+                    Logger.audio.warning(
+                        "Remembered capture-session path failed for device \(requestedDeviceID): \(error.localizedDescription). Retrying AVAudioEngine."
+                    )
+                }
+            }
+
             do {
-                try configureAndStartCaptureSession(deviceID: requestedDeviceID)
+                // AVAudioEngine's input tap keeps up with the hardware clock.
+                // The AVCaptureAudioDataOutput path can overflow its bounded
+                // CMBufferQueue while converting long external-mic sessions,
+                // silently dropping most of the recording before ASR.
+                try configureAndStartAudioEngine(deviceID: requestedDeviceID)
                 return
             } catch {
                 Logger.audio.warning(
-                    "Capture-session path failed for device \(requestedDeviceID): \(error.localizedDescription). Falling back to AVAudioEngine."
+                    "Audio-engine path failed for device \(requestedDeviceID): \(error.localizedDescription). Falling back to AVCaptureSession."
                 )
-                try configureAndStartAudioEngine(deviceID: requestedDeviceID)
+                try configureAndStartCaptureSession(deviceID: requestedDeviceID)
+                backendPreferences.rememberCaptureSession(forDeviceUID: deviceUID)
                 return
             }
         }
@@ -362,8 +436,12 @@ final class AudioCaptureService: AudioCapturing {
         return capturedSamples
     }
 
-    func currentSamplesSnapshot() -> [Float] {
-        sampleQueue.sync { _samples }
+    func currentSamplesSnapshot(maxSamples: Int? = nil) -> [Float] {
+        sampleQueue.sync {
+            guard let maxSamples else { return _samples }
+            guard maxSamples > 0 else { return [] }
+            return Array(_samples.suffix(maxSamples))
+        }
     }
 
     private static func defaultInputDeviceID() -> AudioDeviceID {

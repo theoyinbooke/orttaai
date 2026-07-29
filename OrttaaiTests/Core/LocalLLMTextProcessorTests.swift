@@ -1,8 +1,8 @@
 // LocalLLMTextProcessorTests.swift
 // OrttaaiTests
 //
-// Covers the default-on gating of local LLM polish: users who never touched
-// the setting get polish, an explicit OFF stays OFF, and an unreachable or
+// Covers the opt-in gating of local LLM polish and the one-time reliability
+// recovery. An unreachable or
 // misconfigured provider degrades to rule-based output without repeated
 // connection attempts. Also covers the output sanitizer rails through the
 // full process() path.
@@ -18,6 +18,7 @@ final class LocalLLMTextProcessorTests: XCTestCase {
         "localLLMPolishMaxChars",
         "spokenFormattingEnabled",
         "polishModeEnabled",
+        "dictationReliabilityRecoveryVersion",
     ]
 
     private var previousValues: [String: Any?] = [:]
@@ -63,24 +64,26 @@ final class LocalLLMTextProcessorTests: XCTestCase {
         TextProcessorInput(rawTranscript: text, targetApp: nil, mode: .clean)
     }
 
-    // MARK: - Default-on gating
+    // MARK: - Opt-in gating
 
-    func testPolishDefaultsOnForUsersWhoNeverTouchedTheSetting() {
+    func testPolishDefaultsOffForUsersWhoNeverTouchedTheSetting() {
         UserDefaults.standard.removeObject(forKey: "localLLMPolishEnabled")
-
-        XCTAssertTrue(
-            AppSettings().localLLMPolishEnabled,
-            "A user with no stored preference must get polish by default"
-        )
-    }
-
-    func testExplicitOffIsPreservedAcrossTheDefaultFlip() {
-        settings.localLLMPolishEnabled = false
 
         XCTAssertFalse(
             AppSettings().localLLMPolishEnabled,
-            "An explicit OFF must survive the default changing to ON"
+            "Recognizer output must remain authoritative unless polish is explicitly enabled"
         )
+    }
+
+    func testReliabilityRecoveryRunsOnceThenPreservesExplicitOptIn() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "dictationReliabilityRecoveryVersion")
+        defaults.set(true, forKey: "localLLMPolishEnabled")
+
+        XCTAssertFalse(AppSettings().localLLMPolishEnabled)
+
+        defaults.set(true, forKey: "localLLMPolishEnabled")
+        XCTAssertTrue(AppSettings().localLLMPolishEnabled)
     }
 
     func testOrphanedPolishModeKeyIsRemovedAtInit() {
@@ -91,56 +94,6 @@ final class LocalLLMTextProcessorTests: XCTestCase {
         XCTAssertNil(
             UserDefaults.standard.object(forKey: "polishModeEnabled"),
             "The orphaned pre-1.7 polishModeEnabled key must be deleted"
-        )
-    }
-
-    // MARK: - Stored-model migration (pre-default-on gemma3:1b cohort)
-
-    func testStoredGemma1bModelMigratesWhenPolishWasNeverExplicitlySet() {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: "localLLMPolishEnabled")
-        defaults.set("gemma3:1b", forKey: "localLLMPolishModel")
-
-        XCTAssertEqual(
-            AppSettings().localLLMPolishModel,
-            "gemma4:e2b",
-            "Default-on users with the old settings-persisted gemma3:1b must be moved to the eval-proven model"
-        )
-    }
-
-    func testStoredGemma1bModelSurvivesWhenPolishWasExplicitlyEnabled() {
-        let defaults = UserDefaults.standard
-        defaults.set(true, forKey: "localLLMPolishEnabled")
-        defaults.set("gemma3:1b", forKey: "localLLMPolishModel")
-
-        XCTAssertEqual(
-            AppSettings().localLLMPolishModel,
-            "gemma3:1b",
-            "An explicit polish choice implies a deliberate model choice; do not migrate"
-        )
-    }
-
-    func testStoredGemma1bModelSurvivesWhenPolishWasExplicitlyDisabled() {
-        let defaults = UserDefaults.standard
-        defaults.set(false, forKey: "localLLMPolishEnabled")
-        defaults.set("gemma3:1b", forKey: "localLLMPolishModel")
-
-        XCTAssertEqual(
-            AppSettings().localLLMPolishModel,
-            "gemma3:1b",
-            "An explicit polish choice implies a deliberate model choice; do not migrate"
-        )
-    }
-
-    func testStoredNonGemma1bModelIsNotMigrated() {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: "localLLMPolishEnabled")
-        defaults.set("qwen3.5:2b", forKey: "localLLMPolishModel")
-
-        XCTAssertEqual(
-            AppSettings().localLLMPolishModel,
-            "qwen3.5:2b",
-            "Only the old persisted gemma3:1b default migrates; other stored models are user choices"
         )
     }
 

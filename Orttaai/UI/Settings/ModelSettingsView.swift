@@ -26,7 +26,7 @@ struct ModelSettingsView: View {
     @AppStorage("lowLatencyModeEnabled") private var lowLatencyModeEnabled = false
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
     @AppStorage("computeMode") private var computeMode = "cpuAndNeuralEngine"
-    @AppStorage("decodingPreset") private var decodingPresetRaw: String = DecodingPreset.fast.rawValue
+    @AppStorage("decodingPreset") private var decodingPresetRaw: String = DecodingPreset.balanced.rawValue
     @AppStorage("advancedDecodingEnabled") private var advancedDecodingEnabled = false
     @AppStorage("decodingTemperature") private var decodingTemperature = DecodingPreferences.defaultTemperature
     @AppStorage("decodingTopK") private var decodingTopK = DecodingPreferences.defaultTopK
@@ -35,7 +35,7 @@ struct ModelSettingsView: View {
     @AppStorage("decodingLogProbThreshold") private var decodingLogProbThreshold = DecodingPreferences.defaultLogProbThreshold
     @AppStorage("decodingNoSpeechThreshold") private var decodingNoSpeechThreshold = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") private var decodingWorkerCount = DecodingPreferences.defaultWorkerCount
-    @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = true
+    @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
     @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("lastLocalLLMProvider") private var lastLocalLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
@@ -207,8 +207,11 @@ struct ModelSettingsView: View {
             applyLowLatencyDefaults(enabled: enabled)
         }
         .onChange(of: dictationLanguage) { _, newValue in
-            guard lowLatencyModeEnabled, newValue == "auto" else { return }
-            dictationLanguage = "en"
+            if lowLatencyModeEnabled, newValue == "auto" {
+                dictationLanguage = "en"
+                return
+            }
+            switchToLanguageOptimizedSmallModelIfNeeded()
         }
         .onChange(of: localLLMPolishEnabled) { _, enabled in
             guard enabled else { return }
@@ -360,7 +363,7 @@ struct ModelSettingsView: View {
     }
 
     private var decodingPreset: DecodingPreset {
-        DecodingPreset(rawValue: decodingPresetRaw) ?? .fast
+        DecodingPreset(rawValue: decodingPresetRaw) ?? .balanced
     }
 
     private var modelSelectorCard: some View {
@@ -731,17 +734,43 @@ struct ModelSettingsView: View {
     private var expertOverridesSection: some View {
         VStack(alignment: .leading, spacing: advancedDecodingEnabled ? Spacing.md : 0) {
             Toggle(isOn: $advancedDecodingEnabled) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Expert Overrides")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Advanced Decoding")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
 
-                    Text("Manual decode values for testing only.")
+                        Text(
+                            advancedDecodingEnabled
+                                ? "Manual Whisper values are active for every dictation."
+                                : "Use the selected profile above. Turn this on to set Whisper values manually."
+                        )
                         .font(.Orttaai.caption)
                         .foregroundStyle(Color.Orttaai.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: Spacing.sm)
+
+                    Text(advancedDecodingEnabled ? "Active" : "Off")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(
+                            advancedDecodingEnabled
+                                ? Color.Orttaai.accent
+                                : Color.Orttaai.textTertiary
+                        )
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
+                        .background(
+                            (advancedDecodingEnabled
+                                ? Color.Orttaai.accentSubtle
+                                : Color.Orttaai.bgTertiary.opacity(0.56))
+                                .clipShape(Capsule())
+                        )
                 }
             }
             .toggleStyle(OrttaaiToggleStyle())
+            .accessibilityIdentifier("advancedDecodingToggle")
             .padding(Spacing.md)
             .background(Color.Orttaai.bgPrimary.opacity(0.42))
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
@@ -749,9 +778,21 @@ struct ModelSettingsView: View {
                 RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                     .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
             )
-            .help("Advanced controls for power users. Defaults are safer for stable performance.")
+            .help(
+                advancedDecodingEnabled
+                    ? "Manual values replace the selected decoding profile until Advanced Decoding is turned off."
+                    : "Turn on to override the selected decoding profile with manual Whisper settings."
+            )
 
             if advancedDecodingEnabled {
+                Label(
+                    "\(decodingPreset.title) remains selected, but its values are paused while Advanced Decoding is active.",
+                    systemImage: "info.circle"
+                )
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .padding(.horizontal, Spacing.xs)
+
                 advancedDecodingControls
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -1625,23 +1666,57 @@ struct ModelSettingsView: View {
     }
 
     private func switchToModel(_ model: ModelInfo) {
+        let targetModelID = TranscriptionModelSelectionPolicy.resolvedModelID(
+            selectedModelID: model.id,
+            dictationLanguage: dictationLanguage
+        )
         guard let manager = ModelManager.shared else {
             // ModelManager not initialized yet — fall back to just setting the preference
-            selectedModelId = model.id
+            selectedModelId = targetModelID
+            activeModelId = ""
             return
         }
 
         switchError = nil
         isSwitching = true
-        switchingModelId = model.id
+        switchingModelId = targetModelID
 
         Task {
             do {
-                try await manager.switchModel(to: model)
-                selectedModelId = model.id
+                try await manager.switchModel(toModelId: targetModelID)
+                selectedModelId = targetModelID
                 withAnimation(.easeInOut(duration: 0.15)) {
                     isPickerExpanded = false
                 }
+                await refreshDownloadedMetrics()
+            } catch {
+                switchError = error.localizedDescription
+            }
+            isSwitching = false
+            switchingModelId = nil
+        }
+    }
+
+    private func switchToLanguageOptimizedSmallModelIfNeeded() {
+        let targetModelID = TranscriptionModelSelectionPolicy.resolvedModelID(
+            selectedModelID: selectedModelId,
+            dictationLanguage: dictationLanguage
+        )
+        guard targetModelID != selectedModelId else { return }
+
+        guard let manager = ModelManager.shared else {
+            selectedModelId = targetModelID
+            activeModelId = ""
+            return
+        }
+
+        switchError = nil
+        isSwitching = true
+        switchingModelId = targetModelID
+        Task {
+            do {
+                try await manager.switchModel(toModelId: targetModelID)
+                selectedModelId = targetModelID
                 await refreshDownloadedMetrics()
             } catch {
                 switchError = error.localizedDescription

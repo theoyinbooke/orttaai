@@ -72,4 +72,73 @@ final class AudioCaptureServiceTests: XCTestCase {
             throw XCTSkip("Microphone permission required: \(error.localizedDescription)")
         }
     }
+
+    func testSelectedDeviceCaptureKeepsUpWithWallClock() throws {
+        guard let rawDeviceID = ProcessInfo.processInfo.environment["ORTTAAI_AUDIO_DEVICE_ID"],
+              let deviceID = AudioDeviceID(rawDeviceID) else {
+            throw XCTSkip("Set ORTTAAI_AUDIO_DEVICE_ID to exercise a selected microphone.")
+        }
+
+        let service = AudioCaptureService()
+        try service.startCapture(deviceID: deviceID)
+        let duration: TimeInterval = 3
+        Thread.sleep(forTimeInterval: duration)
+        let samples = service.stopCapture()
+        let coverage = Double(samples.count) / (duration * 16_000)
+
+        XCTAssertGreaterThanOrEqual(
+            coverage,
+            0.90,
+            "Selected-device capture dropped more than 10% of the audio clock"
+        )
+    }
+}
+
+final class AudioCaptureBackendPreferencesTests: XCTestCase {
+    private var defaults: UserDefaults!
+    private var suiteName: String!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "AudioCaptureBackendPreferencesTests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        suiteName = nil
+        super.tearDown()
+    }
+
+    func testRemembersWorkingCaptureSessionByStableDeviceUID() {
+        let preferences = AudioCaptureBackendPreferences(defaults: defaults)
+        let deviceUID = "external-microphone-uid"
+
+        XCTAssertFalse(preferences.prefersCaptureSession(forDeviceUID: deviceUID))
+        preferences.rememberCaptureSession(forDeviceUID: deviceUID)
+
+        let preferencesAfterRelaunch = AudioCaptureBackendPreferences(defaults: defaults)
+        XCTAssertTrue(preferencesAfterRelaunch.prefersCaptureSession(forDeviceUID: deviceUID))
+        XCTAssertFalse(preferencesAfterRelaunch.prefersCaptureSession(forDeviceUID: "another-device"))
+    }
+
+    func testForgettingFailedCaptureSessionAllowsBackendReevaluation() {
+        let preferences = AudioCaptureBackendPreferences(defaults: defaults)
+        let deviceUID = "external-microphone-uid"
+        preferences.rememberCaptureSession(forDeviceUID: deviceUID)
+
+        preferences.forgetCaptureSession(forDeviceUID: deviceUID)
+
+        XCTAssertFalse(preferences.prefersCaptureSession(forDeviceUID: deviceUID))
+    }
+
+    func testEmptyDeviceUIDIsNeverPersisted() {
+        let preferences = AudioCaptureBackendPreferences(defaults: defaults)
+
+        preferences.rememberCaptureSession(forDeviceUID: "  ")
+
+        XCTAssertFalse(preferences.prefersCaptureSession(forDeviceUID: nil))
+        XCTAssertFalse(preferences.prefersCaptureSession(forDeviceUID: ""))
+    }
 }

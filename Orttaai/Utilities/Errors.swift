@@ -78,7 +78,7 @@ enum OrttaaiError: LocalizedError {
         case .outOfMemory:
             return "Close other apps or switch to a smaller model in Settings > Model."
         case .pasteFailed:
-            return "Use Cmd+Shift+V to paste the last transcription."
+            return "The transcription is saved in History. Copy it from there and paste it manually."
         case .secureTextField:
             return "Move focus to a non-password field and try again."
         case .recordingTooShort:

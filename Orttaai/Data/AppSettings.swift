@@ -4,6 +4,25 @@
 import SwiftUI
 import Combine
 
+enum TranscriptionModelSelectionPolicy {
+    static let multilingualSmallModelID = "openai_whisper-small"
+    static let englishSmallModelID = "openai_whisper-small.en"
+
+    static func resolvedModelID(
+        selectedModelID: String,
+        dictationLanguage: String
+    ) -> String {
+        let selected = selectedModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard selected == multilingualSmallModelID else { return selected }
+
+        let language = dictationLanguage
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard language == "en" || language.hasPrefix("en-") else { return selected }
+        return englishSmallModelID
+    }
+}
+
 enum DecodingPreset: String, CaseIterable, Sendable {
     case fast
     case balanced
@@ -82,22 +101,16 @@ final class AppSettings: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
 
     init(defaults: UserDefaults = .standard) {
-        // "polishModeEnabled" (pre-1.7) was written and iCloud-synced but read
-        // nowhere; "localLLMPolishEnabled" is the single source of truth for
-        // polish. Delete the stale key so it stops shadowing the real one.
+        // Remove retired insertion/rewrite state. Version this reliability
+        // recovery so users can deliberately re-enable optional polish later
+        // without every launch overriding their choice.
         defaults.removeObject(forKey: "polishModeEnabled")
-
-        // The pre-default-on Model settings screen unconditionally persisted
-        // localLLMPolishModel="gemma3:1b" for anyone who ever opened it, but
-        // that model scores far below the shipped default on the golden eval
-        // set (see gauntlet/eval_results.json). Users who never explicitly
-        // chose polish (no stored localLLMPolishEnabled) are flipped ON by the
-        // new default, so migrate them to the eval-proven model. An explicit
-        // enabled/disabled choice means the user may also have chosen the
-        // model deliberately; leave those untouched.
-        if defaults.object(forKey: "localLLMPolishEnabled") == nil,
-           defaults.string(forKey: "localLLMPolishModel") == "gemma3:1b" {
-            defaults.set("gemma4:e2b", forKey: "localLLMPolishModel")
+        let recoveryVersionKey = "dictationReliabilityRecoveryVersion"
+        if defaults.integer(forKey: recoveryVersionKey) < 1 {
+            defaults.set(false, forKey: "localLLMPolishEnabled")
+            defaults.removeObject(forKey: "inFieldStreamingEnabled")
+            defaults.removeObject(forKey: "KeyboardShortcuts_pasteLastTranscript")
+            defaults.set(1, forKey: recoveryVersionKey)
         }
     }
 
@@ -109,11 +122,6 @@ final class AppSettings: ObservableObject {
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
-    /// In-field streaming: speculative words appear at the caret while the
-    /// user is still speaking, committed words become the stable prefix, and
-    /// the configured cleanup pipeline replaces the provisional span at
-    /// finalization. The pill stays compact and secure fields still refuse.
-    @AppStorage("inFieldStreamingEnabled") var inFieldStreamingEnabled: Bool = true
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
     @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
     @AppStorage("snippetsEnabled") var snippetsEnabled: Bool = true
@@ -155,7 +163,7 @@ final class AppSettings: ObservableObject {
 
     // Advanced / Compute
     @AppStorage("computeMode") var computeMode: String = "cpuAndNeuralEngine"
-    @AppStorage("decodingPreset") var decodingPresetRaw: String = DecodingPreset.fast.rawValue
+    @AppStorage("decodingPreset") var decodingPresetRaw: String = DecodingPreset.balanced.rawValue
     @AppStorage("advancedDecodingEnabled") var advancedDecodingEnabled: Bool = false
     @AppStorage("decodingTemperature") var decodingTemperature: Double = DecodingPreferences.defaultTemperature
     @AppStorage("decodingTopK") var decodingTopK: Int = DecodingPreferences.defaultTopK
@@ -170,13 +178,9 @@ final class AppSettings: ObservableObject {
     // synced across Macs.
     @AppStorage("localLLMProvider") var localLLMProviderRaw: String = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("lmStudioEndpoint") var lmStudioEndpoint: String = "http://127.0.0.1:1234"
-    /// Local LLM polish is ON by default (eval-proven on the golden set, see
-    /// gauntlet/eval_results.json). Users who explicitly turned it off have a
-    /// stored `false` that this default never overrides; when no local
-    /// provider is reachable the processor falls back to rule-based output
-    /// behind the circuit breaker, so the default is safe for users without
-    /// Ollama.
-    @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = true
+    /// Optional rewriting is off by default so the recognizer's final result
+    /// remains authoritative. Users can opt in from Model settings.
+    @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = false
     @AppStorage("appleIntelligencePolishEnabled") var appleIntelligencePolishEnabled: Bool = false
     @AppStorage("localLLMEndpoint") var localLLMEndpoint: String = "http://127.0.0.1:11434"
     @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma4:e2b"
@@ -209,7 +213,7 @@ final class AppSettings: ObservableObject {
     }
 
     var decodingPreset: DecodingPreset {
-        DecodingPreset(rawValue: decodingPresetRaw) ?? .fast
+        DecodingPreset(rawValue: decodingPresetRaw) ?? .balanced
     }
 
     var decodingPreferences: DecodingPreferences {
@@ -238,6 +242,26 @@ final class AppSettings: ObservableObject {
         (lowLatencyModeEnabled && dictationLanguage == "auto")
             ? "en"
             : dictationLanguage
+    }
+
+    var effectiveSelectedModelId: String {
+        TranscriptionModelSelectionPolicy.resolvedModelID(
+            selectedModelID: selectedModelId,
+            dictationLanguage: dictationLanguage
+        )
+    }
+
+    /// Keeps an explicit English Small selection on Whisper's English-only
+    /// checkpoint. The multilingual checkpoint remains authoritative for
+    /// Auto Detect and every non-English language.
+    @discardableResult
+    func applyLanguageOptimizedSmallModelSelection() -> String {
+        let resolved = effectiveSelectedModelId
+        if resolved != selectedModelId {
+            selectedModelId = resolved
+            activeModelId = ""
+        }
+        return resolved
     }
 
     var normalizedLocalLLMEndpoint: String {

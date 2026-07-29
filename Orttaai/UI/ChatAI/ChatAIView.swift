@@ -504,7 +504,7 @@ private final class ChatAIViewModel: ObservableObject {
     private var voiceTranscriptionService: TranscriptionService {
         ModelManager.shared?.runtimeTranscriptionService ?? fallbackVoiceTranscriptionService
     }
-    private var voiceLiveDecodeTask: Task<Void, Never>?
+    private var voiceModelWarmupTask: Task<Void, Never>?
     private var didLoad = false
     private var voiceRecordingStartedAt: Date?
 
@@ -767,7 +767,7 @@ private final class ChatAIViewModel: ObservableObject {
             isVoiceRecording = true
             errorMessage = nil
             statusMessage = "Listening..."
-            startVoiceLiveDecode()
+            prepareVoiceTranscriptionModel()
         } catch {
             isVoiceRecording = false
             voiceRecordingStartedAt = nil
@@ -775,27 +775,17 @@ private final class ChatAIViewModel: ObservableObject {
         }
     }
 
-    /// Mirrors the main dictation pipeline: the model warms and 15s clips are
-    /// transcribed WHILE the user speaks, so stopping only decodes the short
-    /// tail instead of the whole recording.
-    private func startVoiceLiveDecode() {
-        voiceLiveDecodeTask?.cancel()
-        voiceLiveDecodeTask = Task(priority: .userInitiated) { [weak self] in
+    /// Warm the selected model while audio is captured, but do not decode
+    /// partial clips. The complete recording is transcribed once at stop.
+    private func prepareVoiceTranscriptionModel() {
+        voiceModelWarmupTask?.cancel()
+        voiceModelWarmupTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let service = self.voiceTranscriptionService
 
             await self.settings.syncTranscriptionSettings(to: service)
             if await !service.isLoaded {
-                // Overlapped with recording instead of paid after stop.
                 try? await service.loadModel(named: self.settings.selectedModelId)
-            }
-            guard !Task.isCancelled else { return }
-            await service.beginLiveTranscriptionSession()
-
-            while !Task.isCancelled {
-                let snapshot = self.voiceAudioService.currentSamplesSnapshot()
-                await service.processLiveAudioSnapshot(snapshot)
-                try? await Task.sleep(nanoseconds: 750_000_000)
             }
         }
     }
@@ -803,8 +793,8 @@ private final class ChatAIViewModel: ObservableObject {
     private func stopVoiceInput() {
         guard isVoiceRecording else { return }
         isVoiceRecording = false
-        voiceLiveDecodeTask?.cancel()
-        voiceLiveDecodeTask = nil
+        voiceModelWarmupTask?.cancel()
+        voiceModelWarmupTask = nil
         let samples = voiceAudioService.stopCapture()
         let duration = voiceRecordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         voiceRecordingStartedAt = nil
@@ -812,7 +802,6 @@ private final class ChatAIViewModel: ObservableObject {
         guard duration >= 0.5, !samples.isEmpty else {
             statusMessage = nil
             errorMessage = "Recording was too short."
-            Task { await voiceTranscriptionService.cancelLiveTranscriptionSession() }
             return
         }
 
@@ -825,7 +814,7 @@ private final class ChatAIViewModel: ObservableObject {
                     await settings.syncTranscriptionSettings(to: service)
                     try await service.loadModel(named: settings.selectedModelId)
                 }
-                let transcript = try await service.finalizeLiveTranscription(audioSamples: samples)
+                let transcript = try await service.transcribe(audioSamples: samples)
                 await MainActor.run {
                     isVoiceProcessing = false
                     insertVoiceTranscript(transcript)

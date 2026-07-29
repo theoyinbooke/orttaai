@@ -25,9 +25,7 @@ nonisolated struct FocusedTextSnapshot: Equatable, Sendable {
     var value: String?
     /// kAXSelectedTextAttribute, nil when unsupported.
     var selectedText: String?
-    /// kAXSelectedTextRangeAttribute, nil when unsupported. Lets streaming
-    /// verify the caret still sits at the end of the streamed span before
-    /// typing or deleting at the caret.
+    /// kAXSelectedTextRangeAttribute, nil when unsupported.
     var selectedRange: FocusedTextRange?
 
     init(value: String? = nil, selectedText: String? = nil, selectedRange: FocusedTextRange? = nil) {

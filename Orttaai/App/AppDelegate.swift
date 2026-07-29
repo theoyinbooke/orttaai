@@ -163,7 +163,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
-        KeyboardShortcuts.removeHandler(for: .pasteLastTranscript)
         KeyboardShortcuts.removeHandler(for: .editCommand)
         stopWaveformUpdates()
         if let shortcutObserver {
@@ -383,17 +382,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// Wires the recordable "Paste Last Transcript" shortcut to the same
-    /// verified injection path dictation uses. This is what makes the
-    /// "Use Cmd+Shift+V to paste the last transcription" advice true.
-    private func startPasteLastTranscriptShortcut() {
-        KeyboardShortcuts.removeHandler(for: .pasteLastTranscript)
-        KeyboardShortcuts.onKeyDown(for: .pasteLastTranscript) { [weak self] in
-            Logger.hotkey.info("Paste-last-transcript shortcut pressed")
-            self?.coordinator?.pasteLastTranscript()
-        }
-    }
-
     /// Wires the recordable "Edit Selection with Voice" shortcut. Same
     /// tap/hold gesture semantics as push-to-talk; the coordinator captures
     /// the selection, records the spoken instruction, and replaces the
@@ -441,19 +429,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             KeyboardShortcuts.setShortcut(defaultShortcut, for: .pushToTalk)
         }
 
-        // Default matches the long-standing "Use Cmd+Shift+V to paste the
-        // last transcription" recovery advice in Errors.swift.
-        if KeyboardShortcuts.getShortcut(for: .pasteLastTranscript) == nil {
-            KeyboardShortcuts.setShortcut(
-                KeyboardShortcuts.Shortcut(.v, modifiers: [.command, .shift]),
-                for: .pasteLastTranscript
-            )
-        }
-
         // Ctrl+Shift+E: same modifier family as push-to-talk (Ctrl+Shift+
-        // Space), no collision with it, Cmd+Shift+V, or common system
-        // shortcuts (Cmd+E is "Use Selection for Find"; Ctrl+Shift+E is
-        // unclaimed by macOS defaults).
+        // Space) without colliding with common system shortcuts.
         if KeyboardShortcuts.getShortcut(for: .editCommand) == nil {
             KeyboardShortcuts.setShortcut(
                 KeyboardShortcuts.Shortcut(.e, modifiers: [.control, .shift]),
@@ -473,10 +450,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task {
             do {
+                let selectedModelID = await MainActor.run {
+                    settings.applyLanguageOptimizedSmallModelSelection()
+                }
                 await settings.syncTranscriptionSettings(to: transcription)
-                try await transcription.loadModel(named: settings.selectedModelId)
+                try await transcription.loadModel(named: selectedModelID)
                 await transcription.warmUp()
-                let runtimeModelID = await transcription.loadedModelID() ?? settings.selectedModelId
+                let runtimeModelID = await transcription.loadedModelID() ?? selectedModelID
                 await MainActor.run {
                     settings.activeModelId = runtimeModelID
                     self.statusBarController?.updateIcon(state: .idle)
@@ -558,7 +538,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        startPasteLastTranscriptShortcut()
         startEditCommandShortcut()
         runtimeServicesStarted = true
         floatingPanel?.show()
@@ -676,10 +655,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         handleStateChange(coordinator.state, previousState: nil)
     }
 
-    // The pill never renders transcript text in any state or mode — dictated
-    // words appear only at the insertion point (streamed, blind-typed, or
-    // injected at the end). The pill is only ever the compact
-    // waveform/elapsed/countdown/stop layout while recording.
+    // The pill never renders transcript text. It remains the compact
+    // waveform/elapsed/countdown/stop layout while recording; finalized text
+    // is inserted once after the recording ends.
 
     private func handleStateChange(_ state: DictationCoordinator.State, previousState: DictationCoordinator.State?) {
         playDictationCueIfNeeded(state, previousState: previousState)

@@ -6,7 +6,6 @@ import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
     static let pushToTalk = Self("pushToTalk")
-    static let pasteLastTranscript = Self("pasteLastTranscript")
     static let editCommand = Self("editCommand")
 }
 

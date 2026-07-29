@@ -85,7 +85,6 @@ These features are designed to stay local-first and work without sending your tr
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+Shift+Space` | Push-to-talk (hold to record, release to transcribe) |
-| Configurable | Paste last transcription |
 
 Shortcuts can be customized in Settings > General.
 

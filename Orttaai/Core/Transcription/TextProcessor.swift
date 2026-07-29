@@ -15,8 +15,7 @@ struct TextProcessorInput {
     let targetApp: String?
     let mode: ProcessingMode
     /// Allows specialized callers to skip the optional polish providers.
-    /// Normal dictation, including in-field streaming, keeps this false:
-    /// streamed text is provisional and must not lower final output quality.
+    /// Normal dictation keeps this false so the configured final cleanup runs.
     var deferPolish: Bool = false
 }
 

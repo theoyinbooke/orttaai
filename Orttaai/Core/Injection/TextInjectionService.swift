@@ -8,18 +8,15 @@ import os
 /// history entry so telemetry stays honest about the delivery mechanism.
 enum InjectionMethod: String, Equatable, Sendable {
     case paste
+    case unverifiedPaste = "unverified_paste"
     case axInsert = "ax"
     case typed
-    /// Delivered incrementally while the user was speaking (in-field
-    /// streaming), reconciled to the final pipeline text at finalize.
-    case streamed
     case failed
 }
 
 enum InjectionResult: Equatable {
     case success(method: InjectionMethod)
     case blockedSecureField
-    case noTranscript
     /// Paste, retry, AX insertion, and typed keystrokes all verifiably failed.
     /// The transcript is left on the clipboard so the user can Cmd+V it.
     case failedAllMethods
@@ -46,6 +43,11 @@ enum PasteVerificationOutcome: Equatable, Sendable {
     /// Treated as success so apps that hide their text from AX never trigger
     /// duplicate-inserting fallbacks.
     case inconclusive
+}
+
+enum UnverifiedPastePolicy: Equatable, Sendable {
+    case assumeDeliveredAndRestoreClipboard
+    case preserveClipboardAsUnverifiedSuccess
 }
 
 struct InjectionTelemetry: Sendable {
@@ -75,19 +77,12 @@ struct InjectionTelemetry: Sendable {
 }
 
 protocol TextInjecting: AnyObject {
-    var lastTranscript: String? { get }
     var lastInjectionTelemetry: InjectionTelemetry? { get }
     var lowLatencyModeEnabled: Bool { get set }
     func inject(text: String, targetApp: NSRunningApplication?) async -> InjectionResult
-    func pasteLastTranscript(targetApp: NSRunningApplication?) async -> InjectionResult
-    /// Records a transcript that was delivered outside `inject` (in-field
-    /// streaming) so paste-last-transcript keeps working.
-    func recordDeliveredTranscript(_ text: String)
 }
 
 extension TextInjecting {
-    func recordDeliveredTranscript(_ text: String) {}
-
     var lastInjectionTelemetry: InjectionTelemetry? { nil }
     var lowLatencyModeEnabled: Bool {
         get { false }
@@ -97,16 +92,13 @@ extension TextInjecting {
     func inject(text: String) async -> InjectionResult {
         await inject(text: text, targetApp: nil)
     }
-    func pasteLastTranscript() async -> InjectionResult {
-        await pasteLastTranscript(targetApp: nil)
-    }
 }
 
 final class TextInjectionService: TextInjecting {
     private let clipboard: any ClipboardManaging
     private let inspector: any AccessibilityInspecting
     private let keyPoster: any KeyEventPosting
-    private(set) var lastTranscript: String?
+    private let unverifiedPastePolicyProvider: (String?) -> UnverifiedPastePolicy
     private(set) var lastInjectionTelemetry: InjectionTelemetry?
     var lowLatencyModeEnabled: Bool = false
     private var adaptiveTimingByApp: [String: AdaptiveInjectionTiming] = [:]
@@ -115,19 +107,20 @@ final class TextInjectionService: TextInjecting {
     /// covering apps that commit the pasted text a beat late.
     static let verificationRetryPolls = 3
     static let verificationPollIntervalNs: UInt64 = 40_000_000 // 40ms
+    static let codexBundleID = "com.openai.codex"
 
     init(
         clipboard: any ClipboardManaging = ClipboardManager(),
         inspector: any AccessibilityInspecting = SystemAccessibilityInspector(),
-        keyPoster: any KeyEventPosting = CGKeyEventPoster()
+        keyPoster: any KeyEventPosting = CGKeyEventPoster(),
+        unverifiedPastePolicy: @escaping (String?) -> UnverifiedPastePolicy = {
+            TextInjectionService.unverifiedPastePolicy(targetBundleID: $0)
+        }
     ) {
         self.clipboard = clipboard
         self.inspector = inspector
         self.keyPoster = keyPoster
-    }
-
-    func recordDeliveredTranscript(_ text: String) {
-        lastTranscript = text
+        self.unverifiedPastePolicyProvider = unverifiedPastePolicy
     }
 
     // MARK: - Secure-field policy (pure decision logic)
@@ -204,6 +197,13 @@ final class TextInjectionService: TextInjecting {
         return .failed
     }
 
+    static func unverifiedPastePolicy(targetBundleID: String?) -> UnverifiedPastePolicy {
+        guard targetBundleID?.caseInsensitiveCompare(codexBundleID) == .orderedSame else {
+            return .assumeDeliveredAndRestoreClipboard
+        }
+        return .preserveClipboardAsUnverifiedSuccess
+    }
+
     private static func normalizedForComparison(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -231,7 +231,7 @@ final class TextInjectionService: TextInjecting {
         let injectionStart = CFAbsoluteTimeGetCurrent()
         lastInjectionTelemetry = nil
 
-        // Step 1: Check for secure field BEFORE setting lastTranscript.
+        // Step 1: Check for a secure field before touching the clipboard.
         // Use the target app (captured at recording start) so we check
         // the correct app, not whatever happens to be frontmost now.
         let appToActivate = targetApp ?? NSWorkspace.shared.frontmostApplication
@@ -244,15 +244,14 @@ final class TextInjectionService: TextInjecting {
             return .blockedSecureField
         }
 
-        // Step 2: Set lastTranscript only after secure field check passes
-        lastTranscript = text
-
-        // Step 3: Save current pasteboard, then stage the transcript on it
+        // Step 2: Save current pasteboard, then stage the transcript on it.
         let saved = clipboard.save()
         clipboard.setString(text)
 
         // Step 4: Activate the target app so the paste goes to it, not Orttaai.
         let appKey = adaptiveKey(for: appToActivate)
+        let targetBundleID = appToActivate?.bundleIdentifier
+        let unverifiedPolicy = unverifiedPastePolicyProvider(targetBundleID)
         let timingProfile = adaptiveTiming(for: appKey, textLength: text.count)
         var activationMs = await activateTargetAppIfNeeded(
             appToActivate,
@@ -261,6 +260,22 @@ final class TextInjectionService: TextInjecting {
 
         if let app = appToActivate, app.bundleIdentifier != Bundle.main.bundleIdentifier {
             Logger.injection.info("Target app active: \(app.isActive), bundle: \(app.bundleIdentifier ?? "?")")
+            guard app.isActive else {
+                let injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
+                clipboard.setString(text)
+                lastInjectionTelemetry = InjectionTelemetry(
+                    appActivationMs: activationMs,
+                    clipboardRestoreDelayMs: 0,
+                    totalInjectionMs: injectionMs,
+                    targetBundleID: targetBundleID,
+                    method: .failed,
+                    pasteAttempts: 0
+                )
+                Logger.injection.error(
+                    "Target app did not become active — transcript left on clipboard"
+                )
+                return .failedAllMethods
+            }
         }
 
         // Step 5: Snapshot the focused element's text so verification can
@@ -285,7 +300,12 @@ final class TextInjectionService: TextInjecting {
 
             // Brief stabilization delay after activation so the window server
             // finishes transferring keyboard focus before the CGEvent arrives.
-            if activationMs > 0 {
+            if unverifiedPolicy == .preserveClipboardAsUnverifiedSuccess {
+                // Codex's Electron editor transfers focus and consumes the
+                // pasteboard asynchronously. Give it a real focus-settling
+                // window before sending the single, non-duplicating paste.
+                try? await Task.sleep(nanoseconds: 120_000_000) // 120ms
+            } else if activationMs > 0 {
                 try? await Task.sleep(nanoseconds: 30_000_000) // 30ms
             }
 
@@ -293,11 +313,14 @@ final class TextInjectionService: TextInjecting {
             pasteAttempts += 1
 
             // Wait for the paste to be delivered before verifying/restoring.
-            let delay = resolvedRestoreDelayMs(
+            var delay = resolvedRestoreDelayMs(
                 for: timingProfile,
                 activationMs: activationMs,
                 activationSucceeded: appToActivate?.isActive ?? true
             )
+            if unverifiedPolicy == .preserveClipboardAsUnverifiedSuccess {
+                delay = max(delay, 400)
+            }
             restoreDelayMs += delay
             try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
 
@@ -354,6 +377,26 @@ final class TextInjectionService: TextInjecting {
             return .failedAllMethods
         }
 
+        if verdict == .inconclusive, unverifiedPolicy == .preserveClipboardAsUnverifiedSuccess {
+            // Codex does not expose editor text through Accessibility, so a
+            // CGEvent paste cannot be proved. Keep the transcript staged:
+            // this both gives the asynchronous editor time to consume it and
+            // provides lossless Cmd+V recovery without claiming success.
+            clipboard.setString(text)
+            lastInjectionTelemetry = InjectionTelemetry(
+                appActivationMs: activationMs,
+                clipboardRestoreDelayMs: restoreDelayMs,
+                totalInjectionMs: injectionMs,
+                targetBundleID: targetBundleID,
+                method: .unverifiedPaste,
+                pasteAttempts: pasteAttempts
+            )
+            Logger.injection.info(
+                "Codex paste sent; Accessibility verification unavailable — transcript retained on clipboard"
+            )
+            return .success(method: .unverifiedPaste)
+        }
+
         // Step 8: Restore pasteboard after a verified/assumed-good injection.
         clipboard.restore(saved)
 
@@ -361,7 +404,7 @@ final class TextInjectionService: TextInjecting {
             appActivationMs: activationMs,
             clipboardRestoreDelayMs: restoreDelayMs,
             totalInjectionMs: injectionMs,
-            targetBundleID: appToActivate?.bundleIdentifier,
+            targetBundleID: targetBundleID,
             method: method,
             pasteAttempts: pasteAttempts
         )
@@ -370,14 +413,6 @@ final class TextInjectionService: TextInjecting {
             "Text injected via \(method.rawValue, privacy: .public): \(text.prefix(50))... [activation=\(activationMs)ms, restoreDelay=\(restoreDelayMs)ms, total=\(injectionMs)ms, verification=\(String(describing: verdict), privacy: .public)]"
         )
         return .success(method: method)
-    }
-
-    func pasteLastTranscript(targetApp: NSRunningApplication? = nil) async -> InjectionResult {
-        guard let transcript = lastTranscript else {
-            Logger.injection.info("No last transcript to paste")
-            return .noTranscript
-        }
-        return await inject(text: transcript, targetApp: targetApp)
     }
 
     // MARK: - Verification

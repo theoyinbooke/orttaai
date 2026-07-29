@@ -83,6 +83,33 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertNil(merged)
     }
 
+    func testBackgroundTranscriptRejectsDegenerateRepetition() {
+        let rejectionReason = TranscriptionService.backgroundTranscriptRejectionReason(
+            for: "the result the result the result the result",
+            audioSampleCount: 16_000 * 10
+        )
+
+        XCTAssertEqual(rejectionReason, "transcript contained degenerate repetition")
+    }
+
+    func testBackgroundTranscriptRejectsImplausiblyShortLongRecording() {
+        let rejectionReason = TranscriptionService.backgroundTranscriptRejectionReason(
+            for: "Okay.",
+            audioSampleCount: 16_000 * 20
+        )
+
+        XCTAssertEqual(rejectionReason, "transcript was implausibly short for the recording")
+    }
+
+    func testBackgroundTranscriptAcceptsPlausibleCompleteText() {
+        let rejectionReason = TranscriptionService.backgroundTranscriptRejectionReason(
+            for: "This is a plausible complete transcript from the background decoding session.",
+            audioSampleCount: 16_000 * 20
+        )
+
+        XCTAssertNil(rejectionReason)
+    }
+
     func testSpeculativeReuseRejectedForLongAudio() {
         let rejectionReason = TranscriptionService.speculativeReuseRejectionReason(
             for: "This sounded plausible",
@@ -214,11 +241,20 @@ final class TranscriptionServiceTests: XCTestCase {
 
     // MARK: - Speculative coverage
 
-    func testCoverageSufficientWithinSlack() {
+    func testCoverageInsufficientWhenFinalQuarterSecondContainsSpeech() {
+        let samples = speech(seconds: 10)
+
+        XCTAssertFalse(TranscriptionService.speculativeCoverageIsSufficient(
+            coveredSampleCount: samples.count - 4_000,
+            audioSamples: samples
+        ))
+    }
+
+    func testCoverageSufficientWhenCompleteRecordingIsCovered() {
         let samples = speech(seconds: 10)
 
         XCTAssertTrue(TranscriptionService.speculativeCoverageIsSufficient(
-            coveredSampleCount: samples.count - 4_000,
+            coveredSampleCount: samples.count,
             audioSamples: samples
         ))
     }
@@ -229,6 +265,17 @@ final class TranscriptionServiceTests: XCTestCase {
 
         XCTAssertTrue(TranscriptionService.speculativeCoverageIsSufficient(
             coveredSampleCount: talk.count,
+            audioSamples: samples
+        ))
+    }
+
+    func testCoverageInsufficientWhenRemainderContainsQuietSpeech() {
+        let covered = speech(seconds: 8)
+        let quietEnding = speech(seconds: 0.25, amplitude: 0.01)
+        let samples = covered + quietEnding
+
+        XCTAssertFalse(TranscriptionService.speculativeCoverageIsSufficient(
+            coveredSampleCount: covered.count,
             audioSamples: samples
         ))
     }

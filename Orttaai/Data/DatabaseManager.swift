@@ -752,6 +752,7 @@ final class DatabaseManager {
 
     // MARK: - CRUD
 
+    @discardableResult
     func saveTranscription(
         text: String,
         appName: String?,
@@ -766,8 +767,8 @@ final class DatabaseManager {
         editInstruction: String? = nil,
         createdAt: Date = Date(),
         sourceDeviceID: String = DeviceIdentity.currentID
-    ) throws {
-        try dbQueue.write { db in
+    ) throws -> Int64 {
+        let rowID = try dbQueue.write { db -> Int64 in
             let record = Transcription(
                 createdAt: createdAt,
                 text: text,
@@ -794,6 +795,43 @@ final class DatabaseManager {
                 table: CloudSyncTable.transcription.rawValue,
                 id: db.lastInsertedRowID,
                 modifiedAt: createdAt
+            )
+            return db.lastInsertedRowID
+        }
+        requestCloudSyncIfEnabled()
+        return rowID
+    }
+
+    func completeTranscriptionDelivery(
+        id: Int64,
+        processingMs: Int,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String?
+    ) throws {
+        let modifiedAt = Date()
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE transcription
+                SET processingDurationMs = ?, injectionDurationMs = ?,
+                    appActivationDurationMs = ?, clipboardRestoreDelayMs = ?,
+                    injectionMethod = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    processingMs,
+                    latency.injectionMs,
+                    latency.appActivationMs,
+                    latency.clipboardRestoreDelayMs,
+                    injectionMethod,
+                    id
+                ]
+            )
+            try Self.touchSyncMetadata(
+                in: db,
+                table: CloudSyncTable.transcription.rawValue,
+                id: id,
+                modifiedAt: modifiedAt
             )
         }
         requestCloudSyncIfEnabled()
@@ -2271,7 +2309,7 @@ extension DatabaseManager {
                    recordingDurationMs, processingDurationMs, settingsSyncDurationMs,
                    transcriptionDurationMs, textProcessingDurationMs, injectionDurationMs,
                    appActivationDurationMs, clipboardRestoreDelayMs, modelId, audioDevice,
-                   sourceDeviceID
+                   sourceDeviceID, injectionMethod, entryKind, editInstruction
             FROM transcription
             WHERE syncID IS NOT NULL
             """
@@ -2304,7 +2342,10 @@ extension DatabaseManager {
                 clipboardRestoreDelayMs: row["clipboardRestoreDelayMs"],
                 modelId: modelId,
                 audioDevice: row["audioDevice"],
-                sourceDeviceID: row["sourceDeviceID"]
+                sourceDeviceID: row["sourceDeviceID"],
+                injectionMethod: row["injectionMethod"],
+                entryKind: row["entryKind"],
+                editInstruction: row["editInstruction"]
             )
         }
     }
@@ -2491,7 +2532,8 @@ extension DatabaseManager {
                     recordingDurationMs = ?, processingDurationMs = ?, settingsSyncDurationMs = ?,
                     transcriptionDurationMs = ?, textProcessingDurationMs = ?, injectionDurationMs = ?,
                     appActivationDurationMs = ?, clipboardRestoreDelayMs = ?, modelId = ?,
-                    audioDevice = ?, sourceDeviceID = ?, syncID = ?, modifiedAt = ?
+                    audioDevice = ?, sourceDeviceID = ?, injectionMethod = ?, entryKind = ?,
+                    editInstruction = ?, syncID = ?, modifiedAt = ?
                 WHERE id = ?
                 """,
                 arguments: transcriptionArguments(record) + [id]
@@ -2503,9 +2545,10 @@ extension DatabaseManager {
                     createdAt, text, targetAppName, targetAppBundleID, recordingDurationMs,
                     processingDurationMs, settingsSyncDurationMs, transcriptionDurationMs,
                     textProcessingDurationMs, injectionDurationMs, appActivationDurationMs,
-                    clipboardRestoreDelayMs, modelId, audioDevice, sourceDeviceID, syncID, modifiedAt
+                    clipboardRestoreDelayMs, modelId, audioDevice, sourceDeviceID,
+                    injectionMethod, entryKind, editInstruction, syncID, modifiedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: transcriptionArguments(record)
             )
@@ -2529,6 +2572,9 @@ extension DatabaseManager {
             record.modelId,
             record.audioDevice,
             record.sourceDeviceID,
+            record.injectionMethod,
+            record.entryKind,
+            record.editInstruction,
             record.syncID,
             record.modifiedAt
         ]
@@ -2774,7 +2820,13 @@ protocol TranscriptionHistoryStoring: AnyObject {
         processingMs: Int,
         modelId: String,
         latency: DictationLatencyTelemetry,
-        injectionMethod: String
+        injectionMethod: String?
+    ) throws -> Int64
+    func completeTranscriptionEntry(
+        id: Int64,
+        processingMs: Int,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String?
     ) throws
     /// Persists a voice edit command: `text` is the edited replacement,
     /// `instruction` the spoken command that produced it.
@@ -2801,8 +2853,8 @@ extension DatabaseManager: TranscriptionHistoryStoring {
         processingMs: Int,
         modelId: String,
         latency: DictationLatencyTelemetry,
-        injectionMethod: String
-    ) throws {
+        injectionMethod: String?
+    ) throws -> Int64 {
         try saveTranscription(
             text: text,
             appName: appName,
@@ -2810,6 +2862,20 @@ extension DatabaseManager: TranscriptionHistoryStoring {
             recordingMs: recordingMs,
             processingMs: processingMs,
             modelId: modelId,
+            latency: latency,
+            injectionMethod: injectionMethod
+        )
+    }
+
+    func completeTranscriptionEntry(
+        id: Int64,
+        processingMs: Int,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: String?
+    ) throws {
+        try completeTranscriptionDelivery(
+            id: id,
+            processingMs: processingMs,
             latency: latency,
             injectionMethod: injectionMethod
         )

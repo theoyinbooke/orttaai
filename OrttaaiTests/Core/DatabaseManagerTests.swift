@@ -623,7 +623,10 @@ final class DatabaseManagerTests: XCTestCase {
             appActivationDurationMs: nil,
             clipboardRestoreDelayMs: nil,
             modelId: "test",
-            audioDevice: nil
+            audioDevice: nil,
+            injectionMethod: "paste",
+            entryKind: "edit",
+            editInstruction: "Make this clearer"
         )
 
         try db.applyCloudSnapshot(
@@ -635,6 +638,9 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.text, "Imported from iCloud")
         XCTAssertEqual(records.first?.targetAppName, "Notes")
+        XCTAssertEqual(records.first?.injectionMethod, "paste")
+        XCTAssertEqual(records.first?.entryKind, "edit")
+        XCTAssertEqual(records.first?.editInstruction, "Make this clearer")
     }
 
     func testReplacingFromCloudSnapshotDoesNotTombstoneImportedRows() throws {

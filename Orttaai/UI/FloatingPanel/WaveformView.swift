@@ -4,11 +4,8 @@
 import SwiftUI
 import Foundation
 
-/// The recording pill. It never displays transcript text — dictated words
-/// appear only at the insertion point (streamed in-field, blind-typed into
-/// terminals, or injected at the end); the pill keeps this one compact
-/// shape (waveform, elapsed time, countdown, stop button) for the whole
-/// recording.
+/// The recording pill. It never displays transcript text; the finalized
+/// dictation is inserted once after recording ends.
 struct WaveformView: View {
     let audioLevel: Float
     let elapsedSeconds: Int

@@ -11,7 +11,6 @@ struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
     @AppStorage("spokenFormattingEnabled") private var spokenFormattingEnabled = true
-    @AppStorage("inFieldStreamingEnabled") private var inFieldStreamingEnabled = true
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 90
     @AppStorage("handsFreeModeEnabled") private var handsFreeModeEnabled = true
     @AppStorage("handsFreeSilenceStopEnabled") private var handsFreeSilenceStopEnabled = true
@@ -59,13 +58,6 @@ struct GeneralSettingsView: View {
                     isOn: $spokenFormattingEnabled
                 )
 
-                divider
-
-                toggleRow(
-                    title: "Stream Words Into the App",
-                    subtitle: "Show provisional words at the cursor while you speak in apps with readable text fields, then reconcile them to the polished final text. Apps whose editors cannot safely accept live synthetic typing, including Codex, receive the polished text once when recording ends. Terminals retain commit-only streaming with line breaks flattened to spaces. Password fields are never typed into, and the recording pill never displays dictated text.",
-                    isOn: $inFieldStreamingEnabled
-                )
             }
             .padding(Spacing.lg)
             .dashboardCard()
@@ -122,14 +114,6 @@ struct GeneralSettingsView: View {
                         subtitle: handsFreeModeEnabled
                             ? "Hold to talk, or tap to start hands-free."
                             : "Hold to start and release to transcribe."
-                    )
-
-                    divider
-
-                    shortcutRow(
-                        name: .pasteLastTranscript,
-                        title: "Paste Last Transcript",
-                        subtitle: "Insert your most recent dictation instantly."
                     )
 
                     if editCommandsEnabled {

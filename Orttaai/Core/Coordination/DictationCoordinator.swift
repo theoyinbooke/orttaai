@@ -68,22 +68,6 @@ final class DictationCoordinator {
     /// Mode of the recording in progress. Only meaningful while `state` is
     /// `.recording`; reset to `.pushToTalk` whenever a new recording starts.
     private(set) var recordingMode: RecordingMode = .pushToTalk
-    /// In-progress transcript assembled from the live session's clip commits
-    /// and speculative tail decodes. Never rendered in the pill (the pill
-    /// shows no transcript text in any mode) — this model exists for
-    /// observers and tests of the live event plumbing, and is cleared when
-    /// recording stops.
-    private(set) var liveTranscript: LiveTranscript?
-    /// In-field streaming session for the recording in progress. Created only
-    /// for dictation sessions when the setting is on; nil for edit sessions.
-    private(set) var streamingSession: InFieldStreamingSession?
-    /// True while committed words are being typed into the target — either
-    /// verified in-field streaming (readable fields) or blind typed streaming
-    /// (terminals, unreadable elements). Any stop (secure field, focus loss,
-    /// field mismatch) flips this off silently.
-    var isStreamingToField: Bool {
-        streamingSession?.isStreaming ?? false
-    }
     /// Kind of the session in progress. Only meaningful while a session is
     /// active (recording/processing/injecting); reset to `.dictation` when the
     /// session ends.
@@ -112,10 +96,6 @@ final class DictationCoordinator {
     private var pendingEditGestureAction: HotkeyGestureInterpreter.ReleaseAction?
     private let selectionCapture: any SelectionCapturing
     private let editProcessor: any EditCommandProcessing
-    /// Builds the in-field streaming session for a dictation recording.
-    /// Injectable so tests can supply sessions backed by mock AX/keystroke
-    /// seams; production uses the live seams.
-    private let makeStreamingSession: (NSRunningApplication?) -> InFieldStreamingSession
 
     /// Push-to-talk is bounded by the user-set max duration; hands-free gets
     /// its own, much more generous cap.
@@ -134,17 +114,20 @@ final class DictationCoordinator {
         max(0, maxDuration - Self.countdownWarningWindowSeconds)
     }
     private let minDuration: TimeInterval = 0.5
-    private let liveDecodePollIntervalNs: UInt64 = 250_000_000
+    /// Silent ASR polling only. It prepares committed clips and a speculative
+    /// tail while recording, but never routes text to the destination app.
+    private let backgroundDecodePollIntervalNs: UInt64 = 250_000_000
+    private let silenceMonitorPollIntervalNs: UInt64 = 250_000_000
+    nonisolated private static let captureSampleRate = 16_000
+    private static let minimumCaptureCoverage = 0.90
 
     private var capTimerTask: Task<Void, Never>?
-    private var liveDecodeTask: Task<Void, Never>?
+    private var backgroundDecodeTask: Task<Void, Never>?
+    private var silenceMonitorTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
     private var audioHealthTask: Task<Void, Never>?
     private var targetApp: NSRunningApplication?
-    /// Single FIFO pipeline for live transcript events: the transcription
-    /// actor yields into the stream (ordered), one MainActor task consumes.
-    private var liveEventTask: Task<Void, Never>?
-    private var liveEventContinuation: AsyncStream<LiveTranscriptEvent>.Continuation?
+    private var handsFreeSpeechDetected = false
 
     /// History persistence policy: bounded retries, then a loud failure.
     static let historySaveAttempts = 3
@@ -159,7 +142,6 @@ final class DictationCoordinator {
         settings: AppSettings,
         selectionCapture: (any SelectionCapturing)? = nil,
         editProcessor: (any EditCommandProcessing)? = nil,
-        streamingSessionFactory: ((NSRunningApplication?) -> InFieldStreamingSession)? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.audioService = audioService
@@ -170,9 +152,6 @@ final class DictationCoordinator {
         self.settings = settings
         self.selectionCapture = selectionCapture ?? SelectionCaptureService()
         self.editProcessor = editProcessor ?? EditCommandProcessor(settings: settings)
-        self.makeStreamingSession = streamingSessionFactory ?? { targetApp in
-            InFieldStreamingSession(targetApp: targetApp)
-        }
         self.now = now
     }
 
@@ -416,10 +395,6 @@ final class DictationCoordinator {
         recordingMode = .pushToTalk
         sessionKind = kind
         editSelection = selection
-        // Edit sessions replace the selection at the end and never stream.
-        streamingSession = (kind == .dictation && settings.inFieldStreamingEnabled)
-            ? makeStreamingSession(frontmostApp)
-            : nil
 
         do {
             // Capture the target app NOW, before the floating panel appears
@@ -428,7 +403,7 @@ final class DictationCoordinator {
             try audioService.startCapture(deviceID: selectedDeviceID)
             state = .recording(startTime: Date())
             startCapTimer()
-            startLiveDecodeLoop()
+            startBackgroundDecodeLoop()
             startAudioHealthMonitor()
             if let selectedDeviceID {
                 if let activeDeviceID = audioService.activeInputDeviceID, activeDeviceID != selectedDeviceID {
@@ -470,6 +445,12 @@ final class DictationCoordinator {
         capTimerTask?.cancel()
         countdownSeconds = nil
         startCapTimer(alreadyElapsed: Date().timeIntervalSince(startTime))
+        // Seed the state once from the recording so far, then the polling loop
+        // only requests a bounded trailing window.
+        handsFreeSpeechDetected = TranscriptionService.containsSpeechEnergy(
+            audioService.currentSamplesSnapshot()[...]
+        )
+        startHandsFreeSilenceMonitor()
         Logger.dictation.info("Hands-free mode engaged")
     }
 
@@ -483,15 +464,11 @@ final class DictationCoordinator {
         capTimerTask?.cancel()
         capTimerTask = nil
         countdownSeconds = nil
-        liveDecodeTask?.cancel()
-        liveDecodeTask = nil
+        stopBackgroundDecodePolling()
+        silenceMonitorTask?.cancel()
+        silenceMonitorTask = nil
         audioHealthTask?.cancel()
         audioHealthTask = nil
-        liveTranscript = nil
-        finishLiveEventStream()
-        Task { [transcriptionService] in
-            await transcriptionService.setLiveTranscriptEventHandler(nil)
-        }
 
         // Stop capture
         let samples = audioService.stopCapture()
@@ -499,13 +476,26 @@ final class DictationCoordinator {
 
         // Check minimum duration
         guard duration >= minDuration else {
+            discardBackgroundDecodeSession()
             state = .idle
             endSessionContext()
-            Task {
-                await transcriptionService.cancelLiveTranscriptionSession()
-            }
             historyStore.logSkippedRecording(duration: duration)
             Logger.dictation.info("Recording too short (\(duration, format: .fixed(precision: 2))s), skipping")
+            return
+        }
+
+        let coverage = Self.captureCoverage(
+            sampleCount: samples.count,
+            recordingDurationMs: Int(duration * 1000)
+        )
+        guard coverage >= Self.minimumCaptureCoverage else {
+            discardBackgroundDecodeSession()
+            state = .error(message: "Audio was dropped. Please dictate again.")
+            endSessionContext()
+            autoDismissError()
+            Logger.dictation.error(
+                "Rejecting incomplete recording: \(samples.count) samples over \(duration, format: .fixed(precision: 2))s (\(coverage * 100, format: .fixed(precision: 1))% coverage)"
+            )
             return
         }
 
@@ -543,8 +533,13 @@ final class DictationCoordinator {
             settingsSyncMs = Int((CFAbsoluteTimeGetCurrent() - settingsSyncStart) * 1000)
 
             try await ensureTranscriptionModelLoaded()
+            await transcriptionService.setVocabularyBias(terms: sessionVocabularyBiasTerms())
 
-            // Finalize using any speculative work started while recording.
+            // Finalize the silent background session. The transcription
+            // service reuses committed 15-second/pause-bounded clips and a
+            // sufficiently complete speculative tail, then falls back to one
+            // whole-recording decode whenever the background result is absent
+            // or fails its integrity checks. No provisional text is inserted.
             let transcriptionStart = CFAbsoluteTimeGetCurrent()
             let transcript = try await transcriptionService.finalizeLiveTranscription(audioSamples: samples)
             transcriptionMs = Int((CFAbsoluteTimeGetCurrent() - transcriptionStart) * 1000)
@@ -565,10 +560,6 @@ final class DictationCoordinator {
                 return
             }
 
-            // Streaming is a provisional preview, never the source of truth.
-            // Always run the configured polish pipeline, then reconcile the
-            // visible provisional span to the better final result.
-            let didStreamText = !(streamingSession?.streamedText.isEmpty ?? true)
             let textProcessStart = CFAbsoluteTimeGetCurrent()
             let input = TextProcessorInput(
                 rawTranscript: transcript,
@@ -579,30 +570,48 @@ final class DictationCoordinator {
             let output = try await textProcessor.process(input)
             textProcessingMs = Int((CFAbsoluteTimeGetCurrent() - textProcessStart) * 1000)
 
-            // Inject into the app that was focused when the user started
-            // recording. Sessions that streamed reconcile the streamed span
-            // to the final text instead of pasting the whole transcript.
+            let runtimeModelID = await transcriptionService.loadedModelID()
+            let resolvedModelID: String = {
+                if let runtimeModelID, !runtimeModelID.isEmpty {
+                    return runtimeModelID
+                }
+                let activeModelID = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !activeModelID.isEmpty {
+                    return activeModelID
+                }
+                return settings.selectedModelId
+            }()
+            settings.activeModelId = resolvedModelID
+
+            // Persist the final transcript before interacting with another
+            // application. A destination crash or failed paste must never make
+            // a completed dictation disappear from History.
+            let preDeliveryProcessingMs = Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000)
+            let historyEntryID = await persistTranscription(
+                text: output.text,
+                appName: appName,
+                bundleID: appBundleID,
+                recordingMs: recordingDurationMs,
+                processingMs: preDeliveryProcessingMs,
+                modelId: resolvedModelID,
+                latency: DictationLatencyTelemetry(
+                    settingsSyncMs: settingsSyncMs,
+                    transcriptionMs: transcriptionMs,
+                    textProcessingMs: textProcessingMs,
+                    injectionMs: nil,
+                    appActivationMs: nil,
+                    clipboardRestoreDelayMs: nil
+                ),
+                injectionMethod: nil
+            )
+
+            // Deliver the saved final text once to the app that was focused
+            // when recording began.
             state = .injecting
             injectionService.lowLatencyModeEnabled = settings.lowLatencyModeEnabled
             let injectionStart = CFAbsoluteTimeGetCurrent()
-            let result: InjectionResult
-            if didStreamText, let streamingSession {
-                switch await streamingSession.finalize(finalText: output.text) {
-                case .completed:
-                    injectionService.recordDeliveredTranscript(output.text)
-                    result = .success(method: .streamed)
-                case .failedNeedsManualPaste:
-                    // The session left the final transcript on the clipboard;
-                    // the streamed text stays untouched in the field.
-                    result = .failedAllMethods
-                case .notStreamed:
-                    result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
-                    injectionTelemetry = injectionService.lastInjectionTelemetry
-                }
-            } else {
-                result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
-                injectionTelemetry = injectionService.lastInjectionTelemetry
-            }
+            let result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
+            injectionTelemetry = injectionService.lastInjectionTelemetry
             injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
 
             let processingMs = Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000)
@@ -616,31 +625,27 @@ final class DictationCoordinator {
                 clipboardRestoreDelayMs: injectionTelemetry?.clipboardRestoreDelayMs
             )
 
+            let completedMethod: InjectionMethod? = {
+                switch result {
+                case .success(let method):
+                    return method
+                case .failedAllMethods:
+                    return .failed
+                case .blockedSecureField:
+                    return nil
+                }
+            }()
+            if let historyEntryID {
+                await completePersistedTranscription(
+                    id: historyEntryID,
+                    processingMs: processingMs,
+                    latency: latency,
+                    injectionMethod: completedMethod
+                )
+            }
+
             switch result {
             case .success(let method):
-                let runtimeModelID = await transcriptionService.loadedModelID()
-                let resolvedModelID: String = {
-                    if let runtimeModelID, !runtimeModelID.isEmpty {
-                        return runtimeModelID
-                    }
-                    let activeModelID = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !activeModelID.isEmpty {
-                        return activeModelID
-                    }
-                    return settings.selectedModelId
-                }()
-                settings.activeModelId = resolvedModelID
-
-                persistTranscription(
-                    text: output.text,
-                    appName: appName,
-                    bundleID: appBundleID,
-                    recordingMs: recordingDurationMs,
-                    processingMs: processingMs,
-                    modelId: resolvedModelID,
-                    latency: latency,
-                    injectionMethod: method
-                )
                 maybeStartFastFirstPrefetch(afterSuccessfulDictationWith: resolvedModelID)
                 state = .idle
                 endSessionContext()
@@ -650,30 +655,14 @@ final class DictationCoordinator {
                 Logger.dictation.info("Dictation complete: \(output.text.prefix(50))... (\(processingMs)ms)")
 
             case .failedAllMethods:
-                // Injection verifiably failed everywhere. The transcript is
-                // already on the clipboard; record an honest failed entry and
-                // tell the user instead of reporting silent success.
-                persistTranscription(
-                    text: output.text,
-                    appName: appName,
-                    bundleID: appBundleID,
-                    recordingMs: recordingDurationMs,
-                    processingMs: processingMs,
-                    modelId: settings.activeModelId.isEmpty ? settings.selectedModelId : settings.activeModelId,
-                    latency: latency,
-                    injectionMethod: .failed
-                )
+                // The transcript was saved before delivery and remains on the
+                // clipboard for manual recovery.
                 state = .error(message: "Couldn't insert text. Press Cmd+V to paste it.")
                 endSessionContext()
                 autoDismissError()
 
             case .blockedSecureField:
                 state = .error(message: "Can't dictate into password fields")
-                endSessionContext()
-                autoDismissError()
-
-            case .noTranscript:
-                state = .error(message: "No transcript available to paste")
                 endSessionContext()
                 autoDismissError()
             }
@@ -692,7 +681,7 @@ final class DictationCoordinator {
         targetApp = nil
         editSelection = nil
         sessionKind = .dictation
-        streamingSession = nil
+        handsFreeSpeechDetected = false
     }
 
     /// Applies the spoken instruction to the captured selection through the
@@ -776,9 +765,6 @@ final class DictationCoordinator {
             case .blockedSecureField:
                 state = .error(message: "Can't edit password fields")
                 autoDismissError()
-            case .noTranscript:
-                state = .error(message: "Couldn't apply the edit")
-                autoDismissError()
             }
             endSessionContext()
 
@@ -836,10 +822,9 @@ final class DictationCoordinator {
         }
     }
 
-    /// Persists a history entry with bounded retries. History persistence
-    /// must never affect injection (the text is already delivered/on the
-    /// clipboard) but must not vanish silently either: final failure logs an
-    /// error and posts a user-visible breadcrumb.
+    /// Persists the finalized text before delivery. Returns the row ID so the
+    /// delivery telemetry can be completed afterward without inserting a
+    /// second history row.
     private func persistTranscription(
         text: String,
         appName: String?,
@@ -848,15 +833,12 @@ final class DictationCoordinator {
         processingMs: Int,
         modelId: String,
         latency: DictationLatencyTelemetry,
-        injectionMethod: InjectionMethod
-    ) {
-        let historyStore = self.historyStore
-        Task.detached(priority: .utility) {
-            let failure = await BoundedRetry.run(
-                attempts: Self.historySaveAttempts,
-                delayNs: Self.historySaveRetryDelayNs
-            ) {
-                try historyStore.saveTranscriptionEntry(
+        injectionMethod: InjectionMethod?
+    ) async -> Int64? {
+        var lastError: Error?
+        for attempt in 1...Self.historySaveAttempts {
+            do {
+                return try historyStore.saveTranscriptionEntry(
                     text: text,
                     appName: appName,
                     bundleID: bundleID,
@@ -864,71 +846,87 @@ final class DictationCoordinator {
                     processingMs: processingMs,
                     modelId: modelId,
                     latency: latency,
-                    injectionMethod: injectionMethod.rawValue
+                    injectionMethod: injectionMethod?.rawValue
                 )
-            }
-            guard let failure else { return }
-            Logger.dictation.error(
-                "History save failed after \(failure.attempts) attempts: \(failure.lastError.localizedDescription, privacy: .public)"
-            )
-            await MainActor.run {
-                NotificationCenter.default.post(name: .transcriptionHistorySaveDidFail, object: nil)
+            } catch {
+                lastError = error
+                if attempt < Self.historySaveAttempts {
+                    try? await Task.sleep(nanoseconds: Self.historySaveRetryDelayNs)
+                }
             }
         }
+        Logger.dictation.error(
+            "History save failed after \(Self.historySaveAttempts) attempts: \(lastError?.localizedDescription ?? "unknown error", privacy: .public)"
+        )
+        NotificationCenter.default.post(name: .transcriptionHistorySaveDidFail, object: nil)
+        return nil
     }
 
-    // MARK: - Paste Last Transcript
-
-    /// Re-injects the most recent transcript through the same verified
-    /// injection path used for live dictation. Wired to the
-    /// `.pasteLastTranscript` keyboard shortcut.
-    func pasteLastTranscript() {
-        guard case .idle = state else {
-            Logger.dictation.info("Ignoring pasteLastTranscript — not idle (state: \(String(describing: self.state)))")
-            return
-        }
-
-        // Capture the frontmost app now, matching how dictation targets the
-        // app that was focused when the user acted.
-        let frontmostApp = NSWorkspace.shared.frontmostApplication
-        state = .injecting
-        injectionService.lowLatencyModeEnabled = settings.lowLatencyModeEnabled
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let result = await self.injectionService.pasteLastTranscript(targetApp: frontmostApp)
-            switch result {
-            case .success(let method):
-                Logger.dictation.info("Paste-last-transcript succeeded via \(method.rawValue)")
-                self.state = .idle
-            case .noTranscript:
-                self.state = .error(message: "No transcript available to paste")
-                self.autoDismissError()
-            case .blockedSecureField:
-                self.state = .error(message: "Can't dictate into password fields")
-                self.autoDismissError()
-            case .failedAllMethods:
-                self.state = .error(message: "Couldn't insert text. Press Cmd+V to paste it.")
-                self.autoDismissError()
+    /// Completes delivery metadata on the already-saved row.
+    private func completePersistedTranscription(
+        id: Int64,
+        processingMs: Int,
+        latency: DictationLatencyTelemetry,
+        injectionMethod: InjectionMethod?
+    ) async {
+        var lastError: Error?
+        for attempt in 1...Self.historySaveAttempts {
+            do {
+                try historyStore.completeTranscriptionEntry(
+                    id: id,
+                    processingMs: processingMs,
+                    latency: latency,
+                    injectionMethod: injectionMethod?.rawValue
+                )
+                return
+            } catch {
+                lastError = error
+                if attempt < Self.historySaveAttempts {
+                    try? await Task.sleep(nanoseconds: Self.historySaveRetryDelayNs)
+                }
             }
         }
+        Logger.dictation.error(
+            "History delivery metadata update failed after \(Self.historySaveAttempts) attempts: \(lastError?.localizedDescription ?? "unknown error", privacy: .public)"
+        )
     }
 
     @MainActor
     private func ensureTranscriptionModelLoaded() async throws {
-        let isLoaded = await transcriptionService.isLoaded
-        guard !isLoaded else { return }
-
-        let selectedModelID = settings.selectedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedModelID = settings.applyLanguageOptimizedSmallModelSelection()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !selectedModelID.isEmpty else {
             throw OrttaaiError.modelNotLoaded
         }
 
-        Logger.model.warning("Transcription model was not loaded at recording finalization; loading \(selectedModelID)")
+        let isLoaded = await transcriptionService.isLoaded
+        let loadedModelID = await transcriptionService.loadedModelID()?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if isLoaded, loadedModelID == selectedModelID {
+            settings.activeModelId = selectedModelID
+            return
+        }
+
+        if isLoaded {
+            Logger.model.warning(
+                "Loaded transcription model \(loadedModelID ?? "unknown") does not match selected \(selectedModelID); reloading exact selection"
+            )
+        } else {
+            Logger.model.warning(
+                "Transcription model was not loaded at recording finalization; loading \(selectedModelID)"
+            )
+        }
         try await transcriptionService.loadModel(named: selectedModelID)
-        let runtimeModelID = await transcriptionService.loadedModelID() ?? selectedModelID
-        settings.activeModelId = runtimeModelID
-        Logger.model.info("On-demand transcription model load complete: \(runtimeModelID)")
+        let runtimeModelID = await transcriptionService.loadedModelID()?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard runtimeModelID == selectedModelID else {
+            Logger.model.error(
+                "Requested \(selectedModelID) but runtime reported \(runtimeModelID ?? "unknown")"
+            )
+            throw OrttaaiError.modelNotLoaded
+        }
+        settings.activeModelId = selectedModelID
+        Logger.model.info("Exact transcription model load complete: \(selectedModelID)")
     }
 
     private func maybeStartFastFirstPrefetch(afterSuccessfulDictationWith activeModelId: String) {
@@ -993,55 +991,71 @@ final class DictationCoordinator {
         }
     }
 
-    private func startLiveDecodeLoop() {
-        liveDecodeTask?.cancel()
-
-        // Events flow through a single AsyncStream so delivery order is
-        // guaranteed FIFO: the transcription actor yields synchronously in
-        // emission order and one MainActor task consumes sequentially. (The
-        // previous per-event `Task { @MainActor }` had no ordering guarantee.)
-        finishLiveEventStream()
-        let (stream, continuation) = AsyncStream.makeStream(of: LiveTranscriptEvent.self)
-        liveEventContinuation = continuation
-        liveEventTask = Task { @MainActor [weak self] in
-            for await event in stream {
-                guard let self else { break }
-                self.applyLiveTranscriptEvent(event)
-                // Streaming rides the same FIFO: each event is fully handled
-                // (typed + verified) before the next, so increments can never
-                // land out of order.
-                await self.dispatchLiveEventToStreamingSession(event)
-            }
-        }
-
-        liveDecodeTask = Task(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
+    /// Starts the proven v1.5 background-ASR lifecycle without restoring
+    /// in-field streaming. Live transcript events remain disconnected; the
+    /// only destination interaction is the one final injection after History
+    /// persistence.
+    private func startBackgroundDecodeLoop() {
+        stopBackgroundDecodePolling()
+        backgroundDecodeTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
 
             await self.syncTranscriptionSettings()
-            // Snapshot the personal vocabulary once per session, before any
-            // audio is decoded — the database is never touched from the
-            // decode loop below.
             await self.transcriptionService.setVocabularyBias(terms: self.sessionVocabularyBiasTerms())
             guard !Task.isCancelled else { return }
-            // Handler installed before the session begins so no early commit
-            // or speculative result is missed.
-            await self.transcriptionService.setLiveTranscriptEventHandler { event in
-                continuation.yield(event)
-            }
-            guard !Task.isCancelled else { return }
+
+            // A stale handler from an earlier session must never receive
+            // provisional text. Background decoding is deliberately headless.
+            await self.transcriptionService.setLiveTranscriptEventHandler(nil)
             await self.transcriptionService.beginLiveTranscriptionSession()
 
             while !Task.isCancelled {
                 let snapshot = self.audioService.currentSamplesSnapshot()
                 await self.transcriptionService.processLiveAudioSnapshot(snapshot)
-                // Hands-free silence auto-stop rides the same snapshot the
-                // live decode already takes — no second audio analysis path.
-                await MainActor.run {
-                    self.evaluateHandsFreeAutoStopIfNeeded(samples: snapshot)
-                }
-                try? await Task.sleep(nanoseconds: self.liveDecodePollIntervalNs)
+                try? await Task.sleep(nanoseconds: self.backgroundDecodePollIntervalNs)
             }
         }
+    }
+
+    /// Stops only the snapshot polling. In-flight clip/tail work remains owned
+    /// by TranscriptionService so finalization can await or safely reuse it.
+    private func stopBackgroundDecodePolling() {
+        backgroundDecodeTask?.cancel()
+        backgroundDecodeTask = nil
+    }
+
+    /// Abandons a session that will not be finalized (too short, incomplete,
+    /// or failed capture) so no background decode survives into the next one.
+    private func discardBackgroundDecodeSession() {
+        stopBackgroundDecodePolling()
+        Task { [transcriptionService] in
+            await transcriptionService.cancelLiveTranscriptionSession()
+        }
+    }
+
+    /// Hands-free silence detection only. This never transcribes or inserts
+    /// partial text; the complete recording remains the sole ASR input.
+    private func startHandsFreeSilenceMonitor() {
+        silenceMonitorTask?.cancel()
+        silenceMonitorTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+
+            while !Task.isCancelled {
+                let maxSamples = await MainActor.run { self.handsFreeSilenceSnapshotSampleCount }
+                let snapshot = self.audioService.currentSamplesSnapshot(maxSamples: maxSamples)
+                self.evaluateHandsFreeAutoStopIfNeeded(samples: snapshot)
+                try? await Task.sleep(nanoseconds: self.silenceMonitorPollIntervalNs)
+            }
+        }
+    }
+
+    @MainActor
+    private var handsFreeSilenceSnapshotSampleCount: Int {
+        guard let silenceStop = settings.effectiveHandsFreeSilenceStopSeconds else {
+            return TranscriptionService.energyFrameSampleCount
+        }
+        return Int(silenceStop * Double(Self.captureSampleRate))
+            + TranscriptionService.energyFrameSampleCount
     }
 
     /// Stops a hands-free recording once the trailing silence reaches the
@@ -1053,21 +1067,21 @@ final class DictationCoordinator {
         // Never race the minimum-duration guard: an auto-stop should always
         // produce a real finalization, not a skipped recording.
         guard Date().timeIntervalSince(startTime) >= minDuration else { return }
-        guard HandsFreeAutoStop.shouldAutoStop(samples: samples, silenceDuration: silenceStop) else { return }
+        if TranscriptionService.containsSpeechEnergy(samples[...]) {
+            handsFreeSpeechDetected = true
+        }
+        guard handsFreeSpeechDetected else { return }
+
+        let requiredSilentSamples = Int(silenceStop * Double(Self.captureSampleRate))
+        guard samples.count >= requiredSilentSamples else { return }
+        if let lastSpeechEnd = TranscriptionService.lastSpeechSampleIndex(in: samples[...]) {
+            guard samples.count - lastSpeechEnd >= requiredSilentSamples else { return }
+        }
 
         Logger.dictation.info(
             "Hands-free auto-stop after \(silenceStop, format: .fixed(precision: 1))s of trailing silence"
         )
         stopRecording()
-    }
-
-    /// Ends the live event pipeline. The consumer task drains any buffered
-    /// events and exits; events arriving after recording stops are dropped by
-    /// `applyLiveTranscriptEvent`'s recording-state guard as before.
-    private func finishLiveEventStream() {
-        liveEventContinuation?.finish()
-        liveEventContinuation = nil
-        liveEventTask = nil
     }
 
     /// Checks that the audio tap is actually producing samples shortly after
@@ -1081,7 +1095,7 @@ final class DictationCoordinator {
 
             guard let self, case .recording = self.state else { return }
 
-            let snapshot = self.audioService.currentSamplesSnapshot()
+            let snapshot = self.audioService.currentSamplesSnapshot(maxSamples: 1)
             if snapshot.isEmpty {
                 Logger.dictation.warning("Audio health check failed — no samples after 800ms, attempting recovery")
 
@@ -1103,10 +1117,9 @@ final class DictationCoordinator {
                     self.capTimerTask?.cancel()
                     self.capTimerTask = nil
                     self.countdownSeconds = nil
-                    self.liveDecodeTask?.cancel()
-                    self.liveDecodeTask = nil
-                    self.finishLiveEventStream()
-                    self.liveTranscript = nil
+                    self.discardBackgroundDecodeSession()
+                    self.silenceMonitorTask?.cancel()
+                    self.silenceMonitorTask = nil
                     self.state = .error(message: "Microphone unavailable. Try again.")
                     self.endSessionContext()
                     self.autoDismissError()
@@ -1115,38 +1128,18 @@ final class DictationCoordinator {
         }
     }
 
-    /// Routes live events to the in-field streaming session. Commits provide
-    /// the stable prefix; speculative events visibly revise the provisional
-    /// tail so short dictations do not appear inert until finalization.
-    /// Events after recording ended are dropped — text committed but not yet
-    /// streamed is delivered by finalize reconciliation instead.
-    @MainActor
-    private func dispatchLiveEventToStreamingSession(_ event: LiveTranscriptEvent) async {
-        guard case .recording = state, let streamingSession else { return }
-        switch event {
-        case .committed(let text):
-            await streamingSession.ingestCommit(text)
-        case .speculative(let text):
-            await streamingSession.ingestSpeculative(text)
-        case .sessionBegan:
-            break
-        }
-    }
-
-    /// Folds a live transcript event into the `liveTranscript` model (never
-    /// displayed in the pill; consumed by observers and tests). Events landing
-    /// after recording ended (in-flight commits) are ignored — the final
-    /// transcript comes from finalizeLiveTranscription, never from here.
-    @MainActor
-    private func applyLiveTranscriptEvent(_ event: LiveTranscriptEvent) {
-        guard case .recording = state else { return }
-        var transcript = liveTranscript ?? LiveTranscript()
-        transcript.apply(event)
-        liveTranscript = transcript.isEmpty ? nil : transcript
-    }
-
     private func syncTranscriptionSettings() async {
         await settings.syncTranscriptionSettings(to: transcriptionService)
+    }
+
+    nonisolated static func captureCoverage(
+        sampleCount: Int,
+        recordingDurationMs: Int
+    ) -> Double {
+        guard recordingDurationMs > 0 else { return sampleCount > 0 ? 1 : 0 }
+        let expectedSamples = Double(recordingDurationMs) * Double(captureSampleRate) / 1_000
+        guard expectedSamples > 0 else { return 0 }
+        return min(1, Double(max(0, sampleCount)) / expectedSamples)
     }
 
     /// The vocabulary-bias snapshot for the session that is starting: active

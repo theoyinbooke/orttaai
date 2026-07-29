@@ -2,8 +2,11 @@ import XCTest
 @testable import Orttaai
 
 final class AppSettingsTests: XCTestCase {
+    private var savedDefaults: [String: Any] = [:]
     private let resetKeys = [
         "dictationLanguage",
+        "selectedModelId",
+        "activeModelId",
         "lowLatencyModeEnabled",
         "computeMode",
         "spokenFormattingEnabled",
@@ -16,15 +19,29 @@ final class AppSettingsTests: XCTestCase {
         "decodingLogProbThreshold",
         "decodingNoSpeechThreshold",
         "decodingWorkerCount",
+        "dictationReliabilityRecoveryVersion",
+        "localLLMPolishEnabled",
     ]
 
     override func setUp() {
         super.setUp()
+        savedDefaults = resetKeys.reduce(into: [:]) { snapshot, key in
+            if let value = UserDefaults.standard.object(forKey: key) {
+                snapshot[key] = value
+            }
+        }
         resetDefaults()
     }
 
     override func tearDown() {
-        resetDefaults()
+        let defaults = UserDefaults.standard
+        for key in resetKeys {
+            if let value = savedDefaults[key] {
+                defaults.set(value, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
         super.tearDown()
     }
 
@@ -42,6 +59,40 @@ final class AppSettingsTests: XCTestCase {
         settings.dictationLanguage = "es"
 
         XCTAssertEqual(settings.effectiveDictationLanguage, "es")
+    }
+
+    func testQualityDefaultsUseBalancedDecodeAndNoLLMRewrite() {
+        let settings = AppSettings()
+
+        XCTAssertEqual(settings.decodingPreset, .balanced)
+        XCTAssertFalse(settings.advancedDecodingEnabled)
+        XCTAssertFalse(settings.localLLMPolishEnabled)
+    }
+
+    func testApplyingLanguageOptimizedSmallSelectionUpdatesPreferenceAndInvalidatesActiveModel() {
+        let settings = AppSettings()
+        settings.selectedModelId = "openai_whisper-small"
+        settings.activeModelId = "openai_whisper-small"
+        settings.dictationLanguage = "en"
+
+        let resolvedModelID = settings.applyLanguageOptimizedSmallModelSelection()
+
+        XCTAssertEqual(resolvedModelID, "openai_whisper-small.en")
+        XCTAssertEqual(settings.selectedModelId, "openai_whisper-small.en")
+        XCTAssertEqual(settings.activeModelId, "")
+    }
+
+    func testApplyingLanguageOptimizedSmallSelectionPreservesAutoDetectModel() {
+        let settings = AppSettings()
+        settings.selectedModelId = "openai_whisper-small"
+        settings.activeModelId = "openai_whisper-small"
+        settings.dictationLanguage = "auto"
+
+        let resolvedModelID = settings.applyLanguageOptimizedSmallModelSelection()
+
+        XCTAssertEqual(resolvedModelID, "openai_whisper-small")
+        XCTAssertEqual(settings.selectedModelId, "openai_whisper-small")
+        XCTAssertEqual(settings.activeModelId, "openai_whisper-small")
     }
 
     func testSyncTranscriptionSettingsPassesCurrentRuntimeValues() async {
@@ -67,6 +118,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(snapshot?.computeMode, "cpuOnly")
         XCTAssertEqual(snapshot?.lowLatencyMode, true)
         XCTAssertEqual(snapshot?.decodingPreferences.preset, .accuracy)
+        XCTAssertEqual(snapshot?.decodingPreferences.expertOverridesEnabled, true)
         XCTAssertEqual(snapshot?.decodingPreferences.temperature, 0.4)
         XCTAssertEqual(snapshot?.decodingPreferences.topK, 9)
         XCTAssertEqual(snapshot?.decodingPreferences.fallbackCount, 4)

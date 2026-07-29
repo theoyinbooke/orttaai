@@ -23,9 +23,8 @@ enum LiveTranscriptEvent: Equatable, Sendable {
 /// In-progress transcript assembled from `LiveTranscriptEvent`s with the
 /// same semantics the transcription session uses internally: commits append
 /// (and invalidate the speculative tail), speculative decodes replace one
-/// another, and a new session clears everything. Feeds the in-field
-/// streaming machinery; it is never rendered in the floating pill (the pill
-/// shows no dictated text by design).
+/// another, and a new session clears everything. Retained for transcription
+/// service diagnostics; product dictation uses a whole-recording final decode.
 struct LiveTranscript: Equatable, Sendable {
     /// Committed text kept in memory. Head-trimming keeps long dictations
     /// bounded; consumers only ever need the trailing portion.

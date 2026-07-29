@@ -142,7 +142,12 @@ final class TextInjectionServiceTests: XCTestCase {
         inspector = MockAccessibilityInspector()
         keyPoster = MockKeyEventPoster()
         clipboard = MockClipboard()
-        service = TextInjectionService(clipboard: clipboard, inspector: inspector, keyPoster: keyPoster)
+        service = TextInjectionService(
+            clipboard: clipboard,
+            inspector: inspector,
+            keyPoster: keyPoster,
+            unverifiedPastePolicy: { _ in .assumeDeliveredAndRestoreClipboard }
+        )
         service.lowLatencyModeEnabled = true // keep test waits short
     }
 
@@ -189,7 +194,6 @@ final class TextInjectionServiceTests: XCTestCase {
         let result = await service.inject(text: "hunter2")
 
         XCTAssertEqual(result, .blockedSecureField)
-        XCTAssertNil(service.lastTranscript, "Blocked injection must not retain the transcript")
         XCTAssertTrue(clipboard.setStrings.isEmpty, "Blocked injection must not touch the clipboard")
         XCTAssertEqual(keyPoster.pasteChordCount, 0)
     }
@@ -202,7 +206,6 @@ final class TextInjectionServiceTests: XCTestCase {
         let result = await service.inject(text: "Hello world")
 
         XCTAssertEqual(result, .success(method: .paste))
-        XCTAssertEqual(service.lastTranscript, "Hello world")
     }
 
     // MARK: Paste verification matrix (real decision logic)
@@ -294,6 +297,37 @@ final class TextInjectionServiceTests: XCTestCase {
             expectedText: longText
         )
         XCTAssertEqual(outcome, .confirmed)
+    }
+
+    func testCodexUnverifiedPastePreservesClipboardWithoutFailureState() {
+        XCTAssertEqual(
+            TextInjectionService.unverifiedPastePolicy(targetBundleID: "com.openai.codex"),
+            .preserveClipboardAsUnverifiedSuccess
+        )
+        XCTAssertEqual(
+            TextInjectionService.unverifiedPastePolicy(targetBundleID: "com.apple.TextEdit"),
+            .assumeDeliveredAndRestoreClipboard
+        )
+    }
+
+    func testDurableUnverifiedPasteLeavesTranscriptOnClipboardAndReturnsSuccess() async {
+        inspector.detailsResult = normalDetails()
+        inspector.fieldExposesNoText = true
+        let durableService = TextInjectionService(
+            clipboard: clipboard,
+            inspector: inspector,
+            keyPoster: keyPoster,
+            unverifiedPastePolicy: { _ in .preserveClipboardAsUnverifiedSuccess }
+        )
+        durableService.lowLatencyModeEnabled = true
+
+        let result = await durableService.inject(text: "Hello Codex")
+
+        XCTAssertEqual(result, .success(method: .unverifiedPaste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1)
+        XCTAssertEqual(clipboard.restoreCount, 0)
+        XCTAssertEqual(clipboard.stringToReturn, "Hello Codex")
+        XCTAssertEqual(durableService.lastInjectionTelemetry?.method, .unverifiedPaste)
     }
 
     // MARK: Happy path
@@ -419,27 +453,5 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(service.lastInjectionTelemetry?.method, .failed)
         XCTAssertEqual(clipboard.restoreCount, 0, "Failure must leave the transcript on the clipboard")
         XCTAssertEqual(clipboard.setStrings.last, "Hello world")
-        XCTAssertEqual(service.lastTranscript, "Hello world", "Transcript preserved for paste-last recovery")
-    }
-
-    // MARK: Paste last transcript
-
-    func testPasteLastTranscriptWithNoTranscript() async {
-        let result = await service.pasteLastTranscript()
-        XCTAssertEqual(result, .noTranscript, "Should return noTranscript when no last transcript")
-    }
-
-    func testPasteLastTranscriptReinjectsThroughVerifiedPath() async {
-        inspector.detailsResult = normalDetails()
-        inspector.simulatedFieldValue = ""
-        keyPoster.onPasteChord = { [inspector] _ in
-            inspector?.simulatedFieldValue = (inspector?.simulatedFieldValue ?? "") + "Hello world"
-        }
-
-        _ = await service.inject(text: "Hello world")
-        let result = await service.pasteLastTranscript()
-
-        XCTAssertEqual(result, .success(method: .paste))
-        XCTAssertEqual(keyPoster.pasteChordCount, 2, "Re-paste goes through the same injection path")
     }
 }

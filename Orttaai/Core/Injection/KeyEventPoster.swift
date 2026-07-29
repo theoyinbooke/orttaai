@@ -15,9 +15,7 @@ protocol KeyEventPosting: AnyObject {
     /// Types `text` as ordered unicode keystrokes, chunked so long transcripts
     /// stay within CGEvent's per-event unicode payload limits.
     func postTypedText(_ text: String)
-    /// Posts `count` Delete (backspace) keystrokes. Used by streaming
-    /// reconciliation to remove exactly the divergent tail of the span it
-    /// streamed — never more.
+    /// Posts `count` Delete (backspace) keystrokes.
     func postBackspaces(count: Int)
 }
 

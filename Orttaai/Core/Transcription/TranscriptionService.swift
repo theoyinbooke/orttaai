@@ -60,7 +60,6 @@ actor TranscriptionService: Transcribing {
 
     private static let liveTranscriptionMinSampleCount = 16_000 * 2
     private static let liveTranscriptionIncrementSampleCount = 16_000
-    private static let liveTranscriptionReuseSlackSampleCount = 16_000 / 2
     private static let transcriptionSampleRate = 16_000
     private static let mergedTranscriptSeparator = " "
     private static let liveTranscriptionReuseMaxAudioSeconds = 15.0
@@ -329,16 +328,36 @@ actor TranscriptionService: Transcribing {
                     promptTokens: tailPromptTokens
                 )
             } catch {
-                // The tail may legitimately be silence; committed clips can
-                // still carry the transcript.
+                // Do not fail the whole session here. The completeness check
+                // below decides whether a committed prefix is safe to return
+                // or whether the complete recording must be decoded again.
                 Logger.transcription.debug("Tail decode produced no text: \(error.localizedDescription)")
             }
+        }
+
+        // A non-empty tail came from audio above the conservative faint-energy
+        // floor. Returning only the committed prefix after that tail failed
+        // would silently lose the end of the user's dictation.
+        if !tailAudio.isEmpty, tailText == nil {
+            Logger.transcription.info(
+                "Background tail decode was unavailable; falling back to the complete recording"
+            )
+            return try await performWholeRecordingFallback(audioSamples)
         }
 
         if let combined = Self.mergedLiveTranscript(
             committedTexts: session.committedTexts,
             tailText: tailText
         ) {
+            if let rejectionReason = Self.backgroundTranscriptRejectionReason(
+                for: combined,
+                audioSampleCount: audioSamples.count
+            ) {
+                Logger.transcription.info(
+                    "Background transcript failed integrity check (\(rejectionReason)); falling back to the complete recording"
+                )
+                return try await performWholeRecordingFallback(audioSamples)
+            }
             Logger.transcription.debug(
                 "Finalized with \(session.committedTexts.count) committed clip(s) and \(tailAudio.count) tail samples"
             )
@@ -350,6 +369,17 @@ actor TranscriptionService: Transcribing {
         // Unconditioned: this path means the audio is likely near-silent, the
         // worst case for prompt bleed-through.
         return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+    }
+
+    /// Authoritative recovery path when background decoding cannot prove a
+    /// complete result. It uses the same whole-recording options and safe
+    /// vocabulary-bias rules as a normal batch transcription.
+    private func performWholeRecordingFallback(_ audioSamples: [Float]) async throws -> String {
+        try await performTranscription(
+            audioSamples: audioSamples,
+            allowCancellation: false,
+            promptTokens: wholeDecodePromptTokens(audioSamples: audioSamples)
+        )
     }
 
     func cancelLiveTranscriptionSession() {
@@ -940,6 +970,30 @@ actor TranscriptionService: Transcribing {
         return merged.isEmpty ? nil : merged
     }
 
+    /// Conservative integrity gate for a transcript assembled from background
+    /// clips. It catches the two observed corruption modes without attempting
+    /// to score normal wording: degenerate decoder loops and implausibly tiny
+    /// output for a long recording. Rejection triggers an authoritative
+    /// whole-recording decode; it never discards the recording.
+    nonisolated static func backgroundTranscriptRejectionReason(
+        for text: String,
+        audioSampleCount: Int
+    ) -> String? {
+        let normalized = normalizedTranscriptionText(text)
+        guard !normalized.isEmpty else {
+            return "transcript was empty after normalization"
+        }
+        if hasDegenerateRepetition(in: normalized) {
+            return "transcript contained degenerate repetition"
+        }
+
+        let audioSeconds = Double(max(0, audioSampleCount)) / Double(transcriptionSampleRate)
+        if audioSeconds >= 8, normalized.count < max(8, Int(audioSeconds.rounded(.down))) {
+            return "transcript was implausibly short for the recording"
+        }
+        return nil
+    }
+
     nonisolated static func mergedTranscriptionText(from results: [TranscriptionResult]) -> String? {
         let merged = results
             .map { normalizedTranscriptionText($0.text) }
@@ -1013,21 +1067,20 @@ actor TranscriptionService: Transcribing {
         return (sum / Float(samples.count)).squareRoot()
     }
 
-    /// A speculative tail result can stand in for the final decode when it
-    /// covers the recording up to the reuse slack, or when everything recorded
-    /// after it carries no voice-level energy (the user stopped speaking
-    /// before releasing the hotkey).
+    /// A speculative tail result can stand in for the final decode only when
+    /// it covers the complete recording or everything recorded after it is
+    /// effectively silent. Never accept a time-based coverage slack: at normal
+    /// speech rates even the final 250–500ms can contain several words.
     nonisolated static func speculativeCoverageIsSufficient(
         coveredSampleCount: Int,
         audioSamples: [Float]
     ) -> Bool {
         guard coveredSampleCount >= 0 else { return false }
         guard coveredSampleCount < audioSamples.count else { return true }
-        let reuseThreshold = max(0, audioSamples.count - liveTranscriptionReuseSlackSampleCount)
-        if coveredSampleCount >= reuseThreshold {
-            return true
-        }
-        return !containsSpeechEnergy(audioSamples[coveredSampleCount...])
+        return !containsSpeechEnergy(
+            audioSamples[coveredSampleCount...],
+            threshold: faintEnergyFloor
+        )
     }
 
     /// Trims dead silence from both ends of tail audio before the final
