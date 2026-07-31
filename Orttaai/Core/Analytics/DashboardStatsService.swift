@@ -62,8 +62,9 @@ final class DashboardStatsService {
         }
     }
 
-    func deleteRecentDictation(id: Int64) throws {
-        _ = try databaseManager.deleteTranscription(id: id)
+    @discardableResult
+    func deleteRecentDictation(id: Int64) throws -> Bool {
+        try databaseManager.deleteTranscription(id: id)
     }
 
     // MARK: - Builders

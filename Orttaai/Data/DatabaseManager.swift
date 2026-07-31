@@ -950,6 +950,10 @@ final class DatabaseManager {
         try db.execute(sql: "DELETE FROM semantic_insight_snapshot")
         try db.execute(sql: "DELETE FROM semantic_graph_edge")
         try db.execute(sql: "DELETE FROM semantic_graph_node")
+        try deleteSemanticIndex(in: db)
+    }
+
+    private static func deleteSemanticIndex(in db: Database) throws {
         try db.execute(sql: "DELETE FROM semantic_signal")
         try db.execute(sql: "DELETE FROM semantic_embedding")
         try db.execute(sql: "DELETE FROM semantic_chunk")
@@ -2202,7 +2206,11 @@ extension DatabaseManager {
     func applyCloudSnapshot(_ snapshot: CloudDatabaseSnapshot, replacingLocalData: Bool) throws {
         try dbQueue.write { db in
             if replacingLocalData {
-                try Self.deleteAllSemanticMemory(in: db)
+                // The graph and its generated report are user-visible snapshots.
+                // Keep them until the user explicitly regenerates or clears
+                // semantic memory. Only the source-dependent search index must
+                // be rebuilt when cloud reconciliation replaces local rows.
+                try Self.deleteSemanticIndex(in: db)
                 try db.execute(sql: "DELETE FROM transcription")
                 try db.execute(sql: "DELETE FROM dictionary_entry")
                 try db.execute(sql: "DELETE FROM snippet_entry")

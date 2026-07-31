@@ -662,6 +662,66 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertFalse(result.tombstones.contains { $0.table == .transcription && $0.syncID == syncID })
     }
 
+    func testReplacingFromCloudSnapshotPreservesGeneratedSemanticGraphAndReport() throws {
+        let generatedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let nodes = [
+            SemanticGraphNode(
+                nodeID: "topic:durable-graph",
+                kind: "topic",
+                title: "Durable Graph",
+                subtitle: nil,
+                weight: 3,
+                lastSeenAt: generatedAt,
+                updatedAt: generatedAt
+            ),
+            SemanticGraphNode(
+                nodeID: "app:notes",
+                kind: "app",
+                title: "Notes",
+                subtitle: nil,
+                weight: 2,
+                lastSeenAt: generatedAt,
+                updatedAt: generatedAt
+            )
+        ]
+        let edges = [
+            SemanticGraphEdge(
+                sourceNodeID: "topic:durable-graph",
+                targetNodeID: "app:notes",
+                kind: "used-in",
+                weight: 0.8,
+                evidence: nil,
+                updatedAt: generatedAt
+            )
+        ]
+        let graph = SemanticMemoryGraph(nodes: nodes, edges: edges)
+        let report = SemanticMemoryService.makeInsightReport(
+            graph: graph,
+            chunks: [],
+            generatedAt: generatedAt,
+            limitCards: 4
+        )
+        try db.replaceSemanticGraph(nodes: nodes, edges: edges)
+        try db.saveSemanticInsightSnapshot(report)
+
+        try db.applyCloudSnapshot(CloudDatabaseSnapshot(), replacingLocalData: true)
+
+        let persistedGraph = try db.fetchSemanticGraph()
+        XCTAssertEqual(Set(persistedGraph.nodes), Set(nodes))
+        XCTAssertEqual(persistedGraph.edges.count, 1)
+        XCTAssertEqual(persistedGraph.edges.first?.sourceNodeID, edges.first?.sourceNodeID)
+        XCTAssertEqual(persistedGraph.edges.first?.targetNodeID, edges.first?.targetNodeID)
+        XCTAssertEqual(persistedGraph.edges.first?.kind, edges.first?.kind)
+        XCTAssertEqual(persistedGraph.edges.first?.weight, edges.first?.weight)
+
+        let persistedReport = try XCTUnwrap(try db.fetchLatestSemanticInsightSnapshot())
+        XCTAssertEqual(persistedReport.generatedAt, report.generatedAt)
+        XCTAssertEqual(persistedReport.graphSignature, report.graphSignature)
+        XCTAssertEqual(persistedReport.summary, report.summary)
+        XCTAssertEqual(persistedReport.sourceNodeCount, report.sourceNodeCount)
+        XCTAssertEqual(persistedReport.sourceEdgeCount, report.sourceEdgeCount)
+    }
+
     func testApplyingLiveCloudRecordClearsStaleTombstone() throws {
         try db.saveTranscription(
             text: "Deleted locally, then restored from cloud",
@@ -711,7 +771,7 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(snapshot.modifiedAt, Date(timeIntervalSince1970: 1_800_000_100.0))
     }
 
-    func testApplyingCloudProfileRemovesMissingSyncedValuesButKeepsLocalSyncState() throws {
+    func testApplyingCloudProfilePreservesMissingToneProfileAndLocalSyncState() throws {
         let suiteName = "CloudProfileApplyTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -734,10 +794,11 @@ final class DatabaseManagerTests: XCTestCase {
 
         snapshot.apply(to: defaults)
 
-        // Local model choice survives sync untouched; synced keys missing from
-        // the snapshot (toneOfVoiceProfile) are removed.
+        // Local model choice survives sync untouched. A generated tone profile
+        // also remains until the user regenerates it, even if an older cloud
+        // snapshot does not contain that key.
         XCTAssertEqual(defaults.string(forKey: "selectedModelId"), "local-model")
-        XCTAssertNil(defaults.object(forKey: "toneOfVoiceProfile"))
+        XCTAssertEqual(defaults.string(forKey: "toneOfVoiceProfile"), "snippets-on")
         XCTAssertEqual(defaults.string(forKey: "dictationLanguage"), "en-GB")
         XCTAssertEqual(defaults.string(forKey: CloudSyncService.deviceIDKey), "device-a")
         XCTAssertTrue(defaults.bool(forKey: CloudSyncService.syncEnabledKey))

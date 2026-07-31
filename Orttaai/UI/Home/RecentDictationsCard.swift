@@ -80,18 +80,16 @@ struct RecentDictationsCard: View {
                     }
                 }
             ),
-            titleVisibility: .visible
-        ) {
+            titleVisibility: .visible,
+            presenting: pendingDeleteEntry
+        ) { entry in
             Button("Delete", role: .destructive) {
-                if let pendingDeleteEntry {
-                    onDeleteEntry(pendingDeleteEntry)
-                    self.pendingDeleteEntry = nil
-                }
+                onDeleteEntry(entry)
             }
             Button("Cancel", role: .cancel) {
                 pendingDeleteEntry = nil
             }
-        } message: {
+        } message: { _ in
             Text("This removes the transcript from local history.")
         }
         .onDisappear {

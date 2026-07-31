@@ -97,6 +97,7 @@ final class MockClipboard: ClipboardManaging {
     /// Simulated plain-string contents and change counter (bumped by
     /// setString and by tests simulating an app's Cmd+C landing).
     var stringToReturn: String?
+    var restoredStringToReturn: String?
     var changeCount: Int = 0
 
     func save() -> [ClipboardManager.SavedItem] {
@@ -106,6 +107,8 @@ final class MockClipboard: ClipboardManaging {
 
     func restore(_ savedItems: [ClipboardManager.SavedItem]) {
         restoreCount += 1
+        stringToReturn = restoredStringToReturn
+        changeCount += 1
     }
 
     func setString(_ string: String) {
@@ -299,10 +302,10 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(outcome, .confirmed)
     }
 
-    func testCodexUnverifiedPastePreservesClipboardWithoutFailureState() {
+    func testCodexUnverifiedPasteUsesGuardedRestoreWithoutFailureState() {
         XCTAssertEqual(
             TextInjectionService.unverifiedPastePolicy(targetBundleID: "com.openai.codex"),
-            .preserveClipboardAsUnverifiedSuccess
+            .guardedRestoreAfterUnverifiedSuccess
         )
         XCTAssertEqual(
             TextInjectionService.unverifiedPastePolicy(targetBundleID: "com.apple.TextEdit"),
@@ -310,14 +313,40 @@ final class TextInjectionServiceTests: XCTestCase {
         )
     }
 
-    func testDurableUnverifiedPasteLeavesTranscriptOnClipboardAndReturnsSuccess() async {
+    func testCodexUnverifiedPasteRestoresClipboardAfterDeliveryWindow() async {
         inspector.detailsResult = normalDetails()
         inspector.fieldExposesNoText = true
+        clipboard.restoredStringToReturn = "Previous clipboard"
         let durableService = TextInjectionService(
             clipboard: clipboard,
             inspector: inspector,
             keyPoster: keyPoster,
-            unverifiedPastePolicy: { _ in .preserveClipboardAsUnverifiedSuccess }
+            unverifiedPastePolicy: { _ in .guardedRestoreAfterUnverifiedSuccess }
+        )
+        durableService.lowLatencyModeEnabled = true
+
+        let result = await durableService.inject(text: "Hello Codex")
+
+        XCTAssertEqual(result, .success(method: .unverifiedPaste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1)
+        XCTAssertEqual(clipboard.restoreCount, 1)
+        XCTAssertEqual(clipboard.setStrings, ["Hello Codex"])
+        XCTAssertEqual(clipboard.stringToReturn, "Previous clipboard")
+        XCTAssertEqual(durableService.lastInjectionTelemetry?.method, .unverifiedPaste)
+    }
+
+    func testCodexUnverifiedPasteDoesNotOverwriteNewerClipboardContents() async {
+        inspector.detailsResult = normalDetails()
+        inspector.fieldExposesNoText = true
+        keyPoster.onPasteChord = { [clipboard] _ in
+            clipboard?.stringToReturn = "Copied on iPhone"
+            clipboard?.changeCount += 1
+        }
+        let durableService = TextInjectionService(
+            clipboard: clipboard,
+            inspector: inspector,
+            keyPoster: keyPoster,
+            unverifiedPastePolicy: { _ in .guardedRestoreAfterUnverifiedSuccess }
         )
         durableService.lowLatencyModeEnabled = true
 
@@ -326,8 +355,8 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(result, .success(method: .unverifiedPaste))
         XCTAssertEqual(keyPoster.pasteChordCount, 1)
         XCTAssertEqual(clipboard.restoreCount, 0)
-        XCTAssertEqual(clipboard.stringToReturn, "Hello Codex")
-        XCTAssertEqual(durableService.lastInjectionTelemetry?.method, .unverifiedPaste)
+        XCTAssertEqual(clipboard.stringToReturn, "Copied on iPhone")
+        XCTAssertEqual(clipboard.setStrings, ["Hello Codex"])
     }
 
     // MARK: Happy path
@@ -349,6 +378,23 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.restoreCount, 1, "Clipboard must be restored after success")
         XCTAssertEqual(service.lastInjectionTelemetry?.method, .paste)
         XCTAssertEqual(service.lastInjectionTelemetry?.pasteAttempts, 1)
+    }
+
+    func testVerifiedPasteDoesNotOverwriteNewerClipboardContents() async {
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        keyPoster.onPasteChord = { [inspector, clipboard] _ in
+            inspector?.simulatedFieldValue = "Hello world"
+            clipboard?.stringToReturn = "Copied on iPhone"
+            clipboard?.changeCount += 1
+        }
+
+        let result = await service.inject(text: "Hello world")
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(clipboard.restoreCount, 0)
+        XCTAssertEqual(clipboard.stringToReturn, "Copied on iPhone")
+        XCTAssertEqual(clipboard.setStrings, ["Hello world"])
     }
 
     func testInjectInconclusiveVerificationCountsAsSuccessWithoutFallbacks() async {

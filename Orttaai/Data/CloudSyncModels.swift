@@ -229,6 +229,9 @@ enum UserDefaultsSyncValue: Codable, Equatable, Sendable {
 
 struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     static let modifiedAtKey = "cloudSyncProfileModifiedAt"
+    private static let preserveWhenMissingKeys: Set<String> = [
+        "toneOfVoiceProfile"
+    ]
 
     // Device-specific keys are intentionally NOT synced. Each Mac has different
     // hardware, downloaded models, and audio devices, so syncing these breaks the
@@ -319,7 +322,8 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
 
     func apply(to defaults: UserDefaults = .standard) {
         CloudProfileChangeTracker.shared.performWithoutTracking {
-            for key in Self.syncedUserDefaultsKeys where values[key] == nil {
+            for key in Self.syncedUserDefaultsKeys
+            where values[key] == nil && !Self.preserveWhenMissingKeys.contains(key) {
                 defaults.removeObject(forKey: key)
             }
             // Only apply listed keys: snapshots pushed by older app versions may

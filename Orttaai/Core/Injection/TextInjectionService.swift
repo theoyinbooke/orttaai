@@ -47,7 +47,7 @@ enum PasteVerificationOutcome: Equatable, Sendable {
 
 enum UnverifiedPastePolicy: Equatable, Sendable {
     case assumeDeliveredAndRestoreClipboard
-    case preserveClipboardAsUnverifiedSuccess
+    case guardedRestoreAfterUnverifiedSuccess
 }
 
 struct InjectionTelemetry: Sendable {
@@ -201,7 +201,7 @@ final class TextInjectionService: TextInjecting {
         guard targetBundleID?.caseInsensitiveCompare(codexBundleID) == .orderedSame else {
             return .assumeDeliveredAndRestoreClipboard
         }
-        return .preserveClipboardAsUnverifiedSuccess
+        return .guardedRestoreAfterUnverifiedSuccess
     }
 
     private static func normalizedForComparison(_ text: String) -> String {
@@ -247,6 +247,7 @@ final class TextInjectionService: TextInjecting {
         // Step 2: Save current pasteboard, then stage the transcript on it.
         let saved = clipboard.save()
         clipboard.setString(text)
+        let stagedClipboardChangeCount = clipboard.changeCount
 
         // Step 4: Activate the target app so the paste goes to it, not Orttaai.
         let appKey = adaptiveKey(for: appToActivate)
@@ -300,7 +301,7 @@ final class TextInjectionService: TextInjecting {
 
             // Brief stabilization delay after activation so the window server
             // finishes transferring keyboard focus before the CGEvent arrives.
-            if unverifiedPolicy == .preserveClipboardAsUnverifiedSuccess {
+            if unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
                 // Codex's Electron editor transfers focus and consumes the
                 // pasteboard asynchronously. Give it a real focus-settling
                 // window before sending the single, non-duplicating paste.
@@ -318,7 +319,7 @@ final class TextInjectionService: TextInjecting {
                 activationMs: activationMs,
                 activationSucceeded: appToActivate?.isActive ?? true
             )
-            if unverifiedPolicy == .preserveClipboardAsUnverifiedSuccess {
+            if unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
                 delay = max(delay, 400)
             }
             restoreDelayMs += delay
@@ -377,12 +378,16 @@ final class TextInjectionService: TextInjecting {
             return .failedAllMethods
         }
 
-        if verdict == .inconclusive, unverifiedPolicy == .preserveClipboardAsUnverifiedSuccess {
+        if verdict == .inconclusive, unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
             // Codex does not expose editor text through Accessibility, so a
-            // CGEvent paste cannot be proved. Keep the transcript staged:
-            // this both gives the asynchronous editor time to consume it and
-            // provides lossless Cmd+V recovery without claiming success.
-            clipboard.setString(text)
+            // CGEvent paste cannot be proved. The transcript has already
+            // remained staged for the full Codex delivery window. Restore the
+            // prior clipboard only if no app or nearby device replaced it in
+            // the meantime.
+            let clipboardRestored = restoreClipboardIfUnchanged(
+                saved,
+                expectedChangeCount: stagedClipboardChangeCount
+            )
             lastInjectionTelemetry = InjectionTelemetry(
                 appActivationMs: activationMs,
                 clipboardRestoreDelayMs: restoreDelayMs,
@@ -391,14 +396,19 @@ final class TextInjectionService: TextInjecting {
                 method: .unverifiedPaste,
                 pasteAttempts: pasteAttempts
             )
-            Logger.injection.info(
-                "Codex paste sent; Accessibility verification unavailable — transcript retained on clipboard"
-            )
+            if clipboardRestored {
+                Logger.injection.info(
+                    "Codex paste sent; Accessibility verification unavailable — prior clipboard restored"
+                )
+            }
             return .success(method: .unverifiedPaste)
         }
 
         // Step 8: Restore pasteboard after a verified/assumed-good injection.
-        clipboard.restore(saved)
+        restoreClipboardIfUnchanged(
+            saved,
+            expectedChangeCount: stagedClipboardChangeCount
+        )
 
         lastInjectionTelemetry = InjectionTelemetry(
             appActivationMs: activationMs,
@@ -413,6 +423,25 @@ final class TextInjectionService: TextInjecting {
             "Text injected via \(method.rawValue, privacy: .public): \(text.prefix(50))... [activation=\(activationMs)ms, restoreDelay=\(restoreDelayMs)ms, total=\(injectionMs)ms, verification=\(String(describing: verdict), privacy: .public)]"
         )
         return .success(method: method)
+    }
+
+    /// Restores the clipboard only while the transcript staged by this
+    /// injection is still the newest pasteboard write. This prevents a copy
+    /// from another Mac app or Universal Clipboard from being overwritten by
+    /// a delayed restore.
+    @discardableResult
+    private func restoreClipboardIfUnchanged(
+        _ saved: [ClipboardManager.SavedItem],
+        expectedChangeCount: Int
+    ) -> Bool {
+        guard clipboard.changeCount == expectedChangeCount else {
+            Logger.injection.info(
+                "Clipboard changed after transcript staging — preserving newer contents"
+            )
+            return false
+        }
+        clipboard.restore(saved)
+        return true
     }
 
     // MARK: - Verification

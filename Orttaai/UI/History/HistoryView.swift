@@ -151,17 +151,16 @@ struct HistoryView: View {
                     }
                 }
             ),
-            titleVisibility: .visible
-        ) {
+            titleVisibility: .visible,
+            presenting: pendingDeleteEntry
+        ) { entry in
             Button("Delete", role: .destructive) {
-                guard let pendingDeleteEntry else { return }
-                deleteEntry(pendingDeleteEntry)
-                self.pendingDeleteEntry = nil
+                deleteEntry(entry)
             }
             Button("Cancel", role: .cancel) {
                 pendingDeleteEntry = nil
             }
-        } message: {
+        } message: { _ in
             Text("This removes the transcript from local history.")
         }
     }
@@ -507,11 +506,16 @@ struct HistoryView: View {
     private func deleteEntry(_ entry: HistoryTableEntry) {
         do {
             let db = try DatabaseManager()
-            _ = try db.deleteTranscription(id: entry.id)
+            guard try db.deleteTranscription(id: entry.id) else {
+                errorMessage = "Couldn't delete dictation because it was no longer in local history."
+                Logger.database.error("Failed to delete history entry: record \(entry.id) was not found")
+                return
+            }
             errorMessage = nil
             if detailEntry?.id == entry.id {
                 detailEntry = nil
             }
+            loadEntries()
         } catch {
             errorMessage = "Couldn't delete dictation."
             Logger.database.error("Failed to delete history entry: \(error.localizedDescription)")

@@ -352,7 +352,13 @@ final class HomeViewModel {
         guard let statsService else { return }
 
         do {
-            try statsService.deleteRecentDictation(id: id)
+            guard try statsService.deleteRecentDictation(id: id) else {
+                errorMessage = "Couldn't delete dictation because it was no longer in local history."
+                Logger.database.error("Failed to delete dictation: record \(id) was not found")
+                return
+            }
+            errorMessage = nil
+            refresh()
         } catch {
             errorMessage = "Couldn't delete dictation."
             Logger.database.error("Failed to delete dictation: \(error.localizedDescription)")

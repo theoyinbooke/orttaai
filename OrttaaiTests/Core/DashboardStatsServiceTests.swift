@@ -323,7 +323,7 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(newest.wordCount, 2)
         XCTAssertEqual(newest.processingMs, 900)
 
-        try service.deleteRecentDictation(id: newest.id)
+        XCTAssertTrue(try service.deleteRecentDictation(id: newest.id))
 
         payload = try service.load(currentModelId: "test-model")
         XCTAssertEqual(payload.recent.count, 1)
@@ -378,9 +378,9 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertTrue(longEntry?.previewText.hasSuffix("...") == true)
     }
 
-    func testDeleteRecentDictationNoOpWhenIdMissing() throws {
+    func testDeleteRecentDictationReportsMissingId() throws {
         try save(text: "existing entry", dayOffset: 0, recordingMs: 1_000)
-        try service.deleteRecentDictation(id: 99_999)
+        XCTAssertFalse(try service.deleteRecentDictation(id: 99_999))
 
         let payload = try service.load(currentModelId: "test-model")
         XCTAssertEqual(payload.recent.count, 1)
