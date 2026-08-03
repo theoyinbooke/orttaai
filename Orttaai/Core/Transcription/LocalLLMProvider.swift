@@ -5,12 +5,13 @@ import Foundation
 
 /// Which inference provider powers LLM features (polish, insights, chat,
 /// tone analysis, semantic embeddings). Ollama and LM Studio are local
-/// servers; Codex routes to OpenAI cloud models through the user's own
-/// ChatGPT subscription via the locally installed Codex CLI.
+/// servers; Codex and Grok route through CLIs installed and authenticated by
+/// the user on this Mac.
 enum LocalLLMProviderKind: String, CaseIterable, Identifiable, Sendable {
     case ollama
     case lmStudio = "lmstudio"
     case codex
+    case grok
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum LocalLLMProviderKind: String, CaseIterable, Identifiable, Sendable {
         case .ollama: return "Ollama"
         case .lmStudio: return "LM Studio"
         case .codex: return "ChatGPT (Codex)"
+        case .grok: return "Grok CLI"
         }
     }
 
@@ -26,7 +28,7 @@ enum LocalLLMProviderKind: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .ollama: return "http://127.0.0.1:11434"
         case .lmStudio: return "http://127.0.0.1:1234"
-        case .codex: return ""
+        case .codex, .grok: return ""
         }
     }
 
@@ -42,17 +44,17 @@ enum LocalLLMProviderKind: String, CaseIterable, Identifiable, Sendable {
 
     /// Whether the provider is reached over a user-configurable HTTP endpoint.
     /// Codex is a spawned subprocess, so there is nothing to configure.
-    var usesHTTPEndpoint: Bool { self != .codex }
+    var usesHTTPEndpoint: Bool { self != .codex && self != .grok }
 
     /// Whether the provider can produce embeddings. The Codex app-server has
     /// no embedding endpoint, so semantic embeddings stay on a local provider
     /// even while generation runs on Codex.
-    var supportsEmbeddings: Bool { self != .codex }
+    var supportsEmbeddings: Bool { self != .codex && self != .grok }
 
     /// Whether generation stays on-device. Cloud providers get an explicit
     /// consent caption in Settings and are excluded from the dictation-polish
     /// hot path, which cannot afford a network round-trip.
-    var isLocal: Bool { self != .codex }
+    var isLocal: Bool { self != .codex && self != .grok }
 }
 
 /// The local-LLM surface the app actually uses. `OllamaClient` implements it
@@ -161,12 +163,14 @@ enum LocalLLM {
     static let ollamaClient = OllamaClient()
     static let lmStudioClient = LMStudioClient()
     static let codexClient = CodexClient()
+    static let grokClient = GrokClient()
 
     static func client(for kind: LocalLLMProviderKind) -> any LocalLLMServing {
         switch kind {
         case .ollama: return ollamaClient
         case .lmStudio: return lmStudioClient
         case .codex: return codexClient
+        case .grok: return grokClient
         }
     }
 }

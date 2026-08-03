@@ -1,6 +1,7 @@
 // CodexSettingsCard.swift
 // Orttaai
 
+import AppKit
 import SwiftUI
 
 /// Account, model, and usage controls for the ChatGPT (Codex) provider,
@@ -103,13 +104,44 @@ struct CodexSettingsCard: View {
             Text("This provider uses the Codex command-line tool that OpenAI ships for ChatGPT subscribers. Install it, then re-check:")
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textSecondary)
-            Text("brew install --cask codex")
+            Text("Homebrew:  brew install --cask codex")
                 .font(.Orttaai.mono)
                 .foregroundStyle(Color.Orttaai.textPrimary)
                 .textSelection(.enabled)
-            Text("Orttaai looks in /opt/homebrew/bin, /usr/local/bin, ~/.local/bin, and your PATH.")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
+            Text("npm:      npm install -g @openai/codex")
+                .font(.Orttaai.mono)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .textSelection(.enabled)
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    chooseCodexExecutable()
+                } label: {
+                    Label("Locate Codex...", systemImage: "folder")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+
+                Text("Orttaai also checks common npm, pnpm, NVM, fnm, Volta, asdf, mise, and app-bundled locations.")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+            }
+        }
+    }
+
+    private func chooseCodexExecutable() {
+        let panel = NSOpenPanel()
+        panel.title = "Locate the Codex CLI"
+        panel.message = "Choose the codex executable installed on this Mac."
+        panel.prompt = "Use Codex"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.resolvesAliases = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        UserDefaults.standard.set(url.path, forKey: CodexBinaryLocator.overridePathKey)
+        Task {
+            await account.refresh()
+            await loadModelsIfPossible()
         }
     }
 

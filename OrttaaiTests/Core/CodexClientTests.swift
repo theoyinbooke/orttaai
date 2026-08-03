@@ -117,6 +117,83 @@ final class CodexClientTests: XCTestCase {
         XCTAssertFalse(CodexBinaryLocator.isVersionSupported("0.100.0"))
     }
 
+    func testFinderSafeEnvironmentPrependsExecutableAndNodeManagerBins() throws {
+        let fileManager = FileManager.default
+        let home = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fileManager.removeItem(at: home) }
+
+        let nvmBin = home.appendingPathComponent(".nvm/versions/node/v25.8.1/bin")
+        try fileManager.createDirectory(at: nvmBin, withIntermediateDirectories: true)
+        let executable = home.appendingPathComponent("custom-prefix/bin/codex").path
+
+        let environment = ExternalCLIEnvironment.prepared(
+            forExecutableAt: executable,
+            baseEnvironment: ["PATH": "/usr/bin:/custom/inherited/bin"],
+            homeDirectory: home.path,
+            fileManager: fileManager
+        )
+        let path = try XCTUnwrap(environment["PATH"]?.split(separator: ":").map(String.init))
+
+        XCTAssertEqual(path.first, home.appendingPathComponent("custom-prefix/bin").path)
+        XCTAssertTrue(path.contains("/opt/homebrew/bin"))
+        XCTAssertTrue(path.contains(nvmBin.path))
+        XCTAssertTrue(path.contains("/custom/inherited/bin"))
+        XCTAssertEqual(path.filter { $0 == "/usr/bin" }.count, 1)
+        XCTAssertEqual(environment["HOME"], home.path)
+    }
+
+    func testVersionProbeRunsNPMStyleEnvNodeShimWithFinderPath() throws {
+        let fileManager = FileManager.default
+        let home = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let bin = home.appendingPathComponent("npm-prefix/bin")
+        defer { try? fileManager.removeItem(at: home) }
+        try fileManager.createDirectory(at: bin, withIntermediateDirectories: true)
+
+        let codex = bin.appendingPathComponent("codex")
+        let node = bin.appendingPathComponent("node")
+        try "#!/usr/bin/env node\n// npm codex entry point\n".write(to: codex, atomically: true, encoding: .utf8)
+        try "#!/bin/sh\n[ \"$2\" = \"--version\" ] && echo \"codex-cli 0.145.0\"\n".write(
+            to: node,
+            atomically: true,
+            encoding: .utf8
+        )
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: codex.path)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
+
+        let version = CodexBinaryLocator.readVersion(
+            atPath: codex.path,
+            baseEnvironment: ["PATH": "/usr/bin:/bin"],
+            homeDirectory: home.path,
+            fileManager: fileManager
+        )
+
+        XCTAssertEqual(version, "0.145.0")
+    }
+
+    func testCandidatePathsIncludePackageManagersVersionManagersAndDesktopApps() throws {
+        let fileManager = FileManager.default
+        let home = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fileManager.removeItem(at: home) }
+        try fileManager.createDirectory(
+            at: home.appendingPathComponent(".fnm/node-versions/v24.1.0/installation/bin"),
+            withIntermediateDirectories: true
+        )
+
+        let paths = CodexBinaryLocator.candidatePaths(
+            homeDirectory: home.path,
+            environment: ["PATH": "/finder/only"],
+            fileManager: fileManager
+        )
+
+        XCTAssertTrue(paths.contains(home.appendingPathComponent("Library/pnpm/codex").path))
+        XCTAssertTrue(paths.contains(home.appendingPathComponent(".volta/bin/codex").path))
+        XCTAssertTrue(paths.contains(home.appendingPathComponent(".fnm/node-versions/v24.1.0/installation/bin/codex").path))
+        XCTAssertTrue(paths.contains("/Applications/Codex.app/Contents/Resources/codex"))
+        XCTAssertTrue(paths.contains("/Applications/ChatGPT.app/Contents/Resources/codex"))
+        XCTAssertTrue(paths.contains("/finder/only/codex"))
+        XCTAssertEqual(Set(paths).count, paths.count)
+    }
+
     // MARK: - Model list
 
     func testFetchModelNamesFiltersHiddenModels() async throws {

@@ -40,6 +40,7 @@ struct ModelSettingsView: View {
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("lastLocalLLMProvider") private var lastLocalLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("codexModel") private var codexModel = "gpt-5.4-mini"
+    @AppStorage("grokModel") private var grokModel = GrokClient.defaultModel
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
     @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
     @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma4:e2b"
@@ -968,9 +969,9 @@ struct ModelSettingsView: View {
                                         lastLocalLLMProviderRaw = newKind.rawValue
                                     }
                                     ollamaStatusReachable = nil
-                                    ollamaStatusMessage = newKind == .codex
-                                        ? "Check connection to validate ChatGPT sign-in and models."
-                                        : "Check connection to validate local model availability."
+                                    ollamaStatusMessage = newKind.isLocal
+                                        ? "Check connection to validate local model availability."
+                                        : "Check connection to validate CLI sign-in and cloud models."
                                     installedOllamaModels = []
                                     Task { await checkOllamaAvailability() }
                                 }
@@ -1004,6 +1005,10 @@ struct ModelSettingsView: View {
 
                     if providerKind == .codex {
                         CodexSettingsCard()
+                    }
+
+                    if providerKind == .grok {
+                        GrokSettingsCard()
                     }
 
                     if providerKind == .lmStudio {
@@ -1326,7 +1331,7 @@ struct ModelSettingsView: View {
                                 .foregroundStyle(Color.Orttaai.textPrimary)
                             Text(providerKind.isLocal
                                  ? "Uses local LLM analysis to surface speaking and writing patterns."
-                                 : "Uses your ChatGPT subscription to surface speaking and writing patterns.")
+                                 : "Uses your authenticated \(providerKind.displayName) account to surface speaking and writing patterns.")
                                 .font(.Orttaai.caption)
                                 .foregroundStyle(Color.Orttaai.textSecondary)
                         }
@@ -1370,7 +1375,9 @@ struct ModelSettingsView: View {
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                         } else {
-                            Text("Writing insights and graph interpretation use \"\(codexModel)\" through your ChatGPT subscription. Change the model and reasoning effort in the ChatGPT Account section above.")
+                            Text(providerKind == .codex
+                                 ? "Writing insights and graph interpretation use \"\(codexModel)\" through your ChatGPT subscription. Change the model and reasoning effort in the ChatGPT Account section above."
+                                 : "Writing insights and graph interpretation use \"\(grokModel)\" through your authenticated Grok CLI account. Change the model in the Grok Account section above.")
                                 .font(.Orttaai.caption)
                                 .foregroundStyle(Color.Orttaai.textSecondary)
                         }
@@ -1916,7 +1923,7 @@ struct ModelSettingsView: View {
         switch providerKind {
         case .ollama: return localLLMEndpoint
         case .lmStudio: return lmStudioEndpoint
-        case .codex: return "" // Spawned subprocess; no HTTP endpoint.
+        case .codex, .grok: return "" // Spawned subprocess; no HTTP endpoint.
         }
     }
 

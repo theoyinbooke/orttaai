@@ -43,7 +43,7 @@ actor CodexClient: LocalLLMServing {
             return OllamaHealthStatus(
                 isReachable: false,
                 installedModels: [],
-                message: "Codex CLI not found. Install it with `brew install --cask codex`, then re-check."
+                message: "Codex CLI not found. Install it with Homebrew or npm, or choose the executable manually in Settings, then re-check."
             )
         }
         guard CodexBinaryLocator.isVersionSupported(info.version) else {

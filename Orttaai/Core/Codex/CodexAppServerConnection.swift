@@ -20,7 +20,7 @@ enum CodexError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .binaryNotFound:
-            return "Codex CLI not found. Install it with `brew install --cask codex`, then re-check."
+            return "Codex CLI not found. Install it with Homebrew or npm, or choose the executable manually in Settings, then re-check."
         case .binaryOutdated(let found, let required):
             return "Codex CLI \(found) is too old; Orttaai needs \(required) or newer. Run `codex update` or `brew upgrade --cask codex`."
         case .notSignedIn:
@@ -56,8 +56,135 @@ struct CodexBinaryInfo: Sendable {
     let version: String
 }
 
+/// Builds a deterministic executable search path for processes launched from
+/// the app. Finder launches do not inherit the user's interactive shell PATH,
+/// which matters for npm/pnpm-installed CLIs whose `#!/usr/bin/env node`
+/// entry point must find the Node runtime before Codex can start.
+nonisolated enum ExternalCLIEnvironment {
+    static func prepared(
+        forExecutableAt executablePath: String,
+        baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: String = NSHomeDirectory(),
+        fileManager: FileManager = .default
+    ) -> [String: String] {
+        var environment = baseEnvironment
+        var directories = [(executablePath as NSString).deletingLastPathComponent]
+        directories.append(contentsOf: executableSearchDirectories(
+            homeDirectory: homeDirectory,
+            fileManager: fileManager
+        ))
+        if let inheritedPath = baseEnvironment["PATH"] {
+            directories.append(contentsOf: inheritedPath.split(separator: ":").map(String.init))
+        }
+        environment["PATH"] = uniqueNonempty(directories).joined(separator: ":")
+        if environment["HOME"]?.isEmpty != false {
+            environment["HOME"] = homeDirectory
+        }
+        return environment
+    }
+
+    /// Stable install locations plus version-manager Node bins discovered from
+    /// disk. The latter makes NVM/fnm/asdf/mise installs visible without
+    /// sourcing arbitrary shell startup files.
+    static func executableSearchDirectories(
+        homeDirectory: String = NSHomeDirectory(),
+        fileManager: FileManager = .default
+    ) -> [String] {
+        let home = homeDirectory as NSString
+        var directories = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/opt/local/bin",
+            home.appendingPathComponent(".local/bin"),
+            home.appendingPathComponent(".npm-global/bin"),
+            home.appendingPathComponent(".npm/bin"),
+            home.appendingPathComponent("Library/pnpm"),
+            home.appendingPathComponent(".local/share/pnpm"),
+            home.appendingPathComponent(".config/pnpm"),
+            home.appendingPathComponent(".volta/bin"),
+            home.appendingPathComponent(".bun/bin"),
+            home.appendingPathComponent(".deno/bin"),
+            home.appendingPathComponent(".n/bin"),
+            home.appendingPathComponent(".yarn/bin"),
+            home.appendingPathComponent(".config/yarn/global/node_modules/.bin"),
+            home.appendingPathComponent(".nix-profile/bin"),
+            home.appendingPathComponent(".asdf/shims"),
+            home.appendingPathComponent(".local/share/mise/shims"),
+            "/nix/var/nix/profiles/default/bin",
+        ]
+
+        directories.append(contentsOf: versionedBinDirectories(
+            root: home.appendingPathComponent(".nvm/versions/node"),
+            suffix: "bin",
+            fileManager: fileManager
+        ))
+        directories.append(contentsOf: versionedBinDirectories(
+            root: home.appendingPathComponent(".fnm/node-versions"),
+            suffix: "installation/bin",
+            fileManager: fileManager
+        ))
+        directories.append(contentsOf: versionedBinDirectories(
+            root: home.appendingPathComponent(".asdf/installs/nodejs"),
+            suffix: "bin",
+            fileManager: fileManager
+        ))
+        directories.append(contentsOf: versionedBinDirectories(
+            root: home.appendingPathComponent(".local/share/mise/installs/node"),
+            suffix: "bin",
+            fileManager: fileManager
+        ))
+        directories.append(contentsOf: ["/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+        return uniqueNonempty(directories)
+    }
+
+    static func candidateExecutablePaths(
+        named executableName: String,
+        overridePath: String? = nil,
+        additionalPaths: [String] = [],
+        homeDirectory: String = NSHomeDirectory(),
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> [String] {
+        var paths: [String] = []
+        if let overridePath = overridePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           overridePath.isEmpty == false {
+            paths.append(overridePath)
+        }
+        paths.append(contentsOf: executableSearchDirectories(
+            homeDirectory: homeDirectory,
+            fileManager: fileManager
+        ).map { ($0 as NSString).appendingPathComponent(executableName) })
+        paths.append(contentsOf: additionalPaths)
+        if let inheritedPath = environment["PATH"] {
+            paths.append(contentsOf: inheritedPath.split(separator: ":").map {
+                (String($0) as NSString).appendingPathComponent(executableName)
+            })
+        }
+        return uniqueNonempty(paths)
+    }
+
+    private static func versionedBinDirectories(
+        root: String,
+        suffix: String,
+        fileManager: FileManager
+    ) -> [String] {
+        guard let versions = try? fileManager.contentsOfDirectory(atPath: root) else { return [] }
+        return versions
+            .sorted { $0.localizedStandardCompare($1) == .orderedDescending }
+            .map { ((root as NSString).appendingPathComponent($0) as NSString).appendingPathComponent(suffix) }
+    }
+
+    static func uniqueNonempty(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { value in
+            !value.isEmpty && seen.insert(value).inserted
+        }
+    }
+}
+
 /// Locates a user-installed Codex CLI. Orttaai deliberately does not bundle
-/// the binary (~240 MB); users install it themselves via Homebrew or npm.
+/// the binary; users can install it through Homebrew, npm, another Node
+/// version manager, an OpenAI desktop app, or choose an executable manually.
 enum CodexBinaryLocator {
     /// Minimum CLI version whose app-server protocol Orttaai has been
     /// validated against (see docs/codex-chatgpt-integration-plan.md §8).
@@ -67,31 +194,43 @@ enum CodexBinaryLocator {
     static let overridePathKey = "codexBinaryPathOverride"
 
     static func discover() -> CodexBinaryInfo? {
+        var newestUnsupported: CodexBinaryInfo?
         for path in candidatePaths() {
             guard FileManager.default.isExecutableFile(atPath: path) else { continue }
             if let version = readVersion(atPath: path) {
-                return CodexBinaryInfo(path: path, version: version)
+                let info = CodexBinaryInfo(path: path, version: version)
+                if isVersionSupported(version) {
+                    return info
+                }
+                if newestUnsupported.map({ compareVersions(version, $0.version) > 0 }) ?? true {
+                    newestUnsupported = info
+                }
             }
         }
-        return nil
+        return newestUnsupported
     }
 
-    static func candidatePaths() -> [String] {
-        var paths: [String] = []
+    static func candidatePaths(
+        homeDirectory: String = NSHomeDirectory(),
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> [String] {
         let override = UserDefaults.standard.string(forKey: overridePathKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let override, !override.isEmpty {
-            paths.append(override)
-        }
-        paths.append(contentsOf: [
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex",
-            (NSHomeDirectory() as NSString).appendingPathComponent(".local/bin/codex"),
-        ])
-        if let fromPath = searchEnvironmentPath() {
-            paths.append(fromPath)
-        }
-        return paths
+        let home = homeDirectory as NSString
+        return ExternalCLIEnvironment.candidateExecutablePaths(
+            named: "codex",
+            overridePath: override,
+            additionalPaths: [
+                "/Applications/Codex.app/Contents/Resources/codex",
+                "/Applications/ChatGPT.app/Contents/Resources/codex",
+                home.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex"),
+                home.appendingPathComponent("Applications/ChatGPT.app/Contents/Resources/codex"),
+            ],
+            homeDirectory: homeDirectory,
+            environment: environment,
+            fileManager: fileManager
+        )
     }
 
     static func isVersionSupported(_ version: String) -> Bool {
@@ -122,10 +261,21 @@ enum CodexBinaryLocator {
         return 0
     }
 
-    private static func readVersion(atPath path: String) -> String? {
+    static func readVersion(
+        atPath path: String,
+        baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: String = NSHomeDirectory(),
+        fileManager: FileManager = .default
+    ) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = ["--version"]
+        process.environment = ExternalCLIEnvironment.prepared(
+            forExecutableAt: path,
+            baseEnvironment: baseEnvironment,
+            homeDirectory: homeDirectory,
+            fileManager: fileManager
+        )
         let stdout = Pipe()
         process.standardOutput = stdout
         process.standardError = Pipe()
@@ -139,17 +289,6 @@ enum CodexBinaryLocator {
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8) else { return nil }
         return parseVersionOutput(output)
-    }
-
-    private static func searchEnvironmentPath() -> String? {
-        guard let pathVariable = ProcessInfo.processInfo.environment["PATH"] else { return nil }
-        for directory in pathVariable.split(separator: ":") {
-            let candidate = (String(directory) as NSString).appendingPathComponent("codex")
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        return nil
     }
 }
 
@@ -192,9 +331,10 @@ final class CodexProcessTransport: CodexTransport, @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binaryPath)
         process.arguments = Self.appServerArguments
-        // Codex resolves its own home (~/.codex) from the environment; pass it
-        // through unchanged so auth.json and config are found.
-        process.environment = ProcessInfo.processInfo.environment
+        // Preserve HOME/auth/config while making npm-style `env node` shims
+        // work under Finder's minimal launch environment. Discovery and the
+        // long-running app server deliberately use the same preparation.
+        process.environment = ExternalCLIEnvironment.prepared(forExecutableAt: binaryPath)
 
         let stdin = Pipe()
         let stdout = Pipe()

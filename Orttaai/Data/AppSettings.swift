@@ -203,6 +203,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("codexModel") var codexModel: String = "gpt-5.4-mini"
     @AppStorage(CodexClient.reasoningEffortKey) var codexReasoningEffort: String = "medium"
     @AppStorage("codexConsentAcknowledged") var codexConsentAcknowledged: Bool = false
+    @AppStorage("grokModel") var grokModel: String = GrokClient.defaultModel
+    @AppStorage("grokConsentAcknowledged") var grokConsentAcknowledged: Bool = false
     /// Last local provider the user had selected; features that must stay
     /// on-device (embeddings, dictation polish) fall back to it while the
     /// active provider is cloud-based.
@@ -296,7 +298,7 @@ final class AppSettings: ObservableObject {
         switch kind {
         case .ollama: return normalizedLocalLLMEndpoint
         case .lmStudio: return normalizedLMStudioEndpoint
-        case .codex: return "" // Spawned subprocess; no HTTP endpoint.
+        case .codex, .grok: return "" // Spawned subprocess; no HTTP endpoint.
         }
     }
 
@@ -350,13 +352,20 @@ final class AppSettings: ObservableObject {
         return trimmed.isEmpty ? "gpt-5.4-mini" : trimmed
     }
 
+    var normalizedGrokModel: String {
+        let trimmed = grokModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? GrokClient.defaultModel : trimmed
+    }
+
     /// Insights model for the active provider: the Codex cloud model when the
     /// cloud provider is selected, otherwise the configured local model (the
     /// local sanitizer's "llama" filter must not touch cloud model ids).
     var normalizedLocalLLMInsightsModel: String {
-        localLLMProvider == .codex
-            ? normalizedCodexModel
-            : sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+        switch localLLMProvider {
+        case .codex: normalizedCodexModel
+        case .grok: normalizedGrokModel
+        case .ollama, .lmStudio: sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+        }
     }
 
     var normalizedSemanticEmbeddingModel: String {
@@ -364,9 +373,11 @@ final class AppSettings: ObservableObject {
     }
 
     var normalizedSemanticInsightSummaryModel: String {
-        localLLMProvider == .codex
-            ? normalizedCodexModel
-            : sanitizeLocalLLMModel(semanticInsightSummaryModel, fallback: "qwen3.5:0.8b")
+        switch localLLMProvider {
+        case .codex: normalizedCodexModel
+        case .grok: normalizedGrokModel
+        case .ollama, .lmStudio: sanitizeLocalLLMModel(semanticInsightSummaryModel, fallback: "qwen3.5:0.8b")
+        }
     }
 
     var localLLMInsightCandidateModels: [String] {
