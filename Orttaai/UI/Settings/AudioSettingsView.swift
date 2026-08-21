@@ -16,18 +16,8 @@ struct AudioSettingsView: View {
     @State private var audioResetSucceeded = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Audio")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Control microphone input for dictation.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
-
-            VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Microphone")
                         .font(.Orttaai.subheading)
@@ -63,12 +53,8 @@ struct AudioSettingsView: View {
                         .foregroundStyle(Color.Orttaai.textSecondary)
                 }
 
-                Text("Changes here affect only Orttaai. Other apps keep using their own audio settings.")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                    .padding(.top, Spacing.xs)
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -76,11 +62,11 @@ struct AudioSettingsView: View {
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.warning)
 
-                Text("If input looks flat, check macOS microphone permissions and try selecting a specific device instead of System Default.")
+                Text("If input stays flat, check microphone permission or choose another device.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.Orttaai.warningSubtle.opacity(0.45))
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
@@ -93,10 +79,6 @@ struct AudioSettingsView: View {
                 Text("Audio Recovery")
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Use this when monitoring gets stuck at 0% or the selected mic no longer responds.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
 
                 Button {
                     requestAudioPipelineReset()
@@ -124,7 +106,7 @@ struct AudioSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.Orttaai.bgSecondary.opacity(0.7))
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
@@ -142,13 +124,13 @@ struct AudioSettingsView: View {
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                 }
-                .padding(Spacing.lg)
+                .padding(Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.Orttaai.errorSubtle.opacity(0.45))
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
             }
         }
-        .padding(Spacing.xxl)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             startLevelMonitoring()

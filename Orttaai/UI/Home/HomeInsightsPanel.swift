@@ -38,8 +38,8 @@ struct HomeInsightsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             panelHeader
-                .padding(.horizontal, Spacing.lg)
-                .padding(.top, Spacing.lg)
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.md)
                 .padding(.bottom, Spacing.sm)
 
             Divider()
@@ -83,7 +83,7 @@ struct HomeInsightsPanel: View {
                         emptyState
                     }
                 }
-                .padding(Spacing.lg)
+                .padding(Spacing.md)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -99,14 +99,9 @@ struct HomeInsightsPanel: View {
 
     private var panelHeader: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Insights")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Text("Understand your writing patterns and opportunities.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text("Insights")
+                .font(.Orttaai.subheading)
+                .foregroundStyle(Color.Orttaai.textPrimary)
 
             Spacer()
 
@@ -274,10 +269,6 @@ struct HomeInsightsPanel: View {
                     .clipShape(Capsule())
             }
 
-            Text(freshnessSummaryText(freshness))
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-
             if let latestSessionAt = freshness.latestSessionAt {
                 Text("Latest dictation: \(Self.timestampFormatter.string(from: latestSessionAt))")
                     .font(.Orttaai.caption)
@@ -292,22 +283,6 @@ struct HomeInsightsPanel: View {
         }
         .padding(Spacing.md)
         .dashboardCard()
-    }
-
-    private func freshnessSummaryText(_ freshness: WritingInsightFreshness) -> String {
-        if freshness.newSessionCount == 0 {
-            return "This insight includes your latest dictation history."
-        }
-
-        let sessionLabel = freshness.newSessionCount == 1 ? "session" : "sessions"
-        switch freshness.status {
-        case .fresh:
-            return "\(freshness.newSessionCount) new \(sessionLabel) since this snapshot."
-        case .aging:
-            return "\(freshness.newSessionCount) new \(sessionLabel) available. Consider regenerating."
-        case .stale:
-            return "\(freshness.newSessionCount) new \(sessionLabel) available. Regenerate for updated patterns."
-        }
     }
 
     private func freshnessStatusTint(_ status: WritingInsightFreshnessStatus) -> Color {
@@ -601,7 +576,7 @@ struct HomeInsightsPanel: View {
             Text("No insights yet")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-            Text("Click Generate to analyze your recent dictation history.")
+            Text("Select Generate to begin.")
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
         }

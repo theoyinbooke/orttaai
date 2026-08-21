@@ -199,7 +199,7 @@ enum SemanticTextAnalyzer {
 
             let isCapitalized = CharacterSet.uppercaseLetters.contains(first) && word.count > 2
             // A capitalized function word at sentence start ("Do", "Can",
-            // "The") can't begin a run — that's what let junk like "Do you"
+            // "The") can't begin a run. That's what let junk like "Do you"
             // through in the old heuristic. A capitalized content word can,
             // so sentence-leading entities ("Project Atlas …") still count.
             let blockedStarter = previousEndedSentence && runFunctionWords.contains(word.lowercased())

@@ -198,6 +198,24 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(metrics.downloadedModelIDs.contains("openai_whisper-small"))
     }
 
+    func testFlatWhisperRepositoryScansOnlyImmediateModelDirectories() throws {
+        let fileManager = FileManager.default
+        let tempRoot = fileManager.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
+        defer { try? fileManager.removeItem(at: tempRoot.deletingLastPathComponent()) }
+
+        let directModel = tempRoot.appendingPathComponent("openai_whisper-small", isDirectory: true)
+        let unrelatedNestedModel = tempRoot
+            .appendingPathComponent("unrelated/archive/openai_whisper-base", isDirectory: true)
+        try createFakeModelFiles(at: directModel)
+        try createFakeModelFiles(at: unrelatedNestedModel)
+
+        let metrics = ModelManager.detectDownloadedModelMetrics(in: [tempRoot])
+
+        XCTAssertEqual(metrics.downloadedModelIDs, ["openai_whisper-small"])
+    }
+
     func testDetectDownloadedModelMetricsCanonicalizesSizeSuffixedModelDirectory() throws {
         let fileManager = FileManager.default
         let tempRoot = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

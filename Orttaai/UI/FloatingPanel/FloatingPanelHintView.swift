@@ -39,7 +39,7 @@ struct FloatingPanelHintView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .help(
                     handsFreeEnabled
-                        ? "Hold to talk, or tap to go hands-free — tap again or pause to stop."
+                        ? "Hold to talk, or tap for hands-free. Tap again or pause to stop."
                         : "Hold the shortcut and speak; release to insert the text."
                 )
 

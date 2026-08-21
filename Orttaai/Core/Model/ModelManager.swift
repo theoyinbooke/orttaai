@@ -108,8 +108,6 @@ final class ModelManager {
     /// The app-wide warm transcription service. Features like ChatAI voice
     /// input reuse it instead of owning a second copy of the Whisper model.
     var runtimeTranscriptionService: TranscriptionService { transcriptionService }
-    private let downloader: ModelDownloader
-    private let modelsDirectory: URL
     nonisolated private static let requiredModelComponents = [
         "MelSpectrogram",
         "AudioEncoder",
@@ -118,15 +116,10 @@ final class ModelManager {
 
     init(
         transcriptionService: TranscriptionService,
-        settings: AppSettings = AppSettings(),
-        downloader: ModelDownloader = ModelDownloader()
+        settings: AppSettings = AppSettings()
     ) {
         self.transcriptionService = transcriptionService
         self.settings = settings
-        self.downloader = downloader
-
-        modelsDirectory = (try? AppStoragePaths.modelsDirectoryURL(createDirectory: true))
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("Orttaai/Models")
 
         setupHardcodedModels()
         checkExistingModels()
@@ -277,27 +270,17 @@ final class ModelManager {
         // directory in that family — no orphaned duplicates left on disk.
         var removedAny = false
         let canonicalTargetID = Self.canonicalModelListID(modelId)
+        let storageAccess = try? ModelStorageLocation.beginAccess(
+            createIfNeeded: false,
+            requiresWrite: false
+        )
+        defer { _ = storageAccess }
         let detectedMetrics = Self.detectDownloadedModelMetrics()
         for (detectedID, detectedModelDir) in detectedMetrics.modelDirectories
         where Self.canonicalModelListID(detectedID) == canonicalTargetID {
             if FileManager.default.fileExists(atPath: detectedModelDir.path) {
                 try FileManager.default.removeItem(at: detectedModelDir)
                 removedAny = true
-            }
-        }
-
-        if FileManager.default.fileExists(atPath: modelsDirectory.path),
-           let entries = try? FileManager.default.contentsOfDirectory(
-               at: modelsDirectory,
-               includingPropertiesForKeys: nil,
-               options: [.skipsHiddenFiles]
-           )
-        {
-            for entry in entries where Self.canonicalModelListID(entry.lastPathComponent) == canonicalTargetID {
-                if FileManager.default.fileExists(atPath: entry.path) {
-                    try FileManager.default.removeItem(at: entry)
-                    removedAny = true
-                }
             }
         }
 
@@ -528,6 +511,10 @@ final class ModelManager {
     }
 
     nonisolated static func detectDownloadedModelMetrics(in roots: [URL]? = nil) -> DownloadedModelMetrics {
+        let storageAccess = roots == nil
+            ? try? ModelStorageLocation.beginAccess(createIfNeeded: false, requiresWrite: false)
+            : nil
+        defer { _ = storageAccess }
         let modelRoots = roots ?? modelStorageRoots()
         let variantDirectories = detectDownloadedVariantDirectories(in: modelRoots)
 
@@ -584,6 +571,10 @@ final class ModelManager {
         let trimmed = variantID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        let storageAccess = roots == nil
+            ? try? ModelStorageLocation.beginAccess(createIfNeeded: false, requiresWrite: false)
+            : nil
+        defer { _ = storageAccess }
         let fileManager = FileManager.default
         for record in detectDownloadedModelMetrics(in: roots).variants where record.variantID == trimmed {
             if fileManager.fileExists(atPath: record.directoryURL.path) {
@@ -606,11 +597,33 @@ final class ModelManager {
         }
 
         do {
-            _ = try await WhisperKit.download(variant: exactModelId)
+            let storageAccess = try ModelStorageLocation.beginAccess(
+                createIfNeeded: true,
+                requiresWrite: true
+            )
+            _ = try await WhisperKit.download(
+                variant: exactModelId,
+                downloadBase: storageAccess.url
+            )
             return .downloaded
         } catch {
             return .failed(message: error.localizedDescription)
         }
+    }
+
+    /// Resolves an exact downloaded build so callers can load it directly
+    /// instead of allowing WhisperKit to redownload it into another cache.
+    nonisolated static func downloadedVariantDirectory(
+        named variantID: String,
+        in roots: [URL]? = nil
+    ) -> URL? {
+        let exactID = variantID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !exactID.isEmpty else { return nil }
+        let storageAccess = roots == nil
+            ? try? ModelStorageLocation.beginAccess(createIfNeeded: false, requiresWrite: false)
+            : nil
+        defer { _ = storageAccess }
+        return detectDownloadedVariantDirectories(in: roots ?? modelStorageRoots())[exactID]
     }
 
     nonisolated private static func modelStorageRoots() -> [URL] {
@@ -621,6 +634,11 @@ final class ModelManager {
 
         let env = ProcessInfo.processInfo.environment
         var roots: [URL] = [
+            // Keep discovery bounded even when the user selects the root of
+            // a large external drive. WhisperKit always writes this repository
+            // below its download base.
+            ModelStorageLocation.selectedDownloadBaseURL()
+                .appendingPathComponent("models/argmaxinc/whisperkit-coreml", isDirectory: true),
             appSupport?
                 .appendingPathComponent(AppStoragePaths.applicationSupportFolderName)
                 .appendingPathComponent("Models"),
@@ -675,6 +693,24 @@ final class ModelManager {
                 insert(root)
             }
 
+            // WhisperKit's normal repository and OrttaAI's legacy Models
+            // folder keep model variants as immediate children. Do not walk
+            // their Core ML packages recursively: a single library can be
+            // several gigabytes and may live on a slower external SSD.
+            if isFlatModelRepository(root),
+               let entries = try? fileManager.contentsOfDirectory(
+                   at: root,
+                   includingPropertiesForKeys: [.isDirectoryKey],
+                   options: [.skipsHiddenFiles]
+               ) {
+                for candidate in entries where candidate.lastPathComponent.hasPrefix("openai_whisper-") {
+                    if isValidModelDirectory(candidate) {
+                        insert(candidate)
+                    }
+                }
+                continue
+            }
+
             guard let enumerator = fileManager.enumerator(
                 at: root,
                 includingPropertiesForKeys: [.isDirectoryKey],
@@ -698,6 +734,11 @@ final class ModelManager {
         }
 
         return variantDirectories
+    }
+
+    nonisolated private static func isFlatModelRepository(_ url: URL) -> Bool {
+        let name = url.lastPathComponent.lowercased()
+        return name == "whisperkit-coreml" || name == "models"
     }
 
     nonisolated private static func insertDownloadedModelDirectory(

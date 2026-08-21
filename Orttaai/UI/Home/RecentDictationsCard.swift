@@ -60,7 +60,7 @@ struct RecentDictationsCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
         .accessibilityElement(children: .contain)

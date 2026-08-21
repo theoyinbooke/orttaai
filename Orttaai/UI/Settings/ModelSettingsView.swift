@@ -3,6 +3,7 @@
 
 import SwiftUI
 import Foundation
+import AppKit
 
 private enum ModelSortMode: String, CaseIterable {
     case size
@@ -90,6 +91,8 @@ struct ModelSettingsView: View {
     @State private var selectedPolishDownloadModel: String = ""
     @State private var selectedInsightsDownloadModel: String = ""
     @State private var selectedSemanticDownloadModel: String = ""
+    @State private var modelStorage = ModelStorageLocation.snapshot()
+    @State private var modelStorageError: String?
 
     private let supportedLanguages: [(code: String, name: String)] = [
         ("en", "English"),
@@ -110,18 +113,13 @@ struct ModelSettingsView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Model")
-                        .font(.Orttaai.heading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Text("Choose a WhisperKit model for transcription.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text("Model")
+                    .font(.Orttaai.heading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
 
                 modelSelectorCard
+                modelStorageCard
                 modelParametersCard
                 localLLMCard
 
@@ -232,6 +230,9 @@ struct ModelSettingsView: View {
                 await warmEnabledOllamaModelsIfNeeded(silent: true)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: ModelStorageLocation.didChangeNotification)) { _ in
+            refreshModelStorage()
+        }
         .confirmationDialog(
             "Remove Downloaded Model?",
             isPresented: Binding(
@@ -251,7 +252,7 @@ struct ModelSettingsView: View {
                 pendingDeleteModel = nil
             }
         } message: {
-            Text("This removes local model files to free storage. You can download the model again anytime.")
+            Text("Removes the model from this shared folder. You can download it again.")
         }
     }
 
@@ -267,7 +268,7 @@ struct ModelSettingsView: View {
     private var switchingProgressMessage: String? {
         guard isSwitching, let switchingModelId else { return nil }
         let displayName = models.first(where: { $0.id == switchingModelId })?.name ?? switchingModelId
-        return "Preparing \(displayName): loading and warming up now so first dictation stays fast."
+        return "Preparing \(displayName)..."
     }
 
     private var ollamaStatusIconName: String {
@@ -370,15 +371,9 @@ struct ModelSettingsView: View {
     private var modelSelectorCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Available Models")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Text("One-click switch with recommendation labels for your Mac.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("Available Models")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Spacer()
 
@@ -439,30 +434,161 @@ struct ModelSettingsView: View {
                 .foregroundStyle(Color.Orttaai.accent)
             }
 
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "internaldrive")
-                Text(diskUsage)
-                    .lineLimit(1)
-            }
-            .font(.Orttaai.caption)
-            .foregroundStyle(Color.Orttaai.textTertiary)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
+    }
+
+    private var modelStorageCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                Text("Model Storage")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+
+                Spacer(minLength: Spacing.md)
+
+                modelStorageStatusLabel
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: modelStorage.isCustom ? "externaldrive" : "internaldrive")
+                        .foregroundStyle(modelStorage.isAvailable ? Color.Orttaai.accent : Color.Orttaai.error)
+
+                    Text(modelStorage.url.path)
+                        .font(.Orttaai.mono)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+
+                    Spacer(minLength: 0)
+                }
+
+                Text(diskUsage)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+
+                if !modelStorage.isAvailable {
+                    Text("Folder unavailable. Reconnect the drive or choose another folder.")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.error)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if !modelStorage.isWritable {
+                    Text("Choose a writable folder for downloads.")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let modelStorageError {
+                    Text(modelStorageError)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.error)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(Spacing.md)
+            .background(Color.Orttaai.bgPrimary.opacity(0.42))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                    .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+            )
+
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    chooseModelStorageLocation()
+                } label: {
+                    Label("Choose Folder", systemImage: "folder.badge.plus")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+
+                Button {
+                    revealModelStorageLocation()
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                .disabled(!modelStorage.isAvailable)
+
+                if modelStorage.isCustom {
+                    Button("Use Default") {
+                        ModelStorageLocation.resetToDefault()
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary))
+                }
+
+                Spacer()
+
+                Button {
+                    refreshModelStorage()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                .help("Refresh model storage status")
+            }
+        }
+        .padding(Spacing.md)
+        .dashboardCard()
+    }
+
+    @ViewBuilder
+    private var modelStorageStatusLabel: some View {
+        let title = modelStorage.isCustom ? "Custom folder" : "Default folder"
+        let tint = modelStorage.isAvailable && modelStorage.isWritable
+            ? Color.Orttaai.success
+            : (modelStorage.isAvailable ? Color.Orttaai.warning : Color.Orttaai.error)
+
+        Label(title, systemImage: modelStorage.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .font(.Orttaai.caption)
+            .foregroundStyle(tint)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .background(tint.opacity(0.1))
+            .clipShape(Capsule())
+    }
+
+    private func chooseModelStorageLocation() {
+        guard let url = ModelStorageFolderPicker.chooseFolder(
+            startingAt: modelStorage.isAvailable ? modelStorage.url : nil
+        ) else { return }
+
+        do {
+            try ModelStorageLocation.setCustomLocation(url)
+            modelStorageError = nil
+            refreshModelStorage()
+        } catch {
+            modelStorageError = error.localizedDescription
+        }
+    }
+
+    private func revealModelStorageLocation() {
+        do {
+            let access = try ModelStorageLocation.beginAccess(
+                createIfNeeded: true,
+                requiresWrite: false
+            )
+            NSWorkspace.shared.activateFileViewerSelecting([access.url])
+        } catch {
+            modelStorageError = error.localizedDescription
+        }
+    }
+
+    private func refreshModelStorage() {
+        modelStorage = ModelStorageLocation.snapshot()
+        modelStorageError = nil
+        Task { await refreshDownloadedMetrics() }
     }
 
     private var modelParametersCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top, spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Compute & Decoding")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Text("Choose how transcription balances latency, hardware, and accuracy.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("Compute & Decoding")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Spacer(minLength: Spacing.md)
 
@@ -477,15 +603,9 @@ struct ModelSettingsView: View {
 
             VStack(alignment: .leading, spacing: Spacing.md) {
                 Toggle(isOn: $lowLatencyModeEnabled) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Low Latency Mode")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-
-                        Text("Keeps startup and decode behavior lean for quick capture.")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
+                    Text("Low Latency Mode")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
                 }
                 .toggleStyle(OrttaaiToggleStyle())
                 .padding(.vertical, Spacing.sm)
@@ -501,7 +621,6 @@ struct ModelSettingsView: View {
                 LazyVGrid(columns: computeControlColumns, spacing: Spacing.md) {
                     computeControlPanel(
                         title: "Dictation Language",
-                        subtitle: "Avoid Auto-detect when speed matters.",
                         systemImage: "textformat"
                     ) {
                         OrttaaiDropdown(
@@ -514,7 +633,6 @@ struct ModelSettingsView: View {
 
                     computeControlPanel(
                         title: "Compute Mode",
-                        subtitle: computeModeSubtitle,
                         systemImage: "cpu"
                     ) {
                         OrttaaiDropdown(
@@ -531,18 +649,10 @@ struct ModelSettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
-                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                        Label("Decoding Profile", systemImage: "dial.low")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-
-                        Spacer()
-
-                        Text(decodingPreset.summary)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                            .lineLimit(1)
-                    }
+                    Label("Decoding Profile", systemImage: "dial.low")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .help(decodingPreset.summary)
 
                     LazyVGrid(columns: decodingProfileColumns, spacing: Spacing.sm) {
                         ForEach(DecodingPreset.allCases, id: \.rawValue) { preset in
@@ -553,7 +663,7 @@ struct ModelSettingsView: View {
 
                 expertOverridesSection
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
         }
     }
@@ -572,20 +682,8 @@ struct ModelSettingsView: View {
         )
     }
 
-    private var computeModeSubtitle: String {
-        switch computeMode {
-        case "cpuAndGPU":
-            return "GPU acceleration can help on some Mac configurations."
-        case "cpuOnly":
-            return "CPU only is most predictable, but usually slower."
-        default:
-            return "Fastest default for Apple Silicon."
-        }
-    }
-
     private func computeControlPanel<Control: View>(
         title: String,
-        subtitle: String,
         systemImage: String,
         @ViewBuilder control: () -> Control
     ) -> some View {
@@ -597,17 +695,9 @@ struct ModelSettingsView: View {
                 .background(Color.Orttaai.accentSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text(subtitle)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(title)
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
 
             Spacer(minLength: Spacing.md)
 
@@ -616,7 +706,7 @@ struct ModelSettingsView: View {
         }
         .padding(.vertical, Spacing.sm)
         .padding(.horizontal, Spacing.md)
-        .frame(maxWidth: .infinity, minHeight: 56, alignment: .center)
+        .frame(maxWidth: .infinity, minHeight: 46, alignment: .center)
         .background(Color.Orttaai.bgPrimary.opacity(0.42))
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
         .overlay(
@@ -696,12 +786,6 @@ struct ModelSettingsView: View {
                     }
                 }
 
-                Text(preset.summary)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 HStack(spacing: Spacing.xs) {
                     ForEach(decodingProfileTraits(for: preset), id: \.self) { trait in
                         Text(trait)
@@ -717,7 +801,7 @@ struct ModelSettingsView: View {
                 }
             }
             .padding(Spacing.sm + 2)
-            .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
             .background(isSelected ? Color.Orttaai.accentSubtle : Color.Orttaai.bgPrimary.opacity(0.42))
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
             .overlay(
@@ -736,20 +820,9 @@ struct ModelSettingsView: View {
         VStack(alignment: .leading, spacing: advancedDecodingEnabled ? Spacing.md : 0) {
             Toggle(isOn: $advancedDecodingEnabled) {
                 HStack(alignment: .center, spacing: Spacing.md) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Advanced Decoding")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-
-                        Text(
-                            advancedDecodingEnabled
-                                ? "Manual Whisper values are active for every dictation."
-                                : "Use the selected profile above. Turn this on to set Whisper values manually."
-                        )
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text("Advanced Decoding")
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
 
                     Spacer(minLength: Spacing.sm)
 
@@ -906,29 +979,17 @@ struct ModelSettingsView: View {
 
     private var localLLMCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Local LLM")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Use a small local model to polish punctuation/spelling and generate deeper speaking insights.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text("Local LLM")
+                .font(.Orttaai.subheading)
+                .foregroundStyle(Color.Orttaai.textPrimary)
 
             VStack(alignment: .leading, spacing: Spacing.md) {
                 if AppleIntelligencePolishProcessor.isModelAvailable {
                     llmGroupBox {
                         Toggle(isOn: $appleIntelligencePolishEnabled) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Apple Intelligence Polish")
-                                    .font(.Orttaai.bodyMedium)
-                                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                                Text("Cleans filler words and punctuation with the on-device Apple model. No download, fully private.")
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                            }
+                            Text("Apple Intelligence Polish")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
                         }
                         .toggleStyle(OrttaaiToggleStyle())
                     }
@@ -936,15 +997,9 @@ struct ModelSettingsView: View {
 
                 llmGroupBox {
                     Toggle(isOn: $localLLMPolishEnabled) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Enable Local Text Polish")
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-
-                            Text("Runs a fast local post-pass after transcription with strict timeout fallback.")
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                        }
+                        Text("Enable Local Text Polish")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
                     }
                     .toggleStyle(OrttaaiToggleStyle())
                 }
@@ -953,8 +1008,7 @@ struct ModelSettingsView: View {
                     HStack(alignment: .center, spacing: Spacing.sm) {
                         llmGroupHeader(
                             icon: "server.rack",
-                            title: "\(providerKind.displayName) Connection",
-                            subtitle: "Provider and endpoint shared by polish, insights, chat, and semantic memory."
+                            title: "\(providerKind.displayName) Connection"
                         )
 
                         OrttaaiDropdown(
@@ -1012,7 +1066,7 @@ struct ModelSettingsView: View {
                     }
 
                     if providerKind == .lmStudio {
-                        Text("Model downloads are managed inside the LM Studio app. Models you download or load there appear here automatically.")
+                        Text("Manage model downloads in LM Studio.")
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
@@ -1081,8 +1135,7 @@ struct ModelSettingsView: View {
                 llmGroupBox {
                     llmGroupHeader(
                         icon: "arrow.down.circle",
-                        title: "Curated Downloads",
-                        subtitle: "Lightweight models (5B or smaller) for polish, insights, and semantic memory."
+                        title: "Curated Downloads"
                     )
 
                     VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1276,8 +1329,7 @@ struct ModelSettingsView: View {
                 llmGroupBox {
                     llmGroupHeader(
                         icon: "wand.and.stars",
-                        title: "Polish Model",
-                        subtitle: "Model and time budget for the post-transcription cleanup pass."
+                        title: "Polish Model"
                     )
                     if providerKind.isLocal {
                         OrttaaiDropdown(
@@ -1289,7 +1341,7 @@ struct ModelSettingsView: View {
                             width: 280
                         )
                     } else {
-                        Text("Dictation polish stays on-device for speed: it keeps using \(localFallbackProviderKind.displayName) with \"\(normalizedPolishOllamaModel)\". Switch back to \(localFallbackProviderKind.displayName) to change the polish model.")
+                        Text("Local fallback: \(localFallbackProviderKind.displayName), \"\(normalizedPolishOllamaModel)\".")
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textSecondary)
                     }
@@ -1360,14 +1412,9 @@ struct ModelSettingsView: View {
                         }
 
                         Toggle(isOn: $localLLMInsightsThinkingEnabled) {
-                            VStack(alignment: .leading, spacing: Spacing.xs) {
-                                Text("Enable Thinking")
-                                    .font(.Orttaai.bodyMedium)
-                                    .foregroundStyle(Color.Orttaai.textPrimary)
-                                Text("Allows thinking-model reasoning during insight runs.")
-                                    .font(.Orttaai.secondary)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                            }
+                            Text("Enable Thinking")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
                         }
                         .toggleStyle(OrttaaiToggleStyle())
 
@@ -1387,14 +1434,9 @@ struct ModelSettingsView: View {
 
                 llmGroupBox {
                     Toggle(isOn: $semanticMemoryEnabled) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Enable Semantic Memory")
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                            Text("Indexes dictation history locally for graph view and semantic ChatAI context.")
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                        }
+                        Text("Enable Semantic Memory")
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
                     }
                     .toggleStyle(OrttaaiToggleStyle())
 
@@ -1418,43 +1460,30 @@ struct ModelSettingsView: View {
                             width: 280
                         )
                         } else {
-                            Text("Semantic embeddings stay on-device for privacy: they keep using \(localFallbackProviderKind.displayName) with \"\(normalizedSemanticEmbeddingModel)\". Switch back to \(localFallbackProviderKind.displayName) to change the embedding model.")
+                            Text("Local fallback: \(localFallbackProviderKind.displayName), \"\(normalizedSemanticEmbeddingModel)\".")
                                 .font(.Orttaai.caption)
                                 .foregroundStyle(Color.Orttaai.textSecondary)
                         }
 
                         Toggle(isOn: $semanticMemoryAutoIndexEnabled) {
-                            VStack(alignment: .leading, spacing: Spacing.xs) {
-                                Text("Auto-index for ChatAI")
-                                    .font(.Orttaai.bodyMedium)
-                                    .foregroundStyle(Color.Orttaai.textPrimary)
-                                Text("Refreshes the local semantic index before semantic retrieval.")
-                                    .font(.Orttaai.secondary)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                            }
+                            Text("Auto-index for ChatAI")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
                         }
                         .toggleStyle(OrttaaiToggleStyle())
 
                         Toggle(isOn: $semanticEmbeddingFallbackEnabled) {
-                            VStack(alignment: .leading, spacing: Spacing.xs) {
-                                Text("Use Lexical Fallback")
-                                    .font(.Orttaai.bodyMedium)
-                                    .foregroundStyle(Color.Orttaai.textPrimary)
-                                Text("Builds a basic private graph if the selected embedding model is unavailable.")
-                                    .font(.Orttaai.secondary)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                            }
+                            Text("Use Lexical Fallback")
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
                         }
                         .toggleStyle(OrttaaiToggleStyle())
 
-                        Text("Recommended: install `all-minilm` for a tiny indexer, or `embeddinggemma` for stronger local semantic retrieval.")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
                         }
                     }
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
         }
     }
@@ -1515,6 +1544,7 @@ struct ModelSettingsView: View {
         let isSelected = modelID == selectedID
         let isDownloaded = resolved.isDownloaded
         let isUnsupported = !model.isDeviceSupported
+        let storageBlocksDownload = !isDownloaded && (!modelStorage.isAvailable || !modelStorage.isWritable)
         let isThisSwitching = switchingModelId == model.id && isSwitching
         let isMigratingThisFamily = migratingFamilyID == modelID
         let switchingStatusText = isDownloaded ? "Loading + warm-up..." : "Downloading + warm-up..."
@@ -1581,7 +1611,8 @@ struct ModelSettingsView: View {
                 .opacity(isUnsupported ? 0.62 : 1.0)
             }
             .buttonStyle(.plain)
-            .disabled(isUnsupported || isSwitching || isDeletingModel || migratingFamilyID != nil)
+            .disabled(isUnsupported || storageBlocksDownload || isSwitching || isDeletingModel || migratingFamilyID != nil)
+            .help(storageBlocksDownload ? "Choose an available, writable model folder before downloading." : "")
 
             if isDownloaded && !isSelected {
                 Button {
@@ -1611,6 +1642,7 @@ struct ModelSettingsView: View {
                     offer: offer,
                     isMigrating: isMigratingThisFamily,
                     isDisabled: isSwitching || isDeletingModel
+                        || !modelStorage.isAvailable || !modelStorage.isWritable
                         || (migratingFamilyID != nil && !isMigratingThisFamily),
                     onMigrate: { startQuantizedMigration(offer) },
                     onDismiss: { dismissMigrationOffer(offer) }
@@ -1657,7 +1689,7 @@ struct ModelSettingsView: View {
                     selectedModelId = offer.quantizedVariantID
                 }
                 let reclaimed = ModelSizeFormatter.text(forBytes: offer.estimatedReclaimedBytes)
-                migrationSuccessMessage = "Switched \(ModelManager.formatDisplayName(offer.quantizedVariantID)) to the quantized build — reclaimed ~\(reclaimed)."
+                migrationSuccessMessage = "Switched to \(ModelManager.formatDisplayName(offer.quantizedVariantID)). Reclaimed ~\(reclaimed)."
             } catch {
                 migrationError = error.localizedDescription
             }

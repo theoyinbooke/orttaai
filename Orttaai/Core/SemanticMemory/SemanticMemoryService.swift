@@ -411,7 +411,7 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
             InsightFindingKind.lifeArea.rawValue: "Review what this area needs next.",
             InsightFindingKind.rhythm.rawValue: "Protect this window for your hardest thinking.",
             InsightFindingKind.emergingTheme.rawValue: "Give the new thread a decision or a deadline.",
-            InsightFindingKind.fadingTheme.rawValue: "Confirm it's finished — or revive it on purpose.",
+            InsightFindingKind.fadingTheme.rawValue: "Confirm it is finished or revive it.",
             InsightFindingKind.resurfacingTheme.rawValue: "Recurring loops usually hide an unmade decision.",
             InsightFindingKind.openCommitment.rawValue: "Close the loop or consciously let it go.",
             InsightFindingKind.openQuestion.rawValue: "Answer it or capture it as a task.",

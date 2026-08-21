@@ -18,7 +18,7 @@ struct HomeShellView: View {
                     selection: sidebarSelection,
                     onRunSetup: onRunSetup
                 )
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
             } detail: {
                 content(compactOverview: compactOverview)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -157,17 +157,10 @@ private struct HomeSidebarView: View {
                 .foregroundStyle(Color.Orttaai.accent)
                 .frame(width: 34, height: 34)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Orttaai")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                    .lineLimit(1)
-
-                Text("Personal workspace")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .lineLimit(1)
-            }
+            Text("Orttaai")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .lineLimit(1)
 
             Spacer(minLength: 0)
         }
@@ -192,17 +185,10 @@ private struct HomeSidebarRow: View {
                     .foregroundStyle(isSelected ? Color.Orttaai.accent : Color.Orttaai.textSecondary)
                     .frame(width: 18)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(section.title)
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                        .lineLimit(1)
-
-                    Text(section.subtitle)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                        .lineLimit(1)
-                }
+                Text(section.title)
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
@@ -216,7 +202,7 @@ private struct HomeSidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .accessibilityLabel("\(section.title). \(section.subtitle)")
+        .accessibilityLabel(section.title)
         .accessibilityIdentifier("Sidebar-\(section.title)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

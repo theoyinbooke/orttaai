@@ -7,7 +7,7 @@ struct PerformanceHealthCard: View {
     let health: DashboardPerformanceHealth
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
                 Text("Performance Health")
                     .font(.Orttaai.subheading)
@@ -30,17 +30,12 @@ struct PerformanceHealthCard: View {
                     .clipShape(Capsule())
             }
 
-            Text(statusDescription)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .lineLimit(1)
-
             LazyVGrid(
                 columns: [
                     GridItem(.flexible(), spacing: Spacing.md),
                     GridItem(.flexible(), spacing: Spacing.md)
                 ],
-                spacing: Spacing.md
+                spacing: Spacing.sm
             ) {
                 metricCell(title: "Pipeline", value: averageLatencySummary(health.averageProcessingMs))
                 metricCell(title: "Transcribe", value: averageLatencySummary(health.averageTranscriptionMs))
@@ -48,8 +43,8 @@ struct PerformanceHealthCard: View {
                 metricCell(title: "Current Model", value: health.currentModelId, isMonospaced: true)
             }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, minHeight: 228, alignment: .leading)
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, minHeight: 188, alignment: .leading)
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
@@ -105,7 +100,7 @@ struct PerformanceHealthCard: View {
                 .lineLimit(isMonospaced ? 1 : 2)
                 .truncationMode(.middle)
         }
-        .padding(Spacing.md)
+        .padding(Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.Orttaai.bgPrimary)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))

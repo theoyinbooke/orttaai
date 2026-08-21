@@ -21,21 +21,10 @@ struct GeneralSettingsView: View {
     @State private var showResetConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("General")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Core preferences and keyboard control.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
-
+        VStack(alignment: .leading, spacing: Spacing.md) {
             VStack(spacing: 0) {
                 toggleRow(
                     title: "Launch at Login",
-                    subtitle: "Automatically start Orttaai when you sign in.",
                     isOn: $launchAtLogin
                 )
                 .onChange(of: launchAtLogin) { _, newValue in
@@ -46,7 +35,6 @@ struct GeneralSettingsView: View {
 
                 toggleRow(
                     title: "Show Processing Estimate",
-                    subtitle: "Display ETA while transcriptions are being processed.",
                     isOn: $showProcessingEstimate
                 )
 
@@ -54,12 +42,12 @@ struct GeneralSettingsView: View {
 
                 toggleRow(
                     title: "Spoken Formatting",
-                    subtitle: "Applies \"new line\" and \"new paragraph\", and turns list cues like \"number one\" or \"bullet point\" into formatted lines.",
                     isOn: $spokenFormattingEnabled
                 )
+                .help("Formats spoken line, paragraph, and list commands")
 
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -85,15 +73,8 @@ struct GeneralSettingsView: View {
                 )
                 .tint(Color.Orttaai.accent)
 
-                Text("How long a single recording can last before auto-stopping.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-
-                Text("Model tuning options are in Settings > Model.")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
 
             handsFreeCard
@@ -110,10 +91,7 @@ struct GeneralSettingsView: View {
                 VStack(spacing: 0) {
                     shortcutRow(
                         name: .pushToTalk,
-                        title: "Push to Talk",
-                        subtitle: handsFreeModeEnabled
-                            ? "Hold to talk, or tap to start hands-free."
-                            : "Hold to start and release to transcribe."
+                        title: "Push to Talk"
                     )
 
                     if editCommandsEnabled {
@@ -121,23 +99,18 @@ struct GeneralSettingsView: View {
 
                         shortcutRow(
                             name: .editCommand,
-                            title: "Edit Selection with Voice",
-                            subtitle: "Select text anywhere, press, and speak how to change it."
+                            title: "Edit Selection with Voice"
                         )
                     }
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Danger Zone")
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.error)
-
-                Text("Clear all local transcriptions from this Mac.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
 
                 Button("Clear History") {
                     showClearConfirmation = true
@@ -173,7 +146,7 @@ struct GeneralSettingsView: View {
                     Text("This clears onboarding state, history, Personal Memory, insights, and downloaded models, then quits Orttaai.")
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.Orttaai.errorSubtle.opacity(0.45))
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
@@ -182,7 +155,7 @@ struct GeneralSettingsView: View {
                     .stroke(Color.Orttaai.error.opacity(0.35), lineWidth: BorderWidth.standard)
             )
         }
-        .padding(Spacing.xxl)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -192,16 +165,15 @@ struct GeneralSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             toggleRow(
                 title: "Hands-Free Dictation",
-                subtitle: "Tap the dictation shortcut to start without holding it. Tap again to stop. Holding still works as push to talk.",
                 isOn: $handsFreeModeEnabled
             )
+            .help("Tap to start or stop. Hold for push to talk")
 
             if handsFreeModeEnabled {
                 divider
 
                 toggleRow(
                     title: "Stop After Silence",
-                    subtitle: "Automatically finish hands-free dictation after a pause in speech.",
                     isOn: $handsFreeSilenceStopEnabled
                 )
 
@@ -250,13 +222,10 @@ struct GeneralSettingsView: View {
                     )
                     .tint(Color.Orttaai.accent)
 
-                    Text("Hands-free recordings get their own cap, separate from push to talk. The final 20 seconds show a countdown.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -266,11 +235,11 @@ struct GeneralSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             toggleRow(
                 title: "Edit Selection with Voice",
-                subtitle: "Select text in any app, press the edit shortcut, and speak an instruction like \"make this shorter\". The selection is replaced in place using your local polish model.",
                 isOn: $editCommandsEnabled
             )
+            .help("Select text, press the shortcut, and speak an edit")
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -311,39 +280,26 @@ struct GeneralSettingsView: View {
     private var divider: some View {
         Divider()
             .background(Color.Orttaai.border.opacity(0.75))
-            .padding(.vertical, Spacing.md)
+            .padding(.vertical, Spacing.sm)
     }
 
-    private func toggleRow(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
+    private func toggleRow(title: String, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(title)
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text(subtitle)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text(title)
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
         }
         .toggleStyle(OrttaaiToggleStyle())
     }
 
     private func shortcutRow(
         name: KeyboardShortcuts.Name,
-        title: String,
-        subtitle: String
+        title: String
     ) -> some View {
         HStack(alignment: .center, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(title)
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text(subtitle)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text(title)
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
 
             Spacer(minLength: Spacing.lg)
 

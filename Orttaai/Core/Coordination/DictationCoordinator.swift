@@ -214,7 +214,7 @@ final class DictationCoordinator {
 
         case .processing, .injecting, .error:
             hotkeyGesture.reset()
-            Logger.dictation.info("Ignoring hotkey down — busy (state: \(String(describing: self.state)))")
+            Logger.dictation.info("Ignoring hotkey down; busy (state: \(String(describing: self.state)))")
         }
     }
 
@@ -274,7 +274,7 @@ final class DictationCoordinator {
 
         case .processing, .injecting, .error:
             editHotkeyGesture.reset()
-            Logger.dictation.info("Ignoring edit hotkey down — busy (state: \(String(describing: self.state)))")
+            Logger.dictation.info("Ignoring edit hotkey down; busy (state: \(String(describing: self.state)))")
         }
     }
 
@@ -305,11 +305,11 @@ final class DictationCoordinator {
     /// means a clear pill error and no recording.
     func startEditCommand() {
         guard settings.editCommandsEnabled else {
-            Logger.dictation.info("Ignoring startEditCommand — edit commands disabled")
+            Logger.dictation.info("Ignoring startEditCommand; edit commands disabled")
             return
         }
         guard case .idle = state, !isCapturingEditSelection else {
-            Logger.dictation.info("Ignoring startEditCommand — busy (state: \(String(describing: self.state)))")
+            Logger.dictation.info("Ignoring startEditCommand; busy (state: \(String(describing: self.state)))")
             return
         }
 
@@ -335,7 +335,7 @@ final class DictationCoordinator {
                 self.editHotkeyGesture.reset()
                 self.state = .error(message: "Can't edit password fields")
                 self.autoDismissError()
-                Logger.dictation.info("Edit command aborted — focused element is a secure field")
+                Logger.dictation.info("Edit command aborted; focused element is a secure field")
                 return
             }
 
@@ -345,7 +345,7 @@ final class DictationCoordinator {
                 self.editHotkeyGesture.reset()
                 self.state = .error(message: "Select text first")
                 self.autoDismissError()
-                Logger.dictation.info("Edit command aborted — no selection found")
+                Logger.dictation.info("Edit command aborted; no selection found")
                 return
             }
 
@@ -354,7 +354,7 @@ final class DictationCoordinator {
                 self.editHotkeyGesture.reset()
                 self.state = .error(message: "Selection too long to edit")
                 self.autoDismissError()
-                Logger.dictation.info("Edit command aborted — selection too long (\(selection.text.count) chars)")
+                Logger.dictation.info("Edit command aborted; selection too long (\(selection.text.count) chars)")
                 return
             }
 
@@ -374,7 +374,7 @@ final class DictationCoordinator {
 
     func startRecording() {
         guard !isCapturingEditSelection else {
-            Logger.dictation.info("Ignoring startRecording — edit selection capture in flight")
+            Logger.dictation.info("Ignoring startRecording; edit selection capture in flight")
             return
         }
         beginSession(kind: .dictation, selection: nil, targetApp: NSWorkspace.shared.frontmostApplication)
@@ -388,7 +388,7 @@ final class DictationCoordinator {
         targetApp frontmostApp: NSRunningApplication?
     ) {
         guard case .idle = state else {
-            Logger.dictation.info("Ignoring startRecording — not idle (state: \(String(describing: self.state)))")
+            Logger.dictation.info("Ignoring startRecording; not idle (state: \(String(describing: self.state)))")
             return
         }
 
@@ -456,7 +456,7 @@ final class DictationCoordinator {
 
     func stopRecording() {
         guard case .recording(let startTime) = state else {
-            Logger.dictation.info("Ignoring stopRecording — not recording")
+            Logger.dictation.info("Ignoring stopRecording; not recording")
             return
         }
 
@@ -986,7 +986,7 @@ final class DictationCoordinator {
             guard !Task.isCancelled else { return }
 
             // Time's up — stop recording
-            Logger.dictation.info("Cap timer fired at \(self.maxDuration)s — stopping recording")
+            Logger.dictation.info("Cap timer fired at \(self.maxDuration)s; stopping recording")
             self.stopRecording()
         }
     }
@@ -1097,7 +1097,7 @@ final class DictationCoordinator {
 
             let snapshot = self.audioService.currentSamplesSnapshot(maxSamples: 1)
             if snapshot.isEmpty {
-                Logger.dictation.warning("Audio health check failed — no samples after 800ms, attempting recovery")
+                Logger.dictation.warning("Audio health check failed; no samples after 800ms, attempting recovery")
 
                 // Tear down the stale capture session.
                 _ = self.audioService.stopCapture()

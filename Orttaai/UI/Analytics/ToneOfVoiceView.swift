@@ -128,13 +128,13 @@ struct ToneOfVoiceView: View {
     @State private var viewModel = ToneOfVoiceViewModel()
     @State private var selectedSection: ToneVoiceSection = .overview
 
-    private let overviewTopCardMinHeight: CGFloat = 282
-    private let overviewGuideCardMinHeight: CGFloat = 220
-    private let guideListCardMinHeight: CGFloat = 190
+    private let overviewTopCardMinHeight: CGFloat = 240
+    private let overviewGuideCardMinHeight: CGFloat = 184
+    private let guideListCardMinHeight: CGFloat = 160
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 controlsCard
 
                 if viewModel.isLoading, viewModel.profile == nil {
@@ -145,7 +145,7 @@ struct ToneOfVoiceView: View {
                     emptyState
                 }
             }
-            .padding(.horizontal, Spacing.xxl)
+            .padding(.horizontal, Spacing.lg)
             .padding(.bottom, Spacing.xxl)
         }
         .task {
@@ -155,16 +155,9 @@ struct ToneOfVoiceView: View {
 
     private var controlsCard: some View {
         HStack(alignment: .center, spacing: Spacing.lg) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Label("Tone of Voice", systemImage: "mic")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Build a local tone profile from your writing history, then use it in ChatAI's My Tone mode.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Label("Tone of Voice", systemImage: "mic")
+                .font(.Orttaai.heading)
+                .foregroundStyle(Color.Orttaai.textPrimary)
 
             Spacer(minLength: Spacing.lg)
 
@@ -211,7 +204,7 @@ struct ToneOfVoiceView: View {
                 .disabled(viewModel.isLoading)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                 .fill(Color.Orttaai.bgSecondary)
@@ -620,7 +613,7 @@ struct ToneOfVoiceView: View {
 
             content()
         }
-        .padding(compact ? Spacing.md : Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
@@ -695,9 +688,6 @@ struct ToneOfVoiceView: View {
             Text("Analyzing your tone of voice with Ollama...")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-            Text("This uses your local writing history and stores the profile locally for ChatAI.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(Spacing.xxl)
@@ -710,7 +700,7 @@ struct ToneOfVoiceView: View {
                 .font(.Orttaai.heading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            Text("Run analysis after you have some dictation history. Orttaai will use local metrics first and Ollama when it is available.")
+            Text("Analyze your dictation history to create a tone profile.")
                 .font(.Orttaai.body)
                 .foregroundStyle(Color.Orttaai.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

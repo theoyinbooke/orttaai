@@ -7,22 +7,17 @@ struct TodaySnapshotCard: View {
     let snapshot: DashboardTodaySnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("Today Snapshot")
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Text(statusDescription)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .lineLimit(1)
 
             LazyVGrid(
                 columns: [
                     GridItem(.flexible(), spacing: Spacing.md),
                     GridItem(.flexible(), spacing: Spacing.md)
                 ],
-                spacing: Spacing.md
+                spacing: Spacing.sm
             ) {
                 metricCell(title: "Words", value: snapshot.words.formatted())
                 metricCell(title: "Sessions", value: snapshot.sessions.formatted())
@@ -30,8 +25,8 @@ struct TodaySnapshotCard: View {
                 metricCell(title: "Avg WPM", value: snapshot.averageWPM.formatted())
             }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, minHeight: 228, alignment: .leading)
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, minHeight: 188, alignment: .leading)
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
@@ -57,7 +52,7 @@ struct TodaySnapshotCard: View {
                 .font(.Orttaai.heading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
         }
-        .padding(Spacing.md)
+        .padding(Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.Orttaai.bgPrimary)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))

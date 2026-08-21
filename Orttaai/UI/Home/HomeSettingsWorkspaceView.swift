@@ -16,13 +16,6 @@ private enum HomeSettingsSubsection: String, CaseIterable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .general: return "App behavior and shortcuts"
-        case .audio: return "Input device and live monitoring"
-        }
-    }
-
     var icon: String {
         switch self {
         case .general: return "slider.horizontal.3"
@@ -41,10 +34,6 @@ struct HomeSettingsWorkspaceView: View {
                     .font(.Orttaai.heading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
-                Text(subsection.subtitle)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-
                 HStack(spacing: Spacing.sm) {
                     ForEach(HomeSettingsSubsection.allCases) { item in
                         tabButton(item)
@@ -53,7 +42,7 @@ struct HomeSettingsWorkspaceView: View {
             }
             .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
             .padding(.top, WorkspaceLayout.contentTopPadding)
-            .padding(.bottom, Spacing.lg)
+            .padding(.bottom, Spacing.md)
 
             Divider()
                 .background(Color.Orttaai.border)

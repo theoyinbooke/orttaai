@@ -17,7 +17,7 @@ struct AnalyticsView: View {
             header
                 .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
                 .padding(.top, WorkspaceLayout.contentTopPadding)
-                .padding(.bottom, Spacing.lg)
+                .padding(.bottom, Spacing.md)
 
             switch selectedTab {
             case .dashboard:
@@ -34,15 +34,9 @@ struct AnalyticsView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Analytics")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Insights, trends, and transcription history.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text("Analytics")
+                .font(.Orttaai.heading)
+                .foregroundStyle(Color.Orttaai.textPrimary)
 
             Spacer()
 

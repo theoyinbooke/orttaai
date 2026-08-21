@@ -127,32 +127,29 @@ private struct AboutSetupStepView: View {
     private let repoURL = AppLinks.githubRepositoryURL
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("About Orttaai")
                 .font(.Orttaai.title)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            Text("Orttaai is a local-first voice keyboard for macOS. Hold your hotkey to speak, release to transcribe, and Orttaai pastes text back into your active app.")
+            Text("Hold your hotkey to dictate into any app.")
                 .font(.Orttaai.body)
                 .foregroundStyle(Color.Orttaai.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             featureCard(
                 icon: "mic.fill",
-                title: "Fast Dictation",
-                description: "Press-and-hold to record, release to transcribe and inject text at your cursor."
+                title: "Fast Dictation"
             )
 
             featureCard(
                 icon: "lock.shield.fill",
-                title: "Privacy First",
-                description: "Whisper transcription runs locally on your Mac. Your voice and transcript stay on-device."
+                title: "Private by Default"
             )
 
             featureCard(
                 icon: "cpu.fill",
-                title: "Model Control",
-                description: "Choose the model that fits your hardware and optionally use local LLM polish/insights."
+                title: "Model Control"
             )
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -182,14 +179,14 @@ private struct AboutSetupStepView: View {
                     .buttonStyle(OrttaaiButtonStyle(.secondary))
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.Orttaai.bgSecondary)
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
         }
     }
 
-    private func featureCard(icon: String, title: String, description: String) -> some View {
+    private func featureCard(icon: String, title: String) -> some View {
         HStack(spacing: Spacing.md) {
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .semibold))
@@ -198,17 +195,11 @@ private struct AboutSetupStepView: View {
                 .background(Color.Orttaai.bgPrimary.opacity(0.65))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(title)
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Text(description)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(title)
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.Orttaai.bgSecondary)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))

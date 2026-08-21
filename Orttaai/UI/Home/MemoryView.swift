@@ -19,14 +19,6 @@ private enum MemorySubsection: String, CaseIterable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .dictionary: return "Auto-correct your preferred terms."
-        case .snippets: return "Expand short triggers into full text."
-        case .suggestions: return "Learn from history and review proposed entries."
-        }
-    }
-
     var emptyTitle: String {
         switch self {
         case .dictionary: return "No dictionary entries"
@@ -61,13 +53,13 @@ struct MemoryView: View {
             header
                 .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
                 .padding(.top, WorkspaceLayout.contentTopPadding)
-                .padding(.bottom, Spacing.lg)
+                .padding(.bottom, Spacing.md)
 
             Divider()
                 .background(Color.Orttaai.border)
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
                     statusRow
                     featureToggles
                     flashMessages
@@ -86,7 +78,7 @@ struct MemoryView: View {
                     }
                 }
                 .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
-                .padding(.top, Spacing.xxl)
+                .padding(.top, Spacing.md)
                 .padding(.bottom, WorkspaceLayout.contentBottomPadding)
             }
         }
@@ -149,10 +141,6 @@ struct MemoryView: View {
             Text("Memory")
                 .font(.Orttaai.heading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Text(subsection.subtitle)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
 
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: Spacing.lg) {
@@ -241,7 +229,7 @@ struct MemoryView: View {
             Toggle("Prefer Apple AI for suggestions", isOn: $aiSuggestionsEnabled)
                 .toggleStyle(OrttaaiToggleStyle())
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -276,13 +264,13 @@ struct MemoryView: View {
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
 
     private var dictionaryContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             dictionaryEditorCard
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -304,7 +292,7 @@ struct MemoryView: View {
                     }
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
         }
     }
@@ -314,10 +302,6 @@ struct MemoryView: View {
             Text(viewModel.editingDictionaryID == nil ? "Add Dictionary Entry" : "Edit Dictionary Entry")
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Text("Use this to force preferred terms (for example, `whispr` -> `Wispr`).")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
 
             HStack(spacing: Spacing.sm) {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -356,7 +340,7 @@ struct MemoryView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -406,7 +390,7 @@ struct MemoryView: View {
     }
 
     private var snippetsContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             snippetEditorCard
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -428,7 +412,7 @@ struct MemoryView: View {
                     }
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
         }
     }
@@ -438,10 +422,6 @@ struct MemoryView: View {
             Text(viewModel.editingSnippetID == nil ? "Add Snippet" : "Edit Snippet")
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Text("Speak a trigger phrase to paste the full expansion instantly.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Trigger")
@@ -486,7 +466,7 @@ struct MemoryView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -537,15 +517,11 @@ struct MemoryView: View {
     }
 
     private var suggestionsContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Analyze History")
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Generate personal dictionary and snippet suggestions from recent dictations.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
 
                 Button(viewModel.isAnalyzing ? "Analyzing..." : "Analyze Now") {
                     viewModel.analyzeHistory()
@@ -553,7 +529,7 @@ struct MemoryView: View {
                 .buttonStyle(OrttaaiButtonStyle(.primary))
                 .disabled(viewModel.isAnalyzing)
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -575,7 +551,7 @@ struct MemoryView: View {
                     }
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .dashboardCard()
         }
     }

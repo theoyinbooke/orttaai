@@ -15,15 +15,9 @@ struct CloudSyncSettingsView: View {
                     .foregroundStyle(Color.Orttaai.accent)
                     .frame(width: 28, height: 28)
 
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("iCloud Sync")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Text(viewModel.summary)
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("iCloud Sync")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Spacer(minLength: Spacing.lg)
 
@@ -38,7 +32,7 @@ struct CloudSyncSettingsView: View {
 
             statusContent
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 

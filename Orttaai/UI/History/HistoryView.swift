@@ -168,15 +168,9 @@ struct HistoryView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("History")
-                        .font(.Orttaai.heading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Text("Browse, copy, and manage your dictation history.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("History")
+                    .font(.Orttaai.heading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Spacer()
 
@@ -738,7 +732,7 @@ private struct CreateSnippetSheet: View {
                         .font(.Orttaai.heading)
                         .foregroundStyle(Color.Orttaai.textPrimary)
 
-                    Text("Save this transcript as reusable text you can trigger during dictation.")
+                    Text("Save as a reusable snippet.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                 }

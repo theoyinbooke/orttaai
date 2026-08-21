@@ -51,7 +51,7 @@ struct AboutView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             pageHeader
             appSummaryCard
             creatorCard
@@ -68,15 +68,9 @@ struct AboutView: View {
     }
 
     private var pageHeader: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("About")
-                .font(.Orttaai.heading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Text("Build info, creator details, and open-source components.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-        }
+        Text("About")
+            .font(.Orttaai.heading)
+            .foregroundStyle(Color.Orttaai.textPrimary)
     }
 
     private var appSummaryCard: some View {
@@ -96,7 +90,7 @@ struct AboutView: View {
                 versionBadge
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -115,9 +109,6 @@ struct AboutView: View {
                 .font(.Orttaai.title)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            Text("Native macOS voice keyboard")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
         }
     }
 
@@ -147,10 +138,6 @@ struct AboutView: View {
                         .foregroundStyle(Color.Orttaai.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Orttaai is built as a local-first writing tool for fast, private dictation on macOS.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
@@ -162,7 +149,7 @@ struct AboutView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -232,11 +219,6 @@ struct AboutView: View {
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            Text("No paywall. No server-side transcription. Local-first dictation and user trust come first.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: Spacing.sm) {
                     supportLinks
@@ -248,7 +230,7 @@ struct AboutView: View {
             }
             .padding(.top, Spacing.xs)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -289,7 +271,7 @@ struct AboutView: View {
                 .font(.Orttaai.mono)
                 .foregroundStyle(Color.Orttaai.accent)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.Orttaai.bgSecondary.opacity(0.55))
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
@@ -317,7 +299,7 @@ struct AboutView: View {
                 .foregroundStyle(Color.Orttaai.textTertiary)
                 .padding(.top, Spacing.sm)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 

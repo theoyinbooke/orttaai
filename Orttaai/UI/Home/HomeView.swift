@@ -88,9 +88,9 @@ struct HomeView: View {
     }
 
     private var content: some View {
-        HStack(alignment: .top, spacing: Spacing.lg) {
+        HStack(alignment: .top, spacing: Spacing.md) {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.xl) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
                     HomeHeaderView(
                         stats: viewModel.payload.header,
                         isRefreshing: viewModel.isLoading && viewModel.hasLoaded,
@@ -112,9 +112,7 @@ struct HomeView: View {
 
                     HomeBannerView(
                         title: bannerTitle,
-                        subtitle: bannerSubtitle,
                         buttonTitle: bannerButtonTitle,
-                        showsArtwork: !isCompact,
                         isButtonDisabled: isBannerButtonDisabled,
                         onButtonTap: bannerAction
                     )
@@ -209,19 +207,6 @@ struct HomeView: View {
         return "You're in a good flow"
     }
 
-    private var bannerSubtitle: String {
-        if viewModel.shouldShowFastFirstUpgradePrompt {
-            return "Switch to \(viewModel.fastFirstRecommendedModelDisplayName) now for better accuracy, while keeping your fast start."
-        }
-        if viewModel.payload.today.sessions == 0 {
-            return "Grant permissions and run a quick test to start dictating anywhere on your Mac."
-        }
-        if viewModel.payload.performance.level == .slow {
-            return "Latency is trending high. Switch to a lighter model for faster response."
-        }
-        return "Orttaai is running locally on your Mac with healthy performance."
-    }
-
     private var bannerButtonTitle: String {
         if viewModel.shouldShowFastFirstUpgradePrompt {
             return viewModel.isApplyingFastFirstUpgrade ? "Applying..." : "Use Recommended Model"
@@ -258,12 +243,12 @@ struct HomeView: View {
     @ViewBuilder
     private func rowLayout<Left: View, Right: View>(left: Left, right: Right) -> some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: Spacing.lg) {
+            HStack(alignment: .top, spacing: Spacing.md) {
                 left.frame(maxWidth: .infinity)
                 right.frame(maxWidth: .infinity)
             }
 
-            VStack(spacing: Spacing.lg) {
+            VStack(spacing: Spacing.md) {
                 left
                 right
             }

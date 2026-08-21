@@ -78,6 +78,8 @@ struct DownloadStepView: View {
     @State private var downloadStage: SetupDownloadStage = .downloading
     @State private var downloadingModelId: String?
     @State private var transcriptionService = TranscriptionService()
+    @State private var modelStorage = ModelStorageLocation.snapshot()
+    @State private var modelStorageError: String?
 
     private let hardwareInfo = HardwareDetector.detect()
 
@@ -87,8 +89,8 @@ struct DownloadStepView: View {
 
     private var quickStartModelSummary: String {
         ModelManager.normalizedModelID(quickStartModelId) == "openai_whisper-small.en"
-            ? "English-optimized model that keeps first-run dictation responsive without dropping too much accuracy."
-            : "Multilingual model that balances first-run speed and accuracy."
+            ? "Fast English model."
+            : "Fast multilingual model."
     }
 
     private var recommendedModelId: String {
@@ -96,7 +98,7 @@ struct DownloadStepView: View {
     }
 
     private var recommendedModelSummary: String {
-        "Best match for your Mac if you want to prioritize recognition quality over first-run download time."
+        "Best accuracy for this Mac."
     }
 
     private var showsSeparateRecommendedCard: Bool {
@@ -104,7 +106,7 @@ struct DownloadStepView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Download Model")
                 .font(.Orttaai.title)
                 .foregroundStyle(Color.Orttaai.textPrimary)
@@ -115,24 +117,25 @@ struct DownloadStepView: View {
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
-                HStack(spacing: Spacing.xl) {
+                HStack(spacing: Spacing.md) {
                     Label(hardwareInfo.chipName, systemImage: "cpu")
                     Label("\(hardwareInfo.ramGB)GB RAM", systemImage: "memorychip")
                 }
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.Orttaai.bgSecondary)
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+
+            setupModelStorageCard
 
             modelCard(
                 title: "Quick Start Model",
                 badge: "Faster setup",
                 modelId: quickStartModelId,
-                summary: quickStartModelSummary,
-                footnote: "Smaller download. Best if you want the fastest first dictation.",
+                detail: quickStartModelSummary,
                 accentColor: .Orttaai.accent
             )
 
@@ -141,8 +144,7 @@ struct DownloadStepView: View {
                     title: "Recommended for Your Mac",
                     badge: "Higher accuracy",
                     modelId: recommendedModelId,
-                    summary: recommendedModelSummary,
-                    footnote: "Larger download. Good if you want to start with the best fit for this Mac.",
+                    detail: recommendedModelSummary,
                     accentColor: .Orttaai.textPrimary
                 )
             }
@@ -195,6 +197,72 @@ struct DownloadStepView: View {
         .onChange(of: dictationLanguage) { _, _ in
             refreshInstalledModelState()
         }
+        .onReceive(NotificationCenter.default.publisher(for: ModelStorageLocation.didChangeNotification)) { _ in
+            refreshModelStorage()
+        }
+    }
+
+    private var setupModelStorageCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                Image(systemName: modelStorage.isCustom ? "externaldrive" : "internaldrive")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(modelStorage.isAvailable ? Color.Orttaai.accent : Color.Orttaai.error)
+                    .frame(width: 32, height: 32)
+                    .background(Color.Orttaai.accentSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Model Storage")
+                        .font(.Orttaai.subheading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+
+                    Text(modelStorage.url.path)
+                        .font(.Orttaai.mono)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+
+                }
+
+                Spacer(minLength: Spacing.sm)
+
+                Button("Choose Folder") {
+                    chooseModelStorageLocation()
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                .disabled(isDownloading)
+            }
+
+            if modelStorage.isCustom {
+                Button("Use Default Location") {
+                    ModelStorageLocation.resetToDefault()
+                }
+                .buttonStyle(.plain)
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.accent)
+                .disabled(isDownloading)
+            }
+
+            if !modelStorage.isAvailable || !modelStorage.isWritable {
+                Text(modelStorage.isAvailable
+                     ? "Choose a writable folder before downloading."
+                     : "Reconnect the drive or choose another folder before downloading.")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.error)
+            }
+
+            if let modelStorageError {
+                Text(modelStorageError)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.Orttaai.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
     }
 
     @ViewBuilder
@@ -202,8 +270,7 @@ struct DownloadStepView: View {
         title: String,
         badge: String,
         modelId: String,
-        summary: String,
-        footnote: String,
+        detail: String,
         accentColor: Color
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -224,20 +291,20 @@ struct DownloadStepView: View {
                     startDownload(modelId: modelId)
                 }
                 .buttonStyle(OrttaaiButtonStyle(isSelectedForSetup(modelId) ? .secondary : .primary))
-                .disabled(isDownloading || isSelectedForSetup(modelId))
+                .disabled(
+                    isDownloading
+                        || isSelectedForSetup(modelId)
+                        || (!isDownloaded(modelId) && (!modelStorage.isAvailable || !modelStorage.isWritable))
+                )
             }
 
             Text(modelId)
                 .font(.Orttaai.mono)
                 .foregroundStyle(accentColor)
 
-            Text(summary)
+            Text(detail)
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
-
-            Text(footnote)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
 
             if isSelectedForSetup(modelId) {
                 Label("Selected for setup", systemImage: "checkmark.circle.fill")
@@ -249,7 +316,7 @@ struct DownloadStepView: View {
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.Orttaai.bgSecondary)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
@@ -353,13 +420,37 @@ struct DownloadStepView: View {
                     isModelReady = false
                     downloadProgress = 0
                     downloadStage = .downloading
-                    errorMessage = modelAlreadyDownloaded
-                        ? "Couldn't load downloaded model. Try again or choose another model."
-                        : "Couldn't download model. Check your connection and try again."
+                    if error is ModelStorageLocationError {
+                        errorMessage = error.localizedDescription
+                    } else {
+                        errorMessage = modelAlreadyDownloaded
+                            ? "Couldn't load downloaded model. Try again or choose another model."
+                            : "Couldn't download model. Check your connection and try again."
+                    }
                     Logger.model.error("Setup model prepare failed: \(error.localizedDescription)")
                 }
             }
         }
+    }
+
+    private func chooseModelStorageLocation() {
+        guard let url = ModelStorageFolderPicker.chooseFolder(
+            startingAt: modelStorage.isAvailable ? modelStorage.url : nil
+        ) else { return }
+
+        do {
+            try ModelStorageLocation.setCustomLocation(url)
+            modelStorageError = nil
+            refreshModelStorage()
+        } catch {
+            modelStorageError = error.localizedDescription
+        }
+    }
+
+    private func refreshModelStorage() {
+        modelStorage = ModelStorageLocation.snapshot()
+        modelStorageError = nil
+        refreshInstalledModelState()
     }
 
     private func configureFastFirstOnboarding(settings: AppSettings, quickModelId: String) {

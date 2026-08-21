@@ -70,7 +70,7 @@ struct QuantizedMigrationOfferView: View {
                     .font(.Orttaai.bodyMedium)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
-                Text("Same accuracy class, smaller and faster to load. Full-precision files are removed only after the quantized build is downloaded, loaded, and verified.")
+                Text("Smaller, faster, and verified before replacement.")
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -90,12 +90,12 @@ struct QuantizedMigrationOfferView: View {
                 Button("Keep full precision", action: onDismiss)
                     .buttonStyle(OrttaaiButtonStyle(.secondary))
                     .disabled(isDisabled)
-                    .help("Dismiss this suggestion for this model family. It won't be shown again.")
+                    .help("Dismiss this suggestion")
 
-                Button("Switch to quantized — reclaims ~\(reclaimText)", action: onMigrate)
+                Button("Switch to quantized (~\(reclaimText) reclaimed)", action: onMigrate)
                     .buttonStyle(OrttaaiButtonStyle(.primary))
                     .disabled(isDisabled)
-                    .help("Downloads and verifies the quantized build first, then removes the full-precision files.")
+                    .help("Verify the quantized build before replacement")
             }
         }
         .padding(.horizontal, Spacing.md)

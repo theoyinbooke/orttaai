@@ -74,14 +74,9 @@ struct CodexSettingsCard: View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "sparkles")
                 .foregroundStyle(Color.Orttaai.accent)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("ChatGPT Account")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Text("OpenAI models through your own ChatGPT subscription — no API key, billed to nobody but your existing plan.")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text("ChatGPT Account")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
             Spacer()
             Button {
                 Task {
@@ -101,7 +96,7 @@ struct CodexSettingsCard: View {
             Label("Codex CLI not found", systemImage: "xmark.circle")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.error)
-            Text("This provider uses the Codex command-line tool that OpenAI ships for ChatGPT subscribers. Install it, then re-check:")
+            Text("Install Codex, then re-check:")
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textSecondary)
             Text("Homebrew:  brew install --cask codex")
@@ -120,9 +115,6 @@ struct CodexSettingsCard: View {
                 }
                 .buttonStyle(OrttaaiButtonStyle(.secondary))
 
-                Text("Orttaai also checks common npm, pnpm, NVM, fnm, Volta, asdf, mise, and app-bundled locations.")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
             }
         }
     }
@@ -150,7 +142,7 @@ struct CodexSettingsCard: View {
             Label("Codex CLI \(found) is too old", systemImage: "exclamationmark.triangle")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.error)
-            Text("Orttaai needs Codex \(CodexBinaryLocator.minimumVersion) or newer. Update it, then re-check:")
+            Text("Update to Codex \(CodexBinaryLocator.minimumVersion) or newer:")
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textSecondary)
             Text("codex update")
@@ -185,7 +177,7 @@ struct CodexSettingsCard: View {
                 }
             }
             if account.isSigningIn {
-                Text("Complete the sign-in in your browser; this page updates automatically.")
+                Text("Complete sign-in in your browser.")
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.textTertiary)
             }
@@ -220,24 +212,14 @@ struct CodexSettingsCard: View {
             effortPicker
             usageMeter
 
-            Text("Chat, insights, and tone analysis use this model. Dictation polish and semantic embeddings stay on your local provider.")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
         }
     }
 
     private var modelPicker: some View {
         HStack(spacing: Spacing.sm) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Model")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                if let selected = modelDetails.first(where: { $0.id == codexModel }), !selected.summary.isEmpty {
-                    Text(selected.summary)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
-            }
+            Text("Model")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
             Spacer()
             if isLoadingModels {
                 ProgressView().controlSize(.small)
@@ -252,14 +234,9 @@ struct CodexSettingsCard: View {
 
     private var effortPicker: some View {
         HStack(spacing: Spacing.sm) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Reasoning Effort")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Text("Higher effort thinks longer — better insights, slower replies, more usage.")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+            Text("Reasoning Effort")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
             Spacer()
             OrttaaiDropdown(
                 selection: $codexReasoningEffort,
@@ -267,6 +244,7 @@ struct CodexSettingsCard: View {
                 width: 140
             )
         }
+        .help("Higher effort can improve results but takes longer")
     }
 
     @ViewBuilder
@@ -303,7 +281,7 @@ struct CodexSettingsCard: View {
         HStack(alignment: .top, spacing: Spacing.xs) {
             Image(systemName: "lock.icloud")
                 .foregroundStyle(Color.Orttaai.textTertiary)
-            Text("When this provider is enabled, your transcripts and insight data are sent to OpenAI under your ChatGPT account and handled per OpenAI's data policies.")
+            Text("This provider sends transcripts and insight data to OpenAI.")
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textTertiary)
         }

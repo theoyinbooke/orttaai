@@ -273,7 +273,7 @@ final class TextInjectionService: TextInjecting {
                     pasteAttempts: 0
                 )
                 Logger.injection.error(
-                    "Target app did not become active — transcript left on clipboard"
+                    "Target app did not become active. Transcript left on clipboard"
                 )
                 return .failedAllMethods
             }
@@ -292,7 +292,7 @@ final class TextInjectionService: TextInjecting {
         for attempt in 1...2 {
             if attempt == 2 {
                 // Retry: re-activate in case the first paste raced focus transfer.
-                Logger.injection.warning("Paste verification failed — retrying activation + paste")
+                Logger.injection.warning("Paste verification failed; retrying activation + paste")
                 activationMs += await activateTargetAppIfNeeded(
                     appToActivate,
                     timeoutMs: timingProfile.activationTimeoutMs
@@ -331,7 +331,7 @@ final class TextInjectionService: TextInjecting {
 
         // Step 7: Fallbacks — AX insertion, then typed unicode keystrokes.
         if verdict == .failed {
-            Logger.injection.warning("Paste retry failed verification — attempting AX insertion")
+            Logger.injection.warning("Paste retry failed verification; attempting AX insertion")
             if inspector.insertTextAtFocus(text, processIdentifier: targetPid) {
                 verdict = await verifyInjection(expectedText: text, pre: preSnapshot, pid: targetPid)
                 if verdict != .failed {
@@ -341,7 +341,7 @@ final class TextInjectionService: TextInjecting {
         }
 
         if verdict == .failed {
-            Logger.injection.warning("AX insertion failed — attempting typed keystrokes")
+            Logger.injection.warning("AX insertion failed; attempting typed keystrokes")
             keyPoster.postTypedText(text)
             try? await Task.sleep(nanoseconds: 60_000_000) // 60ms for events to land
             verdict = await verifyInjection(expectedText: text, pre: preSnapshot, pid: targetPid)
@@ -373,7 +373,7 @@ final class TextInjectionService: TextInjecting {
                 pasteAttempts: pasteAttempts
             )
             Logger.injection.error(
-                "All injection methods failed for \(appToActivate?.bundleIdentifier ?? "?", privacy: .public) — transcript left on clipboard"
+                "All injection methods failed for \(appToActivate?.bundleIdentifier ?? "?", privacy: .public). Transcript left on clipboard"
             )
             return .failedAllMethods
         }
@@ -398,7 +398,7 @@ final class TextInjectionService: TextInjecting {
             )
             if clipboardRestored {
                 Logger.injection.info(
-                    "Codex paste sent; Accessibility verification unavailable — prior clipboard restored"
+                    "Codex paste sent; Accessibility verification unavailable. Prior clipboard restored"
                 )
             }
             return .success(method: .unverifiedPaste)
@@ -436,7 +436,7 @@ final class TextInjectionService: TextInjecting {
     ) -> Bool {
         guard clipboard.changeCount == expectedChangeCount else {
             Logger.injection.info(
-                "Clipboard changed after transcript staging — preserving newer contents"
+                "Clipboard changed after transcript staging; preserving newer contents"
             )
             return false
         }

@@ -77,7 +77,7 @@ struct WaveformView: View {
                 .padding(.vertical, Spacing.xs)
                 .background(activeTint.opacity(0.14))
                 .clipShape(Capsule())
-                .help("Voice edit — speak how to change the selected text")
+                .help("Speak how to change the selected text")
                 .accessibilityLabel("Recording edit instruction")
             }
 
@@ -88,7 +88,7 @@ struct WaveformView: View {
                     .frame(width: 18, height: 18)
                     .background(activeTint.opacity(0.14))
                     .clipShape(Circle())
-                    .help("Hands-free — tap the shortcut, press stop, or pause to finish")
+                    .help("Tap the shortcut, press stop, or pause to finish")
                     .accessibilityLabel("Hands-free recording")
             }
 

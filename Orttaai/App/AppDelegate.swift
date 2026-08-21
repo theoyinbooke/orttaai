@@ -304,7 +304,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// alert explaining what failed and what to try.
     private func presentCoreServicesFailure(message: String) {
         statusBarController?.updateIcon(state: .error)
-        statusBarMenu?.updateStatusLine("Startup failed — dictation unavailable")
+        statusBarMenu?.updateStatusLine("Startup failed. Dictation unavailable")
 
         DispatchQueue.main.async {
             let alert = NSAlert()
@@ -412,7 +412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Logger.audio.info("System wake detected — marking audio subsystem for revalidation")
+            Logger.audio.info("System wake detected; marking audio subsystem for revalidation")
             self?.audioService?.markAudioSystemStale()
             CloudSyncScheduler.requestSync(reason: .systemWake, debounce: 1)
         }
@@ -526,7 +526,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // keep the menu bar honest instead of proceeding to a "Ready" state.
         guard coordinator != nil else {
             statusBarController?.updateIcon(state: .error)
-            statusBarMenu?.updateStatusLine("Startup failed — dictation unavailable")
+            statusBarMenu?.updateStatusLine("Startup failed. Dictation unavailable")
             return
         }
 
@@ -583,7 +583,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.statusBarMenu?.updateStatusLine("Text delivered — history save failed")
+            self?.statusBarMenu?.updateStatusLine("Text delivered. History save failed")
         }
     }
 

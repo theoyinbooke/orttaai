@@ -83,6 +83,9 @@ actor TranscriptionService: Transcribing {
 
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
+    /// Retains security-scoped access while a model on a user-selected drive
+    /// is resident. Releasing it on unload balances the access grant.
+    private var modelStorageAccess: ModelStorageAccess?
     private var liveSession: LiveTranscriptionSession?
     /// Personal-dictionary targets and snippet triggers used to bias decoding.
     /// Snapshotted by the coordinator at session start — the database is never
@@ -123,16 +126,49 @@ actor TranscriptionService: Transcribing {
     func loadModel(named modelName: String) async throws {
         Logger.transcription.info("Loading model: \(modelName)")
 
-        let config = WhisperKitConfig(
-            model: modelName,
-            computeOptions: computeOptions(),
-            voiceActivityDetector: EnergyVAD(),
-            load: true
+        let readAccess = try? ModelStorageLocation.beginAccess(
+            createIfNeeded: false,
+            requiresWrite: false
         )
+        let existingFolder = ModelManager.downloadedVariantDirectory(named: modelName)
+        let retainedAccess: ModelStorageAccess?
+        let config: WhisperKitConfig
+
+        if let existingFolder {
+            config = WhisperKitConfig(
+                modelFolder: existingFolder.path,
+                computeOptions: computeOptions(),
+                voiceActivityDetector: EnergyVAD(),
+                load: true,
+                download: false
+            )
+            if let readAccess,
+               ModelStorageLocation.contains(existingFolder, in: readAccess.url) {
+                retainedAccess = readAccess
+            } else {
+                retainedAccess = nil
+            }
+            Logger.transcription.info("Loading existing model folder: \(existingFolder.path)")
+        } else {
+            let writeAccess = try ModelStorageLocation.beginAccess(
+                createIfNeeded: true,
+                requiresWrite: true
+            )
+            config = WhisperKitConfig(
+                model: modelName,
+                downloadBase: writeAccess.url,
+                computeOptions: computeOptions(),
+                voiceActivityDetector: EnergyVAD(),
+                load: true
+            )
+            retainedAccess = writeAccess
+            Logger.transcription.info("Downloading model into: \(writeAccess.url.path)")
+        }
 
         let wk = try await WhisperKit(config)
         whisperKit = wk
         loadedModelIDValue = modelName
+        modelStorageAccess = retainedAccess
 
         Logger.transcription.info("Model loaded: \(modelName)")
     }
@@ -146,8 +182,13 @@ actor TranscriptionService: Transcribing {
         onStageChange?(.downloading)
         onProgress?(0)
 
+        let storageAccess = try ModelStorageLocation.beginAccess(
+            createIfNeeded: true,
+            requiresWrite: true
+        )
         let modelFolder = try await WhisperKit.download(
             variant: modelName,
+            downloadBase: storageAccess.url,
             progressCallback: { progress in
                 let clamped = max(0, min(progress.fractionCompleted, 1))
                 onProgress?(clamped)
@@ -168,6 +209,7 @@ actor TranscriptionService: Transcribing {
         let wk = try await WhisperKit(config)
         whisperKit = wk
         loadedModelIDValue = modelName
+        modelStorageAccess = storageAccess
         Logger.transcription.info("Setup model prepared: \(modelName)")
     }
 
@@ -391,6 +433,7 @@ actor TranscriptionService: Transcribing {
     func unloadModel() {
         whisperKit = nil
         loadedModelIDValue = nil
+        modelStorageAccess = nil
         Logger.transcription.info("Model unloaded")
     }
 

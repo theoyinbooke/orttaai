@@ -27,7 +27,7 @@ struct ReadyStepView: View {
     private let shortcutChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
 
     var body: some View {
-        VStack(spacing: Spacing.lg) {
+        VStack(spacing: Spacing.md) {
             HStack(spacing: Spacing.md) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 34))
@@ -58,12 +58,6 @@ struct ReadyStepView: View {
             }
             .lineLimit(1)
 
-            Text("Hold the hotkey while speaking, then release to transcribe and paste.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-
             microphoneCheckCard
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -73,7 +67,7 @@ struct ReadyStepView: View {
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
-                Text("Click inside the field below. Hold \(hotkeyLabel), say something, then release.")
+                Text("Select the field, then hold \(hotkeyLabel) and speak.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -125,9 +119,6 @@ struct ReadyStepView: View {
             }
             .buttonStyle(OrttaaiButtonStyle(.primary))
 
-            Text("After this, Orttaai stays in your menu bar.")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
         }
         .frame(maxWidth: .infinity)
         .onReceive(NotificationCenter.default.publisher(for: .dictationStateDidChange)) { notification in
@@ -334,9 +325,6 @@ struct ReadyStepView: View {
                 }
             }
 
-            Text("Orttaai pastes back into the app that was focused when you started recording.")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
         }
     }
 

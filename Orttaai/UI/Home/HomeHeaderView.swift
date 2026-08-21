@@ -19,12 +19,6 @@ struct HomeHeaderView: View {
                     .font(.Orttaai.title)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
-                if !isCompact {
-                    Text("Your personal dictation dashboard")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                        .lineLimit(1)
-                }
             }
 
             Spacer()

@@ -4,12 +4,12 @@
 import SwiftUI
 
 struct TopAppsCard: View {
-    static let preferredHeight: CGFloat = 276
+    static let preferredHeight: CGFloat = 236
 
     let apps: [DashboardTopApp]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("Top Apps (30d)")
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
@@ -37,9 +37,6 @@ struct TopAppsCard: View {
                         ProgressView(value: app.sessionShare, total: 1)
                             .tint(Color.Orttaai.accent)
 
-                        Text("\(Int((app.sessionShare * 100).rounded()))% of sessions")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(
@@ -48,7 +45,7 @@ struct TopAppsCard: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(
             maxWidth: .infinity,
             minHeight: Self.preferredHeight,

@@ -312,7 +312,7 @@ struct AnalyticsDashboardView: View {
             let isCompact = proxy.size.width < 1_000
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.xl) {
+                VStack(alignment: .leading, spacing: Spacing.md) {
                     if let error = viewModel.errorMessage {
                         Text(error)
                             .font(.Orttaai.secondary)
@@ -343,8 +343,8 @@ struct AnalyticsDashboardView: View {
 
                     performanceCard
                 }
-                .padding(.horizontal, Spacing.xxl)
-                .padding(.bottom, Spacing.xxl)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.bottom, Spacing.lg)
             }
         }
         .onAppear {
@@ -358,26 +358,14 @@ struct AnalyticsDashboardView: View {
     }
 
     private var rangeControl: some View {
-        HStack(spacing: Spacing.lg) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Trend Range")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Activity charts and totals use the selected window.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+        HStack(spacing: Spacing.md) {
+            Text("Trend Range")
+                .font(.Orttaai.subheading)
+                .foregroundStyle(Color.Orttaai.textPrimary)
 
             Spacer()
 
-            HStack(spacing: Spacing.md) {
-                Text("Trend Range")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-
+            HStack(spacing: Spacing.sm) {
                 rangePicker
                     .frame(width: 280)
             }
@@ -476,7 +464,7 @@ struct AnalyticsDashboardView: View {
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textTertiary)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -555,7 +543,7 @@ struct AnalyticsDashboardView: View {
                 .frame(height: 220)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -608,7 +596,7 @@ struct AnalyticsDashboardView: View {
                 .frame(height: 180)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -663,7 +651,7 @@ struct AnalyticsDashboardView: View {
                 .frame(height: 180)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -717,7 +705,7 @@ struct AnalyticsDashboardView: View {
                 .frame(height: max(CGFloat(viewModel.wordsByApp.count) * 36, 120))
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -770,7 +758,7 @@ struct AnalyticsDashboardView: View {
                 .frame(height: 180)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -838,7 +826,7 @@ struct AnalyticsDashboardView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -894,7 +882,7 @@ struct AnalyticsDashboardView: View {
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textTertiary)
                 .frame(width: 28, alignment: .leading)
-            Text(value.map { "\($0) ms" } ?? "—")
+            Text(value.map { "\($0) ms" } ?? "N/A")
                 .font(.Orttaai.mono)
                 .foregroundStyle(Color.Orttaai.textSecondary)
         }

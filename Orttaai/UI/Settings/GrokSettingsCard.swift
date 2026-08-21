@@ -16,14 +16,9 @@ struct GrokSettingsCard: View {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: "bolt.horizontal.circle")
                     .foregroundStyle(Color.Orttaai.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Grok Account")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text("Uses the Grok CLI and the account already authenticated on this Mac.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("Grok Account")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
                 Spacer()
                 Button {
                     Task { await refresh() }
@@ -59,9 +54,6 @@ struct GrokSettingsCard: View {
                         Label("Locate Grok...", systemImage: "folder")
                     }
                     .buttonStyle(OrttaaiButtonStyle(.secondary))
-                    Text("Orttaai checks ~/.grok/bin plus Homebrew, npm, pnpm, Bun, NVM, fnm, Volta, asdf, mise, Nix, MacPorts, user-local, and PATH locations.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
                 }
             }
 

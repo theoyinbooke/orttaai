@@ -518,7 +518,7 @@ actor CodexClient: LocalLLMServing {
                 .map { "\($0.role == .user ? "User" : "Assistant"): \($0.content)" }
                 .joined(separator: "\n\n")
             sections.append("Conversation so far:\n\n\(transcript)")
-            sections.append("Reply as the assistant to the last user message. Respond with the reply only — no role prefix.")
+            sections.append("Reply as the assistant to the last user message. Respond with the reply only, with no role prefix.")
         }
         return sections.joined(separator: "\n\n")
     }

@@ -971,7 +971,7 @@ private final class ChatAIViewModel: ObservableObject {
     /// authentic excerpts — not just the summary line.
     private static func toneFidelitySection(for profile: ToneOfVoiceProfile) -> String {
         var lines: [String] = [
-            "My Tone mode: you write AS the user. Every draft, rewrite, and reply must sound like them — their rhythm, their vocabulary, their warmth — never like a generic assistant.",
+            "My Tone mode: you write AS the user. Every draft, rewrite, and reply must sound like their rhythm, vocabulary, and warmth, never like a generic assistant.",
             "",
             "Voice guide:",
             profile.compactPromptGuide,
@@ -983,18 +983,18 @@ private final class ChatAIViewModel: ObservableObject {
             lines.append("Voice descriptors: \(profile.descriptors.joined(separator: ", ")).")
         }
         if !profile.signaturePhrases.isEmpty {
-            lines.append("Signature phrases — weave these in where they fit naturally, never force them: \(profile.signaturePhrases.joined(separator: " · "))")
+            lines.append("Signature phrases. Use them naturally and never force them: \(profile.signaturePhrases.joined(separator: " · "))")
         }
         if !profile.signatureApproaches.isEmpty {
-            lines.append("How the user structures ideas — mirror these moves:")
+            lines.append("How the user structures ideas. Mirror these moves:")
             lines.append(contentsOf: profile.signatureApproaches.map { "- \($0)" })
         }
         if !profile.avoidances.isEmpty {
-            lines.append("The user avoids these — never use them:")
+            lines.append("The user avoids these. Never use them:")
             lines.append(contentsOf: profile.avoidances.map { "- \($0)" })
         }
         if !profile.sampleExcerpts.isEmpty {
-            lines.append("Authentic excerpts of the user's own voice — match this register and cadence:")
+            lines.append("Authentic excerpts of the user's own voice. Match this register and cadence:")
             lines.append(contentsOf: profile.sampleExcerpts.prefix(3).map { "«\($0.trimmingCharacters(in: .whitespacesAndNewlines))»" })
         }
 
@@ -1002,7 +1002,7 @@ private final class ChatAIViewModel: ObservableObject {
         lines.append("Fidelity rules: match sentence length and rhythm to the excerpts; keep the user's level of directness and formality even when the content changes; reuse their characteristic transitions and phrasing; do not invent personal facts or experiences.")
 
         if profile.confidencePercent < 50 {
-            lines.append("This profile has low confidence (\(profile.confidencePercent)% from \(profile.wordCount) words) — imitate the broad strokes, not fine details.")
+            lines.append("This profile has low confidence (\(profile.confidencePercent)% from \(profile.wordCount) words). Imitate broad strokes, not fine details.")
         } else {
             lines.append("Profile confidence: \(profile.confidencePercent)% from \(profile.wordCount) words across \(profile.sampleCount) samples.")
         }

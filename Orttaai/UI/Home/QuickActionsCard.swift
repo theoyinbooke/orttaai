@@ -11,12 +11,12 @@ struct QuickActionsCard: View {
     let onRefresh: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("Quick Actions")
                 .font(.Orttaai.subheading)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 actionButton(
                     "Open Settings",
                     icon: "gearshape",
@@ -42,7 +42,7 @@ struct QuickActionsCard: View {
                 )
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(
             maxWidth: .infinity,
             minHeight: TopAppsCard.preferredHeight,

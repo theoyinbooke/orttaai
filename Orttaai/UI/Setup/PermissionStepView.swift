@@ -25,12 +25,12 @@ struct PermissionStepView: View {
     )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Permissions")
                 .font(.Orttaai.title)
                 .foregroundStyle(Color.Orttaai.textPrimary)
 
-            Text("Grant the two required permissions first, then continue to model download. Input Monitoring stays optional.")
+            Text("Microphone and Accessibility are required.")
                 .font(.Orttaai.body)
                 .foregroundStyle(Color.Orttaai.textSecondary)
 
@@ -42,7 +42,7 @@ struct PermissionStepView: View {
                 icon: "mic.fill",
                 stepNumber: 1,
                 title: "Microphone",
-                description: "Captures your voice for on-device transcription",
+                description: "Record voice",
                 status: micGranted ? .granted : .notGranted,
                 action: {
                     requestMicrophonePermission()
@@ -54,7 +54,7 @@ struct PermissionStepView: View {
                 icon: "accessibility",
                 stepNumber: 2,
                 title: "Accessibility",
-                description: "Simulates paste to inject text at your cursor",
+                description: "Paste transcribed text",
                 status: accessibilityGranted ? .granted : .notGranted,
                 action: requestAccessibilityPermission
             )
@@ -66,7 +66,7 @@ struct PermissionStepView: View {
                         .font(.Orttaai.bodyMedium)
                         .foregroundStyle(Color.Orttaai.accent)
 
-                    Text("macOS has stale permission records from a previous version. Click the button below to clear them, then grant access again.")
+                    Text("Reset the stale macOS permission, then grant access again.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -77,7 +77,7 @@ struct PermissionStepView: View {
                     .buttonStyle(OrttaaiButtonStyle(.primary))
                     .padding(.top, Spacing.xs)
                 }
-                .padding(Spacing.lg)
+                .padding(Spacing.md)
                 .background(Color.Orttaai.accent.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
                 .overlay(
@@ -92,7 +92,7 @@ struct PermissionStepView: View {
                 icon: "keyboard",
                 stepNumber: nil,
                 title: "Input Monitoring (Optional)",
-                description: "Useful as a fallback on some macOS setups",
+                description: "Compatibility fallback",
                 status: inputMonitoringGranted ? .granted : .notGranted,
                 action: requestInputMonitoringPermission
             )
@@ -104,7 +104,7 @@ struct PermissionStepView: View {
                         .font(.Orttaai.bodyMedium)
                         .foregroundStyle(Color.Orttaai.accent)
 
-                    Text("macOS has stale permission records. Click below to clear them, then grant access again. This permission is optional — you can skip it.")
+                    Text("Reset the stale macOS permission, then grant access again. This is optional.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -115,7 +115,7 @@ struct PermissionStepView: View {
                     .buttonStyle(OrttaaiButtonStyle(.primary))
                     .padding(.top, Spacing.xs)
                 }
-                .padding(Spacing.lg)
+                .padding(Spacing.md)
                 .background(Color.Orttaai.accent.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
                 .overlay(
@@ -135,12 +135,12 @@ struct PermissionStepView: View {
                     Text("Your privacy is protected")
                         .font(.Orttaai.bodyMedium)
                         .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text("Your voice and text never leave your Mac. All transcription is processed locally using WhisperKit. No data is sent to any server.")
+                    Text("Transcription stays on your Mac.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                 }
             }
-            .padding(Spacing.lg)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.Orttaai.bgSecondary)
             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
@@ -170,11 +170,8 @@ struct PermissionStepView: View {
                     .foregroundStyle(Color.Orttaai.textTertiary)
             }
 
-            Text(nextStepMessage)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .background(Color.Orttaai.bgSecondary)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
         .overlay(
@@ -185,16 +182,6 @@ struct PermissionStepView: View {
 
     private var requiredPermissionCount: Int {
         [micGranted, accessibilityGranted].filter { $0 }.count
-    }
-
-    private var nextStepMessage: String {
-        if !micGranted {
-            return "Start with Microphone so Orttaai can hear you when you hold the hotkey."
-        }
-        if !accessibilityGranted {
-            return "Open Accessibility next so Orttaai can paste text back where you started recording."
-        }
-        return "Required permissions are complete. Continue to download a model and run your first dictation test."
     }
 
     private func checkPermissions() {
@@ -353,7 +340,7 @@ struct PermissionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: Spacing.lg) {
+        HStack(spacing: Spacing.md) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color.Orttaai.bgPrimary.opacity(0.65))
@@ -394,7 +381,7 @@ struct PermissionRow: View {
                     .foregroundStyle(Color.Orttaai.success)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .background(Color.Orttaai.bgSecondary)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
     }

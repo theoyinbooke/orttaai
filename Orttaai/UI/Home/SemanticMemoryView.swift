@@ -192,7 +192,7 @@ struct SemanticMemoryView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 header
                 tabStatusRow
 
@@ -368,7 +368,7 @@ struct SemanticMemoryView: View {
                 .foregroundStyle(Color.Orttaai.textTertiary)
                 .help("About Memory Graph")
                 .popover(isPresented: $isInfoPresented, arrowEdge: .bottom) {
-                    Text("Local semantic map of your dictation history, app contexts, and recurring themes.")
+                    Text("Local map of your dictations.")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                         .padding(Spacing.lg)
@@ -653,7 +653,7 @@ struct SemanticMemoryView: View {
             .disabled(!semanticInsightSummaryEnabled)
 
             if !activeProviderKind.isLocal {
-                Text("Graph insights run on \(activeProviderKind.displayName) while it's the active provider. This model is the local fallback.")
+                Text("Local fallback for \(activeProviderKind.displayName) insights.")
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
@@ -710,24 +710,19 @@ struct SemanticMemoryView: View {
             ],
             spacing: Spacing.md
         ) {
-            metricCard(title: "Chunks", value: "\(stats?.chunkCount ?? 0)", detail: "Transcript segments")
+            metricCard(title: "Chunks", value: "\(stats?.chunkCount ?? 0)", detail: "")
             metricCard(title: "Embedded", value: "\(stats?.embeddedChunkCount ?? 0)", detail: stats?.activeModelID ?? semanticEmbeddingModel)
-            metricCard(title: "Nodes", value: "\(stats?.nodeCount ?? 0)", detail: "Graph concepts")
-            metricCard(title: "Edges", value: "\(stats?.edgeCount ?? 0)", detail: "Semantic links")
+            metricCard(title: "Nodes", value: "\(stats?.nodeCount ?? 0)", detail: "")
+            metricCard(title: "Edges", value: "\(stats?.edgeCount ?? 0)", detail: "")
         }
     }
 
     private var graphCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Graph View")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text("Topics, app contexts, and transcript chunks connected by inferred relationships.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("Graph View")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
                 Spacer()
                 HStack(spacing: Spacing.sm) {
                     graphLegend
@@ -755,7 +750,7 @@ struct SemanticMemoryView: View {
                     )
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -786,14 +781,9 @@ struct SemanticMemoryView: View {
     private var searchCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Semantic Search")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text("Find related dictations by meaning, not exact words.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("Semantic Search")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
                 Spacer()
             }
 
@@ -817,7 +807,7 @@ struct SemanticMemoryView: View {
             }
 
             if viewModel.results.isEmpty {
-                Text("Search results will appear here after the index has been built.")
+                Text("Build the index to search.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textTertiary)
                     .padding(.vertical, Spacing.sm)
@@ -829,21 +819,16 @@ struct SemanticMemoryView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
     private var insightsContent: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             HStack(alignment: .center, spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Graph Insights")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text("Synthesized from graph structure, app context, and supporting transcript excerpts.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                Text("Graph Insights")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Spacer()
 
@@ -882,11 +867,8 @@ struct SemanticMemoryView: View {
             Text("Build the graph before generating insights.")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-            Text("Insights need graph nodes, semantic links, and transcript evidence.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
         }
-        .frame(maxWidth: .infinity, minHeight: 260)
+        .frame(maxWidth: .infinity, minHeight: 180)
         .background(Color.Orttaai.bgTertiary.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
     }
@@ -895,11 +877,11 @@ struct SemanticMemoryView: View {
         HStack(spacing: Spacing.sm) {
             ProgressView()
                 .controlSize(.small)
-            Text("Synthesizing graph insights, charts, and transcript evidence...")
+            Text("Generating insights...")
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -922,7 +904,7 @@ struct SemanticMemoryView: View {
     private func caveatText(_ report: SemanticInsightReport) -> String {
         var parts = ["Computed from \(report.sourceChunkCount) transcript segments"]
         if let model = report.summaryModelName {
-            parts.append("phrased by \(model) — wording only, every claim is evidence-linked")
+            parts.append("phrased by \(model); claims remain evidence-linked")
         } else {
             parts.append("deterministic phrasing (local model offline)")
         }
@@ -941,9 +923,6 @@ struct SemanticMemoryView: View {
                     .font(.Orttaai.bodyMedium)
                     .foregroundStyle(Color.Orttaai.textPrimary)
                 Spacer()
-                Text("things you said you'd do, still unclosed")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
             }
 
             VStack(spacing: Spacing.sm) {
@@ -952,7 +931,7 @@ struct SemanticMemoryView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -985,7 +964,7 @@ struct SemanticMemoryView: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.Orttaai.success)
-                .help("Mark as done — it won't come back")
+                .help("Mark as done")
                 .accessibilityLabel("Mark resolved")
 
                 Button {
@@ -995,7 +974,7 @@ struct SemanticMemoryView: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.Orttaai.textTertiary)
-                .help("Not relevant — dismiss permanently")
+                .help("Dismiss")
                 .accessibilityLabel("Dismiss")
             }
         }
@@ -1024,12 +1003,6 @@ struct SemanticMemoryView: View {
 
     private var readyInsightsState: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Ready to synthesize insights.")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-            Text("Generate a local snapshot with evidence-backed clusters, comparisons, open loops, and graph insight cards. The selected Ollama model is used when available.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
             Button {
                 Task { await viewModel.generateInsights() }
             } label: {
@@ -1037,13 +1010,13 @@ struct SemanticMemoryView: View {
             }
             .buttonStyle(OrttaaiButtonStyle(.secondary))
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
 
     private func insightReportView(_ report: SemanticInsightReport) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             insightSummaryCard(report)
 
             insightCaveatLine(report)
@@ -1073,10 +1046,10 @@ struct SemanticMemoryView: View {
             }
 
             if report.cards.isEmpty {
-                Text("The graph exists, but there is not enough connected evidence yet for meaningful insight cards.")
+                Text("Not enough connected evidence yet.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
-                    .padding(Spacing.lg)
+                    .padding(Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .dashboardCard()
             } else {
@@ -1160,7 +1133,7 @@ struct SemanticMemoryView: View {
                 insightMetric(report.analyzerName, report.usedFallback ? "fallback" : "analyzer")
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -1174,13 +1147,13 @@ struct SemanticMemoryView: View {
                 Text("Snapshot is older than the current graph")
                     .font(.Orttaai.bodyMedium)
                     .foregroundStyle(Color.Orttaai.textPrimary)
-                Text("The saved insights are still shown, but the graph structure has changed. Click Regenerate for a fresh local snapshot.")
+                Text("Regenerate to update the snapshot.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
             Spacer()
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -1240,7 +1213,7 @@ struct SemanticMemoryView: View {
                 insightEvidenceRow(evidence)
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -1337,7 +1310,7 @@ struct SemanticMemoryView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -1379,7 +1352,7 @@ struct SemanticMemoryView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -1401,7 +1374,7 @@ struct SemanticMemoryView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .dashboardCard()
     }
 
@@ -1474,7 +1447,7 @@ struct SemanticMemoryView: View {
                 }
             }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
@@ -1507,14 +1480,11 @@ struct SemanticMemoryView: View {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.system(size: 40, weight: .semibold))
                 .foregroundStyle(Color.Orttaai.accent)
-            Text("Build the semantic index to generate your local memory graph.")
+            Text("Build the index to create your memory graph.")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-            Text("Orttaai will chunk recent dictations, create embeddings locally, and connect related themes.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
         }
-        .frame(maxWidth: .infinity, minHeight: 260)
+        .frame(maxWidth: .infinity, minHeight: 180)
         .background(Color.Orttaai.bgTertiary.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
     }
@@ -1536,12 +1506,14 @@ struct SemanticMemoryView: View {
             Text(value)
                 .font(.Orttaai.title)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-            Text(detail)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .lineLimit(1)
+            if !detail.isEmpty {
+                Text(detail)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
+            }
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
