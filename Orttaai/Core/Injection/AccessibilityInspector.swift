@@ -44,6 +44,32 @@ nonisolated enum AXInspection<Value: Equatable & Sendable>: Equatable, Sendable 
     case axError
 }
 
+/// How long a single AX call may wait on the target app before giving up.
+/// AX calls are synchronous, and an unresponsive target (typically an Electron
+/// app) otherwise blocks the caller for the system default of several seconds.
+/// The timeout applies per element, so it is set on the application element
+/// and on every element read from it.
+nonisolated struct AXTimeoutPolicy: Equatable, Sendable {
+    /// Budget for the secure-field guard. Generous, so a slow-but-alive
+    /// password field is still inspected rather than failing open.
+    static let secureFieldCheckSeconds: Float = 1.5
+    /// Budget for verification snapshots and post-paste writes. Short, because
+    /// an unanswered read only makes verification inconclusive.
+    static let verificationSeconds: Float = 0.4
+
+    let seconds: Float
+
+    static let secureFieldCheck = AXTimeoutPolicy(seconds: secureFieldCheckSeconds)
+    static let verification = AXTimeoutPolicy(seconds: verificationSeconds)
+
+    /// True when an attribute read failed because the target did not answer
+    /// (timeout) or does not speak AX, as opposed to the attribute simply
+    /// being absent. Verification treats such a read as unreadable.
+    static func indicatesUnresponsiveTarget(_ error: AXError) -> Bool {
+        error == .cannotComplete || error == .notImplemented
+    }
+}
+
 /// Testable seam over the Accessibility API so unit tests can drive the real
 /// secure-field and paste-verification decision logic without live AX calls.
 protocol AccessibilityInspecting: AnyObject {
@@ -56,9 +82,24 @@ protocol AccessibilityInspecting: AnyObject {
 
 /// Real implementation backed by the AX API.
 final class SystemAccessibilityInspector: AccessibilityInspecting {
+    private let applyTimeout: (AXUIElement, Float) -> Void
+    private let copyFocusedElement: (AXUIElement) -> AXUIElement?
+
+    /// The closures are the seams for the two AX calls that decide which
+    /// elements get a messaging timeout, so the policy can be tested without
+    /// live AX.
+    init(
+        applyTimeout: @escaping (AXUIElement, Float) -> Void = { element, seconds in
+            _ = AXUIElementSetMessagingTimeout(element, seconds)
+        },
+        copyFocusedElement: @escaping (AXUIElement) -> AXUIElement? = SystemAccessibilityInspector.copySystemFocusedElement
+    ) {
+        self.applyTimeout = applyTimeout
+        self.copyFocusedElement = copyFocusedElement
+    }
 
     func focusedElementDetails(processIdentifier: pid_t?) -> AXInspection<FocusedElementDetails> {
-        guard let element = focusedElement(processIdentifier: processIdentifier) else {
+        guard let element = focusedElement(processIdentifier: processIdentifier, policy: .secureFieldCheck) else {
             return .axError
         }
 
@@ -75,19 +116,27 @@ final class SystemAccessibilityInspector: AccessibilityInspecting {
     }
 
     func focusedElementTextSnapshot(processIdentifier: pid_t?) -> AXInspection<FocusedTextSnapshot> {
-        guard let element = focusedElement(processIdentifier: processIdentifier) else {
+        guard let element = focusedElement(processIdentifier: processIdentifier, policy: .verification) else {
             return .axError
         }
 
-        var snapshot = FocusedTextSnapshot()
-        snapshot.value = copyStringAttribute(element, kAXValueAttribute)
-        snapshot.selectedText = copyStringAttribute(element, kAXSelectedTextAttribute)
-        snapshot.selectedRange = copyRangeAttribute(element, kAXSelectedTextRangeAttribute)
-        return .value(snapshot)
+        // An unanswered read means the target is hung: report the whole
+        // snapshot as unreadable (inconclusive to callers) instead of paying
+        // another timeout per attribute or judging from a partial read.
+        guard case .value(let value) = readAttribute(element, kAXValueAttribute),
+              case .value(let selectedText) = readAttribute(element, kAXSelectedTextAttribute),
+              case .value(let selectedRange) = readAttribute(element, kAXSelectedTextRangeAttribute) else {
+            return .axError
+        }
+        return .value(FocusedTextSnapshot(
+            value: value as? String,
+            selectedText: selectedText as? String,
+            selectedRange: Self.textRange(from: selectedRange)
+        ))
     }
 
     func insertTextAtFocus(_ text: String, processIdentifier: pid_t?) -> Bool {
-        guard let element = focusedElement(processIdentifier: processIdentifier) else {
+        guard let element = focusedElement(processIdentifier: processIdentifier, policy: .verification) else {
             return false
         }
 
@@ -109,12 +158,28 @@ final class SystemAccessibilityInspector: AccessibilityInspecting {
         return setResult == .success
     }
 
+    // MARK: - Bounded element access
+
+    /// Application element with the policy's messaging timeout applied.
+    func boundedApplicationElement(processIdentifier: pid_t, policy: AXTimeoutPolicy) -> AXUIElement {
+        let appElement = AXUIElementCreateApplication(processIdentifier)
+        applyTimeout(appElement, policy.seconds)
+        return appElement
+    }
+
+    /// Focused element of the target app. Both the application element and the
+    /// returned element get the policy's timeout, since it is per object.
+    func focusedElement(processIdentifier: pid_t?, policy: AXTimeoutPolicy) -> AXUIElement? {
+        guard let pid = processIdentifier else { return nil }
+        let appElement = boundedApplicationElement(processIdentifier: pid, policy: policy)
+        guard let element = copyFocusedElement(appElement) else { return nil }
+        applyTimeout(element, policy.seconds)
+        return element
+    }
+
     // MARK: - Private
 
-    private func focusedElement(processIdentifier: pid_t?) -> AXUIElement? {
-        guard let pid = processIdentifier else { return nil }
-        let appElement = AXUIElementCreateApplication(pid)
-
+    private static func copySystemFocusedElement(of appElement: AXUIElement) -> AXUIElement? {
         var focused: AnyObject?
         let result = AXUIElementCopyAttributeValue(
             appElement,
@@ -135,10 +200,22 @@ final class SystemAccessibilityInspector: AccessibilityInspecting {
         return value as? String
     }
 
-    private func copyRangeAttribute(_ element: AXUIElement, _ attribute: String) -> FocusedTextRange? {
+    private enum AttributeRead {
+        /// The read completed; nil when the attribute is absent.
+        case value(AnyObject?)
+        /// The target did not answer, or does not speak AX.
+        case unresponsive
+    }
+
+    private func readAttribute(_ element: AXUIElement, _ attribute: String) -> AttributeRead {
         var value: AnyObject?
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-        guard result == .success, let axValue = value, CFGetTypeID(axValue) == AXValueGetTypeID() else {
+        if AXTimeoutPolicy.indicatesUnresponsiveTarget(result) { return .unresponsive }
+        return .value(result == .success ? value : nil)
+    }
+
+    private static func textRange(from value: AnyObject?) -> FocusedTextRange? {
+        guard let axValue = value, CFGetTypeID(axValue) == AXValueGetTypeID() else {
             return nil
         }
         // swiftlint:disable:next force_cast

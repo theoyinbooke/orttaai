@@ -16,8 +16,13 @@ final class MockAccessibilityInspector: AccessibilityInspecting {
     var simulatedSelectedText: String?
     /// Simulated kAXSelectedTextRangeAttribute (caret when length == 0).
     var simulatedSelectedRange: FocusedTextRange?
-    /// When true, snapshot reads report an AX API failure.
+    /// When true, snapshot reads report an AX API failure (what a timed-out
+    /// read on a hung target maps to).
     var snapshotErrors = false
+    /// When true, snapshot reads succeed until the paste chord is posted, then
+    /// fail (the target hangs after the paste lands).
+    var snapshotErrorsAfterPaste = false
+    var pasteChordPosted = false
     /// When true, the element exposes no value/selectedText attributes.
     var fieldExposesNoText = false
 
@@ -34,7 +39,7 @@ final class MockAccessibilityInspector: AccessibilityInspecting {
 
     func focusedElementTextSnapshot(processIdentifier: pid_t?) -> AXInspection<FocusedTextSnapshot> {
         snapshotReadCount += 1
-        if snapshotErrors {
+        if snapshotErrors || (snapshotErrorsAfterPaste && pasteChordPosted) {
             return .axError
         }
         if fieldExposesNoText {
@@ -302,6 +307,16 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(outcome, .confirmed)
     }
 
+    func testVerificationPreAXErrorWithMarkerAbsentIsInconclusive() {
+        // A timed-out baseline read must never be read as "unchanged".
+        let outcome = TextInjectionService.evaluatePasteVerification(
+            pre: .axError,
+            post: .value(FocusedTextSnapshot(value: "draft: ", selectedText: nil)),
+            expectedText: "hello world"
+        )
+        XCTAssertEqual(outcome, .inconclusive)
+    }
+
     func testCodexUnverifiedPasteUsesGuardedRestoreWithoutFailureState() {
         XCTAssertEqual(
             TextInjectionService.unverifiedPastePolicy(targetBundleID: "com.openai.codex"),
@@ -429,6 +444,56 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.restoreCount, 1)
     }
 
+    // MARK: Hung target (AX reads time out)
+
+    func testInjectPastesOnceWhenEveryVerificationReadTimesOut() async {
+        // Unresponsive Electron target: pre and post snapshots both time out.
+        // Verification is inconclusive, so one paste, no fallbacks, and the
+        // prior clipboard is restored.
+        inspector.detailsResult = normalDetails()
+        inspector.snapshotErrors = true
+
+        let result = await service.inject(text: "Hello world")
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1, "A hung target must not trigger a retry paste")
+        XCTAssertTrue(inspector.insertedTexts.isEmpty, "A hung target must not trigger an AX insert")
+        XCTAssertTrue(keyPoster.typedTexts.isEmpty, "A hung target must not trigger typed keystrokes")
+        XCTAssertEqual(inspector.snapshotReadCount, 2, "One bounded read for the baseline, one for verification")
+        XCTAssertEqual(clipboard.restoreCount, 1)
+        XCTAssertEqual(service.lastInjectionTelemetry?.method, .paste)
+    }
+
+    func testInjectDoesNotFallBackWhenTargetHangsAfterPaste() async {
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = "draft: "
+        inspector.snapshotErrorsAfterPaste = true
+        keyPoster.onPasteChord = { [inspector] _ in
+            inspector?.pasteChordPosted = true
+        }
+
+        let result = await service.inject(text: "Hello world")
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1)
+        XCTAssertTrue(inspector.insertedTexts.isEmpty)
+        XCTAssertTrue(keyPoster.typedTexts.isEmpty)
+        XCTAssertEqual(inspector.snapshotReadCount, 2, "The timed-out verification read must not be polled again")
+        XCTAssertEqual(clipboard.restoreCount, 1)
+    }
+
+    func testInjectStillBlocksSecureFieldWhenSnapshotsWouldTimeOut() async {
+        // The secure check is independent of the verification budget.
+        inspector.detailsResult = secureDetails()
+        inspector.snapshotErrors = true
+
+        let result = await service.inject(text: "hunter2")
+
+        XCTAssertEqual(result, .blockedSecureField)
+        XCTAssertEqual(inspector.snapshotReadCount, 0)
+        XCTAssertTrue(clipboard.setStrings.isEmpty)
+    }
+
     // MARK: Fallback chain
 
     func testInjectRetriesPasteOnceWhenFirstPasteDidNotLand() async {
@@ -499,5 +564,112 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(service.lastInjectionTelemetry?.method, .failed)
         XCTAssertEqual(clipboard.restoreCount, 0, "Failure must leave the transcript on the clipboard")
         XCTAssertEqual(clipboard.setStrings.last, "Hello world")
+    }
+}
+
+// MARK: - AX timeout policy
+
+final class AXTimeoutPolicyTests: XCTestCase {
+    /// Records every element that received a messaging timeout.
+    private final class TimeoutRecorder {
+        private(set) var applied: [(element: AXUIElement, seconds: Float)] = []
+        func record(_ element: AXUIElement, _ seconds: Float) {
+            applied.append((element, seconds))
+        }
+    }
+
+    /// Inspector with no live AX: timeouts are recorded, and the focused
+    /// element read returns a locally created element (or nil).
+    private func makeInspector(
+        recorder: TimeoutRecorder,
+        focused: AXUIElement?
+    ) -> SystemAccessibilityInspector {
+        SystemAccessibilityInspector(
+            applyTimeout: { recorder.record($0, $1) },
+            copyFocusedElement: { _ in focused }
+        )
+    }
+
+    func testPolicyBudgetsAreNamedConstants() {
+        XCTAssertEqual(AXTimeoutPolicy.secureFieldCheckSeconds, 1.5)
+        XCTAssertEqual(AXTimeoutPolicy.verificationSeconds, 0.4)
+        XCTAssertEqual(AXTimeoutPolicy.secureFieldCheck.seconds, AXTimeoutPolicy.secureFieldCheckSeconds)
+        XCTAssertEqual(AXTimeoutPolicy.verification.seconds, AXTimeoutPolicy.verificationSeconds)
+    }
+
+    func testSecureFieldBudgetIsLongerThanVerificationBudget() {
+        XCTAssertGreaterThan(AXTimeoutPolicy.secureFieldCheck.seconds, AXTimeoutPolicy.verification.seconds)
+        XCTAssertGreaterThan(AXTimeoutPolicy.verification.seconds, 0, "0 would mean the system default timeout")
+    }
+
+    func testTimeoutAndUnsupportedErrorsIndicateUnresponsiveTarget() {
+        XCTAssertTrue(AXTimeoutPolicy.indicatesUnresponsiveTarget(.cannotComplete))
+        XCTAssertTrue(AXTimeoutPolicy.indicatesUnresponsiveTarget(.notImplemented))
+    }
+
+    func testAbsentAttributeErrorsDoNotIndicateUnresponsiveTarget() {
+        XCTAssertFalse(AXTimeoutPolicy.indicatesUnresponsiveTarget(.success))
+        XCTAssertFalse(AXTimeoutPolicy.indicatesUnresponsiveTarget(.noValue))
+        XCTAssertFalse(AXTimeoutPolicy.indicatesUnresponsiveTarget(.attributeUnsupported))
+        XCTAssertFalse(AXTimeoutPolicy.indicatesUnresponsiveTarget(.invalidUIElement))
+    }
+
+    func testApplicationElementGetsPolicyTimeout() {
+        let recorder = TimeoutRecorder()
+        let inspector = makeInspector(recorder: recorder, focused: nil)
+
+        _ = inspector.boundedApplicationElement(processIdentifier: 1, policy: .verification)
+
+        XCTAssertEqual(recorder.applied.map(\.seconds), [AXTimeoutPolicy.verificationSeconds])
+    }
+
+    func testFocusedElementAndApplicationElementBothGetPolicyTimeout() {
+        let recorder = TimeoutRecorder()
+        let focused = AXUIElementCreateApplication(2)
+        let inspector = makeInspector(recorder: recorder, focused: focused)
+
+        let element = inspector.focusedElement(processIdentifier: 1, policy: .secureFieldCheck)
+
+        XCTAssertNotNil(element)
+        XCTAssertEqual(
+            recorder.applied.map(\.seconds),
+            [AXTimeoutPolicy.secureFieldCheckSeconds, AXTimeoutPolicy.secureFieldCheckSeconds]
+        )
+        XCTAssertTrue(CFEqual(recorder.applied[1].element, focused), "The returned element must be bounded too")
+    }
+
+    func testMissingFocusedElementYieldsNilAfterBoundingApplicationElement() {
+        let recorder = TimeoutRecorder()
+        let inspector = makeInspector(recorder: recorder, focused: nil)
+
+        XCTAssertNil(inspector.focusedElement(processIdentifier: 1, policy: .verification))
+        XCTAssertEqual(recorder.applied.count, 1)
+    }
+
+    func testNoProcessIdentifierTouchesNoElement() {
+        let recorder = TimeoutRecorder()
+        let inspector = makeInspector(recorder: recorder, focused: nil)
+
+        XCTAssertNil(inspector.focusedElement(processIdentifier: nil, policy: .verification))
+        XCTAssertTrue(recorder.applied.isEmpty)
+    }
+
+    func testSecureFieldCheckUsesLongBudgetAndSnapshotsUseShortBudget() {
+        let recorder = TimeoutRecorder()
+        let inspector = makeInspector(recorder: recorder, focused: nil)
+
+        // The focused element read yields nil, so no attribute is ever read:
+        // only the application element is created and bounded.
+        XCTAssertEqual(inspector.focusedElementDetails(processIdentifier: 1), .axError)
+        XCTAssertEqual(recorder.applied.map(\.seconds), [AXTimeoutPolicy.secureFieldCheckSeconds])
+
+        XCTAssertEqual(inspector.focusedElementTextSnapshot(processIdentifier: 1), .axError)
+        XCTAssertEqual(
+            recorder.applied.map(\.seconds),
+            [AXTimeoutPolicy.secureFieldCheckSeconds, AXTimeoutPolicy.verificationSeconds]
+        )
+
+        XCTAssertFalse(inspector.insertTextAtFocus("x", processIdentifier: 1))
+        XCTAssertEqual(recorder.applied.last?.seconds, AXTimeoutPolicy.verificationSeconds)
     }
 }
