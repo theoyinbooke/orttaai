@@ -100,4 +100,90 @@ final class DisfluencyCleanerTests: XCTestCase {
     func testMultilineTextKeepsItsLineBreaks() {
         XCTAssertEqual(DisfluencyCleaner.clean("First line.\nUm, second line.").text, "First line.\nSecond line.")
     }
+
+    func testFillersInsideEmailsFilenamesUrlsAndQuotesAreNotRemoved() {
+        let unchanged = [
+            "email me at um@x.com",
+            "um.txt",
+            "open file.um now",
+            "um: hello",
+            "\"um\"",
+            "(um)",
+            "[uh] marker",
+            "see http://x.com/um/ok",
+            "the path is /usr/um",
+            "use um_value here",
+            "call me@uh.org"
+        ]
+        for input in unchanged {
+            let result = DisfluencyCleaner.clean(input)
+            XCTAssertEqual(result.text, input, "input: \(input)")
+            XCTAssertTrue(result.changes.isEmpty, "input: \(input)")
+        }
+    }
+
+    func testFillersDelimitedBySentencePunctuationAreRemoved() {
+        let cases: [(input: String, expected: String)] = [
+            ("Well, um; yes", "Well; yes"),
+            ("Is it um? Yes", "Is it? Yes"),
+            ("Wow um! Great", "Wow! Great"),
+            ("So, uh. We go", "So. We go"),
+            ("email um then send", "email then send")
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(DisfluencyCleaner.clean(input).text, expected, "input: \(input)")
+        }
+    }
+
+    func testFillerRemovalKeepsNewlinesIndentationTabsAndListMarkers() {
+        let cases: [(input: String, expected: String)] = [
+            ("Hello um\nWorld", "Hello\nWorld"),
+            ("Hello um  \nWorld", "Hello\nWorld"),
+            ("Hello, um,\nWorld", "Hello\nWorld"),
+            ("Hello\num", "Hello\n"),
+            ("Hello\r\nx um\r\ny", "Hello\r\nx\r\ny"),
+            ("um\nWorld", "\nWorld"),
+            ("First.\n\nUm, second.", "First.\n\nSecond."),
+            ("a\tum\tb", "a\tb"),
+            ("\tum foo", "\tfoo"),
+            ("  Um, i think", "  I think"),
+            ("- um item\n- uh other", "- item\n- other"),
+            ("1. um, the plan\n2. the rest", "1. The plan\n2. the rest"),
+            ("keep  double  spaces um here", "keep  double  spaces here"),
+            ("a\n\n\nb um c", "a\n\n\nb c")
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(DisfluencyCleaner.clean(input).text, expected, "input: \(input.debugDescription)")
+        }
+    }
+
+    func testEllipsisNeverOpensASentence() {
+        let cases: [(input: String, expected: String)] = [
+            ("we can have... um email address", "we can have... email address"),
+            ("wait... um... okay", "wait... okay"),
+            ("wait\u{2026} um okay", "wait\u{2026} okay"),
+            ("hold on... uh, then go", "hold on... then go"),
+            ("So um... yes", "So... yes"),
+            // A real sentence end still recapitalizes.
+            ("we can. um email address", "we can. Email address"),
+            ("really? uh so yes", "really? So yes")
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(DisfluencyCleaner.clean(input).text, expected, "input: \(input)")
+        }
+    }
+
+    func testLongDictationWithManyFillersIsCleanedInLinearTime() {
+        let sentence = "we need to ship the release um and then, uh, check the dashboard erm before lunch. "
+        let text = String(repeating: sentence, count: 1_500)
+        XCTAssertGreaterThan(text.split(separator: " ").count, 19_000)
+
+        let start = Date()
+        let result = DisfluencyCleaner.clean(text)
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertEqual(result.changes.first, "Disfluency: removed 4500 fillers")
+        XCTAssertFalse(result.text.contains(" um "))
+        XCTAssertLessThan(elapsed, 0.1)
+    }
 }

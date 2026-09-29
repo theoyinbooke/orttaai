@@ -13,8 +13,13 @@ enum DisfluencyCleaner {
     private static let boundaryBefore = #"(?<![\p{L}\p{N}_'’\-])"#
     private static let boundaryAfter = #"(?![\p{L}\p{N}_'’]|-[\p{L}\p{N}])"#
 
+    /// A filler is a standalone spoken word: delimited on the left by
+    /// whitespace or the start of the text, and on the right by whitespace,
+    /// the end, or sentence punctuation that is itself followed by
+    /// whitespace or the end. That keeps "um@x.com", "um.txt", "file.um",
+    /// "um: hello", "\"um\"" and "(um)" intact.
     private static let fillerRegex = try? NSRegularExpression(
-        pattern: boundaryBefore + #"(?:um|uhm|umm|erm|uh(?![ \t]+(?:huh|oh)\b))"# + boundaryAfter,
+        pattern: #"(?<!\S)(?:um|uhm|umm|erm|uh(?![ \t]+(?:huh|oh)\b))(?=[,.?!;…]*(?:\s|$))"#,
         options: [.caseInsensitive]
     )
 
@@ -69,60 +74,86 @@ enum DisfluencyCleaner {
 
     // MARK: - Fillers
 
+    /// One pass over the fillers, left to right. Each removal drops only the
+    /// filler, the commas Whisper wraps it in and the spaces adjoining it;
+    /// newlines, indentation and everything else in between is copied as is.
     private static func removeFillers(from text: String) -> (text: String, count: Int) {
-        var value = text
+        guard let fillerRegex else { return (text, 0) }
+        var output = ""
+        var cursor = text.startIndex
         var count = 0
-        // Back to front so a run like "um um" resolves one filler at a time.
-        while let range = lastFillerRange(in: value) {
-            value = removing(fillerAt: range, from: value)
-            count += 1
-        }
-        return (value, count)
-    }
+        // Set when a filler opened a sentence: the next word kept is recapitalized.
+        var capitalizeNext = false
 
-    private static func lastFillerRange(in text: String) -> Range<String.Index>? {
-        guard let fillerRegex else { return nil }
-        let matches = fillerRegex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-        for match in matches.reversed() {
+        for match in fillerRegex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
             guard let range = Range(match.range, in: text) else { continue }
             let filler = text[range]
             // "UM" is an initialism, not a hesitation.
             if filler.uppercased() == filler { continue }
-            return range
+
+            let kept = text[cursor..<range.lowerBound]
+            if capitalizeNext, !kept.isEmpty {
+                output += capitalizedFirstLetter(String(kept))
+                capitalizeNext = false
+            } else {
+                output += kept
+            }
+
+            let leftGap = removeTrailingBlanks(from: &output)
+            if output.last == "," {
+                output.removeLast()
+                removeTrailingBlanks(from: &output)
+            }
+            let hasTextBefore = !output.isEmpty
+            let atLineStart = !hasTextBefore || output.last?.isNewline == true
+            let endsSentence = atLineStart || ".!?…".contains(output.last!)
+            let endsWithEllipsis = output.hasSuffix("…") || output.hasSuffix("...")
+
+            cursor = skipBlanks(in: text, from: range.upperBound)
+            let rightGapEnd = cursor
+            if cursor < text.endIndex, text[cursor] == "," {
+                cursor = skipBlanks(in: text, from: text.index(after: cursor))
+            }
+            // "Um." on its own is a whole sentence of hesitation; so is the
+            // "..." trailing a filler that follows an ellipsis.
+            if endsSentence {
+                while cursor < text.endIndex, ".!?…".contains(text[cursor]) { cursor = text.index(after: cursor) }
+                cursor = skipBlanks(in: text, from: cursor)
+            }
+
+            if atLineStart {
+                output += leftGap
+            } else if cursor < text.endIndex, !text[cursor].isNewline, !",.;:!?)".contains(text[cursor]) {
+                output += leftGap.isEmpty ? String(text[range.upperBound..<rightGapEnd]) : leftGap
+            }
+
+            let fillerIsCapitalized = filler.first?.isUppercase == true
+            // Only . ? ! and a line start open a sentence, never an ellipsis.
+            if endsSentence, !endsWithEllipsis, fillerIsCapitalized || hasTextBefore {
+                capitalizeNext = true
+            }
+            count += 1
         }
-        return nil
+
+        let tail = String(text[cursor...])
+        output += capitalizeNext ? capitalizedFirstLetter(tail) : tail
+        return (output, count)
     }
 
-    /// Drops the filler with the commas Whisper wraps it in, then rejoins the
-    /// neighbours. Recapitalizes the next word when the filler opened a
-    /// sentence.
-    private static func removing(fillerAt range: Range<String.Index>, from text: String) -> String {
-        var left = String(text[..<range.lowerBound])
-        var right = String(text[range.upperBound...])
-
-        while let last = left.last, last == " " || last == "\t" { left.removeLast() }
-        if left.last == "," { left.removeLast() }
-        while let last = left.last, last == " " || last == "\t" { left.removeLast() }
-
-        while let first = right.first, first == " " || first == "\t" { right.removeFirst() }
-        if right.first == "," { right.removeFirst() }
-        while let first = right.first, first == " " || first == "\t" { right.removeFirst() }
-
-        let opensSentence = left.isEmpty || ".!?\n".contains(left.last!)
-        // "Um." on its own is a whole sentence of hesitation.
-        if opensSentence {
-            while let first = right.first, ".!?…".contains(first) { right.removeFirst() }
-            while let first = right.first, first == " " || first == "\t" { right.removeFirst() }
+    /// Removes and returns the spaces and tabs at the end of `text`.
+    @discardableResult
+    private static func removeTrailingBlanks(from text: inout String) -> String {
+        var removed = ""
+        while let last = text.last, last == " " || last == "\t" {
+            removed.insert(text.removeLast(), at: removed.startIndex)
         }
+        return removed
+    }
 
-        let fillerIsCapitalized = text[range].first?.isUppercase == true
-        if opensSentence, fillerIsCapitalized || !left.isEmpty {
-            right = capitalizedFirstLetter(right)
-        }
-
-        let needsSpace = !left.isEmpty && !right.isEmpty
-            && left.last != "\n" && !",.;:!?)".contains(right.first!)
-        return left + (needsSpace ? " " : "") + right
+    private static func skipBlanks(in text: String, from index: String.Index) -> String.Index {
+        var index = index
+        while index < text.endIndex, text[index] == " " || text[index] == "\t" { index = text.index(after: index) }
+        return index
     }
 
     /// Leaves mixed-case tokens such as "iPhone" alone.
