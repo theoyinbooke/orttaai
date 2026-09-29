@@ -11,6 +11,8 @@ struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
     @AppStorage("spokenFormattingEnabled") private var spokenFormattingEnabled = true
+    @AppStorage("fuzzyDictionaryEnabled") private var fuzzyDictionaryEnabled = true
+    @AppStorage("disfluencyCleanupEnabled") private var disfluencyCleanupEnabled = true
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 90
     @AppStorage("handsFreeModeEnabled") private var handsFreeModeEnabled = true
     @AppStorage("handsFreeSilenceStopEnabled") private var handsFreeSilenceStopEnabled = true
@@ -45,6 +47,22 @@ struct GeneralSettingsView: View {
                     isOn: $spokenFormattingEnabled
                 )
                 .help("Formats spoken line, paragraph, and list commands")
+
+                divider
+
+                toggleRow(
+                    title: "Fuzzy Dictionary Matching",
+                    isOn: $fuzzyDictionaryEnabled
+                )
+                .help("Corrects near-miss spellings of your dictionary words, like Tematope for Temitope")
+
+                divider
+
+                toggleRow(
+                    title: "Remove Fillers and Stutters",
+                    isOn: $disfluencyCleanupEnabled
+                )
+                .help("Removes um and uh, collapses repeated words like the the, and capitalizes a lowercase i (English only)")
 
             }
             .padding(Spacing.md)

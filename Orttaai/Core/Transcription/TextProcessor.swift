@@ -41,6 +41,9 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
     private let settings: AppSettings
     private var cachedDictionaryEntries: [DictionaryEntry] = []
     private var cachedSnippetEntries: [SnippetEntry] = []
+    /// Built lazily from the dictionary targets and dropped with them, so
+    /// the per-target caches are recomputed only when the dictionary changes.
+    private var cachedFuzzyMatcher: FuzzyDictionaryMatcher?
     private var memoryCacheIsDirty = true
     private var memoryChangeObserver: NSObjectProtocol?
 
@@ -83,17 +86,38 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
             for entryID in result.appliedEntryIDs {
                 try? databaseManager.incrementDictionaryUsage(id: entryID)
             }
+
+            // Fuzzy hits never bump usage counts: those order the recognizer
+            // bias prompt, and a near-miss is not evidence of demand.
+            if settings.fuzzyDictionaryEnabled {
+                let fuzzyResult = fuzzyMatcher(for: activeRules.dictionaryEntries).apply(to: resolvedText)
+                resolvedText = fuzzyResult.text
+                changes.append(contentsOf: fuzzyResult.replacements.map {
+                    "Dictionary (fuzzy): '\($0.original)' -> '\($0.target)'"
+                })
+            }
         }
 
+        var expandedSnippet = false
         if shouldApplySnippets {
             if let matchedSnippet = resolveSnippet(for: resolvedText, snippets: activeRules.snippetEntries) {
                 let previousText = resolvedText
                 resolvedText = matchedSnippet.expansion
+                expandedSnippet = true
                 changes.append("Snippet expanded: '\(previousText)' -> '\(matchedSnippet.expansion)'")
                 if let entryID = matchedSnippet.id {
                     try? databaseManager.incrementSnippetUsage(id: entryID)
                 }
             }
+        }
+
+        // Runs before spoken formatting so "um, new line" still reaches the
+        // line-break command with the filler already gone. A snippet
+        // expansion is the user's own text and is never edited.
+        if settings.disfluencyCleanupEnabled, !expandedSnippet, settings.effectiveDictationLanguage == "en" {
+            let cleanupResult = DisfluencyCleaner.clean(resolvedText)
+            resolvedText = cleanupResult.text
+            changes.append(contentsOf: cleanupResult.changes)
         }
 
         if settings.spokenFormattingEnabled {
@@ -115,6 +139,11 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
     /// triggers are the phrases the user actually speaks.
     func vocabularyBiasTerms() -> [String] {
         guard let rules = try? loadActiveRulesIfNeeded() else { return [] }
+        // Called once per dictation session before decoding: builds the fuzzy
+        // matcher (and loads the word list) here instead of on the finalize path.
+        if settings.fuzzyDictionaryEnabled {
+            _ = fuzzyMatcher(for: rules.dictionaryEntries)
+        }
         // Most-used terms first: the bias prompt has a tight token budget
         // (prefill costs ~35ms/token on the ANE — measured in
         // gauntlet/asr_eval), so when a large dictionary overflows it, the
@@ -132,12 +161,20 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
         if memoryCacheIsDirty {
             cachedDictionaryEntries = try databaseManager.fetchDictionaryEntries(includeInactive: false)
             cachedSnippetEntries = try databaseManager.fetchSnippetEntries(includeInactive: false)
+            cachedFuzzyMatcher = nil
             memoryCacheIsDirty = false
         }
         return ActivePersonalMemoryRules(
             dictionaryEntries: cachedDictionaryEntries,
             snippetEntries: cachedSnippetEntries
         )
+    }
+
+    private func fuzzyMatcher(for entries: [DictionaryEntry]) -> FuzzyDictionaryMatcher {
+        if let cachedFuzzyMatcher { return cachedFuzzyMatcher }
+        let matcher = FuzzyDictionaryMatcher(targets: entries.filter(\.isActive).map(\.target))
+        cachedFuzzyMatcher = matcher
+        return matcher
     }
 
     private func applyDictionary(
