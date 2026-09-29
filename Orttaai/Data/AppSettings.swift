@@ -124,6 +124,12 @@ final class AppSettings: ObservableObject {
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
     @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
+    /// Corrects recognizer near-misses of dictionary targets (Tematope ->
+    /// Temitope) after the literal source rows have run.
+    @AppStorage("fuzzyDictionaryEnabled") var fuzzyDictionaryEnabled: Bool = true
+    /// Removes fillers and stutters and capitalizes a lowercase "i" in the
+    /// recognizer's output.
+    @AppStorage("disfluencyCleanupEnabled") var disfluencyCleanupEnabled: Bool = true
     @AppStorage("snippetsEnabled") var snippetsEnabled: Bool = true
     /// Feeds active dictionary targets and snippet triggers to short,
     /// whole-utterance recognizer decodes. Live clip bias is disabled because

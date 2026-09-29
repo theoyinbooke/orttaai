@@ -14,7 +14,11 @@ final class RuleBasedTextProcessorTests: XCTestCase {
     private let defaultKeysToRestore = [
         "dictionaryEnabled",
         "snippetsEnabled",
-        "spokenFormattingEnabled"
+        "spokenFormattingEnabled",
+        "fuzzyDictionaryEnabled",
+        "disfluencyCleanupEnabled",
+        "dictationLanguage",
+        "lowLatencyModeEnabled"
     ]
 
     override func setUpWithError() throws {
@@ -29,6 +33,9 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         settings.dictionaryEnabled = true
         settings.snippetsEnabled = true
         settings.spokenFormattingEnabled = true
+        settings.fuzzyDictionaryEnabled = true
+        settings.disfluencyCleanupEnabled = true
+        settings.dictationLanguage = "en"
         processor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
     }
 
@@ -394,5 +401,150 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         XCTAssertTrue(terms.contains("my email sig"))
         XCTAssertFalse(terms.contains("Retired"), "inactive entries must not bias decoding")
         XCTAssertFalse(terms.contains("Best,\nTheo"), "expansions are typed, not spoken — only triggers bias")
+    }
+
+    // MARK: - Fuzzy dictionary
+
+    private func process(_ text: String) async throws -> TextProcessorOutput {
+        try await processor.process(TextProcessorInput(rawTranscript: text, targetApp: nil, mode: .raw))
+    }
+
+    func testFuzzyDictionaryCorrectsNearMissOfTargetWithoutBumpingUsage() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+
+        let output = try await process("Tematope will present today")
+
+        XCTAssertEqual(output.text, "Temitope will present today")
+        XCTAssertTrue(output.changes.contains("Dictionary (fuzzy): 'Tematope' -> 'Temitope'"))
+        let entry = try XCTUnwrap(try db.fetchDictionaryEntries().first)
+        XCTAssertEqual(entry.usageCount, 0, "fuzzy hits must not feed the bias prompt ordering")
+    }
+
+    func testExactRowsRunBeforeFuzzyMatching() async throws {
+        _ = try db.upsertDictionaryEntry(source: "mitumor", target: "Meetumo")
+
+        let output = try await process("mitumor and Mitumo")
+
+        XCTAssertEqual(output.text, "Meetumo and Meetumo")
+        XCTAssertEqual(output.changes.filter { $0.hasPrefix("Dictionary:") }.count, 1)
+        XCTAssertEqual(output.changes.filter { $0.hasPrefix("Dictionary (fuzzy):") }.count, 1)
+        let entry = try XCTUnwrap(try db.fetchDictionaryEntries().first)
+        XCTAssertEqual(entry.usageCount, 1, "only the literal hit counts")
+    }
+
+    func testFuzzyDictionaryLeavesRealWordsAlone() async throws {
+        _ = try db.upsertDictionaryEntry(source: "vasel", target: "Vercel")
+        _ = try db.upsertDictionaryEntry(source: "mitumor", target: "Meetumo")
+
+        let output = try await process("The verse fits the meetup")
+
+        XCTAssertEqual(output.text, "The verse fits the meetup")
+        XCTAssertTrue(output.changes.isEmpty)
+    }
+
+    func testFuzzyDictionaryCanBeDisabled() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+        settings.fuzzyDictionaryEnabled = false
+
+        let output = try await process("Tematope will present")
+
+        XCTAssertEqual(output.text, "Tematope will present")
+    }
+
+    func testFuzzyDictionaryFollowsDictionaryChanges() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+        let first = try await process("Tematope")
+        XCTAssertEqual(first.text, "Temitope")
+
+        let entry = try XCTUnwrap(try db.fetchDictionaryEntries().first)
+        _ = try db.deleteDictionaryEntry(id: try XCTUnwrap(entry.id))
+
+        let second = try await process("Tematope")
+        XCTAssertEqual(second.text, "Tematope")
+    }
+
+    func testDisabledDictionaryDisablesFuzzyMatchingToo() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+        settings.dictionaryEnabled = false
+
+        let output = try await process("Tematope will present")
+
+        XCTAssertEqual(output.text, "Tematope will present")
+    }
+
+    func testFuzzyDictionarySkipsNonEnglishDictation() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+
+        for language in ["es", "fr", "auto"] {
+            settings.dictationLanguage = language
+            let output = try await process("Tematope will present")
+            XCTAssertEqual(output.text, "Tematope will present", language)
+            XCTAssertFalse(output.changes.contains { $0.hasPrefix("Dictionary (fuzzy)") }, language)
+        }
+    }
+
+    func testFuzzyDictionaryRunsForAutoLanguageWhenLowLatencyModeForcesEnglish() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+        settings.dictationLanguage = "auto"
+        settings.lowLatencyModeEnabled = true
+
+        let output = try await process("Tematope will present")
+
+        XCTAssertEqual(output.text, "Temitope will present")
+    }
+
+    func testFuzzyDictionaryKeepsInflectedFormsAndSimilarNamesIntact() async throws {
+        _ = try db.upsertDictionaryEntry(source: "web socket", target: "WebSocket")
+        _ = try db.upsertDictionaryEntry(source: "michael s", target: "Michael")
+
+        let output = try await process("We use websockets and ask Michelle or Michaela.")
+
+        XCTAssertEqual(output.text, "We use websockets and ask Michelle or Michaela.")
+    }
+
+    // MARK: - Disfluency cleanup
+
+    func testDisfluencyCleanupRunsInTheProcessor() async throws {
+        let output = try await process("so um um to avoid the the memory i think")
+
+        XCTAssertEqual(output.text, "so to avoid the memory I think")
+        XCTAssertTrue(output.changes.contains("Disfluency: removed 2 fillers"))
+    }
+
+    func testFillerBeforeLineBreakCommandStillProducesTheBreak() async throws {
+        let output = try await process("Send the report, um, new line best regards")
+
+        XCTAssertEqual(output.text, "Send the report\nBest regards")
+    }
+
+    func testFillerAfterLineBreakCommandStillProducesTheBreak() async throws {
+        let output = try await process("Send the report new line um best regards")
+
+        XCTAssertEqual(output.text, "Send the report\nBest regards")
+    }
+
+    func testDisfluencyCleanupCanBeDisabled() async throws {
+        settings.disfluencyCleanupEnabled = false
+
+        let output = try await process("so um the the plan i think")
+
+        XCTAssertEqual(output.text, "so um the the plan i think")
+    }
+
+    func testDisfluencyCleanupSkipsNonEnglishDictation() async throws {
+        settings.dictationLanguage = "es"
+
+        let output = try await process("voy a a la tienda")
+
+        XCTAssertEqual(output.text, "voy a a la tienda")
+    }
+
+    func testSnippetExpansionIsNeverCleaned() async throws {
+        _ = try db.upsertSnippetEntry(trigger: "my sig", expansion: "um the the plan i think")
+
+        let output = try await process("insert my sig")
+
+        XCTAssertEqual(output.text, "um the the plan i think")
+        XCTAssertFalse(output.changes.contains { $0.hasPrefix("Disfluency") })
     }
 }
