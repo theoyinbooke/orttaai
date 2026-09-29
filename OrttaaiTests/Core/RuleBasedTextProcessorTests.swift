@@ -17,7 +17,8 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         "spokenFormattingEnabled",
         "fuzzyDictionaryEnabled",
         "disfluencyCleanupEnabled",
-        "dictationLanguage"
+        "dictationLanguage",
+        "lowLatencyModeEnabled"
     ]
 
     override func setUpWithError() throws {
@@ -422,7 +423,7 @@ final class RuleBasedTextProcessorTests: XCTestCase {
     func testExactRowsRunBeforeFuzzyMatching() async throws {
         _ = try db.upsertDictionaryEntry(source: "mitumor", target: "Meetumo")
 
-        let output = try await process("mitumor and Mitomo")
+        let output = try await process("mitumor and Mitumo")
 
         XCTAssertEqual(output.text, "Meetumo and Meetumo")
         XCTAssertEqual(output.changes.filter { $0.hasPrefix("Dictionary:") }.count, 1)
@@ -469,6 +470,36 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         let output = try await process("Tematope will present")
 
         XCTAssertEqual(output.text, "Tematope will present")
+    }
+
+    func testFuzzyDictionarySkipsNonEnglishDictation() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+
+        for language in ["es", "fr", "auto"] {
+            settings.dictationLanguage = language
+            let output = try await process("Tematope will present")
+            XCTAssertEqual(output.text, "Tematope will present", language)
+            XCTAssertFalse(output.changes.contains { $0.hasPrefix("Dictionary (fuzzy)") }, language)
+        }
+    }
+
+    func testFuzzyDictionaryRunsForAutoLanguageWhenLowLatencyModeForcesEnglish() async throws {
+        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
+        settings.dictationLanguage = "auto"
+        settings.lowLatencyModeEnabled = true
+
+        let output = try await process("Tematope will present")
+
+        XCTAssertEqual(output.text, "Temitope will present")
+    }
+
+    func testFuzzyDictionaryKeepsInflectedFormsAndSimilarNamesIntact() async throws {
+        _ = try db.upsertDictionaryEntry(source: "web socket", target: "WebSocket")
+        _ = try db.upsertDictionaryEntry(source: "michael s", target: "Michael")
+
+        let output = try await process("We use websockets and ask Michelle or Michaela.")
+
+        XCTAssertEqual(output.text, "We use websockets and ask Michelle or Michaela.")
     }
 
     // MARK: - Disfluency cleanup

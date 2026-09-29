@@ -15,8 +15,8 @@ alphabetic words of 3-14 letters, then trimmed to keep the bundle small:
   - words of 10-14 letters are kept only when they also occur in modern
     prose/documentation (--evidence directories), which drops the archaic
     long tail (the 1934 list is ~200k words, 2 MB, and mostly obscure);
-  - a short list of everyday modern words the 1934 dictionary predates is
-    added.
+  - a list of everyday modern words and developer/product terms the 1934
+    dictionary predates is added (MODERN_WORDS below).
 
 Inflections (verses, codes, running) are NOT listed: the Swift loader strips
 common suffixes at lookup time.
@@ -33,12 +33,48 @@ import re
 import sys
 from collections import Counter
 
+# Everyday words the 1934 dictionary predates: general modern vocabulary,
+# followed by developer, product and business terms and the tool and service
+# names developers type all day. Listed so the fuzzy pass treats them as
+# ordinary words: a stray "codec" or "postgres" must not be "corrected" into
+# a similar dictionary target. Base forms only; the loader strips regular
+# inflections, so codecs, websockets and deployed need no entry. Names of
+# people are never listed.
 MODERN_WORDS = """
 app backend blog chatbot config database email emoji frontend gonna hashtag
-inbox internet laptop livestream logout meetup metadata okay offline onboarding
-online plugin podcast roadmap screenshot smartphone spreadsheet standup startup
-timeline username videos webinar webpage website wifi wanna workflow bluetooth
-download
+inbox internet laptop livestream logout meetup metadata okay offline
+onboarding online plugin podcast roadmap screenshot smartphone spreadsheet
+standup startup timeline username videos webinar webpage website wifi wanna
+workflow bluetooth download codec transcode transcoding bitrate framerate mpeg
+jpeg png svg pdf docx xlsx pptx csv tsv json yaml toml xml html css markdown
+regex ffmpeg gzip tarball webm flac github gitlab bitbucket git repo monorepo
+codebase commit rebase changelog hotfix rollout rollback refactor debug
+debugger deploy redeploy deployment lint linter eslint prettier webpack vite
+babel rollup npm yarn pnpm cargo gradle maven cocoapods homebrew react redux
+nextjs nodejs vuejs angular svelte django flask fastapi rails laravel express
+jquery tailwind bootstrap sass storybook jest mocha cypress playwright
+selenium javascript typescript python golang rust kotlin scala haskell elixir
+clojure perl php ruby bash zsh powershell swiftui uikit appkit xcode
+kubernetes kubectl docker dockerfile helm terraform ansible jenkins nginx
+serverless microservice microservices middleware runtime namespace localhost
+devops fullstack dotenv postgres postgresql mysql sqlite mongodb redis
+memcached dynamodb elasticsearch kafka rabbitmq nosql sql prisma graphql grpc
+protobuf openapi swagger webhook websocket api sdk cli url oauth jwt saml tcp
+udp dns cdn vpn ssh ssl tls http https aws azure firebase netlify heroku
+cloudflare digitalocean stripe twilio sendgrid mailchimp shopify wordpress
+squarespace salesforce hubspot zendesk intercom slack zoom figma sketch canva
+airtable asana trello jira confluence notion linear copilot chatgpt openai llm
+llms gpu gpus cpu ssd usb hdmi tensorflow pytorch numpy jupyter colab
+huggingface tokenizer embedding embeddings inference finetune dataset
+dataframe tensor iphone ipad macbook airpods android macos linux ubuntu debian
+chromium firefox smartwatch async callback boolean enum struct tuple iterator
+hashmap dataclass timestamp uuid analytics dashboard stakeholder backlog
+sprint retro latency throughput uptime downtime scalability monetization
+freemium saas paas fintech edtech crm erp ecommerce checkout paywall signup
+signin login passcode autofill autocomplete dropdown sidebar navbar toolbar
+popup tooltip modal favicon thumbnail influencer unfollow retweet selfie meme
+gif blockchain cryptocurrency bitcoin ethereum nft vlog streamer bandwidth
+pixel
 """.split()
 
 TOKEN = re.compile(r"(?<![A-Za-z0-9_])[a-z]{10,14}(?![A-Za-z0-9_])")

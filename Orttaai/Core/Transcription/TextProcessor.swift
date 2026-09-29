@@ -88,8 +88,10 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
             }
 
             // Fuzzy hits never bump usage counts: those order the recognizer
-            // bias prompt, and a near-miss is not evidence of demand.
-            if settings.fuzzyDictionaryEnabled {
+            // bias prompt, and a near-miss is not evidence of demand. The
+            // word list that guards real words is English only, so any other
+            // (or auto-detected) language skips the pass, like the cleaner below.
+            if settings.fuzzyDictionaryEnabled, settings.effectiveDictationLanguage == "en" {
                 let fuzzyResult = fuzzyMatcher(for: activeRules.dictionaryEntries).apply(to: resolvedText)
                 resolvedText = fuzzyResult.text
                 changes.append(contentsOf: fuzzyResult.replacements.map {
@@ -141,7 +143,7 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
         guard let rules = try? loadActiveRulesIfNeeded() else { return [] }
         // Called once per dictation session before decoding: builds the fuzzy
         // matcher (and loads the word list) here instead of on the finalize path.
-        if settings.fuzzyDictionaryEnabled {
+        if settings.fuzzyDictionaryEnabled, settings.effectiveDictationLanguage == "en" {
             _ = fuzzyMatcher(for: rules.dictionaryEntries)
         }
         // Most-used terms first: the bias prompt has a tight token budget

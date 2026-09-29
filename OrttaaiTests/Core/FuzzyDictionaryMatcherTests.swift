@@ -30,23 +30,39 @@ final class FuzzyDictionaryMatcherTests: XCTestCase {
         }
     }
 
+    func testLexiconKnowsCommonModernDeveloperAndProductWords() {
+        let modern = [
+            "codec", "codecs", "github", "kubernetes", "postgres", "prisma", "figma", "tailwind",
+            "websocket", "websockets", "codebase", "codebases", "docker", "terraform", "graphql",
+            "typescript", "javascript", "firebase", "cloudflare", "stripe", "webhook", "webhooks",
+            "changelog", "deployed", "deploying", "refactored", "dashboards", "middleware", "microservices",
+            "ffmpeg", "bitrate", "openai", "chatgpt", "iphone", "macbook", "signup", "freemium"
+        ]
+        for word in modern {
+            XCTAssertTrue(EnglishLexicon.isRealWord(word), word)
+        }
+    }
+
     // MARK: - Corrections
 
     func testNearMissNamesAreCorrectedToTheTargetSpelling() {
         let temitope = ["Temitope"]
         XCTAssertEqual(corrected("Tematope will present the metrics.", targets: temitope), "Temitope will present the metrics.")
-        XCTAssertEqual(corrected("Taimytope will draft it.", targets: temitope), "Temitope will draft it.")
-        XCTAssertEqual(corrected("Taimitope's team shipped.", targets: temitope), "Temitope's team shipped.")
 
-        for variant in ["Mitumo", "Metumo", "Mitoomo"] {
+        for variant in ["Mitumo", "Metumo"] {
             XCTAssertEqual(corrected("Ask \(variant) about it", targets: ["Meetumo"]), "Ask Meetumo about it", variant)
         }
 
-        XCTAssertEqual(corrected("Owenbook asked", targets: ["Oyinbooke"]), "Oyinbooke asked")
-        XCTAssertEqual(corrected("Owen Book asked", targets: ["Oyinbooke"]), "Oyinbooke asked")
         XCTAssertEqual(corrected("Ask Yemesi to update it", targets: ["Yemisi"]), "Ask Yemisi to update it")
-        XCTAssertEqual(corrected("Send it to Folosaday today", targets: ["Folasade"]), "Send it to Folasade today")
-        XCTAssertEqual(corrected("Install Olima first", targets: ["Ollama"]), "Install Ollama first")
+    }
+
+    func testNamesHeardWithADifferentSyllableShapeAreLeftAlone() {
+        // Too far from the target to tell apart from someone else's name:
+        // an extra or missing syllable, a doubled consonant, a changed ending.
+        XCTAssertEqual(corrected("Owenbook asked", targets: ["Oyinbooke"]), "Owenbook asked")
+        XCTAssertEqual(corrected("Taimytope will draft it.", targets: ["Temitope"]), "Taimytope will draft it.")
+        XCTAssertEqual(corrected("Send it to Folosaday today", targets: ["Folasade"]), "Send it to Folosaday today")
+        XCTAssertEqual(corrected("Install Olima first", targets: ["Ollama"]), "Install Olima first")
     }
 
     func testNearMissBrandsAcrossWordBoundariesAreCorrected() {
@@ -141,7 +157,7 @@ final class FuzzyDictionaryMatcherTests: XCTestCase {
 
     func testAdjacentWordsAreNotSwallowed() {
         XCTAssertEqual(corrected("Tematope presented slides", targets: ["Temitope"]), "Temitope presented slides")
-        XCTAssertEqual(corrected("Mitomo apps", targets: ["Meetumo"]), "Meetumo apps")
+        XCTAssertEqual(corrected("Mitumo apps", targets: ["Meetumo"]), "Meetumo apps")
     }
 
     func testShortTargetsAndShortWindowsAreIgnored() {
@@ -158,5 +174,105 @@ final class FuzzyDictionaryMatcherTests: XCTestCase {
 
     func testDifferentFirstLetterIsNeverCorrected() {
         XCTAssertEqual(corrected("Alain Rouajou wants it", targets: ["Olanrewaju"]), "Alain Rouajou wants it")
+    }
+
+    // MARK: - Inflections, names, casing, documented behavior
+
+    func testInflectedFormsOfATargetAreNeverRewrittenToTheBaseForm() {
+        let cases: [(target: String, text: String)] = [
+            ("WebSocket", "We use websockets a lot."),
+            ("WebSocket", "Two Websockets stayed open."),
+            ("Codebase", "the codebases are big"),
+            ("Codebase", "the code bases are big"),
+            ("Vercel", "We are vercelling it tonight."),
+            ("Vercel", "The Vercels differ."),
+            ("Temitope", "Both Temitopes came."),
+            ("Meetumo", "Two Meetumos merged.")
+        ]
+        for (target, text) in cases {
+            XCTAssertEqual(corrected(text, targets: [target]), text, text)
+        }
+    }
+
+    func testTheBaseFormIsNotRewrittenToAnInflectedTarget() {
+        let cases: [(target: String, text: String)] = [
+            ("Codebases", "the codebase is big"),
+            ("WebSockets", "open one websocket"),
+            ("Temitopes", "ask Temitope"),
+            ("Vercels", "deploy on Vercel")
+        ]
+        for (target, text) in cases {
+            XCTAssertEqual(corrected(text, targets: [target]), text, text)
+        }
+    }
+
+    func testDifferentRealPeopleAndWordsAreNotRewrittenToSimilarTargets() {
+        let cases: [(target: String, names: [String])] = [
+            ("Michael", ["Michelle", "Michaela", "Michele", "Michal"]),
+            ("Claude", ["Claudia", "Claudio", "Cloud"]),
+            ("Olamide", ["Olumide"]),
+            ("Sophia", ["Sophie"]),
+            ("Temitope", ["Temitayo", "Temidayo", "Yemi", "Folake", "Tomiwa", "Temitopa"]),
+            ("Adebayo", ["Adebayor", "Adebayi"]),
+            ("Oluwaseun", ["Oluwaseyi"]),
+            ("Folasade", ["Folake", "Folasida"])
+        ]
+        for (target, names) in cases {
+            for name in names {
+                let sentence = "Ask \(name) to join."
+                XCTAssertEqual(corrected(sentence, targets: [target]), sentence, "\(name) vs \(target)")
+            }
+        }
+    }
+
+    func testNameNearMissRulesAreVowelOnlyAndKeepEndingAndLength() {
+        let corrections: [(target: String, heard: String)] = [
+            ("Temitope", "Tematope"),
+            ("Yemisi", "Yemesi"),
+            ("Meetumo", "Mitumo"),
+            ("Meetumo", "Metumo"),
+            // Eight letters or more tolerate two vowel swaps.
+            ("Folasade", "Folesede")
+        ]
+        for (target, heard) in corrections {
+            XCTAssertEqual(corrected("Ask \(heard) now", targets: [target]), "Ask \(target) now", heard)
+        }
+
+        let untouched: [(target: String, heard: String)] = [
+            // A vowel crossing between {a, e, i} and {o, u}, on a short target.
+            ("Yemisi", "Yemosi"),
+            // Two swaps on a short target.
+            ("Yemisi", "Yamasi"),
+            // A different last letter.
+            ("Yemisi", "Yemisa"),
+            ("Temitope", "Temitopa"),
+            ("Folasade", "Folasida"),
+            // A dropped vowel.
+            ("Temitope", "Temtope"),
+            // Too many edits even for a long target.
+            ("Folasade", "Falisade"),
+            // Different consonants.
+            ("Temitope", "Temitayo")
+        ]
+        for (target, heard) in untouched {
+            XCTAssertEqual(corrected("Ask \(heard) now", targets: [target]), "Ask \(heard) now", heard)
+        }
+    }
+
+    func testBrandCasedTargetsAreRecasedEvenWhenTheLowercaseFormIsAListedWord() {
+        XCTAssertTrue(EnglishLexicon.isRealWord("github"))
+        XCTAssertEqual(corrected("push it to github now", targets: ["GitHub"]), "push it to GitHub now")
+        XCTAssertEqual(corrected("open the websocket now", targets: ["WebSocket"]), "open the WebSocket now")
+        // A plain first-letter-capitalized target is not a brand casing: the
+        // ordinary word stays as spoken.
+        XCTAssertEqual(corrected("the cursor blinks", targets: ["Cursor"]), "the cursor blinks")
+    }
+
+    func testExactCompoundRuleRewritesOrdinaryPhrasesThatSpellATargetOnPurpose() {
+        // By design: the target is the user's own chosen spelling, so a
+        // phrase that spells it letter for letter is joined to it.
+        XCTAssertEqual(corrected("what is the tail wind speed", targets: ["Tailwind"]), "what is the Tailwind speed")
+        XCTAssertEqual(corrected("I asked open AI about it", targets: ["OpenAI"]), "I asked OpenAI about it")
+        XCTAssertEqual(corrected("go to the back end now", targets: ["Backend"]), "go to the Backend now")
     }
 }

@@ -43,18 +43,23 @@ enum EnglishLexicon {
     static func isRealWord(_ word: String) -> Bool {
         if word.count < 3 { return shortWords.contains(word) }
         if words.contains(word) { return true }
+        return stems(of: word).contains(where: words.contains)
+    }
+
+    /// The base forms `word` could be a regular inflection of, with the
+    /// suffix stripped and any dropped letter restored (stopped -> stop,
+    /// coded -> code, parties -> party). Not checked against the word list.
+    static func stems(of word: String) -> [String] {
+        var stems: [String] = []
         for rule in suffixRules where word.hasSuffix(rule.suffix) {
             let stem = String(word.dropLast(rule.suffix.count))
             guard stem.count >= 3 else { continue }
-            for restoration in rule.restorations {
-                if words.contains(stem + restoration) { return true }
-            }
-            // stopped -> stopp -> stop
-            if let last = stem.last, stem.dropLast().last == last, words.contains(String(stem.dropLast())) {
-                return true
+            stems.append(contentsOf: rule.restorations.map { stem + $0 })
+            if let last = stem.last, stem.dropLast().last == last {
+                stems.append(String(stem.dropLast()))
             }
         }
-        return false
+        return stems
     }
 }
 
@@ -62,22 +67,27 @@ enum EnglishLexicon {
 /// *targets* (Tematope -> Temitope, chat GPT -> ChatGPT). The live decode path
 /// carries no vocabulary prompt, so this is what catches names and brands the
 /// recognizer spelled by ear. Runs after the literal source/target rows and
-/// is deliberately conservative: a wrong rewrite of a real word costs more
-/// than a missed correction.
+/// is deliberately conservative: a wrong rewrite of a real word or of a
+/// different person's name costs more than a missed correction. English only
+/// (the word list is): callers skip it for any other dictation language.
 ///
 /// A window is 1-3 consecutive words separated only by spaces. It is
 /// rewritten to the target's exact spelling when either
 ///  - compound-exact: its letters-only skeleton equals the target's
 ///    (no speech threshold -> noSpeechThreshold, app cast -> appcast); or
-///  - near-miss: same first letter, at most two characters of length drift
-///    (one for multi-word windows), and the same consonant skeleton or a
-///    small edit distance (Postgar SQL -> PostgreSQL). Targets that are not
-///    themselves English words (names, brands) need both the consonant
-///    skeleton and a high similarity, so a different real person (Temitayo
-///    for Temitope) is left alone.
-/// A single word that is a valid English word is never touched, a multi-word
-/// window of real words matches only as an exact compound, and windows with
-/// stopwords are skipped unless the target itself contains that word.
+///  - near-miss: same first letter and a small, vowel-only spelling drift
+///    (Postgar SQL -> PostgreSQL, see `nearMiss` for the exact rules).
+/// A window that is only a regular inflection of the target, or the other way
+/// round (websockets / WebSocket, codebases / Codebase), is never touched: the
+/// rewrite would change the grammar. A single word that is a valid English
+/// word is never touched, a multi-word window of real words matches only as
+/// an exact compound, and windows with stopwords are skipped unless the
+/// target itself contains that word.
+///
+/// The exact-compound rule is deliberate even when the window is ordinary
+/// prose: the target is the user's own chosen spelling, so "tail wind speed"
+/// becomes "Tailwind speed" and "open AI" becomes "OpenAI" when those are in
+/// the dictionary.
 struct FuzzyDictionaryMatcher {
     static let minimumTargetLength = 6
 
@@ -89,10 +99,14 @@ struct FuzzyDictionaryMatcher {
     private struct Target {
         let text: String
         let skeleton: [Character]
-        let consonantKey: [Character]
-        let vowelFolded: [Character]
+        let spelling: String
+        let stems: Set<String>
+        let consonants: [Character]
+        let mergedVowels: [Character]
         let words: Set<String>
-        let isNameLike: Bool
+        /// "WebSocket", "GitHub": the user spelled it with a brand casing, so
+        /// even a lowercase spelling that is a listed word is recased.
+        let hasInternalCapital: Bool
     }
 
     private struct Token {
@@ -113,8 +127,8 @@ struct FuzzyDictionaryMatcher {
 
     private static let maximumWindowLength = 3
     private static let minimumWindowSkeleton = 5
-    private static let nameSimilarityLimit = 0.3
-    private static let editSimilarityLimit = 0.2
+    /// Targets shorter than this tolerate one vowel edit, longer ones two.
+    private static let longTargetLength = 8
 
     private static let stopwords: Set<String> = [
         "a", "an", "the", "and", "or", "but", "nor", "so", "yet", "if", "then", "than", "that", "this",
@@ -145,15 +159,18 @@ struct FuzzyDictionaryMatcher {
             let skeleton = Self.skeleton(of: trimmed)
             guard skeleton.count >= Self.minimumTargetLength, let first = skeleton.first,
                   seen.insert(trimmed.lowercased()).inserted else { continue }
-            let words = Self.words(in: trimmed)
+            let spelling = String(skeleton)
+            let merged = Self.mergingRepeatedVowels(skeleton)
             byFirstLetter[first, default: []].append(
                 Target(
                     text: trimmed,
                     skeleton: skeleton,
-                    consonantKey: Self.consonantKey(of: skeleton),
-                    vowelFolded: Self.vowelFolded(skeleton),
-                    words: Set(words),
-                    isNameLike: !words.allSatisfy(EnglishLexicon.isRealWord)
+                    spelling: spelling,
+                    stems: Set(EnglishLexicon.stems(of: spelling)),
+                    consonants: skeleton.filter { !Self.isVowel($0) },
+                    mergedVowels: merged,
+                    words: Set(Self.words(in: trimmed)),
+                    hasInternalCapital: trimmed.dropFirst().contains(where: \.isUppercase)
                 )
             )
             exact.insert(trimmed)
@@ -211,11 +228,15 @@ struct FuzzyDictionaryMatcher {
             let words = window.map(\.word)
             let stopwordsInWindow = Set(words.filter(Self.stopwords.contains))
             let allReal = window.allSatisfy(\.isRealWord)
+            let spelling = String(skeleton)
+            let stems = Set(EnglishLexicon.stems(of: spelling))
 
             for target in targets {
+                if stems.contains(target.spelling) || target.stems.contains(spelling) { continue }
                 let candidate: Candidate?
                 if skeleton == target.skeleton {
-                    let allowed = length > 1 || (!allReal && !Self.hasOwnCasing(windowText, of: target))
+                    let mayRecase = !allReal || target.hasInternalCapital
+                    let allowed = length > 1 || (mayRecase && !Self.hasOwnCasing(windowText, of: target))
                     candidate = allowed && stopwordsInWindow.isSubset(of: target.words)
                         ? Candidate(length: length, range: range, target: target, isExact: true, distance: 0)
                         : nil
@@ -242,23 +263,31 @@ struct FuzzyDictionaryMatcher {
         return window.dropFirst() != window.dropFirst().lowercased()
     }
 
+    /// A near-miss must look like the same word heard by ear, and never like
+    /// a different real name (Michelle, Michaela, Claudia, Sophie and Olumide
+    /// are not "Michael", "Claude", "Sophia" or "Olamide"). All of these hold:
+    ///  - the same consonants in the same order (y, h and w count as
+    ///    consonants), so only the vowels were guessed;
+    ///  - the same last letter: a name's ending marks a different name
+    ///    (Sophia/Sophie, Claude/Claudio);
+    ///  - the same length once a repeated vowel counts as one (Meetumo is
+    ///    Metumo), so no syllable was added or dropped (Michael/Michaela);
+    ///  - a vowel edit budget of one for targets under eight letters and two
+    ///    for longer ones. Swapping a vowel within {a, e, i} or within {o, u}
+    ///    costs one (Tematope/Temitope); crossing between the two groups or
+    ///    moving a vowel past a consonant costs two, which keeps Olumide away
+    ///    from Olamide.
+    /// Where this rule and a mis-heard name conflict, the rule wins.
     private func nearMiss(length: Int, range: Range<String.Index>, skeleton: [Character], target: Target) -> Candidate? {
-        let maximumDrift = length == 1 ? 2 : 1
-        guard abs(skeleton.count - target.skeleton.count) <= maximumDrift else { return nil }
+        guard skeleton.last == target.skeleton.last,
+              skeleton.filter({ !Self.isVowel($0) }) == target.consonants else { return nil }
 
-        let key = Self.consonantKey(of: skeleton)
-        let sameConsonants = key.count >= 2 && key == target.consonantKey
-        let distance = Self.editDistance(skeleton, target.skeleton)
-        let largest = Double(max(skeleton.count, target.skeleton.count))
+        let merged = Self.mergingRepeatedVowels(skeleton)
+        guard merged.count == target.mergedVowels.count else { return nil }
 
-        let matches: Bool
-        if target.isNameLike {
-            let foldedDistance = Self.editDistance(Self.vowelFolded(skeleton), target.vowelFolded)
-            matches = sameConsonants && Double(foldedDistance) / largest <= Self.nameSimilarityLimit
-        } else {
-            matches = sameConsonants || Double(distance) / largest <= Self.editSimilarityLimit
-        }
-        return matches
+        let budget = target.skeleton.count < Self.longTargetLength ? 1 : 2
+        let distance = Self.vowelEditDistance(merged, target.mergedVowels)
+        return distance <= budget
             ? Candidate(length: length, range: range, target: target, isExact: false, distance: distance)
             : nil
     }
@@ -350,21 +379,23 @@ struct FuzzyDictionaryMatcher {
         )
     }
 
-    /// Consonants that survive when the recognizer guesses the vowels by ear:
-    /// vowels, y, h and w dropped, c/q folded to k, z to s, repeats collapsed.
-    private static func consonantKey(of skeleton: [Character]) -> [Character] {
-        var key: [Character] = []
-        for character in skeleton where !"aeiouyhw".contains(character) {
-            let folded: Character = "cq".contains(character) ? "k" : (character == "z" ? "s" : character)
-            if key.last != folded {
-                key.append(folded)
-            }
-        }
-        return key
+    private static func isVowel(_ character: Character) -> Bool {
+        "aeiou".contains(character)
     }
 
-    private static func vowelFolded(_ skeleton: [Character]) -> [Character] {
-        skeleton.map { "aeiouy".contains($0) ? "a" : $0 }
+    /// Vowels are told apart by ear within {a, e, i} and within {o, u}, far
+    /// less across the two.
+    private static func vowelGroup(_ character: Character) -> Int {
+        "aei".contains(character) ? 0 : 1
+    }
+
+    /// "meetumo" -> "metumo": a doubled vowel is one long vowel sound.
+    private static func mergingRepeatedVowels(_ skeleton: [Character]) -> [Character] {
+        var merged: [Character] = []
+        for character in skeleton where !(isVowel(character) && merged.last == character) {
+            merged.append(character)
+        }
+        return merged
     }
 
     /// Splits "noSpeechThreshold", "PostgreSQL", "Meetumo-app" into lowercase
@@ -394,7 +425,10 @@ struct FuzzyDictionaryMatcher {
         return words.map { String(skeleton(of: $0)) }
     }
 
-    private static func editDistance(_ lhs: [Character], _ rhs: [Character]) -> Int {
+    /// Levenshtein distance where swapping two vowels of the same group
+    /// costs one and any other substitution costs two (a delete plus an
+    /// insert), so a consonant can never be traded for a vowel cheaply.
+    private static func vowelEditDistance(_ lhs: [Character], _ rhs: [Character]) -> Int {
         if lhs.isEmpty { return rhs.count }
         if rhs.isEmpty { return lhs.count }
         var previous = Array(0...rhs.count)
@@ -402,10 +436,18 @@ struct FuzzyDictionaryMatcher {
         for (row, left) in lhs.enumerated() {
             current[0] = row + 1
             for (column, right) in rhs.enumerated() {
+                let substitution: Int
+                if left == right {
+                    substitution = 0
+                } else if isVowel(left), isVowel(right), vowelGroup(left) == vowelGroup(right) {
+                    substitution = 1
+                } else {
+                    substitution = 2
+                }
                 current[column + 1] = min(
                     previous[column + 1] + 1,
                     current[column] + 1,
-                    previous[column] + (left == right ? 0 : 1)
+                    previous[column] + substitution
                 )
             }
             swap(&previous, &current)
