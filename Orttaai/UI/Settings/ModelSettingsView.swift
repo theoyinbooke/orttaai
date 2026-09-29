@@ -91,7 +91,7 @@ struct ModelSettingsView: View {
     @State private var selectedPolishDownloadModel: String = ""
     @State private var selectedInsightsDownloadModel: String = ""
     @State private var selectedSemanticDownloadModel: String = ""
-    @State private var modelStorage = ModelStorageLocation.snapshot()
+    @State private var modelStorage = ModelStorageLocation.placeholderSnapshot()
     @State private var modelStorageError: String?
 
     private let supportedLanguages: [(code: String, name: String)] = [
@@ -566,21 +566,25 @@ struct ModelSettingsView: View {
     }
 
     private func revealModelStorageLocation() {
-        do {
-            let access = try ModelStorageLocation.beginAccess(
-                createIfNeeded: true,
-                requiresWrite: false
-            )
-            NSWorkspace.shared.activateFileViewerSelecting([access.url])
-        } catch {
-            modelStorageError = error.localizedDescription
+        Task {
+            do {
+                let access = try await ModelDirectoryLocator.shared.beginAccess(
+                    createIfNeeded: true,
+                    requiresWrite: false
+                )
+                NSWorkspace.shared.activateFileViewerSelecting([access.url])
+            } catch {
+                modelStorageError = error.localizedDescription
+            }
         }
     }
 
     private func refreshModelStorage() {
-        modelStorage = ModelStorageLocation.snapshot()
         modelStorageError = nil
-        Task { await refreshDownloadedMetrics() }
+        Task {
+            modelStorage = await ModelDirectoryLocator.shared.storageSnapshot()
+            await refreshDownloadedMetrics()
+        }
     }
 
     private var modelParametersCard: some View {
@@ -1781,7 +1785,7 @@ struct ModelSettingsView: View {
         Task {
             defer { isDeletingModel = false }
             do {
-                try manager.deleteModel(named: model.id)
+                try await manager.deleteModel(named: model.id)
                 await refreshDownloadedMetrics()
             } catch {
                 deleteError = error.localizedDescription
@@ -2275,6 +2279,7 @@ struct ModelSettingsView: View {
     private func loadInitialModels() {
         // Start with hardcoded fallback, then fetch dynamically
         models = sortedModelsForCurrentMode(hardcodedFallbackModels())
+        Task { modelStorage = await ModelDirectoryLocator.shared.storageSnapshot() }
         Task { await refreshDownloadedMetrics() }
         Task { await fetchModels() }
     }
@@ -2318,13 +2323,11 @@ struct ModelSettingsView: View {
     // MARK: - Disk Usage
 
     private func refreshDownloadedMetrics() async {
-        let metrics = await Task.detached(priority: .utility) {
-            ModelManager.detectDownloadedModelMetrics()
-        }.value
+        let (metrics, isComplete) = await ModelDirectoryLocator.shared.metrics()
 
         let summary: String
         if metrics.downloadedModelIDs.isEmpty {
-            summary = "No models downloaded"
+            summary = isComplete ? "No models downloaded" : "Model folder unavailable"
         } else {
             let formatter = ByteCountFormatter()
             formatter.allowedUnits = [.useMB, .useGB]
@@ -2332,6 +2335,7 @@ struct ModelSettingsView: View {
             let modelCount = metrics.downloadedModelIDs.count
             let sizeText = formatter.string(fromByteCount: metrics.totalBytes)
             summary = "\(modelCount) model\(modelCount == 1 ? "" : "s") downloaded • \(sizeText)"
+                + (isComplete ? "" : " • some folders unavailable")
         }
 
         await MainActor.run {

@@ -78,7 +78,7 @@ struct DownloadStepView: View {
     @State private var downloadStage: SetupDownloadStage = .downloading
     @State private var downloadingModelId: String?
     @State private var transcriptionService = TranscriptionService()
-    @State private var modelStorage = ModelStorageLocation.snapshot()
+    @State private var modelStorage = ModelStorageLocation.placeholderSnapshot()
     @State private var modelStorageError: String?
 
     private let hardwareInfo = HardwareDetector.detect()
@@ -353,19 +353,22 @@ struct DownloadStepView: View {
             return
         }
 
-        let modelAlreadyDownloaded = ModelManager
-            .detectDownloadedModelMetrics()
-            .downloadedModelIDs
-            .contains(ModelManager.normalizedModelID(modelId))
-
         isDownloading = true
         downloadingModelId = modelId
         errorMessage = nil
         isModelReady = false
-        downloadProgress = modelAlreadyDownloaded ? 1 : 0
-        downloadStage = modelAlreadyDownloaded ? .loading : .downloading
+        downloadProgress = 0
+        downloadStage = .downloading
 
         Task {
+            let modelAlreadyDownloaded = await ModelDirectoryLocator.shared.inventory()
+                .downloadedModelIDs
+                .contains(ModelManager.normalizedModelID(modelId))
+            if modelAlreadyDownloaded {
+                downloadProgress = 1
+                downloadStage = .loading
+            }
+
             do {
                 let settings = AppSettings()
                 await settings.syncTranscriptionSettings(to: transcriptionService)
@@ -375,7 +378,7 @@ struct DownloadStepView: View {
                         downloadStage = .loading
                         downloadProgress = 1
                     }
-                    try await transcriptionService.loadModel(named: modelId)
+                    try await transcriptionService.loadModel(named: modelId, allowDownload: true)
                 } else {
                     try await transcriptionService.prepareModelForSetup(
                         named: modelId,
@@ -420,7 +423,7 @@ struct DownloadStepView: View {
                     isModelReady = false
                     downloadProgress = 0
                     downloadStage = .downloading
-                    if error is ModelStorageLocationError {
+                    if error is ModelStorageLocationError || error is ModelLoadError {
                         errorMessage = error.localizedDescription
                     } else {
                         errorMessage = modelAlreadyDownloaded
@@ -448,9 +451,11 @@ struct DownloadStepView: View {
     }
 
     private func refreshModelStorage() {
-        modelStorage = ModelStorageLocation.snapshot()
         modelStorageError = nil
         refreshInstalledModelState()
+        Task {
+            modelStorage = await ModelDirectoryLocator.shared.storageSnapshot()
+        }
     }
 
     private func configureFastFirstOnboarding(settings: AppSettings, quickModelId: String) {
@@ -469,20 +474,24 @@ struct DownloadStepView: View {
     }
 
     private func refreshInstalledModelState(selectedModelID: String? = nil) {
-        let metrics = ModelManager.detectDownloadedModelMetrics()
-        downloadedModelIDs = metrics.downloadedModelIDs
+        Task {
+            let modelIDs = await ModelDirectoryLocator.shared.inventory().downloadedModelIDs
+            // A refresh that outlived the start of a download must not reset it.
+            guard !isDownloading else { return }
+            downloadedModelIDs = modelIDs
 
-        let resolvedModelID = SetupDownloadedModelResolver.resolveInstalledModelID(
-            downloadedModelIDs: metrics.downloadedModelIDs,
-            selectedModelID: selectedModelID ?? selectedModelId,
-            preferredModelIDs: [quickStartModelId, recommendedModelId]
-        )
+            let resolvedModelID = SetupDownloadedModelResolver.resolveInstalledModelID(
+                downloadedModelIDs: modelIDs,
+                selectedModelID: selectedModelID ?? selectedModelId,
+                preferredModelIDs: [quickStartModelId, recommendedModelId]
+            )
 
-        installedModelId = resolvedModelID
-        isModelReady = resolvedModelID != nil
+            installedModelId = resolvedModelID
+            isModelReady = resolvedModelID != nil
 
-        if resolvedModelID != nil {
-            errorMessage = nil
+            if resolvedModelID != nil {
+                errorMessage = nil
+            }
         }
     }
 }

@@ -18,7 +18,7 @@ protocol QuantizedMigrationOperating: AnyObject {
     /// The model id the transcription service currently has loaded.
     func loadedModelID() async -> String?
     /// Delete only this build's directory; other family variants stay.
-    func deleteFullPrecisionVariant(named variantID: String) throws
+    func deleteFullPrecisionVariant(named variantID: String) async throws
     /// Persist the given variant as active + selected model.
     func activateModel(variantID: String) async
     /// Reload the model that was current before migration started (used when
@@ -88,7 +88,7 @@ struct QuantizedMigrator {
         steps.append(.verifiedLoaded(offer.quantizedVariantID))
 
         // 3. Only now delete the full-precision build.
-        try operations.deleteFullPrecisionVariant(named: offer.fullPrecisionVariantID)
+        try await operations.deleteFullPrecisionVariant(named: offer.fullPrecisionVariantID)
         steps.append(.deletedFullPrecision(offer.fullPrecisionVariantID))
 
         // 4. Point the app at a truthful model id. If the migrated family was
@@ -145,8 +145,8 @@ final class ModelManagerQuantizedMigrationOperations: QuantizedMigrationOperatin
         await manager.runtimeTranscriptionService.loadedModelID()
     }
 
-    func deleteFullPrecisionVariant(named variantID: String) throws {
-        try ModelManager.deleteDownloadedVariant(named: variantID)
+    func deleteFullPrecisionVariant(named variantID: String) async throws {
+        try await manager.deleteVariant(named: variantID)
     }
 
     func activateModel(variantID: String) async {

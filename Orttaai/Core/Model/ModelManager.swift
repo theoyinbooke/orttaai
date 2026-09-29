@@ -61,7 +61,7 @@ struct ModelInfo: Identifiable {
 /// directory name, never normalized, so the full-precision and quantized
 /// builds of one family stay distinguishable ("openai_whisper-large-v3" vs
 /// "openai_whisper-large-v3_947MB").
-struct DownloadedVariantRecord: Sendable, Equatable {
+nonisolated struct DownloadedVariantRecord: Sendable, Equatable {
     let variantID: String
     let directoryURL: URL
     let bytes: Int64
@@ -71,7 +71,7 @@ struct DownloadedVariantRecord: Sendable, Equatable {
     }
 }
 
-struct DownloadedModelMetrics: Sendable {
+nonisolated struct DownloadedModelMetrics: Sendable {
     let modelDirectories: [String: URL]
     let totalBytes: Int64
     /// Every downloaded build, one record per on-disk directory. Unlike
@@ -104,6 +104,7 @@ final class ModelManager {
 
     private let transcriptionService: TranscriptionService
     private let settings: AppSettings
+    private let locator: ModelDirectoryLocator
 
     /// The app-wide warm transcription service. Features like ChatAI voice
     /// input reuse it instead of owning a second copy of the Whisper model.
@@ -114,15 +115,20 @@ final class ModelManager {
         "TextDecoder",
     ]
 
+    /// Performs no file-system work: the model folders can block on a macOS
+    /// folder-access prompt, and this runs during application launch. Which
+    /// models exist on disk is asked of the locator, off the main thread, only
+    /// when a feature needs it.
     init(
         transcriptionService: TranscriptionService,
-        settings: AppSettings = AppSettings()
+        settings: AppSettings = AppSettings(),
+        locator: ModelDirectoryLocator = .shared
     ) {
         self.transcriptionService = transcriptionService
         self.settings = settings
+        self.locator = locator
 
         setupHardcodedModels()
-        checkExistingModels()
     }
 
     // MARK: - Model Fetching
@@ -172,7 +178,7 @@ final class ModelManager {
 
     func download(model: ModelInfo) async throws {
         let exactModelID = model.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isAlreadyDownloaded = Self.detectDownloadedVariantIDs().contains(exactModelID)
+        let isAlreadyDownloaded = await locator.inventory().directories[exactModelID] != nil
         state = isAlreadyDownloaded ? .loading : .downloading(progress: 0)
 
         if isAlreadyDownloaded {
@@ -186,7 +192,10 @@ final class ModelManager {
             if !isAlreadyDownloaded {
                 state = .loading
             }
-            try await transcriptionService.loadModel(named: model.id)
+            // Choosing a model to download or activate is the explicit request
+            // that lets loading fetch it; warm-up and dictation never do.
+            try await transcriptionService.loadModel(named: model.id, allowDownload: true)
+            await locator.invalidate()
             await transcriptionService.warmUp()
             currentModelId = model.id
             AppSettings().activeModelId = model.id
@@ -264,25 +273,12 @@ final class ModelManager {
         )
     }
 
-    func deleteModel(named modelId: String) throws {
+    func deleteModel(named modelId: String) async throws {
         // A list row represents a whole model family (quantized builds and
         // date-stamped aliases merged), so deleting it removes every variant
         // directory in that family — no orphaned duplicates left on disk.
-        var removedAny = false
         let canonicalTargetID = Self.canonicalModelListID(modelId)
-        let storageAccess = try? ModelStorageLocation.beginAccess(
-            createIfNeeded: false,
-            requiresWrite: false
-        )
-        defer { _ = storageAccess }
-        let detectedMetrics = Self.detectDownloadedModelMetrics()
-        for (detectedID, detectedModelDir) in detectedMetrics.modelDirectories
-        where Self.canonicalModelListID(detectedID) == canonicalTargetID {
-            if FileManager.default.fileExists(atPath: detectedModelDir.path) {
-                try FileManager.default.removeItem(at: detectedModelDir)
-                removedAny = true
-            }
-        }
+        let removedAny = try await locator.deleteFamily(canonicalID: canonicalTargetID)
 
         if Self.canonicalModelListID(currentModelId ?? "") == canonicalTargetID {
             currentModelId = nil
@@ -293,6 +289,11 @@ final class ModelManager {
         } else {
             Logger.model.info("No local model files found for: \(canonicalTargetID)")
         }
+    }
+
+    /// Removes exactly one downloaded build, leaving its family's other builds.
+    func deleteVariant(named variantID: String) async throws {
+        try await locator.deleteVariant(named: variantID)
     }
 
     // MARK: - Private: Hardcoded Fallback
@@ -341,10 +342,6 @@ final class ModelManager {
                 isEnglishOnly: false
             ),
         ])
-    }
-
-    private func checkExistingModels() {
-        state = Self.detectDownloadedVariantIDs().isEmpty ? .notDownloaded : .downloaded
     }
 
     nonisolated static func sortModelsBySize(_ models: [ModelInfo]) -> [ModelInfo] {
@@ -510,21 +507,24 @@ final class ModelManager {
         return trimmed
     }
 
-    nonisolated static func detectDownloadedModelMetrics(in roots: [URL]? = nil) -> DownloadedModelMetrics {
-        let storageAccess = roots == nil
-            ? try? ModelStorageLocation.beginAccess(createIfNeeded: false, requiresWrite: false)
-            : nil
-        defer { _ = storageAccess }
-        let modelRoots = roots ?? modelStorageRoots()
-        let variantDirectories = detectDownloadedVariantDirectories(in: modelRoots)
+    nonisolated static func detectDownloadedModelMetrics(in roots: [URL]) -> DownloadedModelMetrics {
+        metrics(
+            forVariantDirectories: detectDownloadedVariantDirectories(in: roots),
+            byteSize: directoryByteSize
+        )
+    }
 
+    nonisolated static func metrics(
+        forVariantDirectories variantDirectories: [String: URL],
+        byteSize: (URL) -> Int64
+    ) -> DownloadedModelMetrics {
         let variants = variantDirectories
             .sorted { $0.key < $1.key }
             .map { variantID, directory in
                 DownloadedVariantRecord(
                     variantID: variantID,
                     directoryURL: directory,
-                    bytes: directoryByteSize(directory)
+                    bytes: byteSize(directory)
                 )
             }
         // Total disk usage counts every build, so a family with both a
@@ -547,7 +547,7 @@ final class ModelManager {
     /// model-management footer, these paths do not need recursive disk-usage
     /// totals, so avoid statting every Core ML artifact before dictation can
     /// become ready.
-    nonisolated static func detectDownloadedModelIDs(in roots: [URL]? = nil) -> Set<String> {
+    nonisolated static func detectDownloadedModelIDs(in roots: [URL]) -> Set<String> {
         return Set(
             detectDownloadedVariantIDs(in: roots)
                 .map(normalizedModelID)
@@ -558,33 +558,50 @@ final class ModelManager {
     /// Exact build ids on disk. Precision-sensitive load and prefetch paths
     /// must use this inventory so a quantized sibling never makes a requested
     /// full-precision build look already available.
-    nonisolated static func detectDownloadedVariantIDs(in roots: [URL]? = nil) -> Set<String> {
-        let modelRoots = roots ?? modelStorageRoots()
-        return Set(detectDownloadedVariantDirectories(in: modelRoots).keys)
+    nonisolated static func detectDownloadedVariantIDs(in roots: [URL]) -> Set<String> {
+        Set(detectDownloadedVariantDirectories(in: roots).keys)
     }
 
     /// Removes exactly one downloaded build (matched by its on-disk directory
     /// name) and leaves every other variant of the family untouched — the
     /// quantized-migration counterpart to `deleteModel(named:)`, which removes
     /// a whole family.
-    nonisolated static func deleteDownloadedVariant(named variantID: String, in roots: [URL]? = nil) throws {
+    nonisolated static func deleteDownloadedVariant(named variantID: String, in roots: [URL]) throws {
         let trimmed = variantID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let storageAccess = roots == nil
-            ? try? ModelStorageLocation.beginAccess(createIfNeeded: false, requiresWrite: false)
-            : nil
-        defer { _ = storageAccess }
         let fileManager = FileManager.default
-        for record in detectDownloadedModelMetrics(in: roots).variants where record.variantID == trimmed {
-            if fileManager.fileExists(atPath: record.directoryURL.path) {
-                try fileManager.removeItem(at: record.directoryURL)
-                Logger.model.info("Deleted downloaded variant: \(record.variantID)")
-            }
+        if let directory = detectDownloadedVariantDirectories(in: roots)[trimmed],
+           fileManager.fileExists(atPath: directory.path) {
+            try fileManager.removeItem(at: directory)
+            Logger.model.info("Deleted downloaded variant: \(trimmed)")
         }
     }
 
-    nonisolated static func prefetchModelIfNeeded(_ modelId: String) async -> ModelPrefetchOutcome {
+    /// Removes every directory of one model family. Directories are grouped by
+    /// normalized id (one per family build) before removal.
+    nonisolated static func deleteModelFamily(canonicalID: String, in roots: [URL]) throws -> Bool {
+        var familyDirectories: [String: URL] = [:]
+        for (_, directory) in detectDownloadedVariantDirectories(in: roots).sorted(by: { $0.key < $1.key }) {
+            insertDownloadedModelDirectory(directory, into: &familyDirectories)
+        }
+
+        let fileManager = FileManager.default
+        var removedAny = false
+        for (detectedID, directory) in familyDirectories
+        where canonicalModelListID(detectedID) == canonicalID {
+            if fileManager.fileExists(atPath: directory.path) {
+                try fileManager.removeItem(at: directory)
+                removedAny = true
+            }
+        }
+        return removedAny
+    }
+
+    nonisolated static func prefetchModelIfNeeded(
+        _ modelId: String,
+        locator: ModelDirectoryLocator = .shared
+    ) async -> ModelPrefetchOutcome {
         // Availability and download both use the exact id. Normalization would
         // let a quantized sibling suppress a requested full-precision prefetch.
         let exactModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -592,41 +609,30 @@ final class ModelManager {
             return .failed(message: "Missing model id.")
         }
 
-        if detectDownloadedVariantIDs().contains(exactModelId) {
+        let inventory = await locator.inventory()
+        if inventory.directories[exactModelId] != nil {
             return .alreadyAvailable
+        }
+        // The build may already sit on a folder that did not answer; do not
+        // start a multi-gigabyte download on that guess.
+        guard inventory.isComplete else {
+            return .failed(message: ModelLoadError.storageUnavailable.localizedDescription)
         }
 
         do {
-            let storageAccess = try ModelStorageLocation.beginAccess(
-                createIfNeeded: true,
-                requiresWrite: true
-            )
+            let storageAccess = try await locator.beginAccess(createIfNeeded: true, requiresWrite: true)
             _ = try await WhisperKit.download(
                 variant: exactModelId,
                 downloadBase: storageAccess.url
             )
+            await locator.invalidate()
             return .downloaded
         } catch {
             return .failed(message: error.localizedDescription)
         }
     }
 
-    /// Resolves an exact downloaded build so callers can load it directly
-    /// instead of allowing WhisperKit to redownload it into another cache.
-    nonisolated static func downloadedVariantDirectory(
-        named variantID: String,
-        in roots: [URL]? = nil
-    ) -> URL? {
-        let exactID = variantID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !exactID.isEmpty else { return nil }
-        let storageAccess = roots == nil
-            ? try? ModelStorageLocation.beginAccess(createIfNeeded: false, requiresWrite: false)
-            : nil
-        defer { _ = storageAccess }
-        return detectDownloadedVariantDirectories(in: roots ?? modelStorageRoots())[exactID]
-    }
-
-    nonisolated private static func modelStorageRoots() -> [URL] {
+    nonisolated static func modelStorageRoots() -> [URL] {
         let fileManager = FileManager.default
         let appSupport = try? AppStoragePaths.applicationSupportRootURL()
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -678,7 +684,7 @@ final class ModelManager {
     /// Walks the storage roots and returns every valid model build keyed by
     /// its exact directory name (no normalization) — the source of truth for
     /// which precise variants exist on disk.
-    nonisolated private static func detectDownloadedVariantDirectories(in roots: [URL]) -> [String: URL] {
+    nonisolated static func detectDownloadedVariantDirectories(in roots: [URL]) -> [String: URL] {
         let fileManager = FileManager.default
         var variantDirectories: [String: URL] = [:]
 
@@ -775,7 +781,7 @@ final class ModelManager {
         }
     }
 
-    nonisolated private static func directoryByteSize(_ directory: URL) -> Int64 {
+    nonisolated static func directoryByteSize(_ directory: URL) -> Int64 {
         let fileManager = FileManager.default
         guard let enumerator = fileManager.enumerator(
             at: directory,

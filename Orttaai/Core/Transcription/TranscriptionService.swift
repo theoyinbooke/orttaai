@@ -31,6 +31,17 @@ enum SetupModelLoadStage: Sendable {
 }
 
 actor TranscriptionService: Transcribing {
+    /// Creates the WhisperKit pipeline for a configuration. A seam so tests can
+    /// observe loads without Core ML models.
+    typealias WhisperKitFactory = @Sendable (WhisperKitConfig) async throws -> WhisperKit
+
+    private struct InFlightLoad {
+        let id: UUID
+        let modelName: String
+        let allowDownload: Bool
+        let task: Task<Void, Error>
+    }
+
     private struct SpeculativeTailResult: Sendable {
         /// `committedSampleCount` at the time the tail decode started.
         let base: Int
@@ -86,8 +97,13 @@ actor TranscriptionService: Transcribing {
     /// trailing clip pieces are never allowed to end up shorter than it.
     static let minDecodableSampleCount = transcriptionSampleRate * 3 / 2
 
+    private let modelLocator: ModelDirectoryLocator
+    private let whisperKitFactory: WhisperKitFactory
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
+    /// The model load in progress. Concurrent requests for the same model
+    /// (warm-up and the first finalization) share it instead of loading twice.
+    private var inFlightLoad: InFlightLoad?
     /// Retains security-scoped access while a model on a user-selected drive
     /// is resident. Releasing it on unload balances the access grant.
     private var modelStorageAccess: ModelStorageAccess?
@@ -124,6 +140,14 @@ actor TranscriptionService: Transcribing {
         workerCount: 0
     )
 
+    init(
+        modelLocator: ModelDirectoryLocator = .shared,
+        whisperKitFactory: @escaping WhisperKitFactory = { try await WhisperKit($0) }
+    ) {
+        self.modelLocator = modelLocator
+        self.whisperKitFactory = whisperKitFactory
+    }
+
     var isLoaded: Bool {
         whisperKit != nil
     }
@@ -132,37 +156,77 @@ actor TranscriptionService: Transcribing {
         loadedModelIDValue
     }
 
+    /// Loads a model that is already on this Mac. Never downloads.
     func loadModel(named modelName: String) async throws {
+        try await loadModel(named: modelName, allowDownload: false)
+    }
+
+    /// `allowDownload` is for the flows where the user explicitly asked for
+    /// the model to be fetched (download, setup). Warm-up and dictation leave
+    /// it false so a missing model is reported instead of silently starting a
+    /// multi-gigabyte download.
+    func loadModel(named modelName: String, allowDownload: Bool) async throws {
+        while let inFlight = inFlightLoad {
+            guard inFlight.modelName == modelName else {
+                _ = try? await inFlight.task.value
+                continue
+            }
+            do {
+                try await inFlight.task.value
+                return
+            } catch where allowDownload && !inFlight.allowDownload {
+                // The load joined could not download; this caller may.
+                continue
+            }
+        }
+
+        let id = UUID()
+        let task = Task {
+            defer {
+                if inFlightLoad?.id == id {
+                    inFlightLoad = nil
+                }
+            }
+            try await performLoad(named: modelName, allowDownload: allowDownload)
+        }
+        inFlightLoad = InFlightLoad(id: id, modelName: modelName, allowDownload: allowDownload, task: task)
+        try await task.value
+    }
+
+    private func performLoad(named modelName: String, allowDownload: Bool) async throws {
         Logger.transcription.info("Loading model: \(modelName)")
 
-        let readAccess = try? ModelStorageLocation.beginAccess(
-            createIfNeeded: false,
-            requiresWrite: false
-        )
-        let existingFolder = ModelManager.downloadedVariantDirectory(named: modelName)
-        let retainedAccess: ModelStorageAccess?
         let config: WhisperKitConfig
+        let retainedAccess: ModelStorageAccess?
+        var didDownload = false
 
-        if let existingFolder {
+        switch await modelLocator.lookup(variantID: modelName) {
+        case .found(let existingFolder):
+            let tokenizerFolder = try await tokenizerFolder(
+                forModel: modelName,
+                at: existingFolder,
+                allowDownload: allowDownload
+            )
             config = WhisperKitConfig(
                 modelFolder: existingFolder.path,
+                tokenizerFolder: tokenizerFolder,
                 computeOptions: computeOptions(),
                 voiceActivityDetector: EnergyVAD(),
                 load: true,
                 download: false
             )
-            if let readAccess,
-               ModelStorageLocation.contains(existingFolder, in: readAccess.url) {
-                retainedAccess = readAccess
-            } else {
-                retainedAccess = nil
+            let readAccess = try? await modelLocator.beginAccess(createIfNeeded: false, requiresWrite: false)
+            retainedAccess = readAccess.flatMap {
+                ModelStorageLocation.contains(existingFolder, in: $0.url) ? $0 : nil
             }
             Logger.transcription.info("Loading existing model folder: \(existingFolder.path)")
-        } else {
-            let writeAccess = try ModelStorageLocation.beginAccess(
-                createIfNeeded: true,
-                requiresWrite: true
-            )
+        case .unavailable:
+            throw ModelLoadError.storageUnavailable
+        case .notFound:
+            guard allowDownload else {
+                throw ModelLoadError.modelFilesNotFound(modelID: modelName)
+            }
+            let writeAccess = try await modelLocator.beginAccess(createIfNeeded: true, requiresWrite: true)
             config = WhisperKitConfig(
                 model: modelName,
                 downloadBase: writeAccess.url,
@@ -171,15 +235,40 @@ actor TranscriptionService: Transcribing {
                 load: true
             )
             retainedAccess = writeAccess
+            didDownload = true
             Logger.transcription.info("Downloading model into: \(writeAccess.url.path)")
         }
 
-        let wk = try await WhisperKit(config)
+        let wk = try await whisperKitFactory(config)
         whisperKit = wk
         loadedModelIDValue = modelName
         modelStorageAccess = retainedAccess
+        if didDownload {
+            await modelLocator.invalidate()
+        }
 
         Logger.transcription.info("Model loaded: \(modelName)")
+    }
+
+    /// The root WhisperKit should resolve the tokenizer from: the one that
+    /// holds the model, never a default such as ~/Documents/huggingface. A
+    /// tokenizer that is not stored locally would be fetched from the network
+    /// while loading, so outside an explicit download it is an error.
+    private func tokenizerFolder(
+        forModel modelName: String,
+        at modelFolder: URL,
+        allowDownload: Bool
+    ) async throws -> URL {
+        let hasTokenizer = await modelLocator.probe {
+            ModelTokenizerLocation.hasLocalTokenizer(modelID: modelName, modelFolder: modelFolder)
+        }
+        guard let hasTokenizer else {
+            throw ModelLoadError.storageUnavailable
+        }
+        guard hasTokenizer || allowDownload else {
+            throw ModelLoadError.tokenizerNotFound(modelID: modelName)
+        }
+        return ModelTokenizerLocation.tokenizerBase(forModelFolder: modelFolder)
     }
 
     func prepareModelForSetup(
@@ -191,10 +280,7 @@ actor TranscriptionService: Transcribing {
         onStageChange?(.downloading)
         onProgress?(0)
 
-        let storageAccess = try ModelStorageLocation.beginAccess(
-            createIfNeeded: true,
-            requiresWrite: true
-        )
+        let storageAccess = try await modelLocator.beginAccess(createIfNeeded: true, requiresWrite: true)
         let modelFolder = try await WhisperKit.download(
             variant: modelName,
             downloadBase: storageAccess.url,
@@ -204,18 +290,20 @@ actor TranscriptionService: Transcribing {
             }
         )
 
+        await modelLocator.invalidate()
         onProgress?(1)
         onStageChange?(.loading)
 
         let config = WhisperKitConfig(
             modelFolder: modelFolder.path,
+            tokenizerFolder: storageAccess.url,
             computeOptions: computeOptions(),
             voiceActivityDetector: EnergyVAD(),
             load: true,
             download: false
         )
 
-        let wk = try await WhisperKit(config)
+        let wk = try await whisperKitFactory(config)
         whisperKit = wk
         loadedModelIDValue = modelName
         modelStorageAccess = storageAccess

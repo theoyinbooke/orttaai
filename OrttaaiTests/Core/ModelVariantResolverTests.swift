@@ -243,15 +243,17 @@ final class ModelVariantResolverTests: XCTestCase {
         )
     }
 
-    // MARK: - Real-machine verification (read-only)
+    // MARK: - On-disk inventory
 
-    func testRealDiskInventoryResolvesTruthfullyOnThisMachine() throws {
-        // Read-only walk of the actual model storage roots. Skips cleanly on
-        // machines without downloaded models; on a machine with the original
-        // bug's state (full-precision openai_whisper-large-v3 on disk) it
-        // proves the row resolves to the full build with its measured size.
-        let metrics = ModelManager.detectDownloadedModelMetrics()
-        try XCTSkipIf(metrics.variants.isEmpty, "No downloaded models on this machine")
+    func testDiskInventoryResolvesTruthfully() throws {
+        // A temporary root holding the original bug's state: the
+        // full-precision openai_whisper-large-v3 build on disk while the
+        // family row's download target is the quantized variant. Never reads
+        // the user's real model folders.
+        let root = try ModelProbeTestSupport.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try ModelProbeTestSupport.createFakeModel(at: root.appendingPathComponent("openai_whisper-large-v3"))
+        let metrics = ModelManager.detectDownloadedModelMetrics(in: [root])
 
         for record in metrics.variants {
             XCTAssertGreaterThan(record.bytes, 0, "Measured size missing for \(record.variantID)")
@@ -260,9 +262,7 @@ final class ModelVariantResolverTests: XCTestCase {
         // Footer consistency: total equals the sum of every variant build.
         XCTAssertEqual(metrics.totalBytes, metrics.variants.reduce(Int64(0)) { $0 + $1.bytes })
 
-        guard let fullLargeV3 = metrics.variants.first(where: { $0.variantID == "openai_whisper-large-v3" }) else {
-            throw XCTSkip("Full-precision openai_whisper-large-v3 not present on this machine")
-        }
+        let fullLargeV3 = try XCTUnwrap(metrics.variants.first { $0.variantID == "openai_whisper-large-v3" })
 
         let row = ModelVariantResolver.resolveRow(
             family: makeFamily(id: "openai_whisper-large-v3_947MB", sizeMB: 947),
@@ -274,7 +274,6 @@ final class ModelVariantResolverTests: XCTestCase {
         XCTAssertEqual(row.measuredBytes, fullLargeV3.bytes)
         XCTAssertEqual(row.precision, .fullPrecision)
         XCTAssertNotNil(row.migrationOffer)
-        XCTAssertGreaterThan(fullLargeV3.bytes, 2_000_000_000, "Full-precision large-v3 should measure ~2.9GB")
     }
 
     // MARK: - Helpers

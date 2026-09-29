@@ -670,7 +670,9 @@ final class DictationCoordinator {
         } catch {
             await transcriptionService.cancelLiveTranscriptionSession()
             Logger.dictation.error("Processing failed: \(error.localizedDescription)")
-            state = .error(message: "Couldn't transcribe. Try again.")
+            // A model that cannot be loaded is a different problem from a
+            // failed transcription, and the fix is not "try again".
+            state = .error(message: (error as? ModelLoadError)?.pillMessage ?? "Couldn't transcribe. Try again.")
             endSessionContext()
             autoDismissError()
         }
@@ -916,6 +918,8 @@ final class DictationCoordinator {
                 "Transcription model was not loaded at recording finalization; loading \(selectedModelID)"
             )
         }
+        // Never downloads: a model that is not on disk is reported through
+        // `ModelLoadError`, not fetched in the middle of a dictation.
         try await transcriptionService.loadModel(named: selectedModelID)
         let runtimeModelID = await transcriptionService.loadedModelID()?
             .trimmingCharacters(in: .whitespacesAndNewlines)

@@ -49,6 +49,20 @@ nonisolated enum ModelStorageLocation {
         resolvedCustomURL(defaults: defaults) ?? defaultDownloadBaseURL(fileManager: fileManager)
     }
 
+    /// The selected location as recorded in preferences, with no file-system
+    /// access at all. It is the initial value for view state; the real
+    /// availability comes from `ModelDirectoryLocator.storageSnapshot()`.
+    static func placeholderSnapshot(
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default
+    ) -> ModelStorageSnapshot {
+        let customPath = defaults.string(forKey: customPathKey).flatMap { $0.isEmpty ? nil : $0 }
+        let isCustom = customPath != nil || defaults.data(forKey: customBookmarkKey) != nil
+        let url = customPath.map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL }
+            ?? defaultDownloadBaseURL(fileManager: fileManager)
+        return ModelStorageSnapshot(url: url, isCustom: isCustom, isAvailable: true, isWritable: true)
+    }
+
     static func snapshot(
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default

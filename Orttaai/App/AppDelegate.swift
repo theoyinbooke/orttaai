@@ -452,27 +452,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarMenu?.updateStatusLine("Loading model...")
 
         Task {
-            do {
-                let selectedModelID = await MainActor.run {
-                    settings.applyLanguageOptimizedSmallModelSelection()
-                }
-                await settings.syncTranscriptionSettings(to: transcription)
-                try await transcription.loadModel(named: selectedModelID)
-                await transcription.warmUp()
-                let runtimeModelID = await transcription.loadedModelID() ?? selectedModelID
-                await MainActor.run {
-                    settings.activeModelId = runtimeModelID
-                    self.statusBarController?.updateIcon(state: .idle)
-                    self.statusBarMenu?.updateStatusLine("Ready")
-                    Logger.model.info("Model warm-up complete")
-                }
-            } catch {
-                await MainActor.run {
-                    settings.activeModelId = ""
-                    self.statusBarController?.updateIcon(state: .error)
-                    self.statusBarMenu?.updateStatusLine("Model not loaded")
-                    Logger.model.error("Model warm-up failed: \(error.localizedDescription)")
-                }
+            let outcome = await ModelWarmUp.perform(
+                settings: settings,
+                transcription: transcription,
+                warmUp: { await transcription.warmUp() }
+            )
+            switch outcome {
+            case .ready:
+                statusBarController?.updateIcon(state: .idle)
+                statusBarMenu?.updateStatusLine("Ready")
+                Logger.model.info("Model warm-up complete")
+            case .failed(let statusLine):
+                statusBarController?.updateIcon(state: .error)
+                statusBarMenu?.updateStatusLine(statusLine)
             }
         }
     }

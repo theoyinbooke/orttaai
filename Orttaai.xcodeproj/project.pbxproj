@@ -457,8 +457,10 @@
 				INFOPLIST_FILE = Orttaai/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Orttaai Debug";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Orttaai reads the speech recognition models you already downloaded. Nothing else in this folder is accessed.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Orttaai needs microphone access to capture your voice for on-device transcription.";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Orttaai reads the speech recognition models you already downloaded to this drive. Nothing else on it is accessed.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -509,8 +511,10 @@
 				INFOPLIST_FILE = Orttaai/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Orttaai;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Orttaai reads the speech recognition models you already downloaded. Nothing else in this folder is accessed.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Orttaai needs microphone access to capture your voice for on-device transcription.";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Orttaai reads the speech recognition models you already downloaded to this drive. Nothing else on it is accessed.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
