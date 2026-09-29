@@ -137,3 +137,14 @@ session.
 The macOS XCTest host is deliberately inert: unit tests and ASR evaluations
 must never register Orttaai's global hotkeys, capture a live microphone, open
 application UI, synchronize user data, or inject text.
+
+## Live-path vocabulary prompt on large-v3-turbo (2026-09-28)
+
+The live clip/tail decodes carry no vocabulary prompt. Re-measured on
+`openai_whisper-large-v3-v20240930` (turbo, Release, 92-item corpus, bias
+prompt of the 36 manifest terms applied to every live clip and tail decode):
+live WER 3.85% -> 54.4%, strict hard-vocab recall 43.0% -> 26.6%, median
+finalize 907 ms -> 1843 ms, and every long-* and adv-* item degraded (the
+prompt is re-applied per clip and the decoder degenerates). Do not re-enable
+it; vocabulary recall on the live path comes from the deterministic fuzzy
+dictionary pass in the rule-based text processor instead.
