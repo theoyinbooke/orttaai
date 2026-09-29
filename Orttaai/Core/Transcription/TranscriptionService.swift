@@ -80,6 +80,11 @@ actor TranscriptionService: Transcribing {
     static let pauseCommitSilenceSampleCount = transcriptionSampleRate * 7 / 10
     /// Pause commits below this length risk hallucinated decodes; skip them.
     static let pauseCommitMinClipSampleCount = liveTranscriptionMinSampleCount
+    /// WhisperKit only starts a decode window while more than `windowClipTime`
+    /// (1s by default) of the clip remains, so any clip at or under that
+    /// length silently decodes to nothing. Audio is padded past it, and
+    /// trailing clip pieces are never allowed to end up shorter than it.
+    static let minDecodableSampleCount = transcriptionSampleRate * 3 / 2
 
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
@@ -381,6 +386,15 @@ actor TranscriptionService: Transcribing {
         trace.tailMedianFrameRMS = tailStatistics.median
         trace.committedClipCount = session.committedTexts.count
 
+        // A tail with no speech-level energy behind a committed prefix has
+        // nothing worth a second, threshold-free decode: at best it recovers
+        // nothing, at worst it hallucinates a stock phrase or spends seconds
+        // re-decoding noise.
+        let tailIsDroppable = Self.tailCanBeDropped(
+            tailPeakFrameRMS: tailStatistics.peak,
+            hasCommittedText: !session.committedTexts.isEmpty
+        )
+
         var tailText: String?
         if let speculative = session.speculativeResult,
            speculative.base == base,
@@ -397,6 +411,11 @@ actor TranscriptionService: Transcribing {
                 Logger.transcription.debug("Reusing speculative tail covering \(speculative.coveredSampleCount) samples")
                 tailText = speculative.text
                 trace.path = .reusedSpeculative
+                if tailIsDroppable, Self.isStockHallucination(speculative.text) {
+                    Logger.transcription.info("Dropping stock-phrase hallucination from a non-speech tail")
+                    tailText = ""
+                    trace.path = .tailEmptyAccepted
+                }
             }
         }
 
@@ -415,9 +434,15 @@ actor TranscriptionService: Transcribing {
                     audioSamples: tailAudio,
                     allowCancellation: false,
                     promptTokens: tailPromptTokens,
+                    allowRelaxedRetry: !tailIsDroppable,
                     relaxedRetryProbe: relaxedRetryProbe
                 )
                 trace.path = .tailDecoded
+                if tailIsDroppable, Self.isStockHallucination(tailText ?? "") {
+                    Logger.transcription.info("Dropping stock-phrase hallucination from a non-speech tail")
+                    tailText = ""
+                    trace.path = .tailEmptyAccepted
+                }
             } catch {
                 // Do not fail the whole session here. The completeness check
                 // below decides whether a committed prefix is safe to return
@@ -431,6 +456,12 @@ actor TranscriptionService: Transcribing {
         // A non-empty tail came from audio above the conservative faint-energy
         // floor. Returning only the committed prefix after that tail failed
         // would silently lose the end of the user's dictation.
+        if !tailAudio.isEmpty, tailText == nil, tailIsDroppable {
+            Logger.transcription.info("Tail carried no speech energy and decoded to nothing; keeping the committed prefix")
+            tailText = ""
+            trace.path = .tailEmptyAccepted
+        }
+
         if !tailAudio.isEmpty, tailText == nil {
             Logger.transcription.info(
                 "Background tail decode was unavailable; falling back to the complete recording"
@@ -519,8 +550,11 @@ actor TranscriptionService: Transcribing {
     func warmUp() async {
         guard whisperKit != nil else { return }
 
-        Logger.transcription.info("Warming up model with 1s silence")
-        let silentSamples = [Float](repeating: 0, count: 16000) // 1 second at 16kHz
+        // Two seconds, not one: WhisperKit skips any clip at or under its 1s
+        // window padding, so a 1s buffer never reached the encoder or decoder
+        // and the first real dictation paid the Core ML cold-start cost.
+        Logger.transcription.info("Warming up model with 2s silence")
+        let silentSamples = [Float](repeating: 0, count: 2 * Self.transcriptionSampleRate)
 
         do {
             _ = try await transcribe(audioSamples: silentSamples)
@@ -865,6 +899,7 @@ actor TranscriptionService: Transcribing {
             throw OrttaaiError.modelNotLoaded
         }
 
+        let audioSamples = Self.paddedForDecode(audioSamples)
         try Task.checkCancellation()
         let callback: TranscriptionCallback = { _ in
             Task.isCancelled ? false : nil
@@ -910,12 +945,14 @@ actor TranscriptionService: Transcribing {
         audioSamples: [Float],
         allowCancellation: Bool,
         promptTokens: [Int]? = nil,
+        allowRelaxedRetry: Bool = true,
         relaxedRetryProbe: RelaxedRetryProbe? = nil
     ) async throws -> String {
         try await performTranscriptionDetailed(
             audioSamples: audioSamples,
             allowCancellation: allowCancellation,
             promptTokens: promptTokens,
+            allowRelaxedRetry: allowRelaxedRetry,
             relaxedRetryProbe: relaxedRetryProbe
         ).text
     }
@@ -924,12 +961,14 @@ actor TranscriptionService: Transcribing {
         audioSamples: [Float],
         allowCancellation: Bool,
         promptTokens: [Int]?,
+        allowRelaxedRetry: Bool = true,
         relaxedRetryProbe: RelaxedRetryProbe? = nil
     ) async throws -> DecodeOutcome {
         guard let wk = whisperKit else {
             throw OrttaaiError.modelNotLoaded
         }
 
+        let audioSamples = Self.paddedForDecode(audioSamples)
         try Task.checkCancellation()
         let callback: TranscriptionCallback = allowCancellation ? { _ in
             Task.isCancelled ? false : nil
@@ -978,7 +1017,7 @@ actor TranscriptionService: Transcribing {
             return DecodeOutcome(text: text, trippedFallback: tripped)
         }
 
-        guard !allowCancellation else {
+        guard !allowCancellation, allowRelaxedRetry else {
             throw Self.noTranscriptionResultError()
         }
 
@@ -1070,15 +1109,54 @@ actor TranscriptionService: Transcribing {
         let audioSeconds = Float(sampleCount) / Float(transcriptionSampleRate)
         guard audioSeconds > clipSeconds else { return [] }
 
+        // A trailing piece shorter than WhisperKit's window padding would be
+        // skipped outright and its words lost; fold it into the previous clip.
+        let minTrailingSeconds = Float(minDecodableSampleCount) / Float(transcriptionSampleRate)
+
         var timestamps: [Float] = []
         var start: Float = 0
         while start < audioSeconds {
-            let end = min(start + clipSeconds, audioSeconds)
+            var end = min(start + clipSeconds, audioSeconds)
+            if audioSeconds - end < minTrailingSeconds {
+                end = audioSeconds
+            }
             timestamps.append(start)
             timestamps.append(end)
             start = end
         }
         return timestamps
+    }
+
+    /// Appends dead silence so audio is long enough for WhisperKit to decode
+    /// at all (see `minDecodableSampleCount`). Longer audio is returned as is.
+    nonisolated static func paddedForDecode(_ samples: [Float]) -> [Float] {
+        guard !samples.isEmpty, samples.count < minDecodableSampleCount else { return samples }
+        return samples + [Float](repeating: 0, count: minDecodableSampleCount - samples.count)
+    }
+
+    /// Stock phrases Whisper emits on non-speech audio. Closed and tiny on
+    /// purpose: it is only ever consulted for audio with no speech-level
+    /// energy, where a genuinely spoken "thank you" is not expected.
+    private static let stockHallucinationPhrases: Set<String> = [
+        "you", "thank you", "thanks", "bye", "bye bye",
+        "thanks for watching", "thank you for watching",
+    ]
+
+    nonisolated static func isStockHallucination(_ text: String) -> Bool {
+        let words = text.lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted)
+            .filter { !$0.isEmpty }
+        return stockHallucinationPhrases.contains(words.joined(separator: " "))
+    }
+
+    /// A tail that decoded to nothing (or only a stock hallucination) can be
+    /// dropped instead of re-decoding the whole recording when a committed
+    /// prefix exists and the tail never reached speech-level energy.
+    nonisolated static func tailCanBeDropped(
+        tailPeakFrameRMS: Float,
+        hasCommittedText: Bool
+    ) -> Bool {
+        hasCommittedText && tailPeakFrameRMS < speechEnergyThreshold
     }
 
     nonisolated static func noTranscriptionResultError() -> OrttaaiError {

@@ -13,6 +13,10 @@ nonisolated enum FinalizePath: Sendable, Equatable {
     /// The uncommitted tail trimmed to nothing (dead silence); the committed
     /// prefix alone was returned.
     case tailEmptyNoAudio
+    /// The tail decoded to nothing (or a stock hallucination) but never
+    /// reached speech-level energy, so the committed prefix was returned
+    /// instead of re-decoding the whole recording.
+    case tailEmptyAccepted
     /// The background result was unusable and the whole recording was
     /// decoded again.
     case wholeFallback(FinalizeFallbackReason)
@@ -84,6 +88,8 @@ nonisolated extension FinalizeTrace: Encodable {
             try container.encode("tail_decoded", forKey: .path)
         case .tailEmptyNoAudio:
             try container.encode("tail_empty_no_audio", forKey: .path)
+        case .tailEmptyAccepted:
+            try container.encode("tail_empty_accepted", forKey: .path)
         case .noLiveSession:
             try container.encode("no_live_session", forKey: .path)
         case .wholeFallback(let reason):
