@@ -10,7 +10,9 @@ import Foundation
 /// `<root>/models/openai/whisper-*`. Left to its defaults WhisperKit looks for
 /// the tokenizer under `~/Documents/huggingface` whatever root the model lives
 /// in, which touches Documents for a model stored elsewhere and downloads the
-/// tokenizer when it is not there. Loading passes the model's own root instead.
+/// tokenizer when it is not there. Loading passes the model's own root instead,
+/// falling back to the legacy Documents cache for tokenizers an earlier
+/// version stored there.
 nonisolated enum ModelTokenizerLocation {
     private static let repositoryComponents = ["models", "argmaxinc", "whisperkit-coreml"]
     private static let tokenizerFamilies: Set<String> = [
@@ -77,5 +79,31 @@ nonisolated enum ModelTokenizerLocation {
         return searchFolders.contains {
             fileManager.fileExists(atPath: $0.appendingPathComponent("tokenizer.json").path)
         }
+    }
+
+    /// The root loading should hand WhisperKit as its tokenizer folder: the
+    /// model's own root when it holds the tokenizer; otherwise the legacy
+    /// default root when an earlier version cached the tokenizer there (every
+    /// version before this one did, whatever root the model was in); otherwise
+    /// the model's own root, where WhisperKit stores the small tokenizer files
+    /// it fetches — never a hidden multi-gigabyte download, and never Documents.
+    static func resolveTokenizerBase(
+        modelID: String,
+        modelFolder: URL,
+        legacyBase: URL?,
+        fileManager: FileManager = .default
+    ) -> URL {
+        let derivedBase = tokenizerBase(forModelFolder: modelFolder)
+        if hasLocalTokenizer(modelID: modelID, modelFolder: modelFolder, fileManager: fileManager) {
+            return derivedBase
+        }
+        guard let legacyBase,
+              legacyBase.standardizedFileURL != derivedBase.standardizedFileURL,
+              let repositoryName = tokenizerRepositoryName(forModelID: modelID) else {
+            return derivedBase
+        }
+        let legacyTokenizer = legacyBase
+            .appendingPathComponent("models/\(repositoryName)/tokenizer.json")
+        return fileManager.fileExists(atPath: legacyTokenizer.path) ? legacyBase : derivedBase
     }
 }

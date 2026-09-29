@@ -13,9 +13,6 @@ nonisolated enum ModelLoadError: LocalizedError, Equatable {
     /// folder-access prompt that has not been answered). The model may well
     /// exist there, so this is never treated as "the model is gone".
     case storageUnavailable
-    /// The model is present but its tokenizer is not stored beside it, and
-    /// loading would have to fetch it from the network.
-    case tokenizerNotFound(modelID: String)
 
     var errorDescription: String? {
         switch self {
@@ -23,8 +20,6 @@ nonisolated enum ModelLoadError: LocalizedError, Equatable {
             return "The speech model \(ModelManager.formatDisplayName(modelID)) is not on this Mac."
         case .storageUnavailable:
             return "Orttaai couldn't reach the folder that holds your speech models."
-        case .tokenizerNotFound(let modelID):
-            return "The tokenizer for \(ModelManager.formatDisplayName(modelID)) is missing next to the model."
         }
     }
 
@@ -34,8 +29,6 @@ nonisolated enum ModelLoadError: LocalizedError, Equatable {
             return "Open Settings > Models to download it or choose another model."
         case .storageUnavailable:
             return "Reconnect the drive, or allow Orttaai to access the folder if macOS asks, then try again."
-        case .tokenizerNotFound:
-            return "Open Settings > Models and download the model again."
         }
     }
 
@@ -46,20 +39,17 @@ nonisolated enum ModelLoadError: LocalizedError, Equatable {
             return "Model not found. Open Settings > Models"
         case .storageUnavailable:
             return "Model folder unavailable"
-        case .tokenizerNotFound:
-            return "Model incomplete. Open Settings > Models"
         }
     }
 
     /// Short pill message shown when a finished recording cannot be transcribed.
+    /// The pill is 200pt wide: keep these under ~26 characters.
     var pillMessage: String {
         switch self {
         case .modelFilesNotFound:
-            return "Model not found. Open Settings > Models."
+            return "Model not found"
         case .storageUnavailable:
-            return "Model folder unavailable. Try again."
-        case .tokenizerNotFound:
-            return "Model incomplete. Open Settings > Models."
+            return "Model folder unavailable"
         }
     }
 }

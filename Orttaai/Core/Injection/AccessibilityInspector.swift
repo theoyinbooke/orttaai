@@ -52,7 +52,7 @@ nonisolated enum AXInspection<Value: Equatable & Sendable>: Equatable, Sendable 
 nonisolated struct AXTimeoutPolicy: Equatable, Sendable {
     /// Budget for the secure-field guard. Generous, so a slow-but-alive
     /// password field is still inspected rather than failing open.
-    static let secureFieldCheckSeconds: Float = 1.5
+    static let secureFieldCheckSeconds: Float = 3.0
     /// Budget for verification snapshots and post-paste writes. Short, because
     /// an unanswered read only makes verification inconclusive.
     static let verificationSeconds: Float = 0.4

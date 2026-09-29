@@ -98,4 +98,52 @@ final class ModelTokenizerLocationTests: XCTestCase {
             "An unverifiable family keeps WhisperKit's own behaviour rather than failing"
         )
     }
+
+    func testResolveTokenizerBasePrefersTheModelsOwnRootThenTheLegacyCacheThenTheModelsRoot() throws {
+        let base = try ModelProbeTestSupport.makeTemporaryDirectory()
+        let legacy = try ModelProbeTestSupport.makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: base)
+            try? FileManager.default.removeItem(at: legacy)
+        }
+        let modelFolder = ModelProbeTestSupport.repositoryRoot(under: base)
+            .appendingPathComponent("openai_whisper-small", isDirectory: true)
+        let resolve = {
+            ModelTokenizerLocation.resolveTokenizerBase(
+                modelID: "openai_whisper-small", modelFolder: modelFolder, legacyBase: legacy
+            )
+        }
+
+        // Nowhere: the model's own root (WhisperKit fetches the small files there).
+        XCTAssertEqual(ModelProbeTestSupport.standardizedPath(resolve()), ModelProbeTestSupport.standardizedPath(base))
+
+        // Only in the legacy cache: use it, exactly as before this change.
+        try ModelProbeTestSupport.createFakeTokenizer(named: "openai/whisper-small", under: legacy)
+        XCTAssertEqual(ModelProbeTestSupport.standardizedPath(resolve()), ModelProbeTestSupport.standardizedPath(legacy))
+
+        // Beside the model too: the model's own root wins.
+        try ModelProbeTestSupport.createFakeTokenizer(named: "openai/whisper-small", under: base)
+        XCTAssertEqual(ModelProbeTestSupport.standardizedPath(resolve()), ModelProbeTestSupport.standardizedPath(base))
+    }
+
+    func testResolveTokenizerBaseWithoutALegacyRootOrForUnmappedFamiliesUsesTheModelsRoot() throws {
+        let base = try ModelProbeTestSupport.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let modelFolder = ModelProbeTestSupport.repositoryRoot(under: base)
+            .appendingPathComponent("openai_whisper-small", isDirectory: true)
+        XCTAssertEqual(
+            ModelProbeTestSupport.standardizedPath(
+                ModelTokenizerLocation.resolveTokenizerBase(modelID: "openai_whisper-small", modelFolder: modelFolder, legacyBase: nil)
+            ),
+            ModelProbeTestSupport.standardizedPath(base)
+        )
+        let distil = ModelProbeTestSupport.repositoryRoot(under: base)
+            .appendingPathComponent("distil-whisper_distil-large-v3", isDirectory: true)
+        XCTAssertEqual(
+            ModelProbeTestSupport.standardizedPath(
+                ModelTokenizerLocation.resolveTokenizerBase(modelID: "distil-whisper_distil-large-v3", modelFolder: distil, legacyBase: base)
+            ),
+            ModelProbeTestSupport.standardizedPath(base)
+        )
+    }
 }

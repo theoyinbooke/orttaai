@@ -67,7 +67,8 @@ final class TranscriptionServiceModelLoadingTests: XCTestCase {
         base: URL,
         recorder: WhisperKitFactoryRecorder,
         probes: ModelStorageProbes? = nil,
-        probeTimeout: TimeInterval = 0.5
+        probeTimeout: TimeInterval = 0.5,
+        legacyTokenizerBase: URL? = nil
     ) -> TranscriptionService {
         let probes = probes ?? ModelProbeTestSupport.probes(
             roots: [ModelProbeTestSupport.repositoryRoot(under: base)],
@@ -76,7 +77,9 @@ final class TranscriptionServiceModelLoadingTests: XCTestCase {
         let locator = ModelProbeTestSupport.locator(probes: probes, probeTimeout: probeTimeout)
         return TranscriptionService(
             modelLocator: locator,
-            whisperKitFactory: { config in try await recorder.create(for: config) }
+            whisperKitFactory: { config in try await recorder.create(for: config) },
+            // Tests never look at the real ~/Documents/huggingface.
+            legacyTokenizerBase: legacyTokenizerBase
         )
     }
 
@@ -108,19 +111,42 @@ final class TranscriptionServiceModelLoadingTests: XCTestCase {
         XCTAssertEqual(loadedModelID, modelID)
     }
 
-    func testMissingTokenizerIsATypedErrorInsteadOfANetworkFetch() async throws {
+    func testMissingTokenizerLoadsFromTheModelsOwnRootAndNeverThrows() async throws {
         let base = try makeBase(withModel: true, withTokenizer: false)
         let recorder = WhisperKitFactoryRecorder()
-        let service = makeService(base: base, recorder: recorder)
+        let service = makeService(base: base, recorder: recorder, legacyTokenizerBase: nil)
 
-        do {
-            try await service.loadModel(named: modelID)
-            XCTFail("Expected the missing tokenizer to be reported")
-        } catch {
-            XCTAssertEqual(error as? ModelLoadError, .tokenizerNotFound(modelID: modelID))
-        }
-        let callCount = await recorder.callCount
-        XCTAssertEqual(callCount, 0)
+        try await service.loadModel(named: modelID)
+
+        let configs = await recorder.configs
+        let config = try XCTUnwrap(configs.first)
+        XCTAssertEqual(
+            config.tokenizerFolder.map(ModelProbeTestSupport.standardizedPath),
+            ModelProbeTestSupport.standardizedPath(base),
+            "WhisperKit stores the small tokenizer it fetches under the model's own root, never Documents"
+        )
+        XCTAssertEqual(config.download, false, "Only the tokenizer may be fetched; the model is never downloaded")
+    }
+
+    func testTokenizerCachedByAnEarlierVersionInTheLegacyRootIsStillUsed() async throws {
+        // Versions before this one cached tokenizers under ~/Documents/huggingface
+        // whatever root the model lived in; a model on another drive must keep
+        // loading without a fetch.
+        let base = try makeBase(withModel: true, withTokenizer: false)
+        let legacy = try ModelProbeTestSupport.makeTemporaryDirectory()
+        temporaryDirectories.append(legacy)
+        try ModelProbeTestSupport.createFakeTokenizer(named: "openai/whisper-small", under: legacy)
+        let recorder = WhisperKitFactoryRecorder()
+        let service = makeService(base: base, recorder: recorder, legacyTokenizerBase: legacy)
+
+        try await service.loadModel(named: modelID)
+
+        let configs = await recorder.configs
+        let config = try XCTUnwrap(configs.first)
+        XCTAssertEqual(
+            config.tokenizerFolder.map(ModelProbeTestSupport.standardizedPath),
+            ModelProbeTestSupport.standardizedPath(legacy)
+        )
     }
 
     func testExplicitDownloadFlowMayFetchAMissingTokenizer() async throws {

@@ -99,6 +99,9 @@ actor TranscriptionService: Transcribing {
 
     private let modelLocator: ModelDirectoryLocator
     private let whisperKitFactory: WhisperKitFactory
+    /// Where versions before this one cached tokenizers, whatever root the
+    /// model itself lived in. Only consulted as a fallback.
+    private let legacyTokenizerBase: URL?
     private var whisperKit: WhisperKit?
     private var loadedModelIDValue: String?
     /// The model load in progress. Concurrent requests for the same model
@@ -142,10 +145,12 @@ actor TranscriptionService: Transcribing {
 
     init(
         modelLocator: ModelDirectoryLocator = .shared,
-        whisperKitFactory: @escaping WhisperKitFactory = { try await WhisperKit($0) }
+        whisperKitFactory: @escaping WhisperKitFactory = { try await WhisperKit($0) },
+        legacyTokenizerBase: URL? = ModelStorageLocation.defaultDownloadBaseURL()
     ) {
         self.modelLocator = modelLocator
         self.whisperKitFactory = whisperKitFactory
+        self.legacyTokenizerBase = legacyTokenizerBase
     }
 
     var isLoaded: Bool {
@@ -202,11 +207,7 @@ actor TranscriptionService: Transcribing {
 
         switch await modelLocator.lookup(variantID: modelName) {
         case .found(let existingFolder):
-            let tokenizerFolder = try await tokenizerFolder(
-                forModel: modelName,
-                at: existingFolder,
-                allowDownload: allowDownload
-            )
+            let tokenizerFolder = try await tokenizerFolder(forModel: modelName, at: existingFolder)
             config = WhisperKitConfig(
                 modelFolder: existingFolder.path,
                 tokenizerFolder: tokenizerFolder,
@@ -250,25 +251,22 @@ actor TranscriptionService: Transcribing {
         Logger.transcription.info("Model loaded: \(modelName)")
     }
 
-    /// The root WhisperKit should resolve the tokenizer from: the one that
-    /// holds the model, never a default such as ~/Documents/huggingface. A
-    /// tokenizer that is not stored locally would be fetched from the network
-    /// while loading, so outside an explicit download it is an error.
-    private func tokenizerFolder(
-        forModel modelName: String,
-        at modelFolder: URL,
-        allowDownload: Bool
-    ) async throws -> URL {
-        let hasTokenizer = await modelLocator.probe {
-            ModelTokenizerLocation.hasLocalTokenizer(modelID: modelName, modelFolder: modelFolder)
+    /// The root WhisperKit should resolve the tokenizer from; see
+    /// `ModelTokenizerLocation.resolveTokenizerBase`. Probed off the caller's
+    /// thread with the same timeout as every other model-folder access.
+    private func tokenizerFolder(forModel modelName: String, at modelFolder: URL) async throws -> URL {
+        let legacyBase = legacyTokenizerBase
+        let resolved = await modelLocator.probe {
+            ModelTokenizerLocation.resolveTokenizerBase(
+                modelID: modelName,
+                modelFolder: modelFolder,
+                legacyBase: legacyBase
+            )
         }
-        guard let hasTokenizer else {
+        guard let resolved else {
             throw ModelLoadError.storageUnavailable
         }
-        guard hasTokenizer || allowDownload else {
-            throw ModelLoadError.tokenizerNotFound(modelID: modelName)
-        }
-        return ModelTokenizerLocation.tokenizerBase(forModelFolder: modelFolder)
+        return resolved
     }
 
     func prepareModelForSetup(

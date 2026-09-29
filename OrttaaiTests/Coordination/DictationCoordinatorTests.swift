@@ -1220,11 +1220,11 @@ final class DictationCoordinatorTests: XCTestCase {
         )
         XCTAssertEqual(
             DictationCoordinator.startFailureMessage(for: OrttaaiError.noAudioInput),
-            "No microphone signal. Check your mic."
+            "No microphone signal"
         )
         XCTAssertEqual(
             DictationCoordinator.startFailureMessage(for: NSError(domain: "com.apple.coreaudio.avfaudio", code: -10868)),
-            "Couldn't start recording. Try again."
+            "Can't start recording"
         )
     }
 
@@ -1234,7 +1234,7 @@ final class DictationCoordinatorTests: XCTestCase {
         audioService.startCaptureError = OrttaaiError.noAudioInput
         coordinator.startRecording()
 
-        XCTAssertEqual(coordinator.state, .error(message: "No microphone signal. Check your mic."))
+        XCTAssertEqual(coordinator.state, .error(message: "No microphone signal"))
     }
 
     // MARK: - Hands-free duration cap

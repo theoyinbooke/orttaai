@@ -440,9 +440,9 @@ final class DictationCoordinator {
         case .microphoneAccessDenied:
             return "Microphone access needed"
         case .noAudioInput:
-            return "No microphone signal. Check your mic."
+            return "No microphone signal"
         default:
-            return "Couldn't start recording. Try again."
+            return "Can't start recording"
         }
     }
 

@@ -98,7 +98,6 @@ final class ModelLaunchSafetyTests: XCTestCase {
         let failures: [(Error, String)] = [
             (ModelLoadError.storageUnavailable, "Model folder unavailable"),
             (ModelLoadError.modelFilesNotFound(modelID: "openai_whisper-large-v3-v20240930"), "Model not found. Open Settings > Models"),
-            (ModelLoadError.tokenizerNotFound(modelID: "openai_whisper-large-v3-v20240930"), "Model incomplete. Open Settings > Models"),
             (ModelStorageLocationError.folderMissing("/Volumes/Missing"), "Model folder unavailable"),
             (NSError(domain: "test", code: 1), "Model not loaded"),
         ]

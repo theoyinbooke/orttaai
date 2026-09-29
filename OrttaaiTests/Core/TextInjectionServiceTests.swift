@@ -591,7 +591,7 @@ final class AXTimeoutPolicyTests: XCTestCase {
     }
 
     func testPolicyBudgetsAreNamedConstants() {
-        XCTAssertEqual(AXTimeoutPolicy.secureFieldCheckSeconds, 1.5)
+        XCTAssertEqual(AXTimeoutPolicy.secureFieldCheckSeconds, 3.0)
         XCTAssertEqual(AXTimeoutPolicy.verificationSeconds, 0.4)
         XCTAssertEqual(AXTimeoutPolicy.secureFieldCheck.seconds, AXTimeoutPolicy.secureFieldCheckSeconds)
         XCTAssertEqual(AXTimeoutPolicy.verification.seconds, AXTimeoutPolicy.verificationSeconds)
