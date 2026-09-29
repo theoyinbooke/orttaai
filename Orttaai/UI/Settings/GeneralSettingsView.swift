@@ -16,7 +16,7 @@ struct GeneralSettingsView: View {
     @AppStorage("maxRecordingDuration") private var maxRecordingDuration = 90
     @AppStorage("handsFreeModeEnabled") private var handsFreeModeEnabled = true
     @AppStorage("handsFreeSilenceStopEnabled") private var handsFreeSilenceStopEnabled = true
-    @AppStorage("handsFreeSilenceStopSeconds") private var handsFreeSilenceStopSeconds = 2.0
+    @AppStorage("handsFreeSilenceStopSeconds") private var handsFreeSilenceStopSeconds = 4.0
     @AppStorage("handsFreeMaxRecordingDuration") private var handsFreeMaxRecordingDuration = 600
     @AppStorage("editCommandsEnabled") private var editCommandsEnabled = true
     @State private var showClearConfirmation = false
@@ -209,7 +209,7 @@ struct GeneralSettingsView: View {
                                 .foregroundStyle(Color.Orttaai.accent)
                         }
 
-                        Slider(value: $handsFreeSilenceStopSeconds, in: 1...5, step: 0.5)
+                        Slider(value: $handsFreeSilenceStopSeconds, in: 1...10, step: 0.5)
                             .tint(Color.Orttaai.accent)
                     }
                     .padding(.top, Spacing.md)

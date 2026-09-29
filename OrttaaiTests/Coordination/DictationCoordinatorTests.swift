@@ -12,15 +12,30 @@ final class MockAudioCaptureService: AudioCapturing {
     var audioLevel: Float = 0
     var activeInputDeviceID: AudioDeviceID?
     var shouldFail = false
+    var startCaptureError: Error = OrttaaiError.microphoneAccessDenied
+    /// When set, every startCapture call from this (1-based) call number on
+    /// throws, so a health-monitor recovery attempt can be made to fail.
+    var failStartCaptureFromCall: Int?
+    private var startCaptureCallCount = 0
     var mockSamples: [Float] = Array(repeating: 0.1, count: 16000) // 1 second
     var lastStartCaptureDeviceID: AudioDeviceID?
     private(set) var requestedSnapshotLimits: [Int?] = []
+    private(set) var requestedSnapshotStarts: [Int] = []
 
     func startCapture(deviceID: AudioDeviceID? = nil) throws {
         lastStartCaptureDeviceID = deviceID
-        if shouldFail {
-            throw OrttaaiError.microphoneAccessDenied
+        startCaptureCallCount += 1
+        if shouldFail || failStartCaptureFromCall.map({ startCaptureCallCount >= $0 }) == true {
+            throw startCaptureError
         }
+    }
+
+    var capturedSampleCount: Int { mockSamples.count }
+
+    func currentSamplesSnapshot(from startIndex: Int) -> [Float] {
+        requestedSnapshotStarts.append(startIndex)
+        guard startIndex >= 0, startIndex < mockSamples.count else { return [] }
+        return Array(mockSamples[startIndex...])
     }
 
     func stopCapture() -> [Float] {
@@ -273,6 +288,8 @@ final class DictationCoordinatorTests: XCTestCase {
     /// Deterministic gesture clock. Recording durations still use real time;
     /// only tap/hold disambiguation reads this.
     var gestureNow = Date()
+    /// Every recording-end trace the coordinator emitted, oldest first.
+    var recordedEnds: [RecordingEndTrace] = []
 
     @MainActor
     override func setUpWithError() throws {
@@ -310,6 +327,8 @@ final class DictationCoordinatorTests: XCTestCase {
             editProcessor: editProcessor,
             now: { [weak self] in self?.gestureNow ?? Date() }
         )
+        recordedEnds = []
+        coordinator.recordingEndSink = { [weak self] in self?.recordedEnds.append($0) }
     }
 
     override func tearDownWithError() throws {
@@ -926,6 +945,296 @@ final class DictationCoordinatorTests: XCTestCase {
         }
         XCTAssertFalse(coordinator.isHandsFreeRecording)
         coordinator.stopRecording()
+    }
+
+    private func speech(seconds: Double) -> [Float] {
+        [Float](repeating: 0.1, count: Int(seconds * 16_000))
+    }
+
+    private func silence(seconds: Double) -> [Float] {
+        [Float](repeating: 0, count: Int(seconds * 16_000))
+    }
+
+    @MainActor
+    private func isStillRecording() -> Bool {
+        if case .recording = coordinator.state { return true }
+        return false
+    }
+
+    @MainActor
+    func testSingleTransientFrameNeverArmsOrStopsThePillSession() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        // One 100ms burst (a click or bump), then dead silence.
+        audioService.mockSamples = speech(seconds: 0.1) + silence(seconds: 6)
+
+        coordinator.startHandsFreeRecording()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        XCTAssertTrue(isStillRecording(), "A single loud frame must not arm the silence auto-stop")
+
+        coordinator.stopRecording()
+        let end = recordedEnds.last
+        XCTAssertEqual(end?.reason, .pillStop)
+        XCTAssertEqual(end?.speechFrameCount, 1)
+        XCTAssertEqual(end?.handsFreeArmed, false)
+    }
+
+    @MainActor
+    func testSustainedSpeechThenSilenceAutoStopsPillSession() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 1.5)
+
+        coordinator.startHandsFreeRecording()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+
+        let stopped = await waitUntil(timeoutSeconds: 4) { !self.isStillRecording() }
+        XCTAssertTrue(stopped, "Sustained speech followed by the silence window must auto-stop")
+
+        let end = recordedEnds.first
+        XCTAssertEqual(end?.reason, .silenceAutoStop)
+        XCTAssertEqual(end?.handsFreeArmed, true)
+        XCTAssertEqual(end?.silenceStopSeconds, 1.0)
+        XCTAssertEqual(end?.speechFrameCount, 10)
+        XCTAssertGreaterThanOrEqual(end?.trailingSilenceMs ?? 0, 1_000)
+        XCTAssertEqual(end?.isHandsFree, true)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testSilenceOnlyPillSessionNeverAutoStops() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        audioService.mockSamples = silence(seconds: 8)
+
+        coordinator.startHandsFreeRecording()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+        XCTAssertTrue(isStillRecording(), "Never stop before any speech has been heard")
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testSpeechResumingInsideWindowKeepsPillSessionRecording() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 0.8) + speech(seconds: 0.4)
+
+        coordinator.startHandsFreeRecording()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+        XCTAssertTrue(isStillRecording())
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testDefaultSilenceWindowIsFourSecondsAndToleratesLongPauses() async {
+        XCTAssertEqual(settings.handsFreeSilenceStopSeconds, 4.0)
+        XCTAssertEqual(settings.effectiveHandsFreeSilenceStopSeconds, 4.0)
+        // A 3s thinking pause is well inside the default window.
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 3.0)
+
+        coordinator.startHandsFreeRecording()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        XCTAssertTrue(isStillRecording())
+        coordinator.stopRecording()
+        _ = await waitUntil { self.coordinator.state == .idle }
+
+        // A pause past the window ends the session.
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 4.5)
+        coordinator.startHandsFreeRecording()
+        let stopped = await waitUntil(timeoutSeconds: 4) { !self.isStillRecording() }
+        XCTAssertTrue(stopped)
+        XCTAssertEqual(recordedEnds.last?.reason, .silenceAutoStop)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testSilenceWindowClampsToOneToTenSeconds() {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 0.2
+        XCTAssertEqual(settings.effectiveHandsFreeSilenceStopSeconds, 1.0)
+        settings.handsFreeSilenceStopSeconds = 7.5
+        XCTAssertEqual(settings.effectiveHandsFreeSilenceStopSeconds, 7.5)
+        settings.handsFreeSilenceStopSeconds = 10
+        XCTAssertEqual(settings.effectiveHandsFreeSilenceStopSeconds, 10)
+        settings.handsFreeSilenceStopSeconds = 25
+        XCTAssertEqual(settings.effectiveHandsFreeSilenceStopSeconds, 10)
+        settings.handsFreeSilenceStopEnabled = false
+        XCTAssertNil(settings.effectiveHandsFreeSilenceStopSeconds)
+    }
+
+    @MainActor
+    func testPollingScansOnlyTheUnscannedSuffix() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 10
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 2.0)
+
+        coordinator.startHandsFreeRecording()
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        coordinator.stopRecording()
+
+        // Seeded once from the start, then never re-copied from the front.
+        XCTAssertEqual(audioService.requestedSnapshotStarts.first, 0)
+        XCTAssertLessThanOrEqual(audioService.requestedSnapshotStarts.filter { $0 == 0 }.count, 1)
+    }
+
+    // MARK: - Recording end reasons
+
+    @MainActor
+    func testHoldReleaseIsRecordedAsPushToTalk() async {
+        settings.handsFreeModeEnabled = true
+        audioService.mockSamples = speech(seconds: 2.5)
+
+        coordinator.handleHotkeyDown()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        gestureNow.addTimeInterval(1.0)
+        coordinator.handleHotkeyUp()
+
+        let end = recordedEnds.last
+        XCTAssertEqual(end?.reason, .holdRelease)
+        XCTAssertEqual(end?.isHandsFree, false)
+        XCTAssertNil(end?.silenceStopSeconds)
+        XCTAssertEqual(end?.handsFreeArmed, false)
+        XCTAssertEqual(end?.speechFrameCount, 25, "Push-to-talk stats come from the finished recording")
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testHoldToTalkIsNeverAutoStoppedWhateverTheSilence() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 6)
+
+        coordinator.handleHotkeyDown()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+        XCTAssertTrue(isStillRecording())
+        XCTAssertTrue(recordedEnds.isEmpty)
+        gestureNow.addTimeInterval(1.0)
+        coordinator.handleHotkeyUp()
+        XCTAssertEqual(recordedEnds.last?.reason, .holdRelease)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testHotkeyTapStopIsRecorded() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopEnabled = false
+        audioService.mockSamples = speech(seconds: 2.5)
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.handleHotkeyDown()
+
+        XCTAssertEqual(recordedEnds.last?.reason, .hotkeyTapStop)
+        XCTAssertEqual(recordedEnds.last?.isHandsFree, true)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testPillStopIsRecorded() async {
+        settings.handsFreeSilenceStopEnabled = false
+        audioService.mockSamples = speech(seconds: 2.5)
+
+        coordinator.startHandsFreeRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        XCTAssertEqual(recordedEnds.last?.reason, .pillStop)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testCapTimerStopIsRecorded() async {
+        settings.handsFreeSilenceStopEnabled = false
+        settings.handsFreeMaxRecordingDuration = 2
+        audioService.mockSamples = speech(seconds: 3)
+
+        coordinator.startHandsFreeRecording()
+        let stopped = await waitUntil(timeoutSeconds: 5) { !self.isStillRecording() }
+
+        XCTAssertTrue(stopped)
+        XCTAssertEqual(recordedEnds.last?.reason, .capTimer)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testTooShortRecordingIsRecorded() {
+        coordinator.startRecording()
+        coordinator.stopRecording()
+
+        XCTAssertEqual(recordedEnds.last?.reason, .tooShort)
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    @MainActor
+    func testDroppedAudioIsRecorded() async {
+        audioService.mockSamples = speech(seconds: 0.1)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        XCTAssertEqual(recordedEnds.last?.reason, .audioDropped)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testCaptureStartFailureIsRecorded() {
+        audioService.shouldFail = true
+        coordinator.startRecording()
+
+        XCTAssertEqual(recordedEnds.last?.reason, .captureFailed)
+        XCTAssertEqual(recordedEnds.last?.recordingDurationMs, 0)
+    }
+
+    @MainActor
+    func testFailedHealthRecoveryIsRecorded() async {
+        // No samples ever arrive and the recovery restart fails.
+        audioService.mockSamples = []
+        audioService.failStartCaptureFromCall = 2
+
+        coordinator.startRecording()
+        let failed = await waitUntil(timeoutSeconds: 4) {
+            if case .error = self.coordinator.state { return true }
+            return false
+        }
+
+        XCTAssertTrue(failed)
+        XCTAssertEqual(recordedEnds.last?.reason, .captureFailed)
+    }
+
+    // MARK: - Capture start failure messages
+
+    @MainActor
+    func testStartFailureMessagesAreHonest() {
+        XCTAssertEqual(
+            DictationCoordinator.startFailureMessage(for: OrttaaiError.microphoneAccessDenied),
+            "Microphone access needed"
+        )
+        XCTAssertEqual(
+            DictationCoordinator.startFailureMessage(for: OrttaaiError.noAudioInput),
+            "No microphone signal. Check your mic."
+        )
+        XCTAssertEqual(
+            DictationCoordinator.startFailureMessage(for: NSError(domain: "com.apple.coreaudio.avfaudio", code: -10868)),
+            "Couldn't start recording. Try again."
+        )
+    }
+
+    @MainActor
+    func testNoInputDeviceShowsMicSignalMessageNotPermissionMessage() {
+        audioService.shouldFail = true
+        audioService.startCaptureError = OrttaaiError.noAudioInput
+        coordinator.startRecording()
+
+        XCTAssertEqual(coordinator.state, .error(message: "No microphone signal. Check your mic."))
     }
 
     // MARK: - Hands-free duration cap
