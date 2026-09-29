@@ -186,4 +186,12 @@ final class DisfluencyCleanerTests: XCTestCase {
         XCTAssertFalse(result.text.contains(" um "))
         XCTAssertLessThan(elapsed, 0.1)
     }
+
+    func testLetterIAfterADeterminerOrLetterWordIsNotCapitalized() {
+        for input in ["click on the i icon", "use a i variable", "the loop variable i is unused", "type the letter i here"] {
+            XCTAssertEqual(DisfluencyCleaner.clean(input).text, input, input)
+        }
+        XCTAssertEqual(DisfluencyCleaner.clean("then i went home").text, "then I went home")
+        XCTAssertEqual(DisfluencyCleaner.clean("so the i think").text, "so the i think", "documented trade-off: after a determiner it is a letter")
+    }
 }

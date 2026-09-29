@@ -44,6 +44,12 @@ enum DisfluencyCleaner {
         "volume", "page", "clause", "book", "act", "scene", "level", "tier"
     ]
 
+    /// A bare "i" right after one of these names the letter (the i icon, a
+    /// variable i), never the pronoun.
+    private static let letterIntroducers: Set<String> = [
+        "the", "a", "an", "variable", "letter", "index", "counter", "symbol", "int", "var"
+    ]
+
     static func clean(_ text: String) -> (text: String, changes: [String]) {
         let fillerResult = removeFillers(from: text)
         // A lone "Um." would otherwise paste as nothing at all.
@@ -220,6 +226,7 @@ enum DisfluencyCleaner {
         let previousWord = word(endingAt: before)
         let nextWord = word(startingAt: afterSpaces.drop(while: { $0 == "," || $0 == " " || $0 == "\t" }))
         if numeralIntroducers.contains(previousWord.lowercased()) { return false }
+        if letterIntroducers.contains(previousWord.lowercased()) { return false }
         if previousWord.lowercased() == "for", nextWord.lowercased() == "in" { return false }
         return ![previousWord, nextWord].contains(where: isSingleLetterNameOrNumeral)
     }
