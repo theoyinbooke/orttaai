@@ -30,6 +30,9 @@
 //   ORTTAAI_ASR_EVAL_PATHS        both|whole|live (default both)
 //   ORTTAAI_ASR_EVAL_IDS          comma-separated item subset
 //   ORTTAAI_ASR_EVAL_BIAS         1 to snapshot the manifest's bias_vocabulary
+//   ORTTAAI_ASR_EVAL_MODEL_ROOT   a storage base laid out like WhisperKit's (models/argmaxinc/whisperkit-coreml/<variant>,
+//                                 models/openai/whisper-*); loads from there instead of scanning ~/Documents, the custom
+//                                 storage folder and the caches, so the eval never triggers a macOS folder-access prompt
 //                                 into the service's vocabulary biasing (the
 //                                 production dictionary-snapshot mechanism)
 
@@ -106,7 +109,20 @@ final class ASREvalRunnerTests: XCTestCase {
             return
         }
 
-        let service = TranscriptionService()
+        let service: TranscriptionService
+        if let rootPath = env["ORTTAAI_ASR_EVAL_MODEL_ROOT"] {
+            let base = URL(fileURLWithPath: rootPath, isDirectory: true)
+            let probes = ModelProbeTestSupport.probes(
+                roots: [ModelProbeTestSupport.repositoryRoot(under: base)],
+                beginAccessBase: base
+            )
+            service = TranscriptionService(
+                modelLocator: ModelProbeTestSupport.locator(probes: probes, probeTimeout: 60, cacheLifetime: 3600),
+                legacyTokenizerBase: nil
+            )
+        } else {
+            service = TranscriptionService()
+        }
         await service.updateSettings(
             language: "en",
             computeMode: "cpuAndNeuralEngine",
