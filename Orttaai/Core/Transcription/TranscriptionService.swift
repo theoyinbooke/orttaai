@@ -95,6 +95,10 @@ actor TranscriptionService: Transcribing {
     /// speculative tails) so the UI can show a live transcript. Purely a
     /// side channel: it never influences finalization.
     private var liveTranscriptEventHandler: (@Sendable (LiveTranscriptEvent) -> Void)?
+    /// Receives the trace of every completed `finalizeLiveTranscription`.
+    /// Unset by default (tests, the eval runner); the app installs a
+    /// file-backed sink. Diagnostic only — it never influences finalization.
+    private var finalizeTraceSink: (@Sendable (FinalizeTrace) -> Void)?
 
     /// Language code for transcription (e.g. "en", "es", "auto").
     /// Set from AppSettings.dictationLanguage before transcribing.
@@ -235,6 +239,10 @@ actor TranscriptionService: Transcribing {
         liveTranscriptEventHandler = handler
     }
 
+    func setFinalizeTraceSink(_ sink: (@Sendable (FinalizeTrace) -> Void)?) {
+        finalizeTraceSink = sink
+    }
+
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {
         guard whisperKit != nil else { return }
         guard var session = liveSession else { return }
@@ -295,20 +303,43 @@ actor TranscriptionService: Transcribing {
     }
 
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String {
+        let (text, trace) = try await finalizeLiveTranscriptionDetailed(audioSamples: audioSamples)
+        finalizeTraceSink?(trace)
+        return text
+    }
+
+    /// `finalizeLiveTranscription` plus the trace of how it got there. The
+    /// trace is observation only: it never influences the control flow.
+    func finalizeLiveTranscriptionDetailed(
+        audioSamples: [Float]
+    ) async throws -> (text: String, trace: FinalizeTrace) {
         defer { liveSession = nil }
 
+        let clock = ContinuousClock()
+        let started = clock.now
+        var trace = FinalizeTrace(
+            totalAudioSeconds: Double(audioSamples.count) / Double(Self.transcriptionSampleRate)
+        )
+
         guard liveSession != nil else {
-            return try await performTranscription(
+            trace.path = .noLiveSession
+            let decodeStarted = clock.now
+            let text = try await performTranscription(
                 audioSamples: audioSamples,
                 allowCancellation: false,
                 promptTokens: wholeDecodePromptTokens(audioSamples: audioSamples)
             )
+            trace.msFallbackDecode = Self.milliseconds(since: decodeStarted, on: clock)
+            trace.msTotal = Self.milliseconds(since: started, on: clock)
+            return (text, trace)
         }
 
         // An in-flight clip commit always advances the committed prefix, so
         // waiting for it is never wasted work.
         if let commitTask = liveSession?.commitTask {
+            let awaitStarted = clock.now
             await commitTask.value
+            trace.msAwaitingCommit = Self.milliseconds(since: awaitStarted, on: clock)
         }
         // An in-flight tail decode is worth waiting for when it covers the
         // final audio within slack — or when everything queued after it is
@@ -319,23 +350,36 @@ actor TranscriptionService: Transcribing {
                 coveredSampleCount: inFlight.lastQueuedSampleCount,
                 audioSamples: audioSamples
             ) {
+                let awaitStarted = clock.now
                 await speculativeTask.value
+                trace.msAwaitingSpeculative = Self.milliseconds(since: awaitStarted, on: clock)
             } else {
                 speculativeTask.cancel()
+                trace.speculativeCancelled = true
             }
         }
 
         guard let session = liveSession else {
             // Session was cancelled while awaiting.
-            return try await performTranscription(
+            trace.path = .noLiveSession
+            let decodeStarted = clock.now
+            let text = try await performTranscription(
                 audioSamples: audioSamples,
                 allowCancellation: false,
                 promptTokens: wholeDecodePromptTokens(audioSamples: audioSamples)
             )
+            trace.msFallbackDecode = Self.milliseconds(since: decodeStarted, on: clock)
+            trace.msTotal = Self.milliseconds(since: started, on: clock)
+            return (text, trace)
         }
 
         let base = min(session.committedSampleCount, audioSamples.count)
         let tailAudio = Self.trimmedTailAudio(from: Array(audioSamples[base...]))
+        let tailStatistics = Self.frameRMSStatistics(of: tailAudio)
+        trace.tailSampleCount = tailAudio.count
+        trace.tailPeakFrameRMS = tailStatistics.peak
+        trace.tailMedianFrameRMS = tailStatistics.median
+        trace.committedClipCount = session.committedTexts.count
 
         var tailText: String?
         if let speculative = session.speculativeResult,
@@ -352,10 +396,13 @@ actor TranscriptionService: Transcribing {
             } else {
                 Logger.transcription.debug("Reusing speculative tail covering \(speculative.coveredSampleCount) samples")
                 tailText = speculative.text
+                trace.path = .reusedSpeculative
             }
         }
 
         if tailText == nil, !tailAudio.isEmpty {
+            let decodeStarted = clock.now
+            let relaxedRetryProbe = RelaxedRetryProbe()
             do {
                 // Condition the tail decode on the committed session text and
                 // bias vocabulary — but only when the tail actually carries
@@ -367,14 +414,18 @@ actor TranscriptionService: Transcribing {
                 tailText = try await performTranscription(
                     audioSamples: tailAudio,
                     allowCancellation: false,
-                    promptTokens: tailPromptTokens
+                    promptTokens: tailPromptTokens,
+                    relaxedRetryProbe: relaxedRetryProbe
                 )
+                trace.path = .tailDecoded
             } catch {
                 // Do not fail the whole session here. The completeness check
                 // below decides whether a committed prefix is safe to return
                 // or whether the complete recording must be decoded again.
                 Logger.transcription.debug("Tail decode produced no text: \(error.localizedDescription)")
             }
+            trace.msTailDecode = Self.milliseconds(since: decodeStarted, on: clock)
+            trace.relaxedRetryRan = relaxedRetryProbe.didRun
         }
 
         // A non-empty tail came from audio above the conservative faint-energy
@@ -384,7 +435,12 @@ actor TranscriptionService: Transcribing {
             Logger.transcription.info(
                 "Background tail decode was unavailable; falling back to the complete recording"
             )
-            return try await performWholeRecordingFallback(audioSamples)
+            trace.path = .wholeFallback(.tailNoResult)
+            let decodeStarted = clock.now
+            let text = try await performWholeRecordingFallback(audioSamples)
+            trace.msFallbackDecode = Self.milliseconds(since: decodeStarted, on: clock)
+            trace.msTotal = Self.milliseconds(since: started, on: clock)
+            return (text, trace)
         }
 
         if let combined = Self.mergedLiveTranscript(
@@ -398,19 +454,42 @@ actor TranscriptionService: Transcribing {
                 Logger.transcription.info(
                     "Background transcript failed integrity check (\(rejectionReason)); falling back to the complete recording"
                 )
-                return try await performWholeRecordingFallback(audioSamples)
+                trace.path = .wholeFallback(.integrityRejected(rejectionReason))
+                let decodeStarted = clock.now
+                let text = try await performWholeRecordingFallback(audioSamples)
+                trace.msFallbackDecode = Self.milliseconds(since: decodeStarted, on: clock)
+                trace.msTotal = Self.milliseconds(since: started, on: clock)
+                return (text, trace)
             }
             Logger.transcription.debug(
                 "Finalized with \(session.committedTexts.count) committed clip(s) and \(tailAudio.count) tail samples"
             )
-            return combined
+            if tailText == nil {
+                trace.path = .tailEmptyNoAudio
+            }
+            trace.msTotal = Self.milliseconds(since: started, on: clock)
+            return (combined, trace)
         }
 
         // Nothing anywhere — fall back to a full decode (with its relaxed
         // retry) to preserve the previous behavior for quiet recordings.
         // Unconditioned: this path means the audio is likely near-silent, the
         // worst case for prompt bleed-through.
-        return try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+        trace.path = .wholeFallback(.nothingCommitted)
+        let decodeStarted = clock.now
+        let text = try await performTranscription(audioSamples: audioSamples, allowCancellation: false)
+        trace.msFallbackDecode = Self.milliseconds(since: decodeStarted, on: clock)
+        trace.msTotal = Self.milliseconds(since: started, on: clock)
+        return (text, trace)
+    }
+
+    nonisolated private static func milliseconds(
+        since start: ContinuousClock.Instant,
+        on clock: ContinuousClock
+    ) -> Int {
+        let elapsed = start.duration(to: clock.now)
+        return Int(elapsed.components.seconds) * 1000
+            + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
     }
 
     /// Authoritative recovery path when background decoding cannot prove a
@@ -731,6 +810,13 @@ actor TranscriptionService: Transcribing {
         let trippedFallback: Bool
     }
 
+    /// Reports whether a decode reached its relaxed-threshold retry. A probe
+    /// rather than a `DecodeOutcome` field because the retry that matters for
+    /// diagnosis is the one that still comes back empty, which throws.
+    private final class RelaxedRetryProbe {
+        var didRun = false
+    }
+
     /// Live decodes deliberately run without prompt tokens. The checked-in ASR
     /// corpus shows that applying the vocabulary prompt independently to live
     /// clips increases live WER from 4.36% to 6.60%, doubles median latency,
@@ -823,19 +909,22 @@ actor TranscriptionService: Transcribing {
     private func performTranscription(
         audioSamples: [Float],
         allowCancellation: Bool,
-        promptTokens: [Int]? = nil
+        promptTokens: [Int]? = nil,
+        relaxedRetryProbe: RelaxedRetryProbe? = nil
     ) async throws -> String {
         try await performTranscriptionDetailed(
             audioSamples: audioSamples,
             allowCancellation: allowCancellation,
-            promptTokens: promptTokens
+            promptTokens: promptTokens,
+            relaxedRetryProbe: relaxedRetryProbe
         ).text
     }
 
     private func performTranscriptionDetailed(
         audioSamples: [Float],
         allowCancellation: Bool,
-        promptTokens: [Int]?
+        promptTokens: [Int]?,
+        relaxedRetryProbe: RelaxedRetryProbe? = nil
     ) async throws -> DecodeOutcome {
         guard let wk = whisperKit else {
             throw OrttaaiError.modelNotLoaded
@@ -903,6 +992,7 @@ actor TranscriptionService: Transcribing {
 
         let relaxedOptions = Self.relaxedDecodingOptions(from: primaryOptions)
         Logger.transcription.info("Primary decode returned empty transcript; retrying with relaxed thresholds")
+        relaxedRetryProbe?.didRun = true
 
         let retriedResults = try await wk.transcribe(
             audioArray: audioSamples,
@@ -1092,6 +1182,28 @@ actor TranscriptionService: Transcribing {
             frameStart = frameEnd
         }
         return nil
+    }
+
+    /// Peak and median RMS over the sample's 100ms energy frames (a trailing
+    /// partial frame is ignored once at least one full frame exists). Both
+    /// are 0 for empty input.
+    nonisolated static func frameRMSStatistics(of samples: [Float]) -> (peak: Float, median: Float) {
+        guard !samples.isEmpty else { return (0, 0) }
+        var energies: [Float] = []
+        var frameStart = 0
+        while frameStart < samples.count {
+            let frameEnd = min(samples.count, frameStart + energyFrameSampleCount)
+            if frameEnd - frameStart == energyFrameSampleCount || energies.isEmpty {
+                energies.append(frameRMS(samples[frameStart..<frameEnd]))
+            }
+            frameStart = frameEnd
+        }
+        energies.sort()
+        let middle = energies.count / 2
+        let median = energies.count.isMultiple(of: 2)
+            ? (energies[middle - 1] + energies[middle]) / 2
+            : energies[middle]
+        return (energies[energies.count - 1], median)
     }
 
     nonisolated static func containsSpeechEnergy(

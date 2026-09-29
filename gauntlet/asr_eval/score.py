@@ -19,12 +19,28 @@ Metrics per path (whole / live):
       invented_run    — >= 8 consecutive hypothesis words that are pure
                         insertions against the alignment with the reference
 
+Realistic-corpus additions (build_realistic_corpus.py):
+  - Items with an empty reference (noise-only recordings) have no WER; they
+    are excluded from aggregate WER and instead counted as junk_only_outputs
+    when the output is non-empty.
+  - trailing_stock_phrase: the hypothesis ends with a stock phrase Whisper
+    invents on noise ("thank you", "thanks", "you", "bye", "thanks for
+    watching") that the reference does not end with.
+  - by_group: per id-prefix group (long, noisy-long, hold, soft-last,
+    noise-only, quiet, pn, adv, ...) latency p50/p90/max and, for the live
+    path, the distribution of finalize_trace paths.
+  - soft_last: the reference's final word must still end the hypothesis
+    (strict) or appear in its last three words (lenient).
+
 Usage:
   python3 gauntlet/asr_eval/score.py RAW_RUN.json [--label baseline] \
-      [--out gauntlet/asr_eval/results.json] [--compare BASELINE.json]
+      [--out gauntlet/asr_eval/results.json] [--compare BASELINE.json] \
+      [--manifest gauntlet/asr_eval/corpus_realistic/manifest_realistic.json] \
+      [--group PREFIX]
 
 --compare adds relative deltas and the new-hallucination check against a
-previously written results file.
+previously written results file. --group scores only the items whose id
+prefix (the id minus its trailing -NNN) equals PREFIX.
 """
 
 from __future__ import annotations
@@ -244,8 +260,66 @@ def term_recall(term: str, hyp_text: str) -> tuple[bool, bool]:
     return strict, lenient
 
 
+STOCK_PHRASES = [
+    ["thanks", "for", "watching"],
+    ["thank", "you"],
+    ["thanks"],
+    ["bye"],
+    ["you"],
+]
+
+
+def group_of(item_id: str) -> str:
+    """Id prefix: the id minus its trailing -NNN (noisy-long-01 -> noisy-long)."""
+    return re.sub(r"-\d+$", "", item_id)
+
+
+def percentile(sorted_values, p):
+    if not sorted_values:
+        return None
+    return sorted_values[min(len(sorted_values) - 1, int(round(p * (len(sorted_values) - 1))))]
+
+
+def trailing_stock_phrase(ref: list[str], hyp: list[str]) -> str | None:
+    """The stock phrase the hypothesis ends with but the reference does not."""
+    for phrase in STOCK_PHRASES:
+        if hyp[-len(phrase):] == phrase and ref[-len(phrase):] != phrase:
+            return " ".join(phrase)
+    return None
+
+
+def trace_label(trace: dict) -> str:
+    label = trace["path"]
+    if trace.get("fallback_reason"):
+        label += ":" + trace["fallback_reason"]
+    return label
+
+
+def group_stats(entries):
+    """entries: [(ms, finalize_trace or None)] for one group."""
+    latencies = sorted(ms for ms, _ in entries)
+    stats = {
+        "count": len(entries),
+        "ms_p50": statistics.median(latencies),
+        "ms_p90": percentile(latencies, 0.9),
+        "ms_max": latencies[-1],
+    }
+    paths: dict[str, int] = {}
+    for _, trace in entries:
+        if trace:
+            label = trace_label(trace)
+            paths[label] = paths.get(label, 0) + 1
+    if paths:
+        stats["finalize_paths"] = dict(sorted(paths.items()))
+    return stats
+
+
 def score_path(items, raw_by_id, path_key):
     per_item = {}
+    group_entries: dict[str, list] = {}
+    junk_ids: list[str] = []
+    stock_ids: list[str] = []
+    soft_last: dict[str, dict] = {}
     total_err = 0
     total_ref = 0
     latencies = []
@@ -257,8 +331,22 @@ def score_path(items, raw_by_id, path_key):
         ref = normalize(item["reference"])
         hyp = normalize(raw["text"])
         errors, _ = align(ref, hyp)
-        wer = errors / max(len(ref), 1)
+        # An empty reference (noise-only item) has no WER; its output is
+        # judged as junk instead.
+        wer = errors / len(ref) if ref else None
         artifacts = hallucination_artifacts(ref, hyp)
+        stock = trailing_stock_phrase(ref, hyp)
+        if stock:
+            stock_ids.append(item["id"])
+        if not ref and hyp:
+            junk_ids.append(item["id"])
+        if group_of(item["id"]) == "soft-last" and ref:
+            soft_last[item["id"]] = {
+                "strict": hyp[-1:] == ref[-1:],
+                "lenient": ref[-1] in hyp[-3:],
+            }
+        trace = raw_by_id[item["id"]].get("finalize_trace") if path_key == "live" else None
+        group_entries.setdefault(group_of(item["id"]), []).append((raw["ms"], trace))
         terms = {}
         for term in item["hard_terms"]:
             s, l = term_recall(term, raw["text"])
@@ -266,11 +354,12 @@ def score_path(items, raw_by_id, path_key):
             strict_total += 1
             strict_hits += s
             lenient_hits += l
-        total_err += errors
-        total_ref += max(len(ref), 1)
+        if ref:
+            total_err += errors
+            total_ref += len(ref)
         latencies.append(raw["ms"])
         per_item[item["id"]] = {
-            "wer": round(wer, 4),
+            "wer": round(wer, 4) if wer is not None else None,
             "errors": errors,
             "ref_len": len(ref),
             "ms": raw["ms"],
@@ -278,13 +367,15 @@ def score_path(items, raw_by_id, path_key):
             "hard_terms": terms,
             "text": raw["text"],
             "error": raw.get("error"),
+            "trailing_stock_phrase": stock,
+            "finalize_trace": trace,
         }
     lat_sorted = sorted(latencies)
+
     def pct(p):
-        if not lat_sorted:
-            return None
-        return lat_sorted[min(len(lat_sorted) - 1, int(round(p * (len(lat_sorted) - 1))))]
-    return {
+        return percentile(lat_sorted, p)
+
+    result = {
         "aggregate_wer": round(total_err / max(total_ref, 1), 4),
         "total_errors": total_err,
         "total_ref_words": total_ref,
@@ -298,7 +389,24 @@ def score_path(items, raw_by_id, path_key):
             i for i, v in per_item.items() if v["hallucination_artifacts"]
         ),
         "per_item": per_item,
+        "junk_only_outputs": len(junk_ids),
+        "junk_only_item_ids": sorted(junk_ids),
+        "trailing_stock_phrase": len(stock_ids),
+        "trailing_stock_phrase_item_ids": sorted(stock_ids),
+        "by_group": {g: group_stats(e) for g, e in sorted(group_entries.items())},
     }
+    if soft_last:
+        result["soft_last"] = {
+            "items": len(soft_last),
+            "last_word_recall_strict": round(
+                sum(v["strict"] for v in soft_last.values()) / len(soft_last), 4
+            ),
+            "last_word_recall_lenient": round(
+                sum(v["lenient"] for v in soft_last.values()) / len(soft_last), 4
+            ),
+            "missed_item_ids": sorted(i for i, v in soft_last.items() if not v["strict"]),
+        }
+    return result
 
 
 def main() -> int:
@@ -307,12 +415,19 @@ def main() -> int:
     ap.add_argument("--label", default="run")
     ap.add_argument("--out", default=str(HERE / "results.json"))
     ap.add_argument("--compare", help="previously scored results.json to diff against")
+    ap.add_argument("--manifest", default=str(MANIFEST),
+                    help="corpus manifest the raw run was made against "
+                         "(default: corpus/manifest.json)")
+    ap.add_argument("--group", metavar="PREFIX",
+                    help="score only items whose id prefix equals PREFIX (e.g. noisy-long)")
     args = ap.parse_args()
 
-    manifest = json.loads(MANIFEST.read_text())
+    manifest = json.loads(Path(args.manifest).read_text())
     raw = json.loads(Path(args.raw_run).read_text())
     raw_by_id = {r["id"]: r for r in raw["items"]}
     items = [i for i in manifest["items"] if i["id"] in raw_by_id]
+    if args.group:
+        items = [i for i in items if group_of(i["id"]) == args.group]
 
     result = {
         "label": args.label,
@@ -322,6 +437,7 @@ def main() -> int:
         "bias_enabled": raw["biasEnabled"],
         "bias_term_count": raw["biasTermCount"],
         "corpus_items": len(items),
+        **({"group": args.group} if args.group else {}),
         "whole": score_path(items, raw_by_id, "whole"),
         "live": score_path(items, raw_by_id, "live"),
     }
@@ -364,6 +480,26 @@ def main() -> int:
             f"{path}: WER={p['aggregate_wer']} recall_strict={p['hard_vocab_recall_strict']} "
             f"recall_lenient={p['hard_vocab_recall_lenient']} p50={p['latency_ms_p50']}ms "
             f"p90={p['latency_ms_p90']}ms halluc={len(p['hallucination_item_ids'])}"
+        )
+    for path in ("whole", "live"):
+        p = result[path]
+        if p["junk_only_outputs"] or p["trailing_stock_phrase"]:
+            print(
+                f"{path}: junk_only_outputs={p['junk_only_outputs']} "
+                f"trailing_stock_phrase={p['trailing_stock_phrase']} "
+                f"({', '.join(p['trailing_stock_phrase_item_ids'])})"
+            )
+        if "soft_last" in p:
+            sl = p["soft_last"]
+            print(
+                f"{path}: soft-last last-word recall strict={sl['last_word_recall_strict']} "
+                f"lenient={sl['last_word_recall_lenient']} missed={sl['missed_item_ids']}"
+            )
+    for group, g in result["live"]["by_group"].items():
+        paths = " ".join(f"{k}={v}" for k, v in g.get("finalize_paths", {}).items())
+        print(
+            f"live finalize [{group}] n={g['count']} p50={g['ms_p50']}ms "
+            f"p90={g['ms_p90']}ms max={g['ms_max']}ms {paths}"
         )
     if "live_vs_whole_relative_wer_gap" in result:
         print(f"live vs whole relative WER gap: {result['live_vs_whole_relative_wer_gap']}")

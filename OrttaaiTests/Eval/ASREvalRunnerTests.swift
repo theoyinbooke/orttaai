@@ -12,11 +12,14 @@
 //           processLiveAudioSnapshot feeding (the same growing-snapshot
 //           polling DictationCoordinator performs, paced at a configurable
 //           multiple of realtime) + finalizeLiveTranscription, i.e. the real
-//           clip-commit/pause-commit/speculative-tail machinery.
+//           clip-commit/pause-commit/speculative-tail machinery. Each item's
+//           raw JSON also carries the finalize_trace (path, tail energy,
+//           per-stage timings) from finalizeLiveTranscriptionDetailed.
 //
 // Environment:
 //   ORTTAAI_ASR_EVAL=1            enable
-//   ORTTAAI_ASR_EVAL_MANIFEST     path to corpus/manifest.json (required)
+//   ORTTAAI_ASR_EVAL_MANIFEST     path to corpus/manifest.json or
+//                                 corpus_realistic/manifest_realistic.json (required)
 //   ORTTAAI_ASR_EVAL_OUT          path for the raw decode JSON (required)
 //   ORTTAAI_ASR_EVAL_MODEL        model name (default openai_whisper-large-v3)
 //   ORTTAAI_ASR_EVAL_PRESET       fast|balanced|accuracy (default balanced —
@@ -59,6 +62,9 @@ final class ASREvalRunnerTests: XCTestCase {
         let id: String
         let whole: PathResult?
         let live: PathResult?
+        /// How the live finalize got its transcript; nil when the live path
+        /// was not run or finalize threw.
+        let finalize_trace: FinalizeTrace?
     }
 
     private struct RunOutput: Encodable {
@@ -134,6 +140,7 @@ final class ASREvalRunnerTests: XCTestCase {
             let samples = try Self.loadFloat32WAV(url: corpusDir.appendingPathComponent(item.wav))
             var whole: PathResult?
             var live: PathResult?
+            var finalizeTrace: FinalizeTrace?
 
             if paths == "both" || paths == "whole" {
                 whole = await Self.timedDecode {
@@ -155,11 +162,13 @@ final class ASREvalRunnerTests: XCTestCase {
                     try? await Task.sleep(nanoseconds: sleepNs)
                 }
                 live = await Self.timedDecode {
-                    try await service.finalizeLiveTranscription(audioSamples: samples)
+                    let finalized = try await service.finalizeLiveTranscriptionDetailed(audioSamples: samples)
+                    finalizeTrace = finalized.trace
+                    return finalized.text
                 }
             }
 
-            results.append(ItemResult(id: item.id, whole: whole, live: live))
+            results.append(ItemResult(id: item.id, whole: whole, live: live, finalize_trace: finalizeTrace))
             print("ASR-EVAL [\(index + 1)/\(items.count)] \(item.id) whole=\(whole?.ms ?? -1)ms live_finalize=\(live?.ms ?? -1)ms")
         }
 

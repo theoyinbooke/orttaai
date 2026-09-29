@@ -240,6 +240,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupCoreServices(settings: AppSettings) {
         let audio = AudioCaptureService()
         let transcription = TranscriptionService()
+        if let finalizeTraceLog = FinalizeTraceLog.makeDefault() {
+            Task { await transcription.setFinalizeTraceSink { finalizeTraceLog.record($0) } }
+        }
         let injection = TextInjectionService()
 
         // The database must never fail silently at launch: retry transient

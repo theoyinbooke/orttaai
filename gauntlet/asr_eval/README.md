@@ -68,6 +68,58 @@ committed-context tail takes the remainder.
 Model: `openai_whisper-large-v3` (the user's active model, already on disk);
 preset `balanced` (the user's active preset); language `en`.
 
+## Realistic corpus
+
+The clean corpus is TTS over digital silence with an instant key release, so
+it cannot reproduce two things seen in real usage history: ~30% of dictations
+longer than ~30-45 s taking 5-9 s to finalize (vs ~1 s), and ~1% ending in a
+hallucinated "Thank you." / "you". `build_realistic_corpus.py` re-mixes the
+tracked corpus wavs (pure Python, deterministic per-item seeds, no numpy) into
+`corpus_realistic/` + `manifest_realistic.json`. The directory is git-ignored:
+generate it, never commit it.
+
+| group | what it is |
+| --- | --- |
+| `noisy-long-01..08` | 45-95 s: concatenated long items, 1.0-3.5 s silence gaps, pink-ish noise floor (RMS 0.004-0.012) over the whole file, 0.5-2.5 s trailing noise (the key-hold gap) |
+| `hold-01..12` | 5-25 s speech + 0.3-2.0 s trailing noise at RMS 0.006 / 0.010 / 0.015 (4 each) |
+| `soft-last-01..06` | final word attenuated to ~0.02-0.03 RMS (3) or ~0.012 (3); must keep the last word |
+| `noise-only-01..06` | empty reference: digital silence, noise-only at RMS 0.003-0.012, two key-press-only clips |
+| `quiet-01..04` | whispery speech (~0.025 RMS) |
+
+Reference points: the finalize path trims tails below the 0.005 RMS faint
+floor and treats 100 ms frames above 0.02 RMS as speech, so the tail noise
+levels straddle both.
+
+```bash
+python3 gauntlet/asr_eval/build_realistic_corpus.py
+./gauntlet/asr_eval/run_eval.sh /tmp/raw_real.json ORTTAAI_ASR_EVAL_PATHS=live \
+  ORTTAAI_ASR_EVAL_MANIFEST=$PWD/gauntlet/asr_eval/corpus_realistic/manifest_realistic.json
+python3 gauntlet/asr_eval/score.py /tmp/raw_real.json --label realistic \
+  --manifest gauntlet/asr_eval/corpus_realistic/manifest_realistic.json \
+  --out /tmp/results_realistic.json [--group noisy-long]
+```
+
+The runner records a `finalize_trace` per item (from
+`TranscriptionService.finalizeLiveTranscriptionDetailed`): the finalize path
+(`reused_speculative`, `tail_decoded`, `tail_empty_no_audio`,
+`whole_fallback` + `fallback_reason`, `no_live_session`), tail sample count
+and peak/median 100 ms frame RMS, whether the relaxed retry ran, and the
+per-stage milliseconds (awaiting commit, awaiting speculative, tail decode,
+fallback decode, total). Items whose finalize throws (e.g. pure digital
+silence) carry no trace, only the error. `score.py` adds, without changing
+existing outputs: WER excluded for empty references with `junk_only_outputs`
+counted instead, `trailing_stock_phrase` (hypothesis ends in thank you /
+thanks / you / bye / thanks for watching but the reference does not),
+`by_group` latency p50/p90/max plus finalize-path distribution per id prefix,
+and `soft_last` last-word recall. In production the same traces append to
+`finalize-trace.jsonl` in the app's Application Support folder (numbers and
+enums only, 1 MB cap, rotated to `finalize-trace.1.jsonl`), so real-usage
+finalize paths can be compared to these results.
+
+The `finalize_trace` numbers are telemetry only; finalize behavior is the same
+as before the trace was added, so realistic-corpus results are comparable to
+`baseline.json`-era builds.
+
 ## Full-precision model comparison
 
 `model_comparison.json` records the 2026-07-28 run of the same 92-item

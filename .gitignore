@@ -16,3 +16,6 @@ DerivedData/
 
 # Local eval data (contains personal dictation content — never commit)
 /eval/
+
+# Generated realistic ASR eval corpus (rebuilt by build_realistic_corpus.py)
+/gauntlet/asr_eval/corpus_realistic/
