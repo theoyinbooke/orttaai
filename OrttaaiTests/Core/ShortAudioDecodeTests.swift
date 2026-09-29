@@ -108,6 +108,36 @@ final class ShortAudioDecodeTests: XCTestCase {
         XCTAssertFalse(TranscriptionService.tailCanBeDropped(tailPeakFrameRMS: 0.008, hasCommittedText: false))
     }
 
+    // MARK: - Whole-transcript artifacts
+
+    func testPunctuationAndAnnotationOnlyTranscriptsAreArtifacts() {
+        let speech = [Float](repeating: 0.2, count: 16_000)
+        for text in ["-", ".", "...", "*crying*", "[MUSIC]", "(silence)", " * "] {
+            XCTAssertTrue(TranscriptionService.isNonSpeechArtifact(text, audioSamples: speech), text)
+        }
+    }
+
+    func testStockPhraseIsAnArtifactOnlyWhenTheRecordingHasNoSpeechEnergy() {
+        let quiet = [Float](repeating: 0.004, count: 48_000)
+        let speech = [Float](repeating: 0.2, count: 48_000)
+        XCTAssertTrue(TranscriptionService.isNonSpeechArtifact("Thank you.", audioSamples: quiet))
+        XCTAssertTrue(TranscriptionService.isNonSpeechArtifact("you", audioSamples: quiet))
+        XCTAssertFalse(TranscriptionService.isNonSpeechArtifact("Thank you.", audioSamples: speech))
+    }
+
+    func testRealTranscriptsAreNeverArtifacts() {
+        let quiet = [Float](repeating: 0.004, count: 48_000)
+        for text in ["", "Yes.", "Send it (please).", "Version 2", "Thanks for the update.", "*bold* move", "[1] first item"] {
+            XCTAssertFalse(TranscriptionService.isNonSpeechArtifact(text, audioSamples: quiet), text)
+        }
+    }
+
+    func testRejectNonSpeechArtifactThrowsTheStandardNoResultError() {
+        let quiet = [Float](repeating: 0.004, count: 48_000)
+        XCTAssertThrowsError(try TranscriptionService.rejectNonSpeechArtifact("you", audioSamples: quiet))
+        XCTAssertNoThrow(try TranscriptionService.rejectNonSpeechArtifact("Send the report.", audioSamples: quiet))
+    }
+
     func testEmptyAcceptedPathEncodesForTraceLog() throws {
         var trace = FinalizeTrace()
         trace.path = .tailEmptyAccepted

@@ -229,6 +229,7 @@ actor TranscriptionService: Transcribing {
             allowCancellation: false,
             promptTokens: wholeDecodePromptTokens(audioSamples: audioSamples)
         )
+        try Self.rejectNonSpeechArtifact(text, audioSamples: audioSamples)
         Logger.transcription.info("Transcription complete: \(text.prefix(50))...")
         return text
     }
@@ -316,6 +317,14 @@ actor TranscriptionService: Transcribing {
     /// `finalizeLiveTranscription` plus the trace of how it got there. The
     /// trace is observation only: it never influences the control flow.
     func finalizeLiveTranscriptionDetailed(
+        audioSamples: [Float]
+    ) async throws -> (text: String, trace: FinalizeTrace) {
+        let result = try await assembleLiveTranscript(audioSamples: audioSamples)
+        try Self.rejectNonSpeechArtifact(result.text, audioSamples: audioSamples)
+        return result
+    }
+
+    private func assembleLiveTranscript(
         audioSamples: [Float]
     ) async throws -> (text: String, trace: FinalizeTrace) {
         defer { liveSession = nil }
@@ -1147,6 +1156,29 @@ actor TranscriptionService: Transcribing {
             .components(separatedBy: CharacterSet.letters.inverted)
             .filter { !$0.isEmpty }
         return stockHallucinationPhrases.contains(words.joined(separator: " "))
+    }
+
+    /// True when a whole transcript is not speech: only punctuation/symbols,
+    /// a lone bracketed annotation ("*crying*", "[MUSIC]"), or a stock phrase
+    /// on a recording that never reached speech-level energy.
+    nonisolated static func isNonSpeechArtifact(_ text: String, audioSamples: [Float]) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.rangeOfCharacter(from: .alphanumerics) == nil { return true }
+        let wrappers: [(Character, Character)] = [("*", "*"), ("[", "]"), ("(", ")")]
+        for (open, close) in wrappers where trimmed.first == open && trimmed.last == close {
+            let inner = trimmed.dropFirst().dropLast()
+            if !inner.contains(open), !inner.contains(close) { return true }
+        }
+        return isStockHallucination(trimmed) && !containsSpeechEnergy(audioSamples[...])
+    }
+
+    /// Throws the standard "no transcription" error instead of letting junk
+    /// from a silent or accidental key press be injected into the target app.
+    nonisolated static func rejectNonSpeechArtifact(_ text: String, audioSamples: [Float]) throws {
+        guard isNonSpeechArtifact(text, audioSamples: audioSamples) else { return }
+        Logger.transcription.info("Rejecting transcript that is not speech")
+        throw noTranscriptionResultError()
     }
 
     /// A tail that decoded to nothing (or only a stock hallucination) can be
