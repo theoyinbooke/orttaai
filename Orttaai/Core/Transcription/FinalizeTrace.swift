@@ -119,7 +119,73 @@ nonisolated extension FinalizeTrace: Encodable {
     }
 }
 
-/// Appends one JSON line per finalize to `finalize-trace.jsonl`, rotating to
+/// Why a recording ended. The cases are the diagnostic vocabulary of
+/// `RecordingEndTrace`; raw values are the strings written to the log.
+nonisolated enum RecordingEndReason: String, Sendable, Equatable {
+    /// The push-to-talk key was held and released.
+    case holdRelease = "hold_release"
+    /// The pill's stop button (or any caller that gave no other reason).
+    case pillStop = "pill_stop"
+    /// A second hotkey tap ended a hands-free session.
+    case hotkeyTapStop = "hotkey_tap_stop"
+    /// Sustained trailing silence ended a hands-free session.
+    case silenceAutoStop = "silence_auto_stop"
+    /// The duration cap fired.
+    case capTimer = "cap_timer"
+    /// The captured audio did not cover the recording's duration.
+    case audioDropped = "audio_dropped"
+    /// The recording ended before the minimum duration and was skipped.
+    case tooShort = "too_short"
+    /// The microphone could not start, or failed to recover mid-session.
+    case captureFailed = "capture_failed"
+    case cancelled
+    case other
+}
+
+/// Why and how one recording ended, for diagnosing cut-off reports. Numbers
+/// and enums only: a trace never carries transcript text.
+nonisolated struct RecordingEndTrace: Sendable, Equatable {
+    var reason: RecordingEndReason
+    var recordingDurationMs: Int
+    var isHandsFree: Bool
+    /// The configured silence window, or nil when auto-stop was off (or the
+    /// recording was push-to-talk).
+    var silenceStopSeconds: Double?
+    /// 100ms frames at or above the speech energy threshold.
+    var speechFrameCount: Int
+    var peakFrameRMS: Float
+    var trailingSilenceMs: Int
+    /// True once a hands-free recording had heard sustained speech.
+    var handsFreeArmed: Bool
+}
+
+nonisolated extension RecordingEndTrace: Encodable {
+    private enum CodingKeys: String, CodingKey {
+        case reason
+        case recordingDurationMs = "recording_duration_ms"
+        case mode
+        case silenceStopSeconds = "silence_stop_seconds"
+        case speechFrameCount = "speech_frame_count"
+        case peakFrameRMS = "peak_frame_rms"
+        case trailingSilenceMs = "trailing_silence_ms"
+        case handsFreeArmed = "hands_free_armed"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(reason.rawValue, forKey: .reason)
+        try container.encode(recordingDurationMs, forKey: .recordingDurationMs)
+        try container.encode(isHandsFree ? "hands_free" : "push_to_talk", forKey: .mode)
+        try container.encode(silenceStopSeconds, forKey: .silenceStopSeconds)
+        try container.encode(speechFrameCount, forKey: .speechFrameCount)
+        try container.encode(peakFrameRMS, forKey: .peakFrameRMS)
+        try container.encode(trailingSilenceMs, forKey: .trailingSilenceMs)
+        try container.encode(handsFreeArmed, forKey: .handsFreeArmed)
+    }
+}
+
+/// Appends one JSON line per finalize or recording end to
+/// `finalize-trace.jsonl` (each tagged with a `kind`), rotating to
 /// `finalize-trace.1.jsonl` once the file would exceed `maxBytes`. Purely a
 /// diagnostic side channel: every failure is swallowed and logged at debug.
 nonisolated final class FinalizeTraceLog: Sendable {
@@ -127,15 +193,17 @@ nonisolated final class FinalizeTraceLog: Sendable {
     static let rotatedFileName = "finalize-trace.1.jsonl"
     static let defaultMaxBytes = 1_000_000
 
-    private struct Line: Encodable {
+    private struct Line<Trace: Encodable>: Encodable {
         let ts: String
-        let trace: FinalizeTrace
+        let kind: String
+        let trace: Trace
 
-        private enum CodingKeys: String, CodingKey { case ts }
+        private enum CodingKeys: String, CodingKey { case ts, kind }
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(ts, forKey: .ts)
+            try container.encode(kind, forKey: .kind)
             try trace.encode(to: encoder)
         }
     }
@@ -168,19 +236,32 @@ nonisolated final class FinalizeTraceLog: Sendable {
         }
     }
 
+    /// Queues the recording-end trace for writing off the caller's executor.
+    func record(_ trace: RecordingEndTrace) {
+        let timestamp = Date()
+        queue.async { [self] in
+            append(trace, at: timestamp)
+        }
+    }
+
     /// Blocks until every queued write has finished.
     func flush() {
         queue.sync {}
     }
 
     func append(_ trace: FinalizeTrace, at timestamp: Date) {
+        write(Line(ts: timestamp.formatted(.iso8601), kind: "finalize", trace: trace))
+    }
+
+    func append(_ trace: RecordingEndTrace, at timestamp: Date) {
+        write(Line(ts: timestamp.formatted(.iso8601), kind: "recording_end", trace: trace))
+    }
+
+    private func write(_ line: some Encodable) {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            var data = try encoder.encode(Line(
-                ts: timestamp.formatted(.iso8601),
-                trace: trace
-            ))
+            var data = try encoder.encode(line)
             data.append(0x0A)
 
             let fileManager = FileManager.default

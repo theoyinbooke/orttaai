@@ -1323,7 +1323,7 @@ actor TranscriptionService: Transcribing {
         lastSpeechSampleIndex(in: samples, threshold: threshold) != nil
     }
 
-    nonisolated private static func frameRMS(_ samples: ArraySlice<Float>) -> Float {
+    nonisolated static func frameRMS(_ samples: ArraySlice<Float>) -> Float {
         guard !samples.isEmpty else { return 0 }
         var sum: Float = 0
         for sample in samples {

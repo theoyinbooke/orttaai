@@ -127,7 +127,12 @@ final class DictationCoordinator {
     private var processingTask: Task<Void, Never>?
     private var audioHealthTask: Task<Void, Never>?
     private var targetApp: NSRunningApplication?
-    private var handsFreeSpeechDetected = false
+    /// Per-session speech accounting behind the hands-free silence auto-stop
+    /// and the recording-end diagnostics. Reset when the session ends.
+    private var autoStopPolicy = HandsFreeAutoStopPolicy()
+    /// Receives one numbers-and-enums trace per recording end. Nil (inert)
+    /// unless the app installs the diagnostics log.
+    var recordingEndSink: ((RecordingEndTrace) -> Void)?
 
     /// History persistence policy: bounded retries, then a loud failure.
     static let historySaveAttempts = 3
@@ -206,7 +211,7 @@ final class DictationCoordinator {
                 // follows finds no recorded press and is ignored.
                 hotkeyGesture.reset()
                 Logger.dictation.info("Hands-free recording stopped by hotkey tap")
-                stopRecording()
+                stopRecording(reason: .hotkeyTapStop)
             }
             // Push-to-talk key repeats are filtered by the caller; a stray
             // key-down while already recording push-to-talk is a no-op, and
@@ -241,7 +246,7 @@ final class DictationCoordinator {
         case .promoteToHandsFree:
             promoteToHandsFree()
         case .stopRecording:
-            stopRecording()
+            stopRecording(reason: .holdRelease)
         case .ignore:
             break
         }
@@ -268,7 +273,7 @@ final class DictationCoordinator {
             if sessionKind == .edit, recordingMode == .handsFree {
                 editHotkeyGesture.reset()
                 Logger.dictation.info("Hands-free edit recording stopped by hotkey tap")
-                stopRecording()
+                stopRecording(reason: .hotkeyTapStop)
             }
             // A dictation recording owns the pipeline — the edit key is inert.
 
@@ -419,10 +424,25 @@ final class DictationCoordinator {
                 Logger.dictation.info("Recording started using system default input device")
             }
         } catch {
-            state = .error(message: "Microphone access needed")
+            state = .error(message: Self.startFailureMessage(for: error))
+            recordRecordingEnd(.captureFailed, duration: 0)
             endSessionContext()
             autoDismissError()
             Logger.dictation.error("Failed to start recording: \(error.localizedDescription)")
+        }
+    }
+
+    /// The pill message for a capture start failure. Only a real permission
+    /// denial says "Microphone access needed"; a missing device or dead input
+    /// and any other engine failure each get an accurate message.
+    nonisolated static func startFailureMessage(for error: Error) -> String {
+        switch error as? OrttaaiError {
+        case .microphoneAccessDenied:
+            return "Microphone access needed"
+        case .noAudioInput:
+            return "No microphone signal. Check your mic."
+        default:
+            return "Couldn't start recording. Try again."
         }
     }
 
@@ -445,16 +465,14 @@ final class DictationCoordinator {
         capTimerTask?.cancel()
         countdownSeconds = nil
         startCapTimer(alreadyElapsed: Date().timeIntervalSince(startTime))
-        // Seed the state once from the recording so far, then the polling loop
-        // only requests a bounded trailing window.
-        handsFreeSpeechDetected = TranscriptionService.containsSpeechEnergy(
-            audioService.currentSamplesSnapshot()[...]
-        )
+        // Seed the accounting once from the recording so far; the polling loop
+        // then scans only what was recorded since the previous poll.
+        advanceAutoStopAccounting()
         startHandsFreeSilenceMonitor()
         Logger.dictation.info("Hands-free mode engaged")
     }
 
-    func stopRecording() {
+    func stopRecording(reason: RecordingEndReason = .pillStop) {
         guard case .recording(let startTime) = state else {
             Logger.dictation.info("Ignoring stopRecording; not recording")
             return
@@ -473,9 +491,16 @@ final class DictationCoordinator {
         // Stop capture
         let samples = audioService.stopCapture()
         let duration = Date().timeIntervalSince(startTime)
+        // Account for whatever the polling loop had not yet scanned (all of
+        // it for push-to-talk) so the end trace reflects the whole recording.
+        autoStopPolicy.advance(
+            totalSampleCount: samples.count,
+            samplesFrom: { Array(samples.dropFirst($0)) }
+        )
 
         // Check minimum duration
         guard duration >= minDuration else {
+            recordRecordingEnd(.tooShort, duration: duration)
             discardBackgroundDecodeSession()
             state = .idle
             endSessionContext()
@@ -489,6 +514,7 @@ final class DictationCoordinator {
             recordingDurationMs: Int(duration * 1000)
         )
         guard coverage >= Self.minimumCaptureCoverage else {
+            recordRecordingEnd(.audioDropped, duration: duration)
             discardBackgroundDecodeSession()
             state = .error(message: "Audio was dropped. Please dictate again.")
             endSessionContext()
@@ -499,6 +525,7 @@ final class DictationCoordinator {
             return
         }
 
+        recordRecordingEnd(reason, duration: duration)
         let estimatedProcessing = estimateProcessingTime(duration)
         state = .processing(estimatedDuration: settings.showProcessingEstimate ? estimatedProcessing : nil)
 
@@ -681,7 +708,24 @@ final class DictationCoordinator {
         targetApp = nil
         editSelection = nil
         sessionKind = .dictation
-        handsFreeSpeechDetected = false
+        autoStopPolicy = HandsFreeAutoStopPolicy()
+    }
+
+    /// Hands one numbers-and-enums trace for the recording that just ended to
+    /// the diagnostics sink. Call before `endSessionContext` resets the
+    /// session's speech accounting.
+    private func recordRecordingEnd(_ reason: RecordingEndReason, duration: TimeInterval) {
+        let isHandsFree = recordingMode == .handsFree
+        recordingEndSink?(RecordingEndTrace(
+            reason: reason,
+            recordingDurationMs: Int(duration * 1000),
+            isHandsFree: isHandsFree,
+            silenceStopSeconds: isHandsFree ? settings.effectiveHandsFreeSilenceStopSeconds : nil,
+            speechFrameCount: autoStopPolicy.speechFrameCount,
+            peakFrameRMS: autoStopPolicy.peakFrameRMS,
+            trailingSilenceMs: autoStopPolicy.trailingSilenceMs,
+            handsFreeArmed: isHandsFree && autoStopPolicy.isArmed
+        ))
     }
 
     /// Applies the spoken instruction to the captured selection through the
@@ -987,7 +1031,7 @@ final class DictationCoordinator {
 
             // Time's up — stop recording
             Logger.dictation.info("Cap timer fired at \(self.maxDuration)s; stopping recording")
-            self.stopRecording()
+            self.stopRecording(reason: .capTimer)
         }
     }
 
@@ -1034,54 +1078,49 @@ final class DictationCoordinator {
     }
 
     /// Hands-free silence detection only. This never transcribes or inserts
-    /// partial text; the complete recording remains the sole ASR input.
+    /// partial text; the complete recording remains the sole ASR input. The
+    /// loop inherits the main actor, so each poll only scans the samples
+    /// recorded since the last one.
     private func startHandsFreeSilenceMonitor() {
         silenceMonitorTask?.cancel()
         silenceMonitorTask = Task(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
 
             while !Task.isCancelled {
-                let maxSamples = await MainActor.run { self.handsFreeSilenceSnapshotSampleCount }
-                let snapshot = self.audioService.currentSamplesSnapshot(maxSamples: maxSamples)
-                self.evaluateHandsFreeAutoStopIfNeeded(samples: snapshot)
+                self.evaluateHandsFreeAutoStopIfNeeded()
                 try? await Task.sleep(nanoseconds: self.silenceMonitorPollIntervalNs)
             }
         }
     }
 
-    @MainActor
-    private var handsFreeSilenceSnapshotSampleCount: Int {
-        guard let silenceStop = settings.effectiveHandsFreeSilenceStopSeconds else {
-            return TranscriptionService.energyFrameSampleCount
-        }
-        return Int(silenceStop * Double(Self.captureSampleRate))
-            + TranscriptionService.energyFrameSampleCount
+    /// Scans the audio recorded since the last call into `autoStopPolicy`.
+    private func advanceAutoStopAccounting() {
+        autoStopPolicy.advance(
+            totalSampleCount: audioService.capturedSampleCount,
+            samplesFrom: { audioService.currentSamplesSnapshot(from: $0) }
+        )
     }
 
-    /// Stops a hands-free recording once the trailing silence reaches the
-    /// user's configured window. Push-to-talk recordings are never affected.
+    /// Stops a hands-free recording once sustained speech has been followed by
+    /// the user's configured silence window. Push-to-talk recordings are never
+    /// affected.
     @MainActor
-    private func evaluateHandsFreeAutoStopIfNeeded(samples: [Float]) {
+    private func evaluateHandsFreeAutoStopIfNeeded() {
         guard case .recording(let startTime) = state, recordingMode == .handsFree else { return }
         guard let silenceStop = settings.effectiveHandsFreeSilenceStopSeconds else { return }
-        // Never race the minimum-duration guard: an auto-stop should always
-        // produce a real finalization, not a skipped recording.
-        guard Date().timeIntervalSince(startTime) >= minDuration else { return }
-        if TranscriptionService.containsSpeechEnergy(samples[...]) {
-            handsFreeSpeechDetected = true
-        }
-        guard handsFreeSpeechDetected else { return }
+        advanceAutoStopAccounting()
 
-        let requiredSilentSamples = Int(silenceStop * Double(Self.captureSampleRate))
-        guard samples.count >= requiredSilentSamples else { return }
-        if let lastSpeechEnd = TranscriptionService.lastSpeechSampleIndex(in: samples[...]) {
-            guard samples.count - lastSpeechEnd >= requiredSilentSamples else { return }
-        }
+        let duration = Date().timeIntervalSince(startTime)
+        guard autoStopPolicy.shouldStop(
+            silenceWindow: silenceStop,
+            recordingDuration: duration,
+            minimumDuration: minDuration
+        ) else { return }
 
         Logger.dictation.info(
-            "Hands-free auto-stop after \(silenceStop, format: .fixed(precision: 1))s of trailing silence"
+            "Hands-free auto-stop: window=\(silenceStop, format: .fixed(precision: 1))s trailingSilence=\(self.autoStopPolicy.trailingSilenceMs)ms speechFrames=\(self.autoStopPolicy.speechFrameCount) peakRMS=\(self.autoStopPolicy.peakFrameRMS, format: .fixed(precision: 3)) duration=\(duration, format: .fixed(precision: 1))s"
         )
-        stopRecording()
+        stopRecording(reason: .silenceAutoStop)
     }
 
     /// Checks that the audio tap is actually producing samples shortly after
@@ -1093,7 +1132,7 @@ final class DictationCoordinator {
             // Allow time for the audio engine to start producing samples.
             try? await Task.sleep(nanoseconds: 800_000_000) // 800ms
 
-            guard let self, case .recording = self.state else { return }
+            guard let self, case .recording(let startTime) = self.state else { return }
 
             let snapshot = self.audioService.currentSamplesSnapshot(maxSamples: 1)
             if snapshot.isEmpty {
@@ -1114,6 +1153,7 @@ final class DictationCoordinator {
                     Logger.dictation.info("Audio capture recovered after health check")
                 } catch {
                     Logger.dictation.error("Audio recovery failed: \(error.localizedDescription)")
+                    self.recordRecordingEnd(.captureFailed, duration: Date().timeIntervalSince(startTime))
                     self.capTimerTask?.cancel()
                     self.capTimerTask = nil
                     self.countdownSeconds = nil

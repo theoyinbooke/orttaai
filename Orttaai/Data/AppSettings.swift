@@ -154,7 +154,7 @@ final class AppSettings: ObservableObject {
     // Hands-free (tap-to-toggle) dictation
     @AppStorage("handsFreeModeEnabled") var handsFreeModeEnabled: Bool = true
     @AppStorage("handsFreeSilenceStopEnabled") var handsFreeSilenceStopEnabled: Bool = true
-    @AppStorage("handsFreeSilenceStopSeconds") var handsFreeSilenceStopSeconds: Double = 2.0
+    @AppStorage("handsFreeSilenceStopSeconds") var handsFreeSilenceStopSeconds: Double = 4.0
     /// Hands-free recordings get their own generous cap (seconds), separate
     /// from the push-to-talk max duration.
     @AppStorage("handsFreeMaxRecordingDuration") var handsFreeMaxRecordingDuration: Int = 600
@@ -240,10 +240,10 @@ final class AppSettings: ObservableObject {
 
     /// The silence window (seconds) after which a hands-free recording
     /// auto-stops, or nil when silence auto-stop is turned off. Clamped to
-    /// the supported 1–5s range.
+    /// the supported 1–10s range.
     var effectiveHandsFreeSilenceStopSeconds: TimeInterval? {
         guard handsFreeSilenceStopEnabled else { return nil }
-        return max(1.0, min(5.0, handsFreeSilenceStopSeconds))
+        return max(1.0, min(10.0, handsFreeSilenceStopSeconds))
     }
 
     var effectiveDictationLanguage: String {

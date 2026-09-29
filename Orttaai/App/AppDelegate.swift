@@ -240,8 +240,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupCoreServices(settings: AppSettings) {
         let audio = AudioCaptureService()
         let transcription = TranscriptionService()
-        if let finalizeTraceLog = FinalizeTraceLog.makeDefault() {
-            Task { await transcription.setFinalizeTraceSink { finalizeTraceLog.record($0) } }
+        let traceLog = FinalizeTraceLog.makeDefault()
+        if let traceLog {
+            Task { await transcription.setFinalizeTraceSink { traceLog.record($0) } }
         }
         let injection = TextInjectionService()
 
@@ -289,6 +290,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptionService = transcription
             injectionService = injection
             coordinator = coord
+            if let traceLog {
+                coord.recordingEndSink = { traceLog.record($0) }
+            }
             let mm = ModelManager(transcriptionService: transcription, settings: settings)
             modelManager = mm
             ModelManager.shared = mm

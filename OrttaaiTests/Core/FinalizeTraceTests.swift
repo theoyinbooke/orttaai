@@ -165,6 +165,64 @@ final class FinalizeTraceTests: XCTestCase {
         XCTAssertNotNil(first["ts"] as? String)
         XCTAssertEqual(first["path"] as? String, "whole_fallback")
         XCTAssertEqual(first["ms_total"] as? Int, 5_400)
+        XCTAssertEqual(first["kind"] as? String, "finalize")
+    }
+
+    func testLogWritesRecordingEndLinesBesideFinalizeLines() throws {
+        let directory = try makeTemporaryDirectory()
+        let log = FinalizeTraceLog(directory: directory)
+        let end = RecordingEndTrace(
+            reason: .silenceAutoStop,
+            recordingDurationMs: 31_250,
+            isHandsFree: true,
+            silenceStopSeconds: 4,
+            speechFrameCount: 212,
+            peakFrameRMS: 0.31,
+            trailingSilenceMs: 4_100,
+            handsFreeArmed: true
+        )
+
+        log.append(FinalizeTrace(), at: Date(timeIntervalSince1970: 0))
+        log.append(end, at: Date(timeIntervalSince1970: 60))
+
+        let written = try lines(in: directory.appendingPathComponent(FinalizeTraceLog.fileName))
+        XCTAssertEqual(written.count, 2)
+        let objects = try written.map {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+        }
+        XCTAssertEqual(objects[0]["kind"] as? String, "finalize")
+        XCTAssertEqual(objects[1]["kind"] as? String, "recording_end")
+        XCTAssertEqual(objects[1]["reason"] as? String, "silence_auto_stop")
+        XCTAssertEqual(objects[1]["recording_duration_ms"] as? Int, 31_250)
+        XCTAssertEqual(objects[1]["mode"] as? String, "hands_free")
+        XCTAssertEqual(objects[1]["silence_stop_seconds"] as? Double, 4)
+        XCTAssertEqual(objects[1]["speech_frame_count"] as? Int, 212)
+        XCTAssertEqual(objects[1]["trailing_silence_ms"] as? Int, 4_100)
+        XCTAssertEqual(objects[1]["hands_free_armed"] as? Bool, true)
+        XCTAssertEqual(
+            Set(objects[1].keys),
+            ["ts", "kind", "reason", "recording_duration_ms", "mode", "silence_stop_seconds",
+             "speech_frame_count", "peak_frame_rms", "trailing_silence_ms", "hands_free_armed"],
+            "A recording-end line carries numbers and enums only"
+        )
+    }
+
+    func testPushToTalkRecordingEndEncodesNullSilenceWindow() throws {
+        let end = RecordingEndTrace(
+            reason: .holdRelease,
+            recordingDurationMs: 8_000,
+            isHandsFree: false,
+            silenceStopSeconds: nil,
+            speechFrameCount: 40,
+            peakFrameRMS: 0.2,
+            trailingSilenceMs: 300,
+            handsFreeArmed: false
+        )
+        let data = try JSONEncoder().encode(end)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(object["mode"] as? String, "push_to_talk")
+        XCTAssertTrue(object["silence_stop_seconds"] is NSNull)
     }
 
     func testLogRotatesOnceSizeCapIsReached() throws {

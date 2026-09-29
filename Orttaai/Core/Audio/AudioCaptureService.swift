@@ -12,6 +12,11 @@ protocol AudioCapturing: AnyObject {
     func startCapture(deviceID: AudioDeviceID?) throws
     func stopCapture() -> [Float]
     func currentSamplesSnapshot(maxSamples: Int?) -> [Float]
+    /// Samples captured so far in the active recording.
+    var capturedSampleCount: Int { get }
+    /// The recording from `startIndex` onward, empty when nothing has been
+    /// captured past it. Copies only the requested suffix.
+    func currentSamplesSnapshot(from startIndex: Int) -> [Float]
 }
 
 extension AudioCapturing {
@@ -441,6 +446,17 @@ final class AudioCaptureService: AudioCapturing {
             guard let maxSamples else { return _samples }
             guard maxSamples > 0 else { return [] }
             return Array(_samples.suffix(maxSamples))
+        }
+    }
+
+    var capturedSampleCount: Int {
+        sampleQueue.sync { _samples.count }
+    }
+
+    func currentSamplesSnapshot(from startIndex: Int) -> [Float] {
+        sampleQueue.sync {
+            guard startIndex >= 0, startIndex < _samples.count else { return [] }
+            return Array(_samples[startIndex...])
         }
     }
 
