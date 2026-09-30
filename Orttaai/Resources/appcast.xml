@@ -6,6 +6,15 @@
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
         <item>
+            <title>1.10.0</title>
+            <pubDate>Wed, 30 Sep 2026 05:51:16 +0000</pubDate>
+            <link>https://github.com/theoyinbooke/orttaai</link>
+            <sparkle:version>1.10.0</sparkle:version>
+            <sparkle:shortVersionString>1.10.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.10.0/Orttaai-1.10.0.dmg" length="11260094" type="application/octet-stream" sparkle:edSignature="goZGmuBzDBld1F64+mPZw/C8yK8R8ExDBLPmxNPM7VZ73y71D7mR245nzxj+sUSW6Uj18uMux+YTtGYMhm6yCA==" />
+        </item>
+        <item>
             <title>1.9.0</title>
             <pubDate>Wed, 30 Sep 2026 02:08:43 +0000</pubDate>
             <link>https://github.com/theoyinbooke/orttaai</link>
@@ -22,15 +31,6 @@
             <sparkle:shortVersionString>1.8.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.8.0/Orttaai-1.8.0.dmg" length="13333317" type="application/octet-stream" sparkle:edSignature="LuTW314QpLphGrCIvwOQPRLpkmhlmF/HD0nl7YLvOnOcglQGXfcS5enyx0wgtB1mb/5SFeXDebl6rBtsi0SdDQ==" />
-        </item>
-        <item>
-            <title>1.7.4</title>
-            <pubDate>Mon, 03 Aug 2026 14:41:49 +0000</pubDate>
-            <link>https://github.com/theoyinbooke/orttaai</link>
-            <sparkle:version>1.7.4</sparkle:version>
-            <sparkle:shortVersionString>1.7.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.7.4/Orttaai-1.7.4.dmg" length="13344238" type="application/octet-stream" sparkle:edSignature="e1kz0RI2sngPIVf1Udtk5Orm8TZg96GxqjYBMnTCpdHjN1C7o8rta6brsqZ6wMmNFVPrfHMNjoQJjQ+iurEZDA==" />
         </item>
     </channel>
 </rss>
