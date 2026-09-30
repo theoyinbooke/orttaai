@@ -79,7 +79,6 @@ struct Palette {
     let backgroundBottom: NSColor
     let wordmark: NSColor
     let arrow: NSColor
-    let waveform: NSColor
 
     static func forTheme(_ theme: String) -> Palette {
         // A DMG background can't adapt to Finder's appearance, so "auto"
@@ -89,16 +88,14 @@ struct Palette {
                 backgroundTop: color(hex: "26241F"),
                 backgroundBottom: color(hex: "1C1C1E"),
                 wordmark: color(hex: "F5F3F0"),
-                arrow: color(hex: "D4952A"),
-                waveform: color(hex: "D4952A")
+                arrow: color(hex: "D4952A")
             )
         }
         return Palette(
             backgroundTop: color(hex: "FBF7F0"),
             backgroundBottom: color(hex: "F3E4C9"),
             wordmark: color(hex: "3A342A"),
-            arrow: color(hex: "C88920"),
-            waveform: color(hex: "D4952A")
+            arrow: color(hex: "C88920")
         )
     }
 }
@@ -138,29 +135,6 @@ func drawDottedArrow(from start: CGPoint, to end: CGPoint, dip: CGFloat, color: 
     head.lineJoinStyle = .round
     color.setStroke()
     head.stroke()
-}
-
-/// Decorative audio waveform: rounded bars fading toward the edges.
-/// On-brand ornament for a voice keyboard, standing in for a mascot.
-func drawWaveform(centeredAt center: CGPoint, color: NSColor) {
-    let heights: [CGFloat] = [10, 22, 38, 58, 44, 70, 52, 30, 46, 24, 12]
-    let barWidth: CGFloat = 7
-    let spacing: CGFloat = 13
-    let totalWidth = CGFloat(heights.count - 1) * spacing
-    let peak = heights.max() ?? 1
-
-    for (index, height) in heights.enumerated() {
-        let x = center.x - totalWidth / 2 + CGFloat(index) * spacing
-        // Taller bars are more opaque, so the shape fades at its edges.
-        let alpha = 0.16 + 0.30 * (height / peak)
-        let bar = NSBezierPath(
-            roundedRect: NSRect(x: x - barWidth / 2, y: center.y - height / 2, width: barWidth, height: height),
-            xRadius: barWidth / 2,
-            yRadius: barWidth / 2
-        )
-        color.withAlphaComponent(alpha).setFill()
-        bar.fill()
-    }
 }
 
 func makeBitmap(pointSize: NSSize, scale: CGFloat) -> NSBitmapImageRep? {
@@ -203,27 +177,15 @@ do {
     NSGradient(starting: palette.backgroundTop, ending: palette.backgroundBottom)?
         .draw(in: rect, angle: -90)
 
-    // Wordmark: app icon + name, top-left.
-    let iconInset: CGFloat = 28
-    let iconSide: CGFloat = 30
-    let iconY = canvasSize.height - iconInset - iconSide
-    var wordmarkX = iconInset
-    if let appIcon = NSImage(contentsOfFile: "\(options.appPath)/Contents/Resources/AppIcon.icns") {
-        appIcon.draw(
-            in: NSRect(x: iconInset, y: iconY, width: iconSide, height: iconSide),
-            from: .zero,
-            operation: .sourceOver,
-            fraction: 1.0
-        )
-        wordmarkX += iconSide + 10
-    }
+    // Finder's draggable app icon carries the logo; the backdrop only needs a title.
+    let titleInset: CGFloat = 28
     let wordmarkAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 20, weight: .semibold),
         .foregroundColor: palette.wordmark
     ]
     let wordmarkSize = options.appName.size(withAttributes: wordmarkAttributes)
     options.appName.draw(
-        at: NSPoint(x: wordmarkX, y: iconY + (iconSide - wordmarkSize.height) / 2),
+        at: NSPoint(x: titleInset, y: canvasSize.height - titleInset - wordmarkSize.height),
         withAttributes: wordmarkAttributes
     )
 
@@ -235,9 +197,6 @@ do {
         dip: 58,
         color: palette.arrow
     )
-
-    // Kept clear of the "Applications" label Finder draws under the icon.
-    drawWaveform(centeredAt: CGPoint(x: 655, y: 60), color: palette.waveform)
 
     let outputURL = URL(fileURLWithPath: options.outputPath)
     try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)

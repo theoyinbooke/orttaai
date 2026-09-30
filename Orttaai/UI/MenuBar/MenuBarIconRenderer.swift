@@ -4,8 +4,6 @@
 import Cocoa
 
 final class MenuBarIconRenderer {
-    private static let pointSize: CGFloat = 16
-
     enum IconState {
         case idle
         case recording
@@ -15,95 +13,49 @@ final class MenuBarIconRenderer {
     }
 
     static func renderIcon(for state: IconState, size: NSSize = NSSize(width: 18, height: 18)) -> NSImage {
-        switch state {
-        case .idle:
-            return idleIcon(size: size)
-        case .recording:
-            return tintedIcon(symbolName: "waveform.circle.fill", color: NSColor.Orttaai.accent, size: size)
-        case .processing:
-            return tintedIcon(symbolName: "waveform.circle.fill", color: NSColor.Orttaai.accent, size: size)
-        case .downloading(let progress):
-            return downloadingIcon(progress: progress, size: size)
-        case .error:
-            return errorIcon(size: size)
+        let image = NSImage(size: size, flipped: true) { rect in
+            let scale = min(rect.width, rect.height) / 18
+            let inset: CGFloat
+            switch state {
+            case .downloading: inset = 4 * scale
+            case .idle, .recording, .processing, .error: inset = scale
+            }
+
+            NSColor.white.setFill()
+            NSBezierPath(cgPath: SignalCursorGlyph.path(
+                in: rect.insetBy(dx: inset, dy: inset), minimumStroke: scale
+            )).fill()
+
+            switch state {
+            case .downloading(let rawProgress):
+                let progress = rawProgress.isFinite ? min(1, max(0, rawProgress)) : 0
+                if progress > 0 {
+                    let path = CGMutablePath()
+                    path.addArc(center: CGPoint(x: rect.midX, y: rect.midY),
+                                radius: min(rect.width, rect.height) / 2 - scale,
+                                startAngle: -.pi / 2,
+                                endAngle: -.pi / 2 + CGFloat(progress) * 2 * .pi,
+                                clockwise: false)
+                    let ring = NSBezierPath(cgPath: path)
+                    ring.lineWidth = scale
+                    ring.lineCapStyle = .round
+                    NSColor.white.setStroke()
+                    ring.stroke()
+                }
+            case .error:
+                // Keep the brand intact; a separate badge and accessible
+                // status label communicate the failure.
+                let dot = CGRect(x: rect.minX, y: rect.minY + scale, width: 3 * scale, height: 3 * scale)
+                NSBezierPath(ovalIn: dot).fill()
+            case .idle, .recording, .processing:
+                break
+            }
+            return true
         }
-    }
-
-    // MARK: - Icon States
-
-    private static func idleIcon(size: NSSize) -> NSImage {
-        let image = configuredSymbol(named: "waveform.circle")
+        image.accessibilityDescription = "Orttaai"
+        // White source artwork; macOS supplies white on dark menu bars and
+        // a contrasting dark rendition on light menu bars, including selection.
         image.isTemplate = true
         return image
-    }
-
-    private static func tintedIcon(symbolName: String, color: NSColor, size: NSSize) -> NSImage {
-        let symbol = configuredSymbol(named: symbolName)
-
-        let tinted = NSImage(size: symbol.size, flipped: false) { rect in
-            symbol.draw(in: rect)
-            color.set()
-            rect.fill(using: .sourceAtop)
-            return true
-        }
-        tinted.isTemplate = false
-        return tinted
-    }
-
-    private static func downloadingIcon(progress: Double, size: NSSize) -> NSImage {
-        let image = NSImage(size: size, flipped: false) { rect in
-            let baseIcon = configuredSymbol(named: "waveform.circle")
-            baseIcon.draw(in: rect)
-
-            // Progress ring
-            let center = NSPoint(x: rect.midX, y: rect.midY)
-            let radius = min(rect.width, rect.height) / 2 - 1
-            let startAngle: CGFloat = 90
-            let endAngle = startAngle - CGFloat(360 * progress)
-
-            let path = NSBezierPath()
-            path.appendArc(
-                withCenter: center,
-                radius: radius,
-                startAngle: startAngle,
-                endAngle: endAngle,
-                clockwise: true
-            )
-            path.lineWidth = 1.5
-            NSColor.Orttaai.accent.setStroke()
-            path.stroke()
-
-            return true
-        }
-        image.isTemplate = false
-        return image
-    }
-
-    private static func errorIcon(size: NSSize) -> NSImage {
-        let image = NSImage(size: size, flipped: false) { rect in
-            let baseIcon = configuredSymbol(named: "waveform.circle")
-            baseIcon.draw(in: rect)
-
-            // Error dot
-            let dotSize: CGFloat = 5
-            let dotRect = NSRect(
-                x: rect.maxX - dotSize - 1,
-                y: rect.minY + 1,
-                width: dotSize,
-                height: dotSize
-            )
-            NSColor.Orttaai.warning.setFill()
-            NSBezierPath(ovalIn: dotRect).fill()
-
-            return true
-        }
-        image.isTemplate = false
-        return image
-    }
-
-    private static func configuredSymbol(named symbolName: String) -> NSImage {
-        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-        return NSImage(systemSymbolName: symbolName, accessibilityDescription: "Orttaai")?
-            .withSymbolConfiguration(config) ?? NSImage()
     }
 }

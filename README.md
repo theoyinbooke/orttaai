@@ -1,5 +1,11 @@
 # Orttaai
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/orttaai/wordmarks/white/wordmark-640.png">
+  <source media="(prefers-color-scheme: light)" srcset="branding/orttaai/wordmarks/charcoal/wordmark-640.png">
+  <img alt="Orttaai Signal Cursor logo" src="branding/orttaai/wordmarks/charcoal/wordmark-640.png" width="256">
+</picture>
+
 **Native macOS voice keyboard powered by WhisperKit.**
 
 Giving you back your second hand. Press a hotkey, speak, and your words appear at the cursor — in any app. All processing happens on-device. Your voice never leaves your Mac.
@@ -59,6 +65,12 @@ Download the latest `.dmg` from [GitHub Releases](https://github.com/theoyinbook
 ### Model Management
 
 ![Orttaai Model Management Page](docs/images/model-page.png)
+
+## Brand Assets
+
+The [Signal Cursor brand kit](branding/orttaai/README.md) includes transparent amber, white, and charcoal marks, light and dark app icons, wordmarks, a white macOS menu bar template, and SVG/PDF masters. [Preview the variations](branding/orttaai/preview.png).
+
+Regenerate all exports and app assets with `scripts/generate_brand_assets.sh`.
 
 ## Permissions
 

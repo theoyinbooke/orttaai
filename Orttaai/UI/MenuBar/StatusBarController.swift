@@ -52,6 +52,15 @@ final class StatusBarController {
             .error
         }
         button.image = MenuBarIconRenderer.renderIcon(for: renderedState)
+        let status: String = switch state {
+        case .idle: "Orttaai: Ready"
+        case .recording: "Orttaai: Recording"
+        case .processing: "Orttaai: Processing"
+        case .downloading: "Orttaai: Downloading model"
+        case .error: "Orttaai: Needs attention"
+        }
+        button.toolTip = status
+        button.setAccessibilityLabel(status)
         button.alphaValue = 1.0
     }
 

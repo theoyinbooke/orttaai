@@ -1,0 +1,456 @@
+{
+  "name" : "Orttaai Signal Cursor",
+  "palette" : {
+    "amber" : "#D4952A",
+    "charcoal" : "#1C1C1E",
+    "paper" : "#F5F3F0",
+    "white" : "#FFFFFF"
+  },
+  "png" : [
+    {
+      "file" : "marks\/amber\/mark-16.png",
+      "height" : 16,
+      "transparent" : true,
+      "width" : 16
+    },
+    {
+      "file" : "marks\/amber\/mark-32.png",
+      "height" : 32,
+      "transparent" : true,
+      "width" : 32
+    },
+    {
+      "file" : "marks\/amber\/mark-64.png",
+      "height" : 64,
+      "transparent" : true,
+      "width" : 64
+    },
+    {
+      "file" : "marks\/amber\/mark-128.png",
+      "height" : 128,
+      "transparent" : true,
+      "width" : 128
+    },
+    {
+      "file" : "marks\/amber\/mark-256.png",
+      "height" : 256,
+      "transparent" : true,
+      "width" : 256
+    },
+    {
+      "file" : "marks\/amber\/mark-512.png",
+      "height" : 512,
+      "transparent" : true,
+      "width" : 512
+    },
+    {
+      "file" : "marks\/amber\/mark-1024.png",
+      "height" : 1024,
+      "transparent" : true,
+      "width" : 1024
+    },
+    {
+      "file" : "marks\/amber\/mark-2048.png",
+      "height" : 2048,
+      "transparent" : true,
+      "width" : 2048
+    },
+    {
+      "file" : "wordmarks\/amber\/wordmark-320.png",
+      "height" : 80,
+      "transparent" : true,
+      "width" : 320
+    },
+    {
+      "file" : "wordmarks\/amber\/wordmark-640.png",
+      "height" : 160,
+      "transparent" : true,
+      "width" : 640
+    },
+    {
+      "file" : "wordmarks\/amber\/wordmark-1280.png",
+      "height" : 320,
+      "transparent" : true,
+      "width" : 1280
+    },
+    {
+      "file" : "wordmarks\/amber\/wordmark-2560.png",
+      "height" : 640,
+      "transparent" : true,
+      "width" : 2560
+    },
+    {
+      "file" : "marks\/white\/mark-16.png",
+      "height" : 16,
+      "transparent" : true,
+      "width" : 16
+    },
+    {
+      "file" : "marks\/white\/mark-32.png",
+      "height" : 32,
+      "transparent" : true,
+      "width" : 32
+    },
+    {
+      "file" : "marks\/white\/mark-64.png",
+      "height" : 64,
+      "transparent" : true,
+      "width" : 64
+    },
+    {
+      "file" : "marks\/white\/mark-128.png",
+      "height" : 128,
+      "transparent" : true,
+      "width" : 128
+    },
+    {
+      "file" : "marks\/white\/mark-256.png",
+      "height" : 256,
+      "transparent" : true,
+      "width" : 256
+    },
+    {
+      "file" : "marks\/white\/mark-512.png",
+      "height" : 512,
+      "transparent" : true,
+      "width" : 512
+    },
+    {
+      "file" : "marks\/white\/mark-1024.png",
+      "height" : 1024,
+      "transparent" : true,
+      "width" : 1024
+    },
+    {
+      "file" : "marks\/white\/mark-2048.png",
+      "height" : 2048,
+      "transparent" : true,
+      "width" : 2048
+    },
+    {
+      "file" : "wordmarks\/white\/wordmark-320.png",
+      "height" : 80,
+      "transparent" : true,
+      "width" : 320
+    },
+    {
+      "file" : "wordmarks\/white\/wordmark-640.png",
+      "height" : 160,
+      "transparent" : true,
+      "width" : 640
+    },
+    {
+      "file" : "wordmarks\/white\/wordmark-1280.png",
+      "height" : 320,
+      "transparent" : true,
+      "width" : 1280
+    },
+    {
+      "file" : "wordmarks\/white\/wordmark-2560.png",
+      "height" : 640,
+      "transparent" : true,
+      "width" : 2560
+    },
+    {
+      "file" : "marks\/charcoal\/mark-16.png",
+      "height" : 16,
+      "transparent" : true,
+      "width" : 16
+    },
+    {
+      "file" : "marks\/charcoal\/mark-32.png",
+      "height" : 32,
+      "transparent" : true,
+      "width" : 32
+    },
+    {
+      "file" : "marks\/charcoal\/mark-64.png",
+      "height" : 64,
+      "transparent" : true,
+      "width" : 64
+    },
+    {
+      "file" : "marks\/charcoal\/mark-128.png",
+      "height" : 128,
+      "transparent" : true,
+      "width" : 128
+    },
+    {
+      "file" : "marks\/charcoal\/mark-256.png",
+      "height" : 256,
+      "transparent" : true,
+      "width" : 256
+    },
+    {
+      "file" : "marks\/charcoal\/mark-512.png",
+      "height" : 512,
+      "transparent" : true,
+      "width" : 512
+    },
+    {
+      "file" : "marks\/charcoal\/mark-1024.png",
+      "height" : 1024,
+      "transparent" : true,
+      "width" : 1024
+    },
+    {
+      "file" : "marks\/charcoal\/mark-2048.png",
+      "height" : 2048,
+      "transparent" : true,
+      "width" : 2048
+    },
+    {
+      "file" : "wordmarks\/charcoal\/wordmark-320.png",
+      "height" : 80,
+      "transparent" : true,
+      "width" : 320
+    },
+    {
+      "file" : "wordmarks\/charcoal\/wordmark-640.png",
+      "height" : 160,
+      "transparent" : true,
+      "width" : 640
+    },
+    {
+      "file" : "wordmarks\/charcoal\/wordmark-1280.png",
+      "height" : 320,
+      "transparent" : true,
+      "width" : 1280
+    },
+    {
+      "file" : "wordmarks\/charcoal\/wordmark-2560.png",
+      "height" : 640,
+      "transparent" : true,
+      "width" : 2560
+    },
+    {
+      "file" : "icons\/dark\/icon-16.png",
+      "height" : 16,
+      "transparent" : true,
+      "width" : 16
+    },
+    {
+      "file" : "icons\/dark\/icon-32.png",
+      "height" : 32,
+      "transparent" : true,
+      "width" : 32
+    },
+    {
+      "file" : "icons\/dark\/icon-64.png",
+      "height" : 64,
+      "transparent" : true,
+      "width" : 64
+    },
+    {
+      "file" : "icons\/dark\/icon-128.png",
+      "height" : 128,
+      "transparent" : true,
+      "width" : 128
+    },
+    {
+      "file" : "icons\/dark\/icon-256.png",
+      "height" : 256,
+      "transparent" : true,
+      "width" : 256
+    },
+    {
+      "file" : "icons\/dark\/icon-512.png",
+      "height" : 512,
+      "transparent" : true,
+      "width" : 512
+    },
+    {
+      "file" : "icons\/dark\/icon-1024.png",
+      "height" : 1024,
+      "transparent" : true,
+      "width" : 1024
+    },
+    {
+      "file" : "icons\/dark\/icon-2048.png",
+      "height" : 2048,
+      "transparent" : true,
+      "width" : 2048
+    },
+    {
+      "file" : "icons\/light\/icon-16.png",
+      "height" : 16,
+      "transparent" : true,
+      "width" : 16
+    },
+    {
+      "file" : "icons\/light\/icon-32.png",
+      "height" : 32,
+      "transparent" : true,
+      "width" : 32
+    },
+    {
+      "file" : "icons\/light\/icon-64.png",
+      "height" : 64,
+      "transparent" : true,
+      "width" : 64
+    },
+    {
+      "file" : "icons\/light\/icon-128.png",
+      "height" : 128,
+      "transparent" : true,
+      "width" : 128
+    },
+    {
+      "file" : "icons\/light\/icon-256.png",
+      "height" : 256,
+      "transparent" : true,
+      "width" : 256
+    },
+    {
+      "file" : "icons\/light\/icon-512.png",
+      "height" : 512,
+      "transparent" : true,
+      "width" : 512
+    },
+    {
+      "file" : "icons\/light\/icon-1024.png",
+      "height" : 1024,
+      "transparent" : true,
+      "width" : 1024
+    },
+    {
+      "file" : "icons\/light\/icon-2048.png",
+      "height" : 2048,
+      "transparent" : true,
+      "width" : 2048
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-16.png",
+      "height" : 16,
+      "transparent" : true,
+      "width" : 16
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-32.png",
+      "height" : 32,
+      "transparent" : true,
+      "width" : 32
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-64.png",
+      "height" : 64,
+      "transparent" : true,
+      "width" : 64
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-128.png",
+      "height" : 128,
+      "transparent" : true,
+      "width" : 128
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-256.png",
+      "height" : 256,
+      "transparent" : true,
+      "width" : 256
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-512.png",
+      "height" : 512,
+      "transparent" : true,
+      "width" : 512
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-1024.png",
+      "height" : 1024,
+      "transparent" : true,
+      "width" : 1024
+    },
+    {
+      "file" : "icons\/white-on-dark\/icon-2048.png",
+      "height" : 2048,
+      "transparent" : true,
+      "width" : 2048
+    },
+    {
+      "file" : "presentations\/on-light.png",
+      "height" : 900,
+      "transparent" : false,
+      "width" : 1600
+    },
+    {
+      "file" : "presentations\/on-dark.png",
+      "height" : 900,
+      "transparent" : false,
+      "width" : 1600
+    },
+    {
+      "file" : "menu-bar\/white-16.png",
+      "height" : 16,
+      "transparent" : true,
+      "width" : 16
+    },
+    {
+      "file" : "menu-bar\/white-18.png",
+      "height" : 18,
+      "transparent" : true,
+      "width" : 18
+    },
+    {
+      "file" : "menu-bar\/white-20.png",
+      "height" : 20,
+      "transparent" : true,
+      "width" : 20
+    },
+    {
+      "file" : "menu-bar\/white-22.png",
+      "height" : 22,
+      "transparent" : true,
+      "width" : 22
+    },
+    {
+      "file" : "menu-bar\/white-24.png",
+      "height" : 24,
+      "transparent" : true,
+      "width" : 24
+    },
+    {
+      "file" : "menu-bar\/white-32.png",
+      "height" : 32,
+      "transparent" : true,
+      "width" : 32
+    },
+    {
+      "file" : "menu-bar\/white-36.png",
+      "height" : 36,
+      "transparent" : true,
+      "width" : 36
+    },
+    {
+      "file" : "menu-bar\/white-40.png",
+      "height" : 40,
+      "transparent" : true,
+      "width" : 40
+    },
+    {
+      "file" : "menu-bar\/white-44.png",
+      "height" : 44,
+      "transparent" : true,
+      "width" : 44
+    },
+    {
+      "file" : "menu-bar\/white-48.png",
+      "height" : 48,
+      "transparent" : true,
+      "width" : 48
+    },
+    {
+      "file" : "menu-bar\/white-64.png",
+      "height" : 64,
+      "transparent" : true,
+      "width" : 64
+    },
+    {
+      "file" : "preview.png",
+      "height" : 1320,
+      "transparent" : false,
+      "width" : 1800
+    }
+  ],
+  "source" : "Orttaai\/Design\/SignalCursorGlyph.swift"
+}
