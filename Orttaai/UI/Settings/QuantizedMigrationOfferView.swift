@@ -88,12 +88,12 @@ struct QuantizedMigrationOfferView: View {
                 }
             } else {
                 Button("Keep full precision", action: onDismiss)
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
                     .disabled(isDisabled)
                     .help("Dismiss this suggestion")
 
                 Button("Switch to quantized (~\(reclaimText) reclaimed)", action: onMigrate)
-                    .buttonStyle(OrttaaiButtonStyle(.primary))
+                    .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
                     .disabled(isDisabled)
                     .help("Verify the quantized build before replacement")
             }

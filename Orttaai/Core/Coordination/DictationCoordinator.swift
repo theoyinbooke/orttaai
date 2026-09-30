@@ -98,15 +98,19 @@ final class DictationCoordinator {
     private let editProcessor: any EditCommandProcessing
 
     /// Push-to-talk is bounded by the user-set max duration; hands-free gets
-    /// its own, much more generous cap.
+    /// its own, much more generous cap. Both are clamped to the supported
+    /// ranges, so a corrupt stored value cannot end a recording early.
     private var maxDuration: TimeInterval {
         switch recordingMode {
         case .pushToTalk:
-            return TimeInterval(settings.maxRecordingDuration)
+            return settings.effectiveMaxRecordingDuration
         case .handsFree:
-            return TimeInterval(settings.handsFreeMaxRecordingDuration)
+            return handsFreeMaxDurationOverride ?? settings.effectiveHandsFreeMaxRecordingDuration
         }
     }
+    /// Tests only: a hands-free cap below the supported range, injected here
+    /// instead of written to the shared defaults domain the app reads.
+    var handsFreeMaxDurationOverride: TimeInterval?
     /// The countdown (and its red warning treatment in the UI) covers the final
     /// 20 seconds of the recording window.
     static let countdownWarningWindowSeconds: TimeInterval = 20

@@ -17,121 +17,77 @@ struct AudioSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Microphone")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
+            SettingsCard("Microphone") {
+                SettingsRow(
+                    title: "Input Device",
+                    info: "The microphone Orttaai records from. System Default follows the input chosen in macOS Sound settings."
+                ) {
                     OrttaaiDropdown(
                         selection: $selectedDeviceID,
                         options: [.init("", "System Default")]
-                            + audioDeviceManager.devices.map { .init(String($0.id), $0.name) }
+                            + audioDeviceManager.devices.map { .init(String($0.id), $0.name) },
+                        width: SettingsLayout.controlWidth
                     )
                 }
 
-                Divider()
-                    .background(Color.Orttaai.border)
+                SettingsDivider()
 
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    HStack {
-                        Text("Input Level")
-                            .font(.Orttaai.subheading)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-
-                        Spacer()
-
+                SettingsRow(
+                    title: "Input Level",
+                    info: "Speak to check the level moves. If it stays flat, check microphone permission in System Settings or choose another device."
+                ) {
+                    HStack(spacing: Spacing.sm) {
+                        AudioLevelMeter(level: audioLevel)
+                            .frame(width: SettingsLayout.sliderWidth)
                         Text(audioLevelLabel)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
+                            .font(.Orttaai.mono)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                            .frame(minWidth: 40, alignment: .trailing)
                     }
-
-                    AudioLevelMeter(level: audioLevel)
-
-                    Text(activeDeviceLabel)
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Input level for \(activeDeviceLabel)")
+                    .accessibilityValue(audioLevelLabel)
                 }
 
+                if audioDeviceManager.devices.isEmpty {
+                    SettingsNotice(
+                        kind: .error,
+                        message: "No audio input devices detected. Reconnect a microphone and reopen this section."
+                    )
+                }
             }
-            .padding(Spacing.md)
-            .dashboardCard()
 
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Label("Tip", systemImage: "lightbulb")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.warning)
-
-                Text("If input stays flat, check microphone permission or choose another device.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.Orttaai.warningSubtle.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .stroke(Color.Orttaai.warning.opacity(0.35), lineWidth: BorderWidth.standard)
-            )
-
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Audio Recovery")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Button {
-                    requestAudioPipelineReset()
-                } label: {
-                    HStack(spacing: Spacing.xs) {
-                        if isResettingAudioPipeline {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .semibold))
+            SettingsCard("Troubleshooting") {
+                SettingsRow(
+                    title: "Reset Audio",
+                    info: "Restarts audio capture. Use it if recording stops picking up sound, for example after your Mac wakes from sleep or a microphone reconnects."
+                ) {
+                    Button {
+                        requestAudioPipelineReset()
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            if isResettingAudioPipeline {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            Text(isResettingAudioPipeline ? "Resetting…" : "Reset")
+                                .lineLimit(1)
                         }
-
-                        Text(isResettingAudioPipeline ? "Resetting Audio..." : "Reset Audio Pipeline")
-                            .lineLimit(1)
                     }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                    .disabled(isResettingAudioPipeline)
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(isResettingAudioPipeline)
 
-                if let audioResetMessage {
-                    Text(audioResetMessage)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(audioResetSucceeded ? Color.Orttaai.success : Color.Orttaai.error)
-                        .fixedSize(horizontal: false, vertical: true)
+                if let audioResetMessage, !isResettingAudioPipeline {
+                    SettingsNotice(
+                        kind: audioResetSucceeded ? .success : .error,
+                        message: audioResetMessage
+                    )
                 }
-            }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.Orttaai.bgSecondary.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .stroke(Color.Orttaai.border.opacity(0.7), lineWidth: BorderWidth.standard)
-            )
-
-            if audioDeviceManager.devices.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("No audio input devices detected.")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.error)
-                    Text("Reconnect a microphone and reopen this section.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
-                .padding(Spacing.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.Orttaai.errorSubtle.opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
             }
         }
-        .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             startLevelMonitoring()
         }

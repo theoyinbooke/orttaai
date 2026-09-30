@@ -3,6 +3,8 @@
 
 import SwiftUI
 
+/// The Overview page's stats and Insight button, shown at the trailing edge
+/// of the page header; the header itself carries the "Welcome back" title.
 struct HomeHeaderView: View {
     let stats: DashboardHeaderStats
     let isRefreshing: Bool
@@ -13,51 +15,35 @@ struct HomeHeaderView: View {
     var body: some View {
         let showsStatLabels = !isInsightsVisible || !isCompact
 
-        HStack(alignment: .top, spacing: Spacing.lg) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Welcome back")
-                    .font(.Orttaai.title)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
+        HStack(spacing: Spacing.sm) {
+            if isRefreshing {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("Updating")
+                    .accessibilityLabel("Dashboard updating")
             }
 
-            Spacer()
+            HStack(spacing: Spacing.sm) {
+                StatChipView(label: "active days", value: "\(stats.activeDays)", showsLabel: showsStatLabels)
+                StatChipView(label: "words", value: stats.totalWords.formatted(), showsLabel: showsStatLabels)
+                StatChipView(label: "avg WPM", value: "\(stats.averageWPM)", showsLabel: showsStatLabels)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                "Active days \(stats.activeDays), words \(stats.totalWords), average W P M \(stats.averageWPM)."
+            )
 
-            VStack(alignment: .trailing, spacing: Spacing.sm) {
-                HStack(spacing: Spacing.sm) {
-                    StatChipView(label: "active days", value: "\(stats.activeDays)", showsLabel: showsStatLabels)
-                    StatChipView(label: "words", value: stats.totalWords.formatted(), showsLabel: showsStatLabels)
-                    StatChipView(label: "avg WPM", value: "\(stats.averageWPM)", showsLabel: showsStatLabels)
-
-                    if !isInsightsVisible {
-                        Button {
-                            onToggleInsights()
-                        } label: {
-                            Label("Insight", systemImage: "lightbulb")
-                                .font(.Orttaai.secondary)
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(OrttaaiButtonStyle(.secondary))
-                        .fixedSize(horizontal: true, vertical: false)
-                        .help("Open writing insights panel")
-                    }
+            if !isInsightsVisible {
+                Button {
+                    onToggleInsights()
+                } label: {
+                    Label("Insight", systemImage: "lightbulb")
+                        .lineLimit(1)
                 }
-
-                if isRefreshing {
-                    HStack(spacing: Spacing.xs) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Updating")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                    }
-                    .accessibilityLabel("Dashboard updating")
-                }
+                .buttonStyle(ChipButtonStyle())
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Open writing insights panel")
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(
-            "Welcome back. Active days \(stats.activeDays), words \(stats.totalWords), average W P M \(stats.averageWPM)."
-        )
     }
 }

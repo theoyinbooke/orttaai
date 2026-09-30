@@ -12,16 +12,7 @@ struct OrttaaiToggleStyle: ToggleStyle {
 
             Spacer()
 
-            RoundedRectangle(cornerRadius: 10)
-                .fill(configuration.isOn ? Color.Orttaai.accent : Color.Orttaai.bgTertiary)
-                .frame(width: 36, height: 20)
-                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 16, height: 16)
-                        .padding(2)
-                }
-                .animation(.easeOut(duration: 0.15), value: configuration.isOn)
+            OrttaaiSwitchTrack(isOn: configuration.isOn)
                 .onTapGesture {
                     configuration.isOn.toggle()
                 }

@@ -113,39 +113,37 @@ private enum ToneVoiceSection: String, CaseIterable {
     case style = "Tone & Style"
     case language = "Language"
     case guide = "Guide"
-
-    var icon: String {
-        switch self {
-        case .overview: "mic"
-        case .style: "chart.bar"
-        case .language: "text.bubble"
-        case .guide: "slider.horizontal.3"
-        }
-    }
 }
 
 struct ToneOfVoiceView: View {
     @State private var viewModel = ToneOfVoiceViewModel()
     @State private var selectedSection: ToneVoiceSection = .overview
 
-    private let overviewTopCardMinHeight: CGFloat = 240
-    private let overviewGuideCardMinHeight: CGFloat = 184
-    private let guideListCardMinHeight: CGFloat = 160
-
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Spacing.md) {
-                controlsCard
+                controls
+
+                if let errorMessage = viewModel.errorMessage {
+                    SettingsNotice(kind: .warning, message: errorMessage) {
+                        viewModel.errorMessage = nil
+                    }
+                }
 
                 if viewModel.isLoading, viewModel.profile == nil {
                     loadingCard
                 } else if let profile = viewModel.profile {
-                    profileContent(profile)
+                    switch selectedSection {
+                    case .overview: overviewSection(profile)
+                    case .style: styleSection(profile)
+                    case .language: languageSection(profile)
+                    case .guide: guideSection(profile)
+                    }
                 } else {
                     emptyState
                 }
             }
-            .padding(.horizontal, Spacing.lg)
+            .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
             .padding(.bottom, Spacing.xxl)
         }
         .task {
@@ -153,612 +151,345 @@ struct ToneOfVoiceView: View {
         }
     }
 
-    private var controlsCard: some View {
-        HStack(alignment: .center, spacing: Spacing.lg) {
-            Label("Tone of Voice", systemImage: "mic")
-                .font(.Orttaai.heading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+    // MARK: - Controls
 
-            Spacer(minLength: Spacing.lg)
+    private var controls: some View {
+        HStack(spacing: Spacing.md) {
+            OrttaaiSegmentedControl(
+                title: "Section",
+                selection: $selectedSection,
+                options: ToneVoiceSection.allCases.map { .init($0, $0.rawValue) }
+            )
 
-            HStack(spacing: Spacing.sm) {
-                modelMenu
+            Spacer(minLength: Spacing.md)
 
-                Button {
-                    Task {
-                        await viewModel.refreshModels()
-                    }
-                } label: {
-                    Image(systemName: viewModel.isLoadingModels ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .disabled(viewModel.isLoadingModels)
-                .help("Refresh Ollama models")
-
-                Button {
-                    Task {
-                        await viewModel.runAnalysis()
-                    }
-                } label: {
-                    HStack(spacing: Spacing.sm) {
-                        if viewModel.isLoading {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise.circle")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        Text("Rerun")
-                    }
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.bgPrimary)
-                    .padding(.horizontal, Spacing.md)
-                    .frame(height: 32)
-                    .background(Color.Orttaai.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isLoading)
-            }
-        }
-        .padding(Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .fill(Color.Orttaai.bgSecondary)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
-        )
-        .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
-    }
-
-    private func profileContent(_ profile: ToneOfVoiceProfile) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            sectionTabs
-
-            switch selectedSection {
-            case .overview:
-                overviewSection(profile)
-            case .style:
-                styleSection(profile)
-            case .language:
-                languageSection(profile)
-            case .guide:
-                guideSection(profile)
-            }
-        }
-    }
-
-    private func scoreCard(_ profile: ToneOfVoiceProfile) -> some View {
-        voiceCard(
-            title: "Voice Match",
-            icon: "target",
-            accent: Color.Orttaai.accent,
-            minHeight: overviewTopCardMinHeight
-        ) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                HStack(alignment: .lastTextBaseline, spacing: Spacing.xs) {
-                    Text("\(profile.overallScore)")
-                        .font(.system(size: 68, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text("/100")
-                        .font(.system(size: 24, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    Spacer()
-                    confidenceBadge(profile.confidencePercent)
-                }
-
-                progressBar(Double(profile.overallScore) / 100, tint: Color.Orttaai.accent)
-
-                tagCloud(profile.descriptors.prefix(5).map { $0.capitalized }, tint: Color.Orttaai.accent)
-
-                Divider()
-                    .background(Color.Orttaai.border)
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("\(profile.wordCount.formatted()) words across \(profile.sampleCount.formatted()) samples")
-                    Text("Model: \(profile.model.isEmpty ? "Local metrics" : profile.model)")
-                    Text("Updated \(profile.generatedAt.formatted(date: .abbreviated, time: .shortened))")
-                }
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-        }
-    }
-
-    private func summaryCard(_ profile: ToneOfVoiceProfile) -> some View {
-        voiceCard(
-            title: "Profile",
-            icon: "person.text.rectangle",
-            accent: Color.Orttaai.warning,
-            minHeight: overviewTopCardMinHeight
-        ) {
-            Text(profile.summary)
-                .font(.Orttaai.body)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if !profile.recommendations.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Recommendations")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    ForEach(profile.recommendations.prefix(4), id: \.self) { recommendation in
-                        Label(recommendation, systemImage: "checkmark.circle")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-
-            statusLine
-        }
-    }
-
-    private func metricCard(_ metric: ToneOfVoiceMetric) -> some View {
-        let tint = metricTint(metric.name)
-        return voiceCard(title: metric.name, icon: metricIcon(metric.name), accent: tint, compact: true) {
-            HStack {
-                Text(metric.label)
+            if let statusMessage = viewModel.statusMessage, !viewModel.isLoading {
+                Text(statusMessage)
                     .font(.Orttaai.caption)
-                    .foregroundStyle(tint)
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, 4)
-                    .background(tint.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                Spacer()
-                Text("\(Int((metric.value * 100).rounded()))%")
-                    .font(.Orttaai.caption.monospacedDigit())
-                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+                    .layoutPriority(-1)
             }
 
-            progressBar(metric.value, tint: tint)
+            OrttaaiDropdown(
+                selection: $viewModel.selectedModel,
+                options: modelOptions,
+                width: 170,
+                placeholder: "Choose model"
+            )
+            .help("The model that analyzes your voice")
 
-            Text(metric.detail)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                Task { await viewModel.refreshModels() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+            .disabled(viewModel.isLoadingModels)
+            .help("Refresh the model list")
+            .accessibilityLabel("Refresh the model list")
+
+            Button {
+                Task { await viewModel.runAnalysis() }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    if viewModel.isLoading {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text(viewModel.isLoading ? "Analyzing…" : (viewModel.profile == nil ? "Analyze" : "Rerun"))
+                }
+            }
+            .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
+            .disabled(viewModel.isLoading)
+            .help("Analyze your recent dictation again")
         }
     }
 
-    private func profileListCard(
-        title: String,
-        icon: String? = nil,
-        values: [String],
-        accent: Color,
-        minHeight: CGFloat? = nil
-    ) -> some View {
-        voiceCard(title: title, icon: icon, accent: accent, minHeight: minHeight) {
+    private var modelOptions: [OrttaaiDropdown<String>.Option] {
+        var names = viewModel.availableModels
+        if !viewModel.selectedModel.isEmpty, !names.contains(viewModel.selectedModel) {
+            names.insert(viewModel.selectedModel, at: 0)
+        }
+        return names.map { .init($0, $0) }
+    }
+
+    // MARK: - Overview
+
+    private func overviewSection(_ profile: ToneOfVoiceProfile) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            heroCard(profile)
+
+            if !profile.signaturePhrases.isEmpty {
+                SettingsCard(
+                    "Signature phrases",
+                    info: "Phrases you use often enough that they sound like you."
+                ) {
+                    chips(Array(profile.signaturePhrases.prefix(10)).map { "\u{201C}\($0)\u{201D}" }, tint: Color.Orttaai.accent)
+                        .padding(.bottom, Spacing.xs)
+                }
+            }
+
+            equalHeightRow {
+                listCard("Recommendations", icon: "checkmark.circle", values: profile.recommendations, tint: Color.Orttaai.warning)
+                listCard("Use this voice", icon: "hand.thumbsup", values: profile.signatureApproaches, tint: Color.Orttaai.success)
+                listCard("Avoid", icon: "hand.raised", values: profile.avoidances, tint: Color.Orttaai.error)
+            }
+        }
+    }
+
+    private func heroCard(_ profile: ToneOfVoiceProfile) -> some View {
+        SettingsCard {
+            HStack(alignment: .top, spacing: Spacing.xl) {
+                ScoreRing(score: profile.overallScore)
+                    .frame(width: 104, height: 104)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Voice match \(profile.overallScore) out of 100")
+
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    chips(profile.descriptors.prefix(6).map(\.capitalized), tint: Color.Orttaai.accent)
+                    Text(profile.summary)
+                        .font(.Orttaai.body)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    Text(metaLine(profile))
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                }
+            }
+            .padding(.vertical, Spacing.sm)
+        }
+    }
+
+    private func metaLine(_ profile: ToneOfVoiceProfile) -> String {
+        [
+            "\(profile.confidencePercent)% confidence",
+            "\(profile.wordCount.formatted()) words from \(profile.sampleCount.formatted()) dictations",
+            profile.model.isEmpty ? "local metrics" : profile.model,
+            "updated \(profile.generatedAt.formatted(date: .abbreviated, time: .omitted))"
+        ].joined(separator: " · ")
+    }
+
+    // MARK: - Tone & Style
+
+    private func styleSection(_ profile: ToneOfVoiceProfile) -> some View {
+        SettingsCard(
+            "Tone and style",
+            info: "How your dictation reads on each dimension, measured across your recent history."
+        ) {
+            StatusChip(
+                title: "\(profile.confidencePercent)% confidence",
+                systemImage: "checkmark.seal",
+                tint: profile.wordCount >= 650 ? Color.Orttaai.success : Color.Orttaai.warning
+            )
+            .help(profile.wordCount >= 650 ? "Based on \(profile.wordCount.formatted()) words, an adequate sample." : "More dictation will make this more reliable.")
+        } content: {
+            ForEach(Array(profile.metrics.enumerated()), id: \.element.id) { index, metric in
+                if index > 0 { SettingsDivider() }
+                metricRow(metric)
+            }
+        }
+    }
+
+    private func metricRow(_ metric: ToneOfVoiceMetric) -> some View {
+        let tint = metricTint(metric.name)
+        return HStack(spacing: Spacing.md) {
+            Image(systemName: metricIcon(metric.name))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+            SettingsLabel(title: metric.name, info: metric.detail)
+                .frame(width: 150, alignment: .leading)
+            Text(metric.label)
+                .font(.Orttaai.caption.weight(.medium))
+                .foregroundStyle(tint)
+                .frame(width: 120, alignment: .leading)
+                .lineLimit(1)
+            progressBar(metric.value, tint: tint)
+            Text("\(Int((metric.value * 100).rounded()))%")
+                .font(.Orttaai.caption.monospacedDigit())
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .frame(width: 38, alignment: .trailing)
+        }
+        .frame(minHeight: 36)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Language
+
+    private func languageSection(_ profile: ToneOfVoiceProfile) -> some View {
+        let wordsPerSentence = Double(profile.wordCount) / Double(max(1, profile.sentenceCount))
+        let complexity = metric(named: "Complexity", in: profile)?.value ?? 0.5
+        let conversation = metric(named: "Conversation", in: profile)?.value ?? 0.5
+        let readingGrade = min(12, max(3, Int((4 + wordsPerSentence / 8 + complexity * 4).rounded())))
+
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            equalHeightRow {
+                statTile("Grade \(readingGrade)", "Reading level", info: "An estimate from sentence length and vocabulary.")
+                statTile("~\(Int(wordsPerSentence.rounded()))", "Words per sentence", info: "Average sentence length in your dictation.")
+                statTile(conversation > 0.68 ? "High" : conversation > 0.38 ? "Medium" : "Low", "Contractions", info: "How often you use contractions like \u{201C}it's\u{201D} and \u{201C}we'll\u{201D}.")
+                statTile(complexity > 0.68 ? "Layered" : complexity > 0.38 ? "Clear" : "Simple", "Vocabulary", info: "How varied and complex your word choice is.")
+            }
+
+            if !profile.signatureApproaches.isEmpty {
+                listCard("Notable traits", icon: "sparkle.magnifyingglass", values: Array(profile.signatureApproaches.prefix(5)), tint: Color.Orttaai.accent)
+            }
+
+            if !profile.sampleExcerpts.isEmpty {
+                SettingsCard(
+                    "In your words",
+                    info: "Excerpts from your dictation the profile was built on."
+                ) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        ForEach(profile.sampleExcerpts, id: \.self) { excerpt in
+                            HStack(alignment: .top, spacing: Spacing.sm) {
+                                Rectangle()
+                                    .fill(Color.Orttaai.accent.opacity(0.5))
+                                    .frame(width: 2)
+                                Text(excerpt)
+                                    .font(.Orttaai.secondary)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                                    .lineLimit(3)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .padding(.bottom, Spacing.xs)
+                }
+            }
+        }
+    }
+
+    // MARK: - Guide
+
+    private func guideSection(_ profile: ToneOfVoiceProfile) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            SettingsCard(
+                "ChatAI prompt guide",
+                info: "What ChatAI's My Tone style sends to the model so replies sound like you."
+            ) {
+                CopyButton(title: "Copy", variant: .secondary, size: .small) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(profile.compactPromptGuide, forType: .string)
+                }
+            } content: {
+                Text(profile.compactPromptGuide)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.Orttaai.bgPrimary.opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+                    .padding(.bottom, Spacing.xs)
+            }
+
+            equalHeightRow {
+                listCard("Use this voice", icon: "hand.thumbsup", values: profile.signatureApproaches, tint: Color.Orttaai.success)
+                listCard("Avoid", icon: "hand.raised", values: profile.avoidances, tint: Color.Orttaai.error)
+                listCard("Recommendations", icon: "checkmark.circle", values: profile.recommendations, tint: Color.Orttaai.warning)
+            }
+        }
+    }
+
+    // MARK: - Building blocks
+
+    /// Cards in one row, all as tall as the tallest.
+    private func equalHeightRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: Spacing.md) {
+            content()
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func listCard(_ title: String, icon: String, values: [String], tint: Color) -> some View {
+        SettingsCard {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                ForEach(values.prefix(6), id: \.self) { value in
+                Label(title, systemImage: icon)
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .labelStyle(TintedIconLabelStyle(tint: tint))
+                if values.isEmpty {
+                    SettingsFootnote("Nothing yet. Rerun after more dictation.")
+                }
+                ForEach(values.prefix(5), id: \.self) { value in
                     HStack(alignment: .top, spacing: Spacing.sm) {
                         Circle()
-                            .fill(accent)
+                            .fill(tint)
                             .frame(width: 5, height: 5)
                             .padding(.top, 6)
+                            .accessibilityHidden(true)
                         Text(value)
                             .font(.Orttaai.secondary)
                             .foregroundStyle(Color.Orttaai.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                Spacer(minLength: 0)
             }
+            .padding(.vertical, Spacing.xs)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private func promptGuideCard(_ profile: ToneOfVoiceProfile) -> some View {
-        voiceCard(title: "ChatAI Prompt Guide", icon: "text.badge.checkmark", accent: Color.Orttaai.accent) {
-            HStack {
-                Text("Used by My Tone")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.accent)
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, 5)
-                    .background(Color.Orttaai.accentSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Spacer()
-            }
-
-            Text(profile.compactPromptGuide)
-                .font(.system(.body, design: .monospaced))
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(Spacing.md)
-                .background(Color.Orttaai.bgTertiary.opacity(0.38))
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        }
-    }
-
-    private func sampleCard(_ profile: ToneOfVoiceProfile) -> some View {
-        voiceCard(title: "Sample Evidence", icon: "doc.text", accent: Color.Orttaai.success) {
-            ForEach(profile.sampleExcerpts, id: \.self) { excerpt in
-                Text(excerpt)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.md)
-                    .background(Color.Orttaai.bgTertiary.opacity(0.32))
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-            }
-        }
-    }
-
-    private var sectionTabs: some View {
-        HStack(spacing: Spacing.xs) {
-            ForEach(ToneVoiceSection.allCases, id: \.self) { section in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        selectedSection = section
-                    }
-                } label: {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: section.icon)
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(section.rawValue)
-                            .font(.Orttaai.bodyMedium)
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(selectedSection == section ? Color.Orttaai.bgPrimary : Color.Orttaai.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous)
-                            .fill(selectedSection == section ? Color.Orttaai.accent : Color.clear)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
-        )
-    }
-
-    private func overviewSection(_ profile: ToneOfVoiceProfile) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            HStack(alignment: .top, spacing: Spacing.lg) {
-                scoreCard(profile)
-                    .frame(minWidth: 300)
-                summaryCard(profile)
-            }
-
-            ToneBalancedCardGrid(itemCount: 3, minimumColumnWidth: 260) {
-                profileListCard(
-                    title: "Signature",
-                    icon: "quote.opening",
-                    values: profile.signaturePhrases.isEmpty ? ["No repeated signature phrases detected yet."] : profile.signaturePhrases,
-                    accent: Color.Orttaai.accent,
-                    minHeight: overviewGuideCardMinHeight
-                )
-                profileListCard(
-                    title: "Use This Voice",
-                    icon: "slider.horizontal.3",
-                    values: profile.signatureApproaches,
-                    accent: Color.Orttaai.success,
-                    minHeight: overviewGuideCardMinHeight
-                )
-                profileListCard(
-                    title: "Avoid",
-                    icon: "exclamationmark.triangle",
-                    values: profile.avoidances,
-                    accent: Color.Orttaai.error,
-                    minHeight: overviewGuideCardMinHeight
-                )
-            }
-        }
-    }
-
-    private func styleSection(_ profile: ToneOfVoiceProfile) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            ToneBalancedCardGrid(itemCount: profile.metrics.count, minimumColumnWidth: 220) {
-                ForEach(profile.metrics) { metric in
-                    metricCard(metric)
-                }
-            }
-
-            confidenceCard(profile)
-        }
-    }
-
-    private func languageSection(_ profile: ToneOfVoiceProfile) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            languageCard(profile)
-            signatureElementsCard(profile)
-            sampleCard(profile)
-        }
-    }
-
-    private func guideSection(_ profile: ToneOfVoiceProfile) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            promptGuideCard(profile)
-
-            ToneBalancedCardGrid(itemCount: 3, minimumColumnWidth: 260) {
-                profileListCard(
-                    title: "Use This Voice",
-                    icon: "checkmark.seal",
-                    values: profile.signatureApproaches,
-                    accent: Color.Orttaai.success,
-                    minHeight: guideListCardMinHeight
-                )
-                profileListCard(
-                    title: "Avoid",
-                    icon: "exclamationmark.triangle",
-                    values: profile.avoidances,
-                    accent: Color.Orttaai.error,
-                    minHeight: guideListCardMinHeight
-                )
-                profileListCard(
-                    title: "Recommendations",
-                    values: profile.recommendations,
-                    accent: Color.Orttaai.warning,
-                    minHeight: guideListCardMinHeight
-                )
-            }
-        }
-    }
-
-    private func confidenceCard(_ profile: ToneOfVoiceProfile) -> some View {
-        voiceCard(title: "Profile Confidence", icon: "checkmark.circle", accent: Color.Orttaai.success) {
-            HStack(alignment: .center, spacing: Spacing.xxl) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("\(profile.confidencePercent)%")
-                        .font(.system(size: 44, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.Orttaai.success)
-                    Text("Overall confidence")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textPrimary.opacity(0.82))
-                }
-
-                Divider()
-                    .background(Color.Orttaai.border)
-
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Based on \(profile.wordCount.formatted()) words analyzed")
-                    Text("\(profile.sampleCount.formatted()) samples")
-                    Text(profile.wordCount >= 650 ? "Adequate sample" : "More samples will improve the profile")
-                        .foregroundStyle(profile.wordCount >= 650 ? Color.Orttaai.success : Color.Orttaai.warning)
-                }
-                .font(.Orttaai.body)
-                .foregroundStyle(Color.Orttaai.textPrimary.opacity(0.82))
-
-                Spacer()
-            }
-        }
-    }
-
-    private func languageCard(_ profile: ToneOfVoiceProfile) -> some View {
-        let wordsPerSentence = Double(profile.wordCount) / Double(max(1, profile.sentenceCount))
-        let complexity = metric(named: "Complexity", in: profile)?.value ?? 0.5
-        let conversation = metric(named: "Conversation", in: profile)?.value ?? 0.5
-        let readingGrade = min(12, max(3, Int((4 + wordsPerSentence / 8 + complexity * 4).rounded())))
-
-        return voiceCard(title: "Language", icon: "text.bubble", accent: Color(hex: "2F8F83")) {
-            ToneBalancedCardGrid(itemCount: 4, minimumColumnWidth: 240) {
-                statTile(title: "Grade \(readingGrade)", subtitle: "Reading Level", accent: Color(hex: "2F8F83"))
-                statTile(title: "~\(Int(wordsPerSentence.rounded()))", subtitle: "Words/Sentence", accent: Color.Orttaai.warning)
-                statTile(title: conversation > 0.68 ? "High" : conversation > 0.38 ? "Medium" : "Low", subtitle: "Contractions", accent: Color(hex: "A855F7"))
-                statTile(title: complexity > 0.68 ? "Layered" : complexity > 0.38 ? "Clear" : "Simple", subtitle: "Vocabulary", accent: Color.Orttaai.accent)
-            }
-
-            Divider()
-                .background(Color.Orttaai.border)
-
-            HStack(spacing: Spacing.xxl) {
-                languagePattern(title: "Opens with", value: profile.signatureApproaches.first ?? "Direct start")
-                languagePattern(title: "Closes with", value: "No sign-off")
-            }
-        }
-    }
-
-    private func signatureElementsCard(_ profile: ToneOfVoiceProfile) -> some View {
-        voiceCard(title: "Signature Elements", icon: "quote.bubble", accent: Color(hex: "2F8F83")) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Your phrases:")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    tagCloud(profile.signaturePhrases.isEmpty ? ["No repeated phrases yet"] : Array(profile.signaturePhrases.prefix(8)), tint: Color(hex: "2F8F83"))
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Notable traits:")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    ForEach(profile.signatureApproaches.prefix(4), id: \.self) { trait in
-                        Label(trait, systemImage: "smallcircle.filled.circle")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-    }
-
-    private func voiceCard<Content: View>(
-        title: String,
-        icon: String?,
-        accent: Color,
-        compact: Bool = false,
-        minHeight: CGFloat? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: compact ? Spacing.sm : Spacing.md) {
-            HStack(spacing: Spacing.sm) {
-                if let icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(accent)
-                        .frame(width: 18)
-                }
-                Text(title)
-                    .font(compact ? .Orttaai.bodyMedium : .Orttaai.heading)
+    private func statTile(_ value: String, _ label: String, info: String) -> some View {
+        SettingsCard {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.Orttaai.textPrimary)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                SettingsLabel(title: label, info: info, font: .Orttaai.caption)
             }
-
-            content()
+            .padding(.vertical, Spacing.xs)
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .fill(Color.Orttaai.bgSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
-        )
-        .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private func confidenceBadge(_ percent: Int) -> some View {
-        Text("\(percent)% confidence")
-            .font(.Orttaai.caption)
-            .foregroundStyle(Color.Orttaai.success)
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 5)
-            .background(Color.Orttaai.successSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func tagCloud(_ values: [String], tint: Color) -> some View {
-        FlowLayout(spacing: Spacing.sm, rowSpacing: Spacing.sm) {
+    private func chips(_ values: [String], tint: Color) -> some View {
+        FlowLayout(spacing: Spacing.xs, rowSpacing: Spacing.xs) {
             ForEach(values, id: \.self) { value in
                 Text(value)
                     .font(.Orttaai.caption)
                     .foregroundStyle(tint)
                     .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 4)
                     .background(tint.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(Capsule())
             }
         }
-    }
-
-    private func statTile(title: String, subtitle: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(title)
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(subtitle)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(accent.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-    }
-
-    private func languagePattern(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(title)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-            Text(value)
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var loadingCard: some View {
-        VStack(spacing: Spacing.md) {
-            ProgressView()
-                .controlSize(.large)
-            Text("Analyzing your tone of voice with Ollama...")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+        SettingsCard {
+            HStack(spacing: Spacing.sm) {
+                ProgressView().controlSize(.small)
+                Text("Analyzing your tone of voice…")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+            .padding(.vertical, Spacing.sm)
         }
-        .frame(maxWidth: .infinity)
-        .padding(Spacing.xxl)
-        .dashboardCard()
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Label("No tone profile yet", systemImage: "person.text.rectangle")
-                .font(.Orttaai.heading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Text("Analyze your dictation history to create a tone profile.")
-                .font(.Orttaai.body)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            statusLine
-        }
-        .padding(Spacing.lg)
-        .dashboardCard()
-    }
-
-    private var statusLine: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            if let statusMessage = viewModel.statusMessage {
-                Label(statusMessage, systemImage: "checkmark.circle")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.success)
+        SettingsCard {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("No tone profile yet")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("Analyze your dictation history to see how you sound and get a guide ChatAI can write in.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let errorMessage = viewModel.errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .padding(.vertical, Spacing.xs)
         }
-    }
-
-    private var modelMenu: some View {
-        Menu {
-            if viewModel.availableModels.isEmpty {
-                Button(viewModel.selectedModelDisplayName) {}
-                    .disabled(true)
-            } else {
-                ForEach(viewModel.availableModels, id: \.self) { model in
-                    Button(model) {
-                        viewModel.selectedModel = model
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 12, weight: .semibold))
-                Text(viewModel.selectedModelDisplayName)
-                    .font(.Orttaai.bodyMedium)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-            .foregroundStyle(Color.Orttaai.textPrimary)
-            .padding(.horizontal, Spacing.md)
-            .frame(height: 32)
-            .frame(maxWidth: 190)
-            .background(Color.Orttaai.bgTertiary.opacity(0.52))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .menuStyle(.borderlessButton)
     }
 
     private func metric(named name: String, in profile: ToneOfVoiceProfile) -> ToneOfVoiceMetric? {
@@ -792,14 +523,52 @@ struct ToneOfVoiceView: View {
     private func progressBar(_ value: Double, tint: Color = Color.Orttaai.accent) -> some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .fill(Color.Orttaai.bgTertiary)
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                Capsule().fill(Color.Orttaai.bgTertiary)
+                Capsule()
                     .fill(tint)
-                    .frame(width: max(8, geometry.size.width * max(0, min(1, value))))
+                    .frame(width: max(6, geometry.size.width * max(0, min(1, value))))
             }
         }
-        .frame(height: 7)
+        .frame(height: 6)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The voice-match score as a ring that fills to the score.
+private struct ScoreRing: View {
+    let score: Int
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.Orttaai.bgTertiary, lineWidth: 9)
+            Circle()
+                .trim(from: 0, to: CGFloat(max(0, min(100, score))) / 100)
+                .stroke(Color.Orttaai.accent, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: 0) {
+                Text("\(score)")
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("voice match")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+            }
+        }
+        .padding(5)
+    }
+}
+
+private struct TintedIconLabelStyle: LabelStyle {
+    let tint: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: Spacing.sm) {
+            configuration.icon
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+            configuration.title
+        }
     }
 }
 

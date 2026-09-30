@@ -403,9 +403,8 @@ struct HistoryView: View {
         VStack(spacing: Spacing.lg) {
             Spacer()
 
-            Image(systemName: "waveform.circle")
-                .font(.system(size: 40))
-                .foregroundStyle(Color.Orttaai.textTertiary)
+            OrttaaiBrandMark(color: .Orttaai.textTertiary)
+                .frame(width: 48, height: 40)
 
             Text("No transcriptions yet.")
                 .font(.Orttaai.body)
@@ -684,12 +683,7 @@ private struct HistoryTranscriptDetailModal: View {
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textTertiary)
 
-                Button {
-                    onCopy()
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
+                CopyButton(action: onCopy)
 
                 Button {
                     onCreateSnippet()

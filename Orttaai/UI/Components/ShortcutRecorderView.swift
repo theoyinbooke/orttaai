@@ -9,27 +9,13 @@ extension KeyboardShortcuts.Name {
     static let editCommand = Self("editCommand")
 }
 
-struct ShortcutRecorderView: View {
+/// The keyboard shortcut recorder at its natural size. It draws its own
+/// field, so it gets no extra frame; the row around it supplies the label.
+struct ShortcutRecorderField: View {
     let name: KeyboardShortcuts.Name
-    let label: String
 
     var body: some View {
-        HStack(spacing: Spacing.sm) {
-            Text(label)
-                .font(.Orttaai.body)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Spacer()
-
-            KeyboardShortcuts.Recorder(for: name)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(Color.Orttaai.bgSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.input)
-                        .stroke(Color.Orttaai.border, lineWidth: 1)
-                )
-        }
+        KeyboardShortcuts.Recorder(for: name)
+            .fixedSize()
     }
 }

@@ -8,32 +8,17 @@ struct CloudSyncSettingsView: View {
     @StateObject private var viewModel = CloudSyncSettingsViewModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                Image(systemName: "icloud")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Color.Orttaai.accent)
-                    .frame(width: 28, height: 28)
-
-                Text("iCloud Sync")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer(minLength: Spacing.lg)
-
-                Button {
-                    viewModel.syncButtonTapped()
-                } label: {
-                    Label(viewModel.primaryButtonTitle, systemImage: viewModel.primaryButtonIcon)
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
-                .disabled(viewModel.isBusy)
+        SettingsCard("iCloud Sync", info: viewModel.summary) {
+            Button {
+                viewModel.syncButtonTapped()
+            } label: {
+                Label(viewModel.primaryButtonTitle, systemImage: viewModel.primaryButtonIcon)
             }
-
+            .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
+            .disabled(viewModel.isBusy)
+        } content: {
             statusContent
         }
-        .padding(Spacing.md)
-        .dashboardCard()
     }
 
     @ViewBuilder
@@ -49,10 +34,9 @@ struct CloudSyncSettingsView: View {
             Label("Last synced \(date.formatted(date: .abbreviated, time: .shortened))", systemImage: "checkmark.icloud")
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.success)
+                .padding(.bottom, Spacing.xs)
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.error)
+            SettingsNotice(kind: .error, message: message)
         case .needsSetup(let preview):
             setupChoiceContent(preview)
         }
@@ -66,12 +50,12 @@ struct CloudSyncSettingsView: View {
                 .font(.Orttaai.caption)
                 .foregroundStyle(Color.Orttaai.textSecondary)
         }
+        .padding(.bottom, Spacing.xs)
     }
 
     private func setupChoiceContent(_ preview: CloudSyncSetupPreview) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Divider()
-                .background(Color.Orttaai.border.opacity(0.75))
+            SettingsDivider()
 
             HStack(alignment: .top, spacing: Spacing.lg) {
                 statsColumn(title: "This Mac", stats: preview.localStats)
@@ -96,6 +80,7 @@ struct CloudSyncSettingsView: View {
                 )
             }
         }
+        .padding(.bottom, Spacing.xs)
     }
 
     private func statsColumn(title: String, stats: CloudSyncStats) -> some View {

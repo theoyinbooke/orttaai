@@ -263,12 +263,7 @@ private struct RecentDictationDetailModal: View {
 
                 Spacer()
 
-                Button {
-                    onCopy()
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
+                CopyButton(action: onCopy)
             }
         }
         .padding(Spacing.xxl)

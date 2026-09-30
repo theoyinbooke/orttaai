@@ -3,106 +3,59 @@
 
 import SwiftUI
 
-private enum HomeSettingsSubsection: String, CaseIterable, Identifiable {
-    case general
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case dictation
+    case text
     case audio
+    case general
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .general: return "General"
+        case .dictation: return "Dictation"
+        case .text: return "Text"
         case .audio: return "Audio"
+        case .general: return "General"
         }
     }
 
     var icon: String {
         switch self {
-        case .general: return "slider.horizontal.3"
+        case .dictation: return "waveform"
+        case .text: return "text.alignleft"
         case .audio: return "mic"
+        case .general: return "slider.horizontal.3"
+        }
+    }
+
+    @MainActor @ViewBuilder
+    var content: some View {
+        switch self {
+        case .dictation: DictationSettingsView()
+        case .text: TextSettingsView()
+        case .audio: AudioSettingsView()
+        case .general: GeneralSettingsView()
         }
     }
 }
 
 struct HomeSettingsWorkspaceView: View {
-    @State private var subsection: HomeSettingsSubsection = .general
+    @State private var section: SettingsSection
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                Text("Settings")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                HStack(spacing: Spacing.sm) {
-                    ForEach(HomeSettingsSubsection.allCases) { item in
-                        tabButton(item)
-                    }
-                }
-            }
-            .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
-            .padding(.top, WorkspaceLayout.contentTopPadding)
-            .padding(.bottom, Spacing.md)
-
-            Divider()
-                .background(Color.Orttaai.border)
-
-            ScrollView(showsIndicators: false) {
-                Group {
-                    switch subsection {
-                    case .general:
-                        GeneralSettingsView()
-                    case .audio:
-                        AudioSettingsView()
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.Orttaai.bgPrimary)
+    init(initialSection: SettingsSection = .dictation) {
+        _section = State(initialValue: initialSection)
     }
 
-    private func tabButton(_ item: HomeSettingsSubsection) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.16)) {
-                subsection = item
-            }
-        } label: {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 14)
-
-                Text(item.title)
-                    .font(.Orttaai.secondary)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(
-                subsection == item
-                    ? Color.Orttaai.textPrimary
-                    : Color.Orttaai.textSecondary
-            )
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous)
-                    .fill(
-                        subsection == item
-                            ? Color.Orttaai.accentSubtle
-                            : Color.Orttaai.bgSecondary.opacity(0.55)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous)
-                    .stroke(
-                        subsection == item
-                            ? Color.Orttaai.accent.opacity(0.55)
-                            : Color.Orttaai.border.opacity(0.6),
-                        lineWidth: BorderWidth.standard
-                    )
-            )
+    var body: some View {
+        TabbedWorkspacePage(
+            title: "Settings",
+            tabs: SettingsSection.allCases,
+            selection: $section,
+            tabTitle: \.title,
+            tabIcon: \.icon
+        ) { section in
+            section.content
         }
-        .buttonStyle(.plain)
-        .help(item.title)
     }
 }

@@ -298,6 +298,63 @@ struct SemanticInsightEvidence: Identifiable, Sendable, Codable, Hashable {
     let score: Double
 }
 
+/// One dictation as the concept graph reads it.
+nonisolated struct ConceptSource: FetchableRecord, Decodable, Sendable {
+    let id: Int64
+    let text: String
+    let createdAt: Date
+    let targetAppName: String?
+}
+
+/// Cached concept extraction for one dictation. Valid while `textHash` and
+/// `extractorVersion` match the dictation and the current extractor.
+nonisolated struct ConceptExtractionRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
+    var transcriptionID: Int64
+    var textHash: String
+    var extractorVersion: Int
+    var conceptsJSON: String
+    var extractedAt: Date
+
+    static let databaseTableName = "concept_extraction"
+
+    init(transcriptionID: Int64, textHash: String, extractorVersion: Int, concepts: [ExtractedConcept], extractedAt: Date) {
+        self.transcriptionID = transcriptionID
+        self.textHash = textHash
+        self.extractorVersion = extractorVersion
+        self.conceptsJSON = (try? String(data: JSONEncoder().encode(concepts), encoding: .utf8)) ?? "[]"
+        self.extractedAt = extractedAt
+    }
+
+    var concepts: [ExtractedConcept] {
+        (try? JSONDecoder().decode([ExtractedConcept].self, from: Data(conceptsJSON.utf8))) ?? []
+    }
+}
+
+/// A local model's cached reading of one working session.
+nonisolated struct SessionAnalysisRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
+    var sessionKey: String
+    var promptVersion: Int
+    var model: String
+    var analysisJSON: String
+    var sessionEnd: Date
+    var analyzedAt: Date
+
+    static let databaseTableName = "session_analysis"
+
+    init(sessionKey: String, promptVersion: Int, analysis: SessionAnalysis, sessionEnd: Date, analyzedAt: Date) {
+        self.sessionKey = sessionKey
+        self.promptVersion = promptVersion
+        self.model = analysis.model ?? ""
+        self.analysisJSON = (try? String(data: JSONEncoder().encode(analysis), encoding: .utf8)) ?? "{}"
+        self.sessionEnd = sessionEnd
+        self.analyzedAt = analyzedAt
+    }
+
+    var analysis: SessionAnalysis? {
+        try? JSONDecoder().decode(SessionAnalysis.self, from: Data(analysisJSON.utf8))
+    }
+}
+
 extension SemanticChunk {
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID

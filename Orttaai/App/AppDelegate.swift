@@ -32,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var runtimeServicesStarted = false
     private var shortcutObserver: NSObjectProtocol?
     private var audioResetObserver: NSObjectProtocol?
+    private var updateCheckObserver: NSObjectProtocol?
     private var polishSettingObserver: NSObjectProtocol?
     private var historySaveFailureObserver: NSObjectProtocol?
     private var isResettingAudioPipeline = false
@@ -65,9 +66,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
-            let image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "Orttaai")
-            image?.isTemplate = true
-            button.image = image
+            button.image = MenuBarIconRenderer.renderIcon(for: .idle)
         }
 
         // Initialize app state
@@ -159,6 +158,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         observeShortcutChanges()
         observeAudioPipelineResetRequests()
         observeHistorySaveFailures()
+        updateCheckObserver = NotificationCenter.default.addObserver(
+            forName: .checkForUpdatesRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.checkForUpdates()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -170,6 +176,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let audioResetObserver {
             NotificationCenter.default.removeObserver(audioResetObserver)
+        }
+        if let updateCheckObserver {
+            NotificationCenter.default.removeObserver(updateCheckObserver)
         }
         if let historySaveFailureObserver {
             NotificationCenter.default.removeObserver(historySaveFailureObserver)

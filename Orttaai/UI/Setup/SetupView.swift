@@ -122,15 +122,18 @@ struct SetupView: View {
 }
 
 private struct AboutSetupStepView: View {
-    private let emailURL = URL(string: "mailto:Oyinbookeola@outlook.com")!
     private let githubURL = AppLinks.githubProfileURL
     private let repoURL = AppLinks.githubRepositoryURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("About Orttaai")
-                .font(.Orttaai.title)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+            HStack(spacing: Spacing.md) {
+                OrttaaiAppIcon()
+                    .frame(width: 52, height: 52)
+                Text("About Orttaai")
+                    .font(.Orttaai.title)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+            }
 
             Text("Hold your hotkey to dictate into any app.")
                 .font(.Orttaai.body)
@@ -163,11 +166,6 @@ private struct AboutSetupStepView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: Spacing.sm) {
-                    Link(destination: emailURL) {
-                        Label("Email", systemImage: "envelope")
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-
                     Link(destination: githubURL) {
                         Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                     }

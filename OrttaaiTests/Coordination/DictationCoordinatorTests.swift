@@ -1153,7 +1153,7 @@ final class DictationCoordinatorTests: XCTestCase {
     @MainActor
     func testCapTimerStopIsRecorded() async {
         settings.handsFreeSilenceStopEnabled = false
-        settings.handsFreeMaxRecordingDuration = 2
+        coordinator.handsFreeMaxDurationOverride = 2
         audioService.mockSamples = speech(seconds: 3)
 
         coordinator.startHandsFreeRecording()
@@ -1243,8 +1243,7 @@ final class DictationCoordinatorTests: XCTestCase {
     func testHandsFreeCapCountsDownAndStops() async {
         settings.handsFreeModeEnabled = true
         settings.handsFreeSilenceStopEnabled = false
-        settings.handsFreeMaxRecordingDuration = 3
-        settings.maxRecordingDuration = 90
+        coordinator.handsFreeMaxDurationOverride = 3
         audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
 
         coordinator.handleHotkeyDown()
@@ -1262,6 +1261,42 @@ final class DictationCoordinatorTests: XCTestCase {
             return true
         }
         XCTAssertTrue(stopped, "The hands-free cap must stop the recording — not the push-to-talk cap")
+    }
+
+    func testStoredRecordingCapsAreClampedToSupportedRanges() {
+        settings.handsFreeMaxRecordingDuration = 3
+        XCTAssertEqual(settings.effectiveHandsFreeMaxRecordingDuration, 120)
+        settings.handsFreeMaxRecordingDuration = 100_000
+        XCTAssertEqual(settings.effectiveHandsFreeMaxRecordingDuration, 1800)
+        settings.handsFreeMaxRecordingDuration = 600
+        XCTAssertEqual(settings.effectiveHandsFreeMaxRecordingDuration, 600)
+
+        let pushToTalk = settings.maxRecordingDuration
+        defer { settings.maxRecordingDuration = pushToTalk }
+        settings.maxRecordingDuration = 300
+        XCTAssertEqual(settings.effectiveMaxRecordingDuration, 300, "5 min is a supported push-to-talk limit")
+        settings.maxRecordingDuration = 100_000
+        XCTAssertEqual(settings.effectiveMaxRecordingDuration, 300)
+    }
+
+    /// Regression: a leaked 3s hands-free cap made the pill's mic button
+    /// count down and cut the recording off after ~3 seconds.
+    @MainActor
+    func testPillStartedRecordingIgnoresTinyStoredCap() async {
+        settings.handsFreeModeEnabled = true
+        settings.handsFreeSilenceStopEnabled = false
+        settings.handsFreeMaxRecordingDuration = 3
+        audioService.mockSamples = speech(seconds: 5)
+
+        coordinator.startHandsFreeRecording()
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+        try? await Task.sleep(nanoseconds: 3_500_000_000)
+
+        XCTAssertTrue(coordinator.isHandsFreeRecording, "A tiny stored cap must not end the recording")
+        XCTAssertNil(coordinator.countdownSeconds, "No countdown until the final 20s of the clamped cap")
+        coordinator.stopRecording()
+        XCTAssertEqual(recordedEnds.last?.reason, .pillStop)
+        _ = await waitUntil { self.coordinator.state == .idle }
     }
 
     // MARK: - History persistence failure

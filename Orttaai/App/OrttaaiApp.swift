@@ -9,7 +9,7 @@ struct OrttaaiApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView(initialTab: .general)
+            SettingsView(initialTab: .settings)
         }
     }
 }

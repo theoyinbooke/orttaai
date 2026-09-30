@@ -547,6 +547,29 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v15_concept_graph") { db in
+            // Derived caches behind the Memory Graph. Never synced; both are
+            // rebuilt from transcription text when missing.
+            // Concepts extracted from each dictation.
+            try db.create(table: "concept_extraction") { t in
+                t.column("transcriptionID", .integer).primaryKey()
+                t.column("textHash", .text).notNull()
+                t.column("extractorVersion", .integer).notNull()
+                t.column("conceptsJSON", .text).notNull()
+                t.column("extractedAt", .datetime).notNull()
+            }
+            // A local model's reading of each working session. The key
+            // changes when a session grows, so a stale reading is never used.
+            try db.create(table: "session_analysis") { t in
+                t.column("sessionKey", .text).primaryKey()
+                t.column("promptVersion", .integer).notNull()
+                t.column("model", .text).notNull()
+                t.column("analysisJSON", .text).notNull()
+                t.column("sessionEnd", .datetime).notNull()
+                t.column("analyzedAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 
@@ -954,6 +977,8 @@ final class DatabaseManager {
     }
 
     private static func deleteSemanticIndex(in db: Database) throws {
+        try db.execute(sql: "DELETE FROM concept_extraction")
+        try db.execute(sql: "DELETE FROM session_analysis")
         try db.execute(sql: "DELETE FROM semantic_signal")
         try db.execute(sql: "DELETE FROM semantic_embedding")
         try db.execute(sql: "DELETE FROM semantic_chunk")
@@ -977,6 +1002,10 @@ final class DatabaseManager {
         }
         try db.execute(
             sql: "DELETE FROM semantic_chunk WHERE transcriptionID = ?",
+            arguments: [transcriptionID]
+        )
+        try db.execute(
+            sql: "DELETE FROM concept_extraction WHERE transcriptionID = ?",
             arguments: [transcriptionID]
         )
     }
@@ -1180,6 +1209,75 @@ final class DatabaseManager {
                     transcriptionID: transcriptionID
                 )
             }
+        }
+    }
+
+    // MARK: - Concept Graph
+
+    /// Every plain dictation (edit commands excluded), oldest first.
+    func fetchConceptSources() throws -> [ConceptSource] {
+        try dbQueue.read { db in
+            try ConceptSource.fetchAll(
+                db,
+                sql: """
+                SELECT id, text, createdAt, targetAppName FROM transcription
+                WHERE (entryKind IS NULL OR entryKind != 'edit') AND length(trim(text)) > 0
+                ORDER BY createdAt ASC
+                """
+            )
+        }
+    }
+
+    func fetchConceptExtractions() throws -> [Int64: ConceptExtractionRecord] {
+        try dbQueue.read { db in
+            let records = try ConceptExtractionRecord.fetchAll(db)
+            return Dictionary(records.map { ($0.transcriptionID, $0) }) { first, _ in first }
+        }
+    }
+
+    func saveConceptExtractions(_ records: [ConceptExtractionRecord]) throws {
+        guard !records.isEmpty else { return }
+        try dbQueue.write { db in
+            for record in records {
+                try record.save(db)
+            }
+        }
+    }
+
+    /// Drops cached extractions whose dictation no longer exists.
+    func pruneConceptExtractions() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                DELETE FROM concept_extraction
+                WHERE transcriptionID NOT IN (SELECT id FROM transcription)
+                """)
+        }
+    }
+
+    func fetchSessionAnalyses(promptVersion: Int) throws -> [String: SessionAnalysisRecord] {
+        try dbQueue.read { db in
+            let records = try SessionAnalysisRecord
+                .filter(Column("promptVersion") == promptVersion)
+                .fetchAll(db)
+            return Dictionary(records.map { ($0.sessionKey, $0) }) { first, _ in first }
+        }
+    }
+
+    func saveSessionAnalysis(_ record: SessionAnalysisRecord) throws {
+        try dbQueue.write { db in
+            try record.save(db)
+        }
+    }
+
+    func fetchTranscriptionTexts(ids: [Int64]) throws -> [Int64: ConceptSource] {
+        guard !ids.isEmpty else { return [:] }
+        return try dbQueue.read { db in
+            let rows = try ConceptSource.fetchAll(
+                db,
+                sql: "SELECT id, text, createdAt, targetAppName FROM transcription WHERE id IN \(ids.sqlInList)",
+                arguments: StatementArguments(ids)
+            )
+            return Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
         }
     }
 

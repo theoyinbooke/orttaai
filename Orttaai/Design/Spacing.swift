@@ -14,10 +14,12 @@ enum Spacing {
 }
 
 enum WorkspaceLayout {
-    static let contentTopPadding: CGFloat = 0
+    /// Page titles live in the window's toolbar strip, so content starts
+    /// just below it with this gap.
+    static let contentTopPadding: CGFloat = Spacing.lg
     static let contentHorizontalPadding: CGFloat = Spacing.xxl
     static let contentBottomPadding: CGFloat = Spacing.xxl
-    static let sidebarHeaderTopPadding: CGFloat = Spacing.xl
+    static let sidebarHeaderTopPadding: CGFloat = 0
 
     static let contentInsets = EdgeInsets(
         top: contentTopPadding,
@@ -41,7 +43,8 @@ enum BorderWidth {
 
 enum WindowSize {
     static let setup = CGSize(width: 600, height: 750)
-    static let home = CGSize(width: 1040, height: 680)
+    /// Wide enough for every page's header and filters without resizing.
+    static let home = CGSize(width: 1200, height: 760)
     static let settings = CGSize(width: 920, height: 720)
     static let history = CGSize(width: 480, height: 600)
     static let historyMin = CGSize(width: 480, height: 300)

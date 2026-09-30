@@ -246,6 +246,25 @@ final class AppSettings: ObservableObject {
         return max(1.0, min(10.0, handsFreeSilenceStopSeconds))
     }
 
+    /// Supported recording caps (seconds); the Settings sliders use the same
+    /// ranges. The stored values arrive from cloud sync and from test runs
+    /// that share this defaults domain, so they are never trusted raw.
+    static let pushToTalkMaxRecordingDurationRange: ClosedRange<Int> = 10...300
+    static let handsFreeMaxRecordingDurationRange: ClosedRange<Int> = 120...1800
+
+    /// Push-to-talk recording cap, clamped to the supported range.
+    var effectiveMaxRecordingDuration: TimeInterval {
+        let range = Self.pushToTalkMaxRecordingDurationRange
+        return TimeInterval(max(range.lowerBound, min(range.upperBound, maxRecordingDuration)))
+    }
+
+    /// Hands-free recording cap, clamped to the supported range so a stray
+    /// tiny value can never cut a recording off after a few seconds.
+    var effectiveHandsFreeMaxRecordingDuration: TimeInterval {
+        let range = Self.handsFreeMaxRecordingDurationRange
+        return TimeInterval(max(range.lowerBound, min(range.upperBound, handsFreeMaxRecordingDuration)))
+    }
+
     var effectiveDictationLanguage: String {
         (lowLatencyModeEnabled && dictationLanguage == "auto")
             ? "en"
@@ -384,6 +403,12 @@ final class AppSettings: ObservableObject {
         case .grok: normalizedGrokModel
         case .ollama, .lmStudio: sanitizeLocalLLMModel(semanticInsightSummaryModel, fallback: "qwen3.5:0.8b")
         }
+    }
+
+    /// The graph-insight model on the local provider, even while a cloud
+    /// provider is selected. For features that must never leave the Mac.
+    var localSemanticInsightModel: String {
+        sanitizeLocalLLMModel(semanticInsightSummaryModel, fallback: "qwen3.5:0.8b")
     }
 
     var localLLMInsightCandidateModels: [String] {

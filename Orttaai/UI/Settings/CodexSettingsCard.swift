@@ -4,14 +4,11 @@
 import AppKit
 import SwiftUI
 
-/// Account, model, and usage controls for the ChatGPT (Codex) provider,
-/// shown inside the Local LLM card when that provider is selected.
-///
-/// Drives four states from `CodexAccountService`: Codex not installed →
-/// install guidance; outdated → update guidance; signed out / API-key-only →
-/// "Sign in with ChatGPT"; signed in → account row, cloud model picker,
-/// reasoning-effort picker, and the subscription usage meter.
-struct CodexSettingsCard: View {
+/// ChatGPT (Codex) rows under the AI Provider line. Model choice and the
+/// connection check live on that line; this adds the account (sign in or
+/// out), reasoning effort, and install guidance when Codex is missing.
+struct CodexProviderRows: View {
+    let onRecheck: () -> Void
     @StateObject private var account = CodexAccountService()
     @AppStorage("codexModel") private var codexModel = "gpt-5.4-mini"
     @AppStorage(CodexClient.reasoningEffortKey) private var codexReasoningEffort = "medium"
@@ -20,41 +17,35 @@ struct CodexSettingsCard: View {
     @State private var modelDetails: [CodexModelInfo] = []
     @State private var isLoadingModels = false
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            header
+    private static let disclosure = "ChatGPT sends transcripts and insight data to OpenAI."
 
+    var body: some View {
+        Group {
             switch account.state {
             case .unknown:
-                HStack(spacing: Spacing.xs) {
-                    ProgressView().controlSize(.small)
-                    Text("Checking Codex installation and sign-in state...")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+                EmptyView()
             case .codexNotInstalled:
-                notInstalledSection
+                SettingsNotice(
+                    kind: .error,
+                    message: "Codex CLI not found. Install it with \u{201C}brew install --cask codex\u{201D} or \u{201C}npm install -g @openai/codex\u{201D}, then check again."
+                )
+                locateRow
             case .codexOutdated(let found):
-                outdatedSection(found: found)
+                SettingsNotice(
+                    kind: .error,
+                    message: "Codex CLI \(found) is too old. Run \u{201C}codex update\u{201D} to get \(CodexBinaryLocator.minimumVersion) or newer."
+                )
             case .signedOut:
-                signedOutSection(message: "Sign in with your ChatGPT account to use OpenAI models on your subscription.")
+                signInRow(info: "Sign in with your ChatGPT account to use OpenAI models on your subscription. \(Self.disclosure)")
             case .apiKeyOnly:
-                signedOutSection(message: "Codex is authenticated with an API key, which doesn't include a ChatGPT subscription. Sign in with ChatGPT instead.")
+                signInRow(info: "Codex is signed in with an API key, which doesn't include a ChatGPT subscription. Sign in with ChatGPT instead. \(Self.disclosure)")
             case .signedIn(let email, let planType):
-                signedInSection(email: email, planType: planType)
+                signedInRows(email: email, planType: planType)
             }
 
             if let errorMessage = account.lastErrorMessage {
-                HStack(spacing: Spacing.xs) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color.Orttaai.error)
-                    Text(errorMessage)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.error)
-                }
+                SettingsNotice(kind: .error, message: errorMessage)
             }
-
-            consentCaption
         }
         .task {
             await account.refresh()
@@ -62,61 +53,101 @@ struct CodexSettingsCard: View {
         }
         .onChange(of: account.state) { _, _ in
             Task { await loadModelsIfPossible() }
+            onRecheck()
         }
         .onChange(of: codexModel) { _, _ in
             normalizeReasoningEffort()
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Rows
 
-    private var header: some View {
-        HStack(spacing: Spacing.sm) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(Color.Orttaai.accent)
-            Text("ChatGPT Account")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-            Spacer()
-            Button {
-                Task {
-                    await account.refresh()
-                    await loadModelsIfPossible()
-                }
-            } label: {
-                Label("Re-check", systemImage: "arrow.clockwise")
+    private var locateRow: some View {
+        SettingsRow(
+            title: "Codex CLI",
+            info: "If Codex is installed somewhere Orttaai can't find it, choose the codex executable."
+        ) {
+            Button("Locate Codex…") {
+                chooseCodexExecutable()
             }
-            .buttonStyle(OrttaaiButtonStyle(.secondary))
-            .disabled(account.isRefreshing || account.isSigningIn)
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
         }
     }
 
-    private var notInstalledSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Label("Codex CLI not found", systemImage: "xmark.circle")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.error)
-            Text("Install Codex, then re-check:")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-            Text("Homebrew:  brew install --cask codex")
-                .font(.Orttaai.mono)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .textSelection(.enabled)
-            Text("npm:      npm install -g @openai/codex")
-                .font(.Orttaai.mono)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .textSelection(.enabled)
+    private func signInRow(info: String) -> some View {
+        SettingsRow(title: "ChatGPT Account", info: info) {
             HStack(spacing: Spacing.sm) {
-                Button {
-                    chooseCodexExecutable()
-                } label: {
-                    Label("Locate Codex...", systemImage: "folder")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                if account.isSigningIn {
+                    Text("Finish in your browser")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
 
+                    Button("Cancel") { account.cancelSignIn() }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                }
+
+                Button(account.isSigningIn ? "Signing In…" : "Sign In") {
+                    codexConsentAcknowledged = true
+                    account.signIn()
+                }
+                .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
+                .disabled(account.isSigningIn)
             }
         }
+    }
+
+    @ViewBuilder
+    private func signedInRows(email: String?, planType: String?) -> some View {
+        SettingsRow(
+            title: "ChatGPT Account",
+            info: accountSummary(email: email, planType: planType)
+        ) {
+            Button("Sign Out") {
+                Task { await account.signOut() }
+            }
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+        }
+
+        SettingsDivider()
+
+        SettingsRow(
+            title: "Reasoning Effort",
+            info: "Higher effort can improve results but takes longer."
+        ) {
+            HStack(spacing: Spacing.sm) {
+                if isLoadingModels {
+                    ProgressView().controlSize(.small)
+                }
+                OrttaaiDropdown(
+                    selection: $codexReasoningEffort,
+                    options: effortOptions,
+                    width: SettingsLayout.controlWidth
+                )
+            }
+        }
+    }
+
+    /// Account, plan, and usage for the info popover instead of on screen.
+    private func accountSummary(email: String?, planType: String?) -> String {
+        var lines: [String] = []
+        if let email, !email.isEmpty {
+            lines.append("Signed in as \(email).")
+        } else {
+            lines.append("Signed in with ChatGPT.")
+        }
+        if let planType, !planType.isEmpty {
+            lines.append("ChatGPT \(planType.capitalized) plan.")
+        }
+        if let limits = account.rateLimits {
+            if let primary = limits.primary {
+                lines.append("\(windowLabel(minutes: primary.windowDurationMins, fallback: "Short-window usage")): \(resetText(for: primary)).")
+            }
+            if let secondary = limits.secondary {
+                lines.append("\(windowLabel(minutes: secondary.windowDurationMins, fallback: "Weekly usage")): \(resetText(for: secondary)).")
+            }
+        }
+        lines.append(Self.disclosure)
+        return lines.joined(separator: "\n")
     }
 
     private func chooseCodexExecutable() {
@@ -137,171 +168,7 @@ struct CodexSettingsCard: View {
         }
     }
 
-    private func outdatedSection(found: String) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Label("Codex CLI \(found) is too old", systemImage: "exclamationmark.triangle")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.error)
-            Text("Update to Codex \(CodexBinaryLocator.minimumVersion) or newer:")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-            Text("codex update")
-                .font(.Orttaai.mono)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .textSelection(.enabled)
-        }
-    }
-
-    private func signedOutSection(message: String) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(message)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-            HStack(spacing: Spacing.sm) {
-                Button {
-                    codexConsentAcknowledged = true
-                    account.signIn()
-                } label: {
-                    if account.isSigningIn {
-                        Label("Waiting for browser sign-in...", systemImage: "person.crop.circle.badge.clock")
-                    } else {
-                        Label("Sign in with ChatGPT", systemImage: "person.crop.circle.badge.checkmark")
-                    }
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
-                .disabled(account.isSigningIn)
-
-                if account.isSigningIn {
-                    Button("Cancel") { account.cancelSignIn() }
-                        .buttonStyle(OrttaaiButtonStyle(.secondary))
-                }
-            }
-            if account.isSigningIn {
-                Text("Complete sign-in in your browser.")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-        }
-    }
-
-    private func signedInSection(email: String?, planType: String?) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(Color.Orttaai.success)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(email?.isEmpty == false ? email! : "Signed in with ChatGPT")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    if let planType, !planType.isEmpty {
-                        Text("ChatGPT \(planType.capitalized) plan")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-                }
-                Spacer()
-                Button("Sign Out") {
-                    Task { await account.signOut() }
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-            }
-
-            divider
-
-            modelPicker
-            effortPicker
-            usageMeter
-
-        }
-    }
-
-    private var modelPicker: some View {
-        HStack(spacing: Spacing.sm) {
-            Text("Model")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-            Spacer()
-            if isLoadingModels {
-                ProgressView().controlSize(.small)
-            }
-            OrttaaiDropdown(
-                selection: $codexModel,
-                options: modelOptions,
-                width: 200
-            )
-        }
-    }
-
-    private var effortPicker: some View {
-        HStack(spacing: Spacing.sm) {
-            Text("Reasoning Effort")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-            Spacer()
-            OrttaaiDropdown(
-                selection: $codexReasoningEffort,
-                options: effortOptions,
-                width: 140
-            )
-        }
-        .help("Higher effort can improve results but takes longer")
-    }
-
-    @ViewBuilder
-    private var usageMeter: some View {
-        if let limits = account.rateLimits {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                if let primary = limits.primary {
-                    usageRow(label: windowLabel(minutes: primary.windowDurationMins, fallback: "Short window"), window: primary)
-                }
-                if let secondary = limits.secondary {
-                    usageRow(label: windowLabel(minutes: secondary.windowDurationMins, fallback: "Weekly window"), window: secondary)
-                }
-            }
-        }
-    }
-
-    private func usageRow(label: String, window: CodexRateLimitSnapshot.Window) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(label)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                Spacer()
-                Text(resetText(for: window))
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-            ProgressView(value: Double(min(100, max(0, window.usedPercent))), total: 100)
-                .tint(window.usedPercent >= 90 ? Color.Orttaai.error : Color.Orttaai.accent)
-        }
-    }
-
-    private var consentCaption: some View {
-        HStack(alignment: .top, spacing: Spacing.xs) {
-            Image(systemName: "lock.icloud")
-                .foregroundStyle(Color.Orttaai.textTertiary)
-            Text("This provider sends transcripts and insight data to OpenAI.")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-        }
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(Color.Orttaai.textTertiary.opacity(0.15))
-            .frame(height: 1)
-    }
-
     // MARK: - Data
-
-    private var modelOptions: [OrttaaiDropdown<String>.Option] {
-        var options = modelDetails.map { OrttaaiDropdown<String>.Option($0.id, $0.displayName) }
-        if !codexModel.isEmpty, !modelDetails.contains(where: { $0.id == codexModel }) {
-            options.insert(.init(codexModel, codexModel), at: 0)
-        }
-        return options
-    }
 
     private var effortOptions: [OrttaaiDropdown<String>.Option] {
         let selected = modelDetails.first { $0.id == codexModel }

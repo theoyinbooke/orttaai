@@ -138,7 +138,8 @@ final class SemanticMemoryViewModel: ObservableObject {
 }
 
 private enum SemanticMemoryTab: String, CaseIterable, Identifiable {
-    case graph = "Graph"
+    case activity = "Activity"
+    case map = "Map"
     case search = "Search"
     case insights = "Insights"
 
@@ -146,19 +147,22 @@ private enum SemanticMemoryTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .graph: return "point.3.connected.trianglepath.dotted"
+        case .activity: return "chart.bar.doc.horizontal"
+        case .map: return "point.3.connected.trianglepath.dotted"
         case .search: return "magnifyingglass"
         case .insights: return "lightbulb"
         }
     }
+
+    /// Search and Insights read the semantic index; the other tabs don't.
+    var usesSemanticIndex: Bool { self == .search || self == .insights }
 }
 
 struct SemanticMemoryView: View {
     @StateObject private var viewModel = SemanticMemoryViewModel()
-    @State private var selectedTab: SemanticMemoryTab = .graph
+    @State private var selectedTab: SemanticMemoryTab = .activity
     @State private var isSetupPresented = false
     @State private var isInfoPresented = false
-    @State private var graphPopoutController: SemanticGraphPopoutController?
     @State private var installedOllamaModels: [String] = []
     @State private var embeddingCatalogModels: [OllamaCatalogModel] = []
     @State private var insightCatalogModels: [OllamaCatalogModel] = []
@@ -193,13 +197,13 @@ struct SemanticMemoryView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Spacing.md) {
-                header
-                tabStatusRow
+                statusStrip
 
                 switch selectedTab {
-                case .graph:
-                    statsGrid
-                    graphCard
+                case .activity:
+                    ActivityOverviewView()
+                case .map:
+                    ConceptMapView()
                 case .search:
                     searchCard
                 case .insights:
@@ -209,19 +213,25 @@ struct SemanticMemoryView: View {
             .padding(WorkspaceLayout.contentInsets)
         }
         .background(Color.Orttaai.bgPrimary)
+        .workspaceHeader("Memory Graph") {
+            HStack(spacing: Spacing.lg) {
+                infoButton
+                OrttaaiTabBar(
+                    tabs: SemanticMemoryTab.allCases,
+                    selection: $selectedTab,
+                    title: \.rawValue,
+                    icon: \.systemImage
+                )
+            }
+        } trailing: {
+            headerActions
+        }
         .sheet(isPresented: $isSetupPresented) {
             setupSheet
-        }
-        .onChange(of: graphSignature) { _, _ in
-            graphPopoutController?.update(graph: viewModel.graph)
         }
         .onAppear {
             viewModel.load()
         }
-    }
-
-    private var graphSignature: String {
-        semanticGraphSignature(for: viewModel.graph)
     }
 
     private var normalizedSemanticEmbeddingModel: String {
@@ -350,98 +360,65 @@ struct SemanticMemoryView: View {
             (isSelectedInsightModelInstalled && isSelectedInsightModelCurrent)
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: Spacing.lg) {
-            HStack(alignment: .center, spacing: Spacing.xs) {
-                Text("Memory Graph")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Button {
-                    isInfoPresented.toggle()
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-                .help("About Memory Graph")
-                .popover(isPresented: $isInfoPresented, arrowEdge: .bottom) {
-                    Text("Local map of your dictations.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                        .padding(Spacing.lg)
-                        .frame(width: 280, alignment: .leading)
-                        .background(Color.Orttaai.bgSecondary)
-                }
-            }
-
-            Spacer()
-
-            HStack(spacing: Spacing.sm) {
-                Button {
-                    isSetupPresented = true
-                } label: {
-                    Label("Setup", systemImage: "slider.horizontal.3")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-
-                Button {
-                    Task { await viewModel.buildIndex() }
-                } label: {
-                    if viewModel.isIndexing {
-                        Label("Building...", systemImage: "arrow.triangle.2.circlepath")
-                    } else {
-                        Label("Build Index", systemImage: "bolt.horizontal.circle")
-                    }
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
-                .disabled(viewModel.isIndexing || !semanticMemoryEnabled)
-
-                Button {
-                    viewModel.load()
-                } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-            }
+    private var infoButton: some View {
+        Button {
+            isInfoPresented.toggle()
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.Orttaai.textTertiary)
+        .help("About Memory Graph")
+        .accessibilityLabel("About Memory Graph")
+        .popover(isPresented: $isInfoPresented, arrowEdge: .bottom) {
+            Text("Local map of your dictations.")
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .padding(Spacing.md)
+                .frame(width: 260, alignment: .leading)
+                .presentationBackground(Color.Orttaai.bgSecondary)
         }
     }
 
-    private var tabPicker: some View {
-        HStack(spacing: 4) {
-            ForEach(SemanticMemoryTab.allCases) { tab in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        selectedTab = tab
-                    }
-                } label: {
-                    Label(tab.rawValue, systemImage: tab.systemImage)
-                        .font(.Orttaai.bodyMedium)
-                        .lineLimit(1)
-                        .foregroundStyle(selectedTab == tab ? Color.Orttaai.bgPrimary : Color.Orttaai.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(selectedTab == tab ? Color.Orttaai.accent : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
+    @ViewBuilder
+    private var headerActions: some View {
+        if selectedTab.usesSemanticIndex {
+            indexActions
         }
-        .padding(4)
-        .frame(width: 420)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private var tabStatusRow: some View {
-        HStack(alignment: .center, spacing: Spacing.md) {
-            tabPicker
-            statusStrip
-            Spacer(minLength: 0)
+    private var indexActions: some View {
+        HStack(spacing: Spacing.sm) {
+            Button {
+                isSetupPresented = true
+            } label: {
+                Label("Setup", systemImage: "slider.horizontal.3")
+            }
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+
+            Button {
+                Task { await viewModel.buildIndex() }
+            } label: {
+                if viewModel.isIndexing {
+                    Label("Building…", systemImage: "arrow.triangle.2.circlepath")
+                } else {
+                    Label("Build Index", systemImage: "bolt.horizontal.circle")
+                }
+            }
+            .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
+            .disabled(viewModel.isIndexing || !semanticMemoryEnabled)
+
+            Button {
+                viewModel.load()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+            .help("Reload")
+            .accessibilityLabel("Reload")
         }
     }
 
@@ -697,85 +674,6 @@ struct SemanticMemoryView: View {
         } else {
             Label("Download", systemImage: "arrow.down.circle")
         }
-    }
-
-    private var statsGrid: some View {
-        let stats = viewModel.stats
-        return LazyVGrid(
-            columns: [
-                GridItem(.flexible(minimum: 160), spacing: Spacing.md),
-                GridItem(.flexible(minimum: 160), spacing: Spacing.md),
-                GridItem(.flexible(minimum: 160), spacing: Spacing.md),
-                GridItem(.flexible(minimum: 160), spacing: Spacing.md),
-            ],
-            spacing: Spacing.md
-        ) {
-            metricCard(title: "Chunks", value: "\(stats?.chunkCount ?? 0)", detail: "")
-            metricCard(title: "Embedded", value: "\(stats?.embeddedChunkCount ?? 0)", detail: stats?.activeModelID ?? semanticEmbeddingModel)
-            metricCard(title: "Nodes", value: "\(stats?.nodeCount ?? 0)", detail: "")
-            metricCard(title: "Edges", value: "\(stats?.edgeCount ?? 0)", detail: "")
-        }
-    }
-
-    private var graphCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack {
-                Text("Graph View")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Spacer()
-                HStack(spacing: Spacing.sm) {
-                    graphLegend
-                    graphHeaderIconButton(
-                        systemImage: graphPopoutController == nil ? "arrow.up.left.and.arrow.down.right" : "macwindow",
-                        help: graphPopoutController == nil ? "Open graph in separate window" : "Show graph window",
-                        action: openGraphPopout
-                    )
-                    .disabled(viewModel.graph.nodes.isEmpty)
-                    .opacity(viewModel.graph.nodes.isEmpty ? 0.45 : 1)
-                }
-            }
-
-            if viewModel.graph.nodes.isEmpty {
-                emptyGraphState
-            } else if graphPopoutController != nil {
-                poppedOutGraphState
-            } else {
-                SemanticGraphCanvas(graph: viewModel.graph)
-                    .frame(height: 430)
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                            .stroke(Color.Orttaai.border.opacity(0.8), lineWidth: BorderWidth.standard)
-                    )
-            }
-        }
-        .padding(Spacing.md)
-        .dashboardCard()
-    }
-
-    private var poppedOutGraphState: some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "macwindow")
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(Color.Orttaai.accent)
-            Text("Graph is open in a separate window.")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-            Button {
-                graphPopoutController?.show()
-            } label: {
-                Label("Show Window", systemImage: "arrow.up.forward")
-            }
-            .buttonStyle(OrttaaiButtonStyle(.secondary))
-        }
-        .frame(maxWidth: .infinity, minHeight: 430)
-        .background(Color.Orttaai.bgTertiary.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.8), lineWidth: BorderWidth.standard)
-        )
     }
 
     private var searchCard: some View {
@@ -1475,49 +1373,6 @@ struct SemanticMemoryView: View {
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
     }
 
-    private var emptyGraphState: some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 40, weight: .semibold))
-                .foregroundStyle(Color.Orttaai.accent)
-            Text("Build the index to create your memory graph.")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 180)
-        .background(Color.Orttaai.bgTertiary.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-    }
-
-    private var graphLegend: some View {
-        HStack(spacing: Spacing.sm) {
-            legendItem("Topic", color: .purple)
-            legendItem("Entity", color: .green)
-            legendItem("App", color: .blue)
-            legendItem("Chunk", color: Color.Orttaai.accent)
-        }
-    }
-
-    private func metricCard(title: String, value: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(title)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-            Text(value)
-                .font(.Orttaai.title)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-            if !detail.isEmpty {
-                Text(detail)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
-    }
-
     private func statusRow(message: String, systemImage: String, color: Color) -> some View {
         HStack(spacing: Spacing.xs) {
             Image(systemName: systemImage)
@@ -1527,47 +1382,6 @@ struct SemanticMemoryView: View {
                 .foregroundStyle(color)
                 .lineLimit(1)
         }
-    }
-
-    private func legendItem(_ title: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-        }
-    }
-
-    private func graphHeaderIconButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 28, height: 26)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Color.Orttaai.textPrimary)
-        .background(Color.Orttaai.bgTertiary.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.65), lineWidth: BorderWidth.standard)
-        )
-        .help(help)
-    }
-
-    private func openGraphPopout() {
-        if let graphPopoutController {
-            graphPopoutController.show()
-            return
-        }
-
-        let controller = SemanticGraphPopoutController(graph: viewModel.graph) {
-            graphPopoutController = nil
-        }
-        graphPopoutController = controller
-        controller.show()
     }
 
     private func normalizeSemanticEmbeddingSelection() {
@@ -1984,1120 +1798,4 @@ struct SemanticMemoryView: View {
         formatter.timeStyle = .short
         return formatter
     }()
-}
-
-private func semanticGraphSignature(for graph: SemanticMemoryGraph) -> String {
-    let nodePart = graph.nodes
-        .map { "\($0.nodeID):\($0.weight)" }
-        .joined(separator: "|")
-    let edgePart = graph.edges
-        .enumerated()
-        .map { "\($0.offset):\($0.element.sourceNodeID)>\($0.element.targetNodeID):\($0.element.weight)" }
-        .joined(separator: "|")
-    return "\(graph.nodes.count)#\(graph.edges.count)#\(nodePart)#\(edgePart)"
-}
-
-@MainActor
-private final class SemanticGraphPopoutController: NSObject, NSWindowDelegate {
-    private var window: NSWindow?
-    private var hostingView: NSHostingView<SemanticGraphPopoutView>?
-    private let onClose: () -> Void
-    private var hasCenteredWindow = false
-
-    init(graph: SemanticMemoryGraph, onClose: @escaping () -> Void) {
-        self.onClose = onClose
-        super.init()
-
-        let size = CGSize(width: 1_120, height: 760)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: size.width, height: size.height),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        let hostingView = NSHostingView(rootView: SemanticGraphPopoutView(graph: graph))
-        window.title = "Memory Graph"
-        window.minSize = CGSize(width: 780, height: 520)
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.backgroundColor = NSColor.Orttaai.bgPrimary
-        window.contentView = hostingView
-        window.isReleasedWhenClosed = false
-        window.collectionBehavior.insert(.moveToActiveSpace)
-        window.delegate = self
-
-        self.window = window
-        self.hostingView = hostingView
-    }
-
-    func show() {
-        guard let window else { return }
-        if !hasCenteredWindow {
-            window.center()
-            hasCenteredWindow = true
-        }
-        if window.isMiniaturized {
-            window.deminiaturize(nil)
-        }
-        NSApp.unhide(nil)
-        NSRunningApplication.current.activate(options: [.activateAllWindows])
-        window.orderFrontRegardless()
-        window.makeKeyAndOrderFront(nil)
-        window.makeMain()
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func update(graph: SemanticMemoryGraph) {
-        hostingView?.rootView = SemanticGraphPopoutView(graph: graph)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        window = nil
-        hostingView = nil
-        onClose()
-    }
-}
-
-private struct SemanticGraphPopoutView: View {
-    let graph: SemanticMemoryGraph
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .center, spacing: Spacing.md) {
-                Text("Memory Graph")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer()
-
-                graphLegend
-            }
-
-            SemanticGraphCanvas(graph: graph)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                        .stroke(Color.Orttaai.border.opacity(0.8), lineWidth: BorderWidth.standard)
-                )
-        }
-        .padding(Spacing.lg)
-        .frame(minWidth: 780, minHeight: 520)
-        .background(Color.Orttaai.bgPrimary)
-    }
-
-    private var graphLegend: some View {
-        HStack(spacing: Spacing.sm) {
-            legendItem("Topic", color: .purple)
-            legendItem("Entity", color: .green)
-            legendItem("App", color: .blue)
-            legendItem("Chunk", color: Color.Orttaai.accent)
-        }
-    }
-
-    private func legendItem(_ title: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-        }
-    }
-}
-
-private struct SemanticGraphCanvas: View {
-    let graph: SemanticMemoryGraph
-
-    @State private var layout = SemanticGraphLayout.empty
-    @State private var layoutSignature = ""
-    @State private var viewport = GraphViewport()
-    @State private var hoveredNodeID: String?
-    @State private var selectedNodeID: String?
-
-    var body: some View {
-        GeometryReader { proxy in
-            let currentSignature = semanticGraphSignature(for: graph)
-
-            ZStack(alignment: .topLeading) {
-                Canvas { context, size in
-                    drawGraph(context: &context, size: size)
-                }
-                .background(Color.Orttaai.bgPrimary.opacity(0.92))
-
-                GraphInteractionOverlay(
-                    layout: layout,
-                    viewport: $viewport,
-                    hoveredNodeID: $hoveredNodeID,
-                    selectedNodeID: $selectedNodeID,
-                    onFit: {
-                        fitGraph(in: proxy.size)
-                    }
-                )
-
-                graphControls(size: proxy.size)
-                    .padding(Spacing.sm)
-
-                if let focusNode {
-                    focusPanel(for: focusNode)
-                        .padding(Spacing.sm)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                }
-            }
-            .clipped()
-            .onAppear {
-                rebuildLayoutIfNeeded(signature: currentSignature, size: proxy.size)
-            }
-            .onChange(of: currentSignature) { _, newSignature in
-                rebuildLayoutIfNeeded(signature: newSignature, size: proxy.size)
-            }
-        }
-    }
-
-    private var activeFocusID: String? {
-        hoveredNodeID ?? selectedNodeID
-    }
-
-    private var focusNode: SemanticGraphLayoutNode? {
-        guard let activeFocusID else { return nil }
-        return layout.node(id: activeFocusID)
-    }
-
-    private var activeFocusIDs: Set<String> {
-        guard let activeFocusID else { return [] }
-        var ids = layout.neighborIDs[activeFocusID] ?? []
-        ids.insert(activeFocusID)
-        return ids
-    }
-
-    private func drawGraph(context: inout GraphicsContext, size: CGSize) {
-        guard !layout.nodes.isEmpty else { return }
-        let focusIDs = activeFocusIDs
-        let viewportRect = CGRect(origin: .zero, size: size).insetBy(dx: -80, dy: -80)
-        drawEdges(context: &context, size: size, viewportRect: viewportRect, focusIDs: focusIDs)
-        drawNodes(context: &context, size: size, viewportRect: viewportRect, focusIDs: focusIDs)
-    }
-
-    private func drawEdges(
-        context: inout GraphicsContext,
-        size: CGSize,
-        viewportRect: CGRect,
-        focusIDs: Set<String>
-    ) {
-        for edge in layout.edges {
-            guard shouldDrawEdge(edge, focusIDs: focusIDs) else { continue }
-            guard let startNode = layout.node(id: edge.sourceID),
-                  let endNode = layout.node(id: edge.targetID) else { continue }
-
-            let start = viewport.project(startNode.position, in: size)
-            let end = viewport.project(endNode.position, in: size)
-            let edgeRect = CGRect(
-                x: min(start.x, end.x),
-                y: min(start.y, end.y),
-                width: abs(start.x - end.x),
-                height: abs(start.y - end.y)
-            )
-            .insetBy(dx: -24, dy: -24)
-            guard edgeRect.intersects(viewportRect) else { continue }
-
-            let touchesFocus = activeFocusID.map { edge.sourceID == $0 || edge.targetID == $0 } ?? false
-            let insideFocus = focusIDs.isEmpty || (focusIDs.contains(edge.sourceID) && focusIDs.contains(edge.targetID))
-            let opacity: Double
-            if touchesFocus {
-                opacity = min(0.88, 0.34 + edge.weight * 0.42)
-            } else if insideFocus {
-                opacity = min(0.55, 0.16 + edge.weight * 0.32)
-            } else {
-                opacity = 0.045
-            }
-
-            var path = Path()
-            path.move(to: start)
-            path.addLine(to: end)
-            context.stroke(
-                path,
-                with: .color(edgeColor(edge.kind).opacity(opacity)),
-                lineWidth: edgeLineWidth(edge)
-            )
-        }
-    }
-
-    private func drawNodes(
-        context: inout GraphicsContext,
-        size: CGSize,
-        viewportRect: CGRect,
-        focusIDs: Set<String>
-    ) {
-        let sortedNodes = layout.nodes.sorted { lhs, rhs in
-            if lhs.kind == rhs.kind {
-                return lhs.importance < rhs.importance
-            }
-            return nodeLayer(lhs.kind) < nodeLayer(rhs.kind)
-        }
-
-        for node in sortedNodes {
-            let position = viewport.project(node.position, in: size)
-            guard viewportRect.contains(position) else { continue }
-            let radius = nodeScreenRadius(node)
-            let isFocused = activeFocusID == node.id
-            let isRelated = focusIDs.isEmpty || focusIDs.contains(node.id)
-            let opacity = isRelated ? 0.9 : 0.22
-
-            let rect = CGRect(
-                x: position.x - radius,
-                y: position.y - radius,
-                width: radius * 2,
-                height: radius * 2
-            )
-
-            if isFocused {
-                context.fill(
-                    Path(ellipseIn: rect.insetBy(dx: -8, dy: -8)),
-                    with: .color(nodeColor(node.kind).opacity(0.18))
-                )
-            }
-
-            context.fill(Path(ellipseIn: rect), with: .color(nodeColor(node.kind).opacity(opacity)))
-            context.stroke(
-                Path(ellipseIn: rect),
-                with: .color(Color.white.opacity(isFocused ? 0.62 : 0.16)),
-                lineWidth: isFocused ? 1.6 : 1
-            )
-
-            if shouldDrawLabel(for: node, isRelated: isRelated, isFocused: isFocused) {
-                drawLabel(for: node, at: position, radius: radius, isFocused: isFocused, context: &context)
-            }
-        }
-    }
-
-    private func drawLabel(
-        for node: SemanticGraphLayoutNode,
-        at position: CGPoint,
-        radius: CGFloat,
-        isFocused: Bool,
-        context: inout GraphicsContext
-    ) {
-        let label = truncatedLabel(node.title, limit: labelLimit(for: node))
-        let opacity = labelOpacity(for: node, isFocused: isFocused)
-        let fontSize = isFocused ? 12.5 : max(9.5, min(12, 9.5 + viewport.scale * 1.4))
-        context.draw(
-            Text(label)
-                .font(.system(size: fontSize, weight: isFocused ? .semibold : .medium))
-                .foregroundStyle(Color.Orttaai.textPrimary.opacity(opacity)),
-            at: CGPoint(x: position.x, y: position.y + radius + 7),
-            anchor: .top
-        )
-    }
-
-    private func shouldDrawEdge(_ edge: SemanticGraphLayoutEdge, focusIDs: Set<String>) -> Bool {
-        if let activeFocusID, (edge.sourceID == activeFocusID || edge.targetID == activeFocusID) {
-            return true
-        }
-        if !focusIDs.isEmpty {
-            return focusIDs.contains(edge.sourceID) && focusIDs.contains(edge.targetID)
-        }
-        if viewport.scale < 0.55 {
-            return edge.weight >= 0.52 || edge.rank < 90
-        }
-        if viewport.scale < 0.95 {
-            return edge.weight >= 0.28 || edge.rank < 180
-        }
-        return true
-    }
-
-    private func shouldDrawLabel(for node: SemanticGraphLayoutNode, isRelated: Bool, isFocused: Bool) -> Bool {
-        if isFocused { return true }
-        if !isRelated {
-            return false
-        }
-        switch viewport.detailLevel {
-        case .overview:
-            return node.kind != "chunk" && node.importance >= 9
-        case .context:
-            return node.kind == "app" || node.importance >= (node.kind == "chunk" ? 14 : 6)
-        case .detail:
-            return node.kind != "chunk" || node.importance >= 5
-        case .inspection:
-            return true
-        }
-    }
-
-    private func labelOpacity(for node: SemanticGraphLayoutNode, isFocused: Bool) -> Double {
-        if isFocused { return 1 }
-        switch viewport.detailLevel {
-        case .overview:
-            return min(0.78, 0.42 + node.importance / 30)
-        case .context:
-            return min(0.86, 0.46 + node.importance / 24)
-        case .detail:
-            return 0.9
-        case .inspection:
-            return 0.96
-        }
-    }
-
-    private func labelLimit(for node: SemanticGraphLayoutNode) -> Int {
-        switch viewport.detailLevel {
-        case .overview:
-            return 14
-        case .context:
-            return node.kind == "chunk" ? 18 : 22
-        case .detail:
-            return node.kind == "chunk" ? 28 : 30
-        case .inspection:
-            return 42
-        }
-    }
-
-    private func nodeScreenRadius(_ node: SemanticGraphLayoutNode) -> CGFloat {
-        max(3.8, min(node.baseRadius * pow(viewport.scale, 0.58), node.baseRadius * 1.8))
-    }
-
-    private func edgeLineWidth(_ edge: SemanticGraphLayoutEdge) -> CGFloat {
-        max(0.45, min(2.8, (0.45 + edge.weight * 1.8) * pow(viewport.scale, 0.24)))
-    }
-
-    private func nodeLayer(_ kind: String) -> Int {
-        switch kind {
-        case "chunk": return 0
-        case "topic": return 1
-        case "entity": return 2
-        case "app": return 3
-        default: return 1
-        }
-    }
-
-    private func nodeColor(_ kind: String) -> Color {
-        switch kind {
-        case "topic": return .purple
-        case "entity": return .green
-        case "app": return .blue
-        default: return Color.Orttaai.accent
-        }
-    }
-
-    private func edgeColor(_ kind: String) -> Color {
-        switch kind {
-        case "semantic": return Color.Orttaai.accent
-        case "entity": return .green
-        case "app-context": return .blue
-        default: return .purple
-        }
-    }
-
-    private func graphControls(size: CGSize) -> some View {
-        HStack(spacing: 4) {
-            graphControlButton(systemImage: "minus.magnifyingglass", help: "Zoom out") {
-                viewport.zoom(by: 0.78, around: CGPoint(x: size.width / 2, y: size.height / 2), in: size)
-            }
-            Text("\(Int((viewport.scale * 100).rounded()))%")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .frame(width: 46)
-            graphControlButton(systemImage: "plus.magnifyingglass", help: "Zoom in") {
-                viewport.zoom(by: 1.28, around: CGPoint(x: size.width / 2, y: size.height / 2), in: size)
-            }
-            Divider()
-                .frame(height: 18)
-                .background(Color.Orttaai.border.opacity(0.65))
-            graphControlButton(systemImage: "viewfinder", help: "Fit graph") {
-                fitGraph(in: size)
-            }
-        }
-        .padding(5)
-        .background(Color.Orttaai.bgSecondary.opacity(0.82))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
-        )
-    }
-
-    private func graphControlButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 24)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Color.Orttaai.textPrimary)
-        .background(Color.Orttaai.bgTertiary.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .help(help)
-    }
-
-    private func focusPanel(for node: SemanticGraphLayoutNode) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(spacing: Spacing.xs) {
-                Circle()
-                    .fill(nodeColor(node.kind))
-                    .frame(width: 8, height: 8)
-                Text(node.kind.capitalized)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                Spacer(minLength: 0)
-                Text("\(layout.degree(for: node.id)) links")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-
-            Text(node.title)
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .lineLimit(2)
-
-            if let subtitle = node.subtitle, !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .lineLimit(3)
-            }
-        }
-        .padding(Spacing.md)
-        .frame(width: 230, alignment: .leading)
-        .background(Color.Orttaai.bgSecondary.opacity(0.88))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.8), lineWidth: BorderWidth.standard)
-        )
-        .shadow(color: .black.opacity(0.22), radius: 14, x: 0, y: 8)
-    }
-
-    private func fitGraph(in size: CGSize) {
-        viewport.fit(bounds: layout.bounds, in: size)
-    }
-
-    private func rebuildLayoutIfNeeded(signature: String, size: CGSize) {
-        guard signature != layoutSignature else { return }
-        layoutSignature = signature
-        layout = SemanticGraphLayoutEngine.build(for: graph)
-        hoveredNodeID = nil
-        selectedNodeID = nil
-        fitGraph(in: size)
-    }
-
-    private func truncatedLabel(_ label: String, limit: Int) -> String {
-        guard label.count > limit else { return label }
-        return String(label.prefix(max(0, limit - 1))) + "…"
-    }
-}
-
-private enum GraphDetailLevel {
-    case overview
-    case context
-    case detail
-    case inspection
-}
-
-private struct GraphViewport {
-    static let minimumScale: CGFloat = 0.28
-    static let maximumScale: CGFloat = 4.2
-
-    var scale: CGFloat = 1
-    var pan: CGSize = .zero
-
-    var detailLevel: GraphDetailLevel {
-        if scale < 0.58 { return .overview }
-        if scale < 1.05 { return .context }
-        if scale < 1.85 { return .detail }
-        return .inspection
-    }
-
-    func project(_ point: CGPoint, in size: CGSize) -> CGPoint {
-        CGPoint(
-            x: size.width / 2 + point.x * scale + pan.width,
-            y: size.height / 2 + point.y * scale + pan.height
-        )
-    }
-
-    func unproject(_ point: CGPoint, in size: CGSize) -> CGPoint {
-        CGPoint(
-            x: (point.x - size.width / 2 - pan.width) / scale,
-            y: (point.y - size.height / 2 - pan.height) / scale
-        )
-    }
-
-    mutating func zoom(by factor: CGFloat, around screenPoint: CGPoint, in size: CGSize) {
-        guard size.width > 1, size.height > 1 else { return }
-        let oldScale = scale
-        let newScale = min(Self.maximumScale, max(Self.minimumScale, oldScale * factor))
-        guard newScale != oldScale else { return }
-        let worldPoint = unproject(screenPoint, in: size)
-        scale = newScale
-        pan = CGSize(
-            width: screenPoint.x - size.width / 2 - worldPoint.x * newScale,
-            height: screenPoint.y - size.height / 2 - worldPoint.y * newScale
-        )
-    }
-
-    mutating func pan(by delta: CGSize) {
-        pan = CGSize(width: pan.width + delta.width, height: pan.height + delta.height)
-    }
-
-    mutating func fit(bounds: CGRect, in size: CGSize) {
-        guard !bounds.isEmpty, bounds.width > 1, bounds.height > 1, size.width > 1, size.height > 1 else {
-            scale = 1
-            pan = .zero
-            return
-        }
-        let horizontalScale = (size.width - 72) / bounds.width
-        let verticalScale = (size.height - 72) / bounds.height
-        let nextScale = min(Self.maximumScale, max(Self.minimumScale, min(horizontalScale, verticalScale)))
-        scale = nextScale
-        pan = CGSize(
-            width: -bounds.midX * nextScale,
-            height: -bounds.midY * nextScale
-        )
-    }
-}
-
-private struct SemanticGraphLayout {
-    var nodes: [SemanticGraphLayoutNode]
-    var edges: [SemanticGraphLayoutEdge]
-    var nodeByID: [String: SemanticGraphLayoutNode]
-    var neighborIDs: [String: Set<String>]
-    var bounds: CGRect
-
-    static let empty = SemanticGraphLayout(nodes: [], edges: [], nodeByID: [:], neighborIDs: [:], bounds: .zero)
-
-    func node(id: String) -> SemanticGraphLayoutNode? {
-        nodeByID[id]
-    }
-
-    func degree(for id: String) -> Int {
-        neighborIDs[id]?.count ?? 0
-    }
-}
-
-private struct SemanticGraphLayoutNode: Identifiable {
-    let id: String
-    let kind: String
-    let title: String
-    let subtitle: String?
-    let weight: Double
-    let importance: Double
-    let baseRadius: CGFloat
-    let position: CGPoint
-}
-
-private struct SemanticGraphLayoutEdge: Identifiable {
-    let id: String
-    let sourceID: String
-    let targetID: String
-    let kind: String
-    let weight: Double
-    let rank: Int
-}
-
-private enum SemanticGraphLayoutEngine {
-    private struct SimNode {
-        let source: SemanticGraphNode
-        let degree: Int
-        var x: CGFloat
-        var y: CGFloat
-        var vx: CGFloat = 0
-        var vy: CGFloat = 0
-
-        var radius: CGFloat {
-            SemanticGraphLayoutEngine.baseRadius(kind: source.kind, weight: source.weight, degree: degree)
-        }
-    }
-
-    private struct SimEdge {
-        let sourceIndex: Int
-        let targetIndex: Int
-        let sourceID: String
-        let targetID: String
-        let kind: String
-        let weight: Double
-    }
-
-    static func build(for graph: SemanticMemoryGraph) -> SemanticGraphLayout {
-        guard !graph.nodes.isEmpty else { return .empty }
-        let sourceNodes = graph.nodes.sorted { lhs, rhs in
-            if lhs.kind == rhs.kind {
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-            }
-            return kindRank(lhs.kind) < kindRank(rhs.kind)
-        }
-        let nodeIDSet = Set(sourceNodes.map(\.nodeID))
-        let sourceEdges = graph.edges.filter {
-            nodeIDSet.contains($0.sourceNodeID) && nodeIDSet.contains($0.targetNodeID)
-        }
-
-        var degrees: [String: Int] = [:]
-        var neighbors: [String: Set<String>] = [:]
-        for edge in sourceEdges {
-            degrees[edge.sourceNodeID, default: 0] += 1
-            degrees[edge.targetNodeID, default: 0] += 1
-            neighbors[edge.sourceNodeID, default: []].insert(edge.targetNodeID)
-            neighbors[edge.targetNodeID, default: []].insert(edge.sourceNodeID)
-        }
-
-        let groupedCounts = Dictionary(grouping: sourceNodes, by: \.kind).mapValues(\.count)
-        var groupedIndexes: [String: Int] = [:]
-        var simNodes = sourceNodes.map { node -> SimNode in
-            let index = groupedIndexes[node.kind, default: 0]
-            groupedIndexes[node.kind, default: 0] = index + 1
-            let position = initialPosition(
-                node: node,
-                index: index,
-                count: max(1, groupedCounts[node.kind] ?? 1)
-            )
-            return SimNode(
-                source: node,
-                degree: degrees[node.nodeID, default: 0],
-                x: position.x,
-                y: position.y
-            )
-        }
-
-        let indexByID = Dictionary(uniqueKeysWithValues: sourceNodes.enumerated().map { ($0.element.nodeID, $0.offset) })
-        let simEdges = sourceEdges.compactMap { edge -> SimEdge? in
-            guard let sourceIndex = indexByID[edge.sourceNodeID],
-                  let targetIndex = indexByID[edge.targetNodeID] else { return nil }
-            return SimEdge(
-                sourceIndex: sourceIndex,
-                targetIndex: targetIndex,
-                sourceID: edge.sourceNodeID,
-                targetID: edge.targetNodeID,
-                kind: edge.kind,
-                weight: max(0.05, min(1, edge.weight))
-            )
-        }
-
-        relax(nodes: &simNodes, edges: simEdges)
-
-        let layoutNodes = simNodes.map { node in
-            let importance = node.source.weight + Double(node.degree) * 0.65
-            return SemanticGraphLayoutNode(
-                id: node.source.nodeID,
-                kind: node.source.kind,
-                title: node.source.title,
-                subtitle: node.source.subtitle,
-                weight: node.source.weight,
-                importance: importance,
-                baseRadius: node.radius,
-                position: CGPoint(x: node.x, y: node.y)
-            )
-        }
-        let nodeByID = Dictionary(uniqueKeysWithValues: layoutNodes.map { ($0.id, $0) })
-        let layoutEdges = simEdges
-            .sorted {
-                if $0.weight == $1.weight {
-                    return $0.sourceID < $1.sourceID
-                }
-                return $0.weight > $1.weight
-            }
-            .enumerated()
-            .map { index, edge in
-                SemanticGraphLayoutEdge(
-                    id: "\(edge.sourceID)>\(edge.targetID)>\(index)",
-                    sourceID: edge.sourceID,
-                    targetID: edge.targetID,
-                    kind: edge.kind,
-                    weight: edge.weight,
-                    rank: index
-                )
-            }
-        let bounds = layoutBounds(for: layoutNodes)
-        return SemanticGraphLayout(
-            nodes: layoutNodes,
-            edges: layoutEdges,
-            nodeByID: nodeByID,
-            neighborIDs: neighbors,
-            bounds: bounds
-        )
-    }
-
-    private static func relax(nodes: inout [SimNode], edges: [SimEdge]) {
-        guard nodes.count > 1 else { return }
-        let iterations = nodes.count > 140 ? 220 : 260
-        for _ in 0..<iterations {
-            applyRepulsion(to: &nodes)
-            applyLinks(edges, to: &nodes)
-            applyCentering(to: &nodes)
-            integrate(&nodes)
-        }
-    }
-
-    private static func applyRepulsion(to nodes: inout [SimNode]) {
-        guard nodes.count > 1 else { return }
-        for lhsIndex in 0..<(nodes.count - 1) {
-            for rhsIndex in (lhsIndex + 1)..<nodes.count {
-                var dx = nodes[rhsIndex].x - nodes[lhsIndex].x
-                var dy = nodes[rhsIndex].y - nodes[lhsIndex].y
-                var distanceSquared = dx * dx + dy * dy
-                if distanceSquared < 0.01 {
-                    let jitter = deterministicJitter(for: nodes[lhsIndex].source.nodeID + nodes[rhsIndex].source.nodeID)
-                    dx = jitter.x
-                    dy = jitter.y
-                    distanceSquared = max(1, dx * dx + dy * dy)
-                }
-                let distance = sqrt(distanceSquared)
-                let minimumDistance = nodes[lhsIndex].radius + nodes[rhsIndex].radius + 16
-                let repel = CGFloat(360 + min(22, nodes[lhsIndex].degree + nodes[rhsIndex].degree) * 9) / max(36, distanceSquared)
-                let collision = distance < minimumDistance ? (minimumDistance - distance) * 0.022 : 0
-                let force = repel + collision
-                let fx = dx / distance * force
-                let fy = dy / distance * force
-                nodes[lhsIndex].vx -= fx
-                nodes[lhsIndex].vy -= fy
-                nodes[rhsIndex].vx += fx
-                nodes[rhsIndex].vy += fy
-            }
-        }
-    }
-
-    private static func applyLinks(_ edges: [SimEdge], to nodes: inout [SimNode]) {
-        for edge in edges {
-            var dx = nodes[edge.targetIndex].x - nodes[edge.sourceIndex].x
-            var dy = nodes[edge.targetIndex].y - nodes[edge.sourceIndex].y
-            var distance = sqrt(dx * dx + dy * dy)
-            if distance < 0.01 {
-                let jitter = deterministicJitter(for: edge.sourceID + edge.targetID)
-                dx = jitter.x
-                dy = jitter.y
-                distance = max(1, sqrt(dx * dx + dy * dy))
-            }
-            let targetDistance = linkDistance(for: edge)
-            let strength = CGFloat(0.006 + edge.weight * 0.018)
-            let force = (distance - targetDistance) * strength
-            let fx = dx / distance * force
-            let fy = dy / distance * force
-            nodes[edge.sourceIndex].vx += fx
-            nodes[edge.sourceIndex].vy += fy
-            nodes[edge.targetIndex].vx -= fx
-            nodes[edge.targetIndex].vy -= fy
-        }
-    }
-
-    private static func applyCentering(to nodes: inout [SimNode]) {
-        for index in nodes.indices {
-            let strength: CGFloat = nodes[index].source.kind == "chunk" ? 0.0014 : 0.0024
-            nodes[index].vx -= nodes[index].x * strength
-            nodes[index].vy -= nodes[index].y * strength
-        }
-    }
-
-    private static func integrate(_ nodes: inout [SimNode]) {
-        for index in nodes.indices {
-            nodes[index].vx = max(-12, min(12, nodes[index].vx * 0.84))
-            nodes[index].vy = max(-12, min(12, nodes[index].vy * 0.84))
-            nodes[index].x += nodes[index].vx
-            nodes[index].y += nodes[index].vy
-        }
-    }
-
-    private static func initialPosition(node: SemanticGraphNode, index: Int, count: Int) -> CGPoint {
-        let phase = phase(for: node.kind)
-        let angle = phase + (Double(index) / Double(max(1, count))) * Double.pi * 2
-        let radius = initialRadius(for: node.kind) - min(38, CGFloat(node.weight) * 2.8)
-        let jitter = deterministicJitter(for: node.nodeID)
-        return CGPoint(
-            x: cos(angle) * radius + jitter.x,
-            y: sin(angle) * radius + jitter.y
-        )
-    }
-
-    private static func layoutBounds(for nodes: [SemanticGraphLayoutNode]) -> CGRect {
-        guard let first = nodes.first else { return .zero }
-        var minX = first.position.x - first.baseRadius
-        var maxX = first.position.x + first.baseRadius
-        var minY = first.position.y - first.baseRadius
-        var maxY = first.position.y + first.baseRadius
-        for node in nodes.dropFirst() {
-            minX = min(minX, node.position.x - node.baseRadius)
-            maxX = max(maxX, node.position.x + node.baseRadius)
-            minY = min(minY, node.position.y - node.baseRadius)
-            maxY = max(maxY, node.position.y + node.baseRadius)
-        }
-        return CGRect(x: minX, y: minY, width: max(1, maxX - minX), height: max(1, maxY - minY))
-    }
-
-    private static func linkDistance(for edge: SimEdge) -> CGFloat {
-        switch edge.kind {
-        case "app-context":
-            return 86
-        case "entity":
-            return 74
-        case "semantic":
-            return 118
-        default:
-            return 96
-        }
-    }
-
-    private static func baseRadius(kind: String, weight: Double, degree: Int) -> CGFloat {
-        let influence = CGFloat(min(7, sqrt(max(0, weight)) * 2.2 + Double(degree) * 0.18))
-        switch kind {
-        case "topic":
-            return 8.5 + influence
-        case "entity":
-            return 9 + influence
-        case "app":
-            return 11 + influence
-        default:
-            return 4.8 + min(4.5, influence * 0.7)
-        }
-    }
-
-    private static func initialRadius(for kind: String) -> CGFloat {
-        switch kind {
-        case "app": return 74
-        case "entity": return 124
-        case "topic": return 184
-        default: return 238
-        }
-    }
-
-    private static func phase(for kind: String) -> Double {
-        switch kind {
-        case "app": return 0.55
-        case "entity": return 1.3
-        case "topic": return -0.35
-        default: return 2.1
-        }
-    }
-
-    private static func kindRank(_ kind: String) -> Int {
-        switch kind {
-        case "app": return 0
-        case "entity": return 1
-        case "topic": return 2
-        case "chunk": return 3
-        default: return 4
-        }
-    }
-
-    private static func deterministicJitter(for value: String) -> CGPoint {
-        let hash = stableHash(for: value)
-        let x = CGFloat(Int(hash % 41) - 20)
-        let y = CGFloat(Int((hash / 41) % 41) - 20)
-        return CGPoint(x: x * 0.75, y: y * 0.75)
-    }
-
-    private static func stableHash(for value: String) -> UInt64 {
-        var hash: UInt64 = 5381
-        for scalar in value.unicodeScalars {
-            hash = ((hash << 5) &+ hash) &+ UInt64(scalar.value)
-        }
-        return hash
-    }
-}
-
-private struct GraphInteractionOverlay: NSViewRepresentable {
-    let layout: SemanticGraphLayout
-    @Binding var viewport: GraphViewport
-    @Binding var hoveredNodeID: String?
-    @Binding var selectedNodeID: String?
-    let onFit: () -> Void
-
-    func makeNSView(context: Context) -> GraphInteractionNSView {
-        let view = GraphInteractionNSView()
-        view.onViewportChange = { viewport = $0 }
-        view.onHoverChange = { hoveredNodeID = $0 }
-        view.onSelect = { selectedNodeID = $0 }
-        view.onFit = onFit
-        return view
-    }
-
-    func updateNSView(_ nsView: GraphInteractionNSView, context: Context) {
-        nsView.layout = layout
-        nsView.viewport = viewport
-        nsView.hoveredNodeID = hoveredNodeID
-        nsView.selectedNodeID = selectedNodeID
-        nsView.onFit = onFit
-    }
-}
-
-private final class GraphInteractionNSView: NSView {
-    var layout = SemanticGraphLayout.empty
-    var viewport = GraphViewport()
-    var hoveredNodeID: String?
-    var selectedNodeID: String?
-    var onViewportChange: (GraphViewport) -> Void = { _ in }
-    var onHoverChange: (String?) -> Void = { _ in }
-    var onSelect: (String?) -> Void = { _ in }
-    var onFit: () -> Void = {}
-
-    private var trackingAreaRef: NSTrackingArea?
-    private var lastDragPoint: CGPoint?
-    private var mouseDownPoint: CGPoint?
-    private var didDrag = false
-
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingAreaRef {
-            removeTrackingArea(trackingAreaRef)
-        }
-        let trackingArea = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        trackingAreaRef = trackingArea
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        updateHover(at: convert(event.locationInWindow, from: nil))
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        hoveredNodeID = nil
-        onHoverChange(nil)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        let point = convert(event.locationInWindow, from: nil)
-        mouseDownPoint = point
-        lastDragPoint = point
-        didDrag = false
-        updateHover(at: point)
-        if event.clickCount == 2 {
-            if let nodeID = hitNode(at: point) {
-                selectedNodeID = nodeID
-                onSelect(nodeID)
-                zoomTowardNode(id: nodeID, point: point)
-            } else {
-                onFit()
-            }
-        }
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        guard let lastDragPoint else {
-            self.lastDragPoint = point
-            return
-        }
-        let delta = CGSize(width: point.x - lastDragPoint.x, height: point.y - lastDragPoint.y)
-        if abs(delta.width) > 0.1 || abs(delta.height) > 0.1 {
-            didDrag = true
-            viewport.pan(by: delta)
-            onViewportChange(viewport)
-        }
-        self.lastDragPoint = point
-        updateHover(at: point)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        defer {
-            mouseDownPoint = nil
-            lastDragPoint = nil
-            didDrag = false
-        }
-
-        if didDrag {
-            return
-        }
-
-        if let nodeID = hitNode(at: point) {
-            selectedNodeID = nodeID
-            onSelect(nodeID)
-        } else {
-            selectedNodeID = nil
-            onSelect(nil)
-        }
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        guard let nodeID = hitNode(at: point) else {
-            selectedNodeID = nil
-            onSelect(nil)
-            return
-        }
-        selectedNodeID = nodeID
-        onSelect(nodeID)
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let horizontal = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX : event.deltaX * 8
-        let vertical = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 8
-
-        if abs(horizontal) > abs(vertical) * 1.4 {
-            viewport.pan(by: CGSize(width: horizontal, height: 0))
-        } else {
-            let factor = exp(vertical * 0.006)
-            viewport.zoom(by: factor, around: point, in: bounds.size)
-        }
-        onViewportChange(viewport)
-        updateHover(at: point)
-    }
-
-    override func magnify(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        viewport.zoom(by: max(0.2, 1 + event.magnification), around: point, in: bounds.size)
-        onViewportChange(viewport)
-        updateHover(at: point)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        switch event.keyCode {
-        case 24, 69:
-            viewport.zoom(by: 1.18, around: center, in: bounds.size)
-            onViewportChange(viewport)
-        case 27, 78:
-            viewport.zoom(by: 0.84, around: center, in: bounds.size)
-            onViewportChange(viewport)
-        case 29, 82:
-            onFit()
-        case 53:
-            selectedNodeID = nil
-            onSelect(nil)
-        case 123, 124, 125, 126:
-            let distance: CGFloat = event.modifierFlags.contains(.shift) ? 72 : 28
-            switch event.keyCode {
-            case 123:
-                viewport.pan(by: CGSize(width: distance, height: 0))
-            case 124:
-                viewport.pan(by: CGSize(width: -distance, height: 0))
-            case 125:
-                viewport.pan(by: CGSize(width: 0, height: -distance))
-            default:
-                viewport.pan(by: CGSize(width: 0, height: distance))
-            }
-            onViewportChange(viewport)
-        default:
-            super.keyDown(with: event)
-        }
-    }
-
-    private func updateHover(at point: CGPoint) {
-        let nextID = hitNode(at: point)
-        guard nextID != hoveredNodeID else { return }
-        hoveredNodeID = nextID
-        onHoverChange(nextID)
-    }
-
-    private func hitNode(at point: CGPoint) -> String? {
-        guard !layout.nodes.isEmpty else { return nil }
-        var best: (id: String, distance: CGFloat)?
-        for node in layout.nodes {
-            let screenPoint = viewport.project(node.position, in: bounds.size)
-            let radius = max(7, min(node.baseRadius * pow(viewport.scale, 0.58), node.baseRadius * 1.8) + 4)
-            let distance = hypot(point.x - screenPoint.x, point.y - screenPoint.y)
-            guard distance <= radius else { continue }
-            if best == nil || distance < best!.distance {
-                best = (node.id, distance)
-            }
-        }
-        return best?.id
-    }
-
-    private func zoomTowardNode(id: String, point: CGPoint) {
-        guard layout.node(id: id) != nil else { return }
-        viewport.zoom(by: 1.55, around: point, in: bounds.size)
-        onViewportChange(viewport)
-    }
 }

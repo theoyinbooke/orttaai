@@ -11,6 +11,14 @@ private enum MemorySubsection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var icon: String {
+        switch self {
+        case .dictionary: return "character.book.closed"
+        case .snippets: return "text.badge.plus"
+        case .suggestions: return "lightbulb"
+        }
+    }
+
     var title: String {
         switch self {
         case .dictionary: return "Dictionary"
@@ -50,18 +58,8 @@ struct MemoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
-                .padding(.top, WorkspaceLayout.contentTopPadding)
-                .padding(.bottom, Spacing.md)
-
-            Divider()
-                .background(Color.Orttaai.border)
-
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.md) {
-                    statusRow
-                    featureToggles
                     flashMessages
 
                     if viewModel.isLoading {
@@ -78,12 +76,23 @@ struct MemoryView: View {
                     }
                 }
                 .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
-                .padding(.top, Spacing.md)
+                .padding(.top, WorkspaceLayout.contentTopPadding)
                 .padding(.bottom, WorkspaceLayout.contentBottomPadding)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.Orttaai.bgPrimary)
+        .workspaceHeader("Memory") {
+            OrttaaiTabBar(
+                tabs: MemorySubsection.allCases,
+                selection: $subsection,
+                title: \.title,
+                icon: \.icon
+            )
+        } trailing: {
+            searchField
+                .frame(width: 240)
+        }
         .onAppear {
             viewModel.load()
         }
@@ -136,36 +145,6 @@ struct MemoryView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Memory")
-                .font(.Orttaai.heading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: Spacing.lg) {
-                    subsectionPicker
-                    Spacer(minLength: Spacing.lg)
-                    searchField
-                        .frame(width: 360)
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    subsectionPicker
-                    searchField
-                }
-            }
-        }
-    }
-
-    private var subsectionPicker: some View {
-        HStack(spacing: Spacing.sm) {
-            ForEach(MemorySubsection.allCases) { item in
-                subsectionButton(item)
-            }
-        }
-    }
-
     private var searchField: some View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "magnifyingglass")
@@ -197,40 +176,6 @@ struct MemoryView: View {
             RoundedRectangle(cornerRadius: CornerRadius.input)
                 .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
         )
-    }
-
-    private var statusRow: some View {
-        HStack(spacing: Spacing.sm) {
-            StatChipView(
-                label: "dictionary",
-                value: "\(viewModel.dictionaryEntries.filter(\.isActive).count)/\(viewModel.dictionaryEntries.count)"
-            )
-            StatChipView(
-                label: "snippets",
-                value: "\(viewModel.snippetEntries.filter(\.isActive).count)/\(viewModel.snippetEntries.count)"
-            )
-            StatChipView(label: "pending", value: "\(viewModel.pendingSuggestions.count)")
-            Spacer()
-        }
-    }
-
-    private var featureToggles: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Runtime Controls")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Toggle("Enable dictionary replacements", isOn: $dictionaryEnabled)
-                .toggleStyle(OrttaaiToggleStyle())
-            Toggle("Enable snippet expansions", isOn: $snippetsEnabled)
-                .toggleStyle(OrttaaiToggleStyle())
-            Toggle("Bias recognition toward my vocabulary", isOn: $vocabularyBiasEnabled)
-                .toggleStyle(OrttaaiToggleStyle())
-            Toggle("Prefer Apple AI for suggestions", isOn: $aiSuggestionsEnabled)
-                .toggleStyle(OrttaaiToggleStyle())
-        }
-        .padding(Spacing.md)
-        .dashboardCard()
     }
 
     @ViewBuilder
@@ -269,14 +214,32 @@ struct MemoryView: View {
         .dashboardCard()
     }
 
+    // MARK: - Dictionary
+
     private var dictionaryContent: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            dictionaryEditorCard
+            SettingsCard {
+                SettingsToggleRow(
+                    title: "Dictionary Replacements",
+                    info: "Replaces what you said with how you want it written, as you dictate.",
+                    isOn: $dictionaryEnabled
+                )
+                SettingsDivider()
+                SettingsToggleRow(
+                    title: "Bias Recognition to My Words",
+                    info: "Nudges speech recognition toward the words in your dictionary, so names are heard right the first time.",
+                    isOn: $vocabularyBiasEnabled
+                )
+            }
 
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Entries")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+            SettingsCard(
+                "Dictionary",
+                info: "What speech recognition hears, and how Orttaai should write it."
+            ) {
+                countChip(active: viewModel.dictionaryEntries.filter(\.isActive).count, total: viewModel.dictionaryEntries.count)
+            } content: {
+                dictionaryEditorRow
+                    .padding(.bottom, Spacing.sm)
 
                 if filteredDictionaryEntries.isEmpty {
                     emptyState(
@@ -285,118 +248,135 @@ struct MemoryView: View {
                         systemImage: "text.badge.checkmark"
                     )
                 } else {
-                    LazyVStack(spacing: Spacing.sm) {
+                    tableHeader([("Heard as", nil), ("Written as", nil), ("Used", 56), ("Active", 56), ("", 64)])
+                    LazyVStack(spacing: 0) {
                         ForEach(filteredDictionaryEntries, id: \.id) { entry in
+                            SettingsDivider()
                             dictionaryRow(entry)
                         }
                     }
+                    .padding(.bottom, Spacing.xs)
                 }
             }
-            .padding(Spacing.md)
-            .dashboardCard()
         }
     }
 
-    private var dictionaryEditorCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(viewModel.editingDictionaryID == nil ? "Add Dictionary Entry" : "Edit Dictionary Entry")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+    /// One line to add or edit an entry.
+    private var dictionaryEditorRow: some View {
+        HStack(spacing: Spacing.sm) {
+            OrttaaiTextField(placeholder: "Heard as", text: $viewModel.dictionarySourceDraft)
+            Image(systemName: "arrow.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .accessibilityHidden(true)
+            OrttaaiTextField(placeholder: "Written as", text: $viewModel.dictionaryTargetDraft)
 
-            HStack(spacing: Spacing.sm) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Input")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    OrttaaiTextField(placeholder: "Say or type", text: $viewModel.dictionarySourceDraft)
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Replace With")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    OrttaaiTextField(placeholder: "Preferred term", text: $viewModel.dictionaryTargetDraft)
-                }
+            Button {
+                viewModel.dictionaryCaseSensitiveDraft.toggle()
+            } label: {
+                Text("Aa")
+                    .font(.Orttaai.secondary.weight(.semibold))
+                    .foregroundStyle(viewModel.dictionaryCaseSensitiveDraft ? Color.Orttaai.accent : Color.Orttaai.textTertiary)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
+                            .fill(viewModel.dictionaryCaseSensitiveDraft ? Color.Orttaai.accentSubtle : Color.Orttaai.bgPrimary.opacity(0.5))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
+                            .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
+                    )
             }
+            .buttonStyle(.plain)
+            .help(viewModel.dictionaryCaseSensitiveDraft ? "Matches exact capitalization" : "Matches any capitalization")
+            .accessibilityLabel("Case sensitive")
+            .accessibilityValue(viewModel.dictionaryCaseSensitiveDraft ? "On" : "Off")
 
-            Toggle("Case sensitive match", isOn: $viewModel.dictionaryCaseSensitiveDraft)
-                .toggleStyle(OrttaaiToggleStyle())
+            Button(viewModel.editingDictionaryID == nil ? "Add" : "Update") {
+                viewModel.saveDictionaryDraft()
+            }
+            .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
+            .disabled(!isDictionaryDraftValid)
 
-            Toggle("Active", isOn: $viewModel.dictionaryActiveDraft)
-                .toggleStyle(OrttaaiToggleStyle())
-
-            HStack(spacing: Spacing.sm) {
-                Button(viewModel.editingDictionaryID == nil ? "Save Entry" : "Update Entry") {
-                    viewModel.saveDictionaryDraft()
+            if viewModel.editingDictionaryID != nil {
+                Button("Cancel") {
+                    viewModel.resetDictionaryDraft()
                 }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
-                .disabled(!isDictionaryDraftValid)
-
-                if viewModel.editingDictionaryID != nil {
-                    Button("Cancel") {
-                        viewModel.resetDictionaryDraft()
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
             }
         }
-        .padding(Spacing.md)
-        .dashboardCard()
     }
 
     private func dictionaryRow(_ entry: DictionaryEntry) -> some View {
-        HStack(spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                HStack(spacing: Spacing.xs) {
-                    Text(entry.source)
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 10, weight: .semibold))
+        HStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Text(entry.source)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+                if entry.isCaseSensitive {
+                    Text("Aa")
+                        .font(.Orttaai.caption.weight(.semibold))
                         .foregroundStyle(Color.Orttaai.textTertiary)
-                    Text(entry.target)
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.accent)
-                }
-
-                HStack(spacing: Spacing.sm) {
-                    Text("Used \(entry.usageCount)x")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    if entry.isCaseSensitive {
-                        textPill("Case sensitive")
-                    }
-                    textPill(entry.isActive ? "Active" : "Disabled", tint: entry.isActive ? .success : .warning)
+                        .help("Case sensitive")
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
+            Text(entry.target)
+                .font(.Orttaai.secondary.weight(.medium))
+                .foregroundStyle(Color.Orttaai.accent)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: Spacing.xs) {
-                iconButton(systemName: entry.isActive ? "pause.circle" : "play.circle", label: entry.isActive ? "Disable" : "Enable") {
-                    viewModel.setDictionaryEntryActive(entry, isActive: !entry.isActive)
-                }
-                iconButton(systemName: "pencil", label: "Edit") {
+            Text("\(entry.usageCount)×")
+                .font(.Orttaai.caption.monospacedDigit())
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .frame(width: 56, alignment: .leading)
+
+            OrttaaiSwitch(
+                title: "\(entry.source) active",
+                isOn: Binding(
+                    get: { entry.isActive },
+                    set: { viewModel.setDictionaryEntryActive(entry, isActive: $0) }
+                )
+            )
+            .scaleEffect(0.8, anchor: .leading)
+            .frame(width: 56, alignment: .leading)
+
+            rowActions(width: 64) {
+                rowIconButton("pencil", label: "Edit \(entry.source)") {
                     viewModel.beginEditingDictionary(entry)
                 }
-                iconButton(systemName: "trash", label: "Delete", tint: Color.Orttaai.error) {
+                rowIconButton("trash", label: "Delete \(entry.source)", tint: Color.Orttaai.error) {
                     pendingDeleteDictionaryEntry = entry
                 }
             }
         }
-        .padding(Spacing.md)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .frame(minHeight: 34)
+        .opacity(entry.isActive ? 1 : 0.6)
     }
+
+    // MARK: - Snippets
 
     private var snippetsContent: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            snippetEditorCard
+            SettingsCard {
+                SettingsToggleRow(
+                    title: "Snippet Expansions",
+                    info: "Say a trigger phrase and Orttaai types its full text.",
+                    isOn: $snippetsEnabled
+                )
+            }
 
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Entries")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+            SettingsCard(
+                "Snippets",
+                info: "Short phrases that expand into text you repeat often."
+            ) {
+                countChip(active: viewModel.snippetEntries.filter(\.isActive).count, total: viewModel.snippetEntries.count)
+            } content: {
+                snippetEditorRow
+                    .padding(.bottom, Spacing.sm)
 
                 if filteredSnippetEntries.isEmpty {
                     emptyState(
@@ -405,138 +385,124 @@ struct MemoryView: View {
                         systemImage: "text.insert"
                     )
                 } else {
-                    LazyVStack(spacing: Spacing.sm) {
+                    tableHeader([("Say", 180), ("Types", nil), ("Used", 56), ("Active", 56), ("", 92)])
+                    LazyVStack(spacing: 0) {
                         ForEach(filteredSnippetEntries, id: \.id) { entry in
+                            SettingsDivider()
                             snippetRow(entry)
                         }
                     }
+                    .padding(.bottom, Spacing.xs)
                 }
             }
-            .padding(Spacing.md)
-            .dashboardCard()
         }
     }
 
-    private var snippetEditorCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(viewModel.editingSnippetID == nil ? "Add Snippet" : "Edit Snippet")
-                .font(.Orttaai.subheading)
+    private var snippetEditorRow: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            OrttaaiTextField(placeholder: "Trigger phrase", text: $viewModel.snippetTriggerDraft)
+                .frame(width: 180)
+            TextField("Text it types", text: $viewModel.snippetExpansionDraft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...5)
+                .font(.Orttaai.body)
                 .foregroundStyle(Color.Orttaai.textPrimary)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.Orttaai.bgSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.input)
+                        .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
+                )
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Trigger")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                OrttaaiTextField(placeholder: "Trigger phrase", text: $viewModel.snippetTriggerDraft)
+            Button(viewModel.editingSnippetID == nil ? "Add" : "Update") {
+                viewModel.saveSnippetDraft()
             }
+            .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
+            .disabled(!isSnippetDraftValid)
+            .padding(.top, 3)
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Expansion")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-
-                TextEditor(text: $viewModel.snippetExpansionDraft)
-                    .font(.Orttaai.body)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                    .frame(minHeight: 92)
-                    .padding(Spacing.xs)
-                    .background(Color.Orttaai.bgSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
-                            .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
-                    )
-            }
-
-            Toggle("Active", isOn: $viewModel.snippetActiveDraft)
-                .toggleStyle(OrttaaiToggleStyle())
-
-            HStack(spacing: Spacing.sm) {
-                Button(viewModel.editingSnippetID == nil ? "Save Snippet" : "Update Snippet") {
-                    viewModel.saveSnippetDraft()
+            if viewModel.editingSnippetID != nil {
+                Button("Cancel") {
+                    viewModel.resetSnippetDraft()
                 }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
-                .disabled(!isSnippetDraftValid)
-
-                if viewModel.editingSnippetID != nil {
-                    Button("Cancel") {
-                        viewModel.resetSnippetDraft()
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                .padding(.top, 3)
             }
         }
-        .padding(Spacing.md)
-        .dashboardCard()
     }
 
     private func snippetRow(_ entry: SnippetEntry) -> some View {
-        HStack(spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(entry.trigger)
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.accent)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+        HStack(spacing: Spacing.sm) {
+            Text(entry.trigger)
+                .font(.Orttaai.secondary.weight(.medium))
+                .foregroundStyle(Color.Orttaai.accent)
+                .lineLimit(1)
+                .frame(width: 180, alignment: .leading)
 
-                Text(entry.expansion)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
+            Text(entry.expansion.replacingOccurrences(of: "\n", with: " "))
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(entry.expansion)
 
-                HStack(spacing: Spacing.sm) {
-                    Text("Used \(entry.usageCount)x")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    textPill(entry.isActive ? "Active" : "Disabled", tint: entry.isActive ? .success : .warning)
-                }
-            }
+            Text("\(entry.usageCount)×")
+                .font(.Orttaai.caption.monospacedDigit())
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .frame(width: 56, alignment: .leading)
 
-            Spacer()
+            OrttaaiSwitch(
+                title: "\(entry.trigger) active",
+                isOn: Binding(
+                    get: { entry.isActive },
+                    set: { viewModel.setSnippetEntryActive(entry, isActive: $0) }
+                )
+            )
+            .scaleEffect(0.8, anchor: .leading)
+            .frame(width: 56, alignment: .leading)
 
-            HStack(spacing: Spacing.xs) {
-                iconButton(systemName: "doc.on.doc", label: "Copy expansion") {
+            rowActions(width: 92) {
+                rowIconButton("doc.on.doc", label: "Copy text") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(entry.expansion, forType: .string)
                 }
-                iconButton(systemName: entry.isActive ? "pause.circle" : "play.circle", label: entry.isActive ? "Disable" : "Enable") {
-                    viewModel.setSnippetEntryActive(entry, isActive: !entry.isActive)
-                }
-                iconButton(systemName: "pencil", label: "Edit") {
+                rowIconButton("pencil", label: "Edit \(entry.trigger)") {
                     viewModel.beginEditingSnippet(entry)
                 }
-                iconButton(systemName: "trash", label: "Delete", tint: Color.Orttaai.error) {
+                rowIconButton("trash", label: "Delete \(entry.trigger)", tint: Color.Orttaai.error) {
                     pendingDeleteSnippetEntry = entry
                 }
             }
         }
-        .padding(Spacing.md)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .frame(minHeight: 34)
+        .opacity(entry.isActive ? 1 : 0.6)
     }
+
+    // MARK: - Suggestions
 
     private var suggestionsContent: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Analyze History")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+            SettingsCard {
+                SettingsToggleRow(
+                    title: "Prefer Apple AI for Suggestions",
+                    info: "Uses Apple's on-device model to propose dictionary words and snippets from your history.",
+                    isOn: $aiSuggestionsEnabled
+                )
+            }
 
-                Button(viewModel.isAnalyzing ? "Analyzing..." : "Analyze Now") {
+            SettingsCard(
+                "Suggestions",
+                info: "Words and phrases found in your history that could become dictionary entries or snippets."
+            ) {
+                Button(viewModel.isAnalyzing ? "Analyzing…" : "Analyze History") {
                     viewModel.analyzeHistory()
                 }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
                 .disabled(viewModel.isAnalyzing)
-            }
-            .padding(Spacing.md)
-            .dashboardCard()
-
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Pending Suggestions")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
+            } content: {
                 if filteredSuggestions.isEmpty {
                     emptyState(
                         title: searchText.isEmpty ? subsection.emptyTitle : "No suggestion matches",
@@ -544,127 +510,108 @@ struct MemoryView: View {
                         systemImage: "brain.head.profile"
                     )
                 } else {
-                    LazyVStack(spacing: Spacing.sm) {
+                    tableHeader([("Type", 84), ("Heard as", nil), ("Suggested", nil), ("Confidence", 80), ("", 150)])
+                    LazyVStack(spacing: 0) {
                         ForEach(filteredSuggestions, id: \.id) { suggestion in
+                            SettingsDivider()
                             suggestionRow(suggestion)
                         }
                     }
+                    .padding(.bottom, Spacing.xs)
                 }
             }
-            .padding(Spacing.md)
-            .dashboardCard()
         }
     }
 
     private func suggestionRow(_ suggestion: LearningSuggestion) -> some View {
-        HStack(alignment: .top, spacing: Spacing.md) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                textPill(suggestion.suggestionType == .dictionary ? "Dictionary" : "Snippet", tint: .accent)
+        HStack(spacing: Spacing.sm) {
+            Text(suggestion.suggestionType == .dictionary ? "Dictionary" : "Snippet")
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .frame(width: 84, alignment: .leading)
 
-                HStack(spacing: Spacing.xs) {
-                    Text(suggestion.candidateSource)
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    Text(suggestion.candidateTarget)
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.accent)
-                }
+            Text(suggestion.candidateSource)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                if let evidence = suggestion.evidence, !evidence.isEmpty {
-                    Text(evidence)
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+            Text(suggestion.candidateTarget)
+                .font(.Orttaai.secondary.weight(.medium))
+                .foregroundStyle(Color.Orttaai.accent)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(suggestion.evidence ?? "")
 
-                Text("Confidence \(Int((suggestion.confidence * 100).rounded()))%")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-
-            Spacer()
+            Text("\(Int((suggestion.confidence * 100).rounded()))%")
+                .font(.Orttaai.caption.monospacedDigit())
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .frame(width: 80, alignment: .leading)
 
             HStack(spacing: Spacing.xs) {
                 Button("Accept") {
                     viewModel.acceptSuggestion(suggestion)
                 }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
-
+                .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
                 Button("Reject") {
                     viewModel.rejectSuggestion(suggestion)
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true))
+                .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true, size: .small))
             }
+            .frame(width: 150, alignment: .trailing)
         }
-        .padding(Spacing.md)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .frame(minHeight: 38)
     }
 
-    private func subsectionButton(_ item: MemorySubsection) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.16)) {
-                subsection = item
+    // MARK: - Table parts
+
+    /// Column labels. A nil width is a flexible column.
+    private func tableHeader(_ columns: [(title: String, width: CGFloat?)]) -> some View {
+        HStack(spacing: Spacing.sm) {
+            ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
+                let label = Text(column.title.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                if let width = column.width {
+                    label.frame(width: width, alignment: column.title.isEmpty ? .trailing : .leading)
+                } else {
+                    label.frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-        } label: {
-            Text(item.title)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(subsection == item ? Color.Orttaai.textPrimary : Color.Orttaai.textSecondary)
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous)
-                        .fill(
-                            subsection == item
-                                ? Color.Orttaai.accentSubtle
-                                : Color.Orttaai.bgSecondary.opacity(0.55)
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous)
-                        .stroke(
-                            subsection == item
-                                ? Color.Orttaai.accent.opacity(0.55)
-                                : Color.Orttaai.border.opacity(0.6),
-                            lineWidth: BorderWidth.standard
-                        )
-                )
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, Spacing.xs)
+        .accessibilityHidden(true)
     }
 
-    private func iconButton(
-        systemName: String,
+    private func rowActions<Content: View>(width: CGFloat, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 2) {
+            content()
+        }
+        .frame(width: width, alignment: .trailing)
+    }
+
+    private func rowIconButton(
+        _ systemName: String,
         label: String,
         tint: Color = Color.Orttaai.textSecondary,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(tint)
                 .frame(width: 26, height: 26)
-                .background(Color.Orttaai.bgTertiary.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(label)
+        .accessibilityLabel(label)
     }
 
-    private func textPill(_ text: String, tint: PillTint = .neutral) -> some View {
-        Text(text)
-            .font(.Orttaai.caption)
-            .foregroundStyle(tint.foreground)
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 3)
-            .background(tint.background)
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(tint.border, lineWidth: BorderWidth.standard)
-            )
+    private func countChip(active: Int, total: Int) -> some View {
+        Text(active == total ? "\(total) entries" : "\(active) of \(total) active")
+            .font(.Orttaai.caption.monospacedDigit())
+            .foregroundStyle(Color.Orttaai.textTertiary)
     }
 
     private func emptyState(title: String, message: String, systemImage: String) -> some View {
@@ -736,39 +683,5 @@ struct MemoryView: View {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return fallback() }
         return filtered(query)
-    }
-}
-
-private enum PillTint {
-    case neutral
-    case accent
-    case success
-    case warning
-
-    var foreground: Color {
-        switch self {
-        case .neutral: return Color.Orttaai.textTertiary
-        case .accent: return Color.Orttaai.accent
-        case .success: return Color.Orttaai.success
-        case .warning: return Color.Orttaai.warning
-        }
-    }
-
-    var background: Color {
-        switch self {
-        case .neutral: return Color.Orttaai.bgTertiary.opacity(0.5)
-        case .accent: return Color.Orttaai.accentSubtle
-        case .success: return Color.Orttaai.successSubtle
-        case .warning: return Color.Orttaai.warningSubtle
-        }
-    }
-
-    var border: Color {
-        switch self {
-        case .neutral: return Color.Orttaai.border.opacity(0.65)
-        case .accent: return Color.Orttaai.accent.opacity(0.45)
-        case .success: return Color.Orttaai.success.opacity(0.45)
-        case .warning: return Color.Orttaai.warning.opacity(0.45)
-        }
     }
 }

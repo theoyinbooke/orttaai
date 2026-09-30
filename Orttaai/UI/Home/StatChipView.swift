@@ -91,3 +91,39 @@ struct StatChipView: View {
         }
     }
 }
+
+/// A button drawn as a stat chip, so an action sitting in a row of chips
+/// has the same shape, height, and type as they do.
+struct ChipButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ChipButton(configuration: configuration)
+    }
+
+    private struct ChipButton: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    Capsule().fill(
+                        configuration.isPressed || isHovered
+                            ? Color.Orttaai.bgTertiary
+                            : Color.Orttaai.bgSecondary
+                    )
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
+                )
+                .contentShape(Capsule())
+                .opacity(isEnabled ? 1 : 0.45)
+                .onHover { isHovered = $0 }
+        }
+    }
+}

@@ -1142,7 +1142,6 @@ struct ChatAIView: View {
     private let activeComposerMaxWidth: CGFloat = 760
     private let emptyComposerMaxWidth: CGFloat = 700
     private let starterPromptMaxWidth: CGFloat = 560
-    private let titlebarControlTopPadding: CGFloat = Spacing.lg
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -1159,33 +1158,25 @@ struct ChatAIView: View {
                 chatSurface
             }
 
-            if !viewModel.isHistoryVisible {
-                Button {
+        }
+        .background(Color.Orttaai.bgPrimary)
+        .workspaceHeader("ChatAI") {
+            HStack(spacing: Spacing.xs) {
+                headerIconButton(
+                    viewModel.isHistoryVisible ? "Hide chat history" : "Show chat history",
+                    systemImage: "clock.arrow.circlepath",
+                    isActive: viewModel.isHistoryVisible
+                ) {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                         viewModel.isHistoryVisible.toggle()
                     }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 32, height: 32)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-                .background(Color.Orttaai.bgSecondary.opacity(0.92))
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                        .stroke(Color.Orttaai.border.opacity(0.75), lineWidth: BorderWidth.standard)
-                )
-                .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 4)
-                .padding(.leading, Spacing.lg)
-                .padding(.top, titlebarControlTopPadding)
-                .help("Show ChatAI history")
-                .accessibilityLabel("Show ChatAI history")
+
+                headerIconButton("New chat", systemImage: "square.and.pencil") {
+                    viewModel.newConversation()
+                }
             }
         }
-        .background(Color.Orttaai.bgPrimary)
-        .ignoresSafeArea(.container, edges: .top)
         .fileImporter(
             isPresented: $isImportingDocument,
             allowedContentTypes: [.item],
@@ -1199,45 +1190,6 @@ struct ChatAIView: View {
 
     private var historyPanel: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.sm) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("ChatAI")
-                        .font(.Orttaai.heading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Text("Writing sessions")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                }
-
-                Spacer()
-
-                Button {
-                    viewModel.newConversation()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .help("New chat")
-
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                        viewModel.isHistoryVisible = false
-                    }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .help("Hide ChatAI history")
-                .accessibilityLabel("Hide ChatAI history")
-            }
-
             HStack(spacing: Spacing.sm) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Color.Orttaai.textTertiary)
@@ -1267,10 +1219,29 @@ struct ChatAIView: View {
             }
         }
         .padding(.horizontal, Spacing.lg)
-        .padding(.top, titlebarControlTopPadding)
+        .padding(.top, Spacing.md)
         .padding(.bottom, Spacing.lg)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.Orttaai.bgSecondary.opacity(0.72))
+    }
+
+    /// Plain icon button for the ChatAI header, matching the sidebar toggle.
+    private func headerIconButton(
+        _ label: String,
+        systemImage: String,
+        isActive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(isActive ? Color.Orttaai.accent : Color.Orttaai.textSecondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
     }
 
     private func historyRow(_ conversation: ChatAIConversation) -> some View {
@@ -1350,7 +1321,7 @@ struct ChatAIView: View {
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: Spacing.lg) {
                     Spacer()
-                        .frame(height: Spacing.xxxl)
+                        .frame(height: Spacing.sm)
 
                     ForEach(viewModel.selectedConversation?.messages ?? []) { message in
                         messageBubble(message)

@@ -40,7 +40,8 @@ struct PerformanceHealthCard: View {
                 metricCell(title: "Pipeline", value: averageLatencySummary(health.averageProcessingMs))
                 metricCell(title: "Transcribe", value: averageLatencySummary(health.averageTranscriptionMs))
                 metricCell(title: "Inject", value: averageLatencySummary(health.averageInjectionMs))
-                metricCell(title: "Current Model", value: health.currentModelId, isMonospaced: true)
+                metricCell(title: "Current Model", value: modelDisplayName)
+                    .help(health.currentModelId)
             }
         }
         .padding(Spacing.md)
@@ -48,7 +49,7 @@ struct PerformanceHealthCard: View {
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "Performance health \(levelLabel). \(statusDescription) Pipeline \(averageLatencySummary(health.averageProcessingMs)). Transcription \(averageLatencySummary(health.averageTranscriptionMs)). Injection \(averageLatencySummary(health.averageInjectionMs)). Current model \(health.currentModelId)."
+            "Performance health \(levelLabel). \(statusDescription) Pipeline \(averageLatencySummary(health.averageProcessingMs)). Transcription \(averageLatencySummary(health.averageTranscriptionMs)). Injection \(averageLatencySummary(health.averageInjectionMs)). Current model \(modelDisplayName)."
         )
     }
 
@@ -82,6 +83,12 @@ struct PerformanceHealthCard: View {
             return "No performance samples yet."
         }
         return "Latency averages from recent dictations."
+    }
+
+    /// The model's family name ("Whisper Large V3 Turbo"), not its build ID;
+    /// the ID stays available on hover.
+    private var modelDisplayName: String {
+        ModelManager.formatDisplayName(health.currentModelId)
     }
 
     private func metricCell(

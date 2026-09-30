@@ -18,11 +18,18 @@ struct HomeShellView: View {
                     selection: sidebarSelection,
                     onRunSetup: onRunSetup
                 )
+                .toolbar(removing: .sidebarToggle)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
             } detail: {
                 content(compactOverview: compactOverview)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.Orttaai.bgPrimary)
+                    .modifier(SolidHeaderScrollEdge())
+                    .environment(\.workspaceSidebarToggle) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                        }
+                    }
             }
             .navigationSplitViewStyle(.balanced)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -152,9 +159,8 @@ private struct HomeSidebarView: View {
 
     private var sidebarHeader: some View {
         HStack(spacing: Spacing.sm) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Color.Orttaai.accent)
+            OrttaaiBrandMark()
+                .frame(width: 23, height: 20)
                 .frame(width: 34, height: 34)
 
             Text("Orttaai")
@@ -215,5 +221,13 @@ private struct HomeSidebarRow: View {
             return Color.Orttaai.bgTertiary.opacity(0.5)
         }
         return .clear
+    }
+}
+
+/// Page headers live in the transparent toolbar strip. Clipping the page to
+/// its own area keeps scrolled content from drawing up under the title.
+private struct SolidHeaderScrollEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        content.clipped()
     }
 }

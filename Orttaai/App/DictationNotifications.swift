@@ -9,6 +9,9 @@ extension Notification.Name {
     static let audioPipelineResetRequested = Notification.Name("Orttaai.audioPipelineResetRequested")
     static let audioPipelineResetDidComplete = Notification.Name("Orttaai.audioPipelineResetDidComplete")
     static let cloudSyncDidComplete = Notification.Name("Orttaai.cloudSyncDidComplete")
+    /// Asks the app's updater to check for a new version (the About page's
+    /// Check for Updates button; the menu bar item calls it directly).
+    static let checkForUpdatesRequested = Notification.Name("Orttaai.checkForUpdatesRequested")
     /// Posted after a transcription history write exhausted its bounded
     /// retries. The transcript itself was already delivered (or left on the
     /// clipboard) — this is the user-visible breadcrumb for the lost entry.

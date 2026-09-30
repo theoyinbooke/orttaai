@@ -4,81 +4,41 @@
 import AppKit
 import SwiftUI
 
-struct GrokSettingsCard: View {
-    @AppStorage("grokModel") private var grokModel = GrokClient.defaultModel
+/// Grok rows under the AI Provider line. Model choice and the connection
+/// check live on that line; this adds only the consent switch and, when the
+/// CLI isn't reachable, how to fix it.
+struct GrokProviderRows: View {
+    /// The provider line's last health check: nil until it has run.
+    let isReady: Bool?
+    let statusMessage: String
+    let onRecheck: () -> Void
     @AppStorage("grokConsentAcknowledged") private var consentAcknowledged = false
-    @State private var health: OllamaHealthStatus?
-    @State private var models: [String] = []
-    @State private var isChecking = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "bolt.horizontal.circle")
-                    .foregroundStyle(Color.Orttaai.accent)
-                Text("Grok Account")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Spacer()
-                Button {
-                    Task { await refresh() }
-                } label: {
-                    Label("Re-check", systemImage: "arrow.clockwise")
+        if isReady == false {
+            SettingsNotice(
+                kind: .error,
+                message: "\(statusMessage) Install it with: curl -fsSL https://x.ai/cli/install.sh | bash"
+            )
+
+            SettingsRow(
+                title: "Grok CLI",
+                info: "If Grok is installed somewhere Orttaai can't find it, choose the grok executable."
+            ) {
+                Button("Locate Grok…") {
+                    chooseGrokExecutable()
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(isChecking)
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
             }
 
-            if let health, health.isReachable {
-                Label(health.message, systemImage: "checkmark.seal.fill")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.success)
-                Picker("Model", selection: $grokModel) {
-                    ForEach(models.isEmpty ? [grokModel] : models, id: \.self) { model in
-                        Text(model).tag(model)
-                    }
-                }
-                .pickerStyle(.menu)
-            } else {
-                Label(health?.message ?? "Checking Grok CLI...", systemImage: "exclamationmark.triangle.fill")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.error)
-                Text("Install:  curl -fsSL https://x.ai/cli/install.sh | bash")
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                    .textSelection(.enabled)
-                HStack(spacing: Spacing.sm) {
-                    Button {
-                        chooseGrokExecutable()
-                    } label: {
-                        Label("Locate Grok...", systemImage: "folder")
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-                }
-            }
-
-            Toggle("I understand that selected text is sent to Grok through my CLI account.", isOn: $consentAcknowledged)
-                .toggleStyle(OrttaaiToggleStyle())
-                .font(.Orttaai.caption)
+            SettingsDivider()
         }
-        .task { await refresh() }
-    }
 
-    private func refresh() async {
-        isChecking = true
-        let client = LocalLLM.grokClient
-        let status = await client.checkHealth(baseURLString: "", timeoutMs: 15_000)
-        let discoveredModels = status.isReachable
-            ? ((try? await client.fetchModelNames(baseURLString: "", timeoutMs: 15_000)) ?? [])
-            : []
-        await MainActor.run {
-            health = status
-            models = discoveredModels
-            if models.isEmpty == false, models.contains(grokModel) == false {
-                grokModel = models[0]
-            }
-            isChecking = false
-        }
+        SettingsToggleRow(
+            title: "Send Text to Grok",
+            info: "Voice edits and writing insights send your text to Grok through your CLI account. Grok stays off until this is on.",
+            isOn: $consentAcknowledged
+        )
     }
 
     private func chooseGrokExecutable() {
@@ -92,6 +52,6 @@ struct GrokSettingsCard: View {
         panel.resolvesAliases = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         UserDefaults.standard.set(url.path, forKey: GrokBinaryLocator.overridePathKey)
-        Task { await refresh() }
+        onRecheck()
     }
 }

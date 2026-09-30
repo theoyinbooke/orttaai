@@ -19,6 +19,27 @@ private enum ModelSortMode: String, CaseIterable {
     }
 }
 
+enum ModelPageSection: String, CaseIterable, Identifiable {
+    case speech
+    case ai
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .speech: return "Speech"
+        case .ai: return "AI Features"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .speech: return "waveform"
+        case .ai: return "brain"
+        }
+    }
+}
+
 struct ModelSettingsView: View {
     @AppStorage("selectedModelId") private var selectedModelId = "openai_whisper-small"
     @AppStorage("activeModelId") private var activeModelId = ""
@@ -93,100 +114,38 @@ struct ModelSettingsView: View {
     @State private var selectedSemanticDownloadModel: String = ""
     @State private var modelStorage = ModelStorageLocation.placeholderSnapshot()
     @State private var modelStorageError: String?
+    @State private var section: ModelPageSection
 
-    private let supportedLanguages: [(code: String, name: String)] = [
-        ("en", "English"),
-        ("es", "Spanish"),
-        ("fr", "French"),
-        ("de", "German"),
-        ("ja", "Japanese"),
-        ("zh", "Chinese"),
-        ("ko", "Korean"),
-        ("pt", "Portuguese"),
-        ("it", "Italian"),
-        ("nl", "Dutch"),
-        ("ru", "Russian"),
-        ("ar", "Arabic"),
-        ("hi", "Hindi"),
-        ("auto", "Auto-detect"),
-    ]
+    init(initialSection: ModelPageSection = .speech) {
+        _section = State(initialValue: initialSection)
+    }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                Text("Model")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                modelSelectorCard
-                modelStorageCard
-                modelParametersCard
-                localLLMCard
-
-                if let switchError {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Color.Orttaai.error)
-                        Text("Failed to switch model: \(switchError)")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.error)
-                    }
-                    .padding(Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.Orttaai.errorSubtle.opacity(0.45))
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        TabbedWorkspacePage(
+            title: "Model",
+            tabs: ModelPageSection.allCases,
+            selection: $section,
+            tabTitle: \.title,
+            tabIcon: \.icon
+        ) { section in
+            switch section {
+            case .speech:
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    modelSelectorCard
+                    modelStorageCard
+                    performanceCard
                 }
-
-                if let deleteError {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "trash.fill")
-                            .foregroundStyle(Color.Orttaai.error)
-                        Text("Failed to delete model: \(deleteError)")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.error)
+            case .ai:
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    providerCard
+                    polishCard
+                    insightsCard
+                    semanticMemoryCard
+                    if providerKind.supportsModelInstall {
+                        modelDownloadsCard
                     }
-                    .padding(Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.Orttaai.errorSubtle.opacity(0.45))
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                }
-
-                if let migrationError {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Color.Orttaai.error)
-                        Text("Quantized migration failed: \(migrationError)")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.error)
-                    }
-                    .padding(Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.Orttaai.errorSubtle.opacity(0.45))
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                }
-
-                if let migrationSuccessMessage {
-                    HStack(spacing: Spacing.sm) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Color.Orttaai.success)
-                        Text(migrationSuccessMessage)
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.success)
-                    }
-                    .padding(Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.Orttaai.success.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                }
-
-                if models.isEmpty && !isFetching {
-                    Text("Loading models...")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                        .padding(Spacing.lg)
                 }
             }
-            .padding(WorkspaceLayout.contentInsets)
         }
         .onAppear {
             loadInitialModels()
@@ -357,109 +316,125 @@ struct ModelSettingsView: View {
         return "Thinking is off by default to keep insight runs lean."
     }
 
-    private var formattedInsightsContextTokens: String {
-        if localLLMInsightsContextTokens >= 1_024 {
-            return "\(localLLMInsightsContextTokens / 1_024)K"
-        }
-        return "\(localLLMInsightsContextTokens)"
-    }
-
     private var decodingPreset: DecodingPreset {
         DecodingPreset(rawValue: decodingPresetRaw) ?? .balanced
     }
 
+    // MARK: - Speech tab
+
     private var modelSelectorCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .top) {
-                Text("Available Models")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer()
-
+        SettingsCard(
+            "Transcription Model",
+            info: "The speech-recognition model that turns your voice into text. Larger models are more accurate but slower and use more memory."
+        ) {
+            HStack(spacing: Spacing.sm) {
                 if isFetching {
                     ProgressView()
                         .controlSize(.small)
                 }
 
+                OrttaaiSegmentedControl(
+                    title: "Sort models",
+                    selection: $modelSortModeRaw,
+                    options: ModelSortMode.allCases.map { .init($0.rawValue, $0.title) }
+                )
+
                 Button {
                     Task { await fetchModels() }
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
                 .disabled(isFetching)
+                .help("Refresh the model list")
+                .accessibilityLabel("Refresh model list")
             }
-
-            Picker("Sort models", selection: $modelSortModeRaw) {
-                ForEach(ModelSortMode.allCases, id: \.rawValue) { mode in
-                    Text(mode.title).tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .tint(Color.Orttaai.accent)
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    isPickerExpanded.toggle()
-                }
-            } label: {
-                selectorTrigger
-            }
-            .buttonStyle(.plain)
-
-            if isPickerExpanded {
-                Divider()
-                    .overlay(Color.Orttaai.border)
-
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: Spacing.sm) {
-                        ForEach(models) { model in
-                            compactModelRow(model)
-                        }
+        } content: {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isPickerExpanded.toggle()
                     }
-                    .padding(.vertical, Spacing.xs)
+                } label: {
+                    selectorTrigger
                 }
-                .frame(maxHeight: 280)
-            }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Current model: \(displayNameForCurrentModel)")
+                .accessibilityHint(isPickerExpanded ? "Hides the model list" : "Shows the model list")
 
-            if let switchingProgressMessage {
-                HStack(spacing: Spacing.sm) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(switchingProgressMessage)
-                        .lineLimit(2)
+                if isPickerExpanded {
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(spacing: Spacing.xs) {
+                            ForEach(models) { model in
+                                compactModelRow(model)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .frame(maxHeight: 280)
                 }
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.accent)
-            }
 
+                if models.isEmpty && !isFetching {
+                    SettingsFootnote("Loading models…")
+                }
+
+                if let switchingProgressMessage {
+                    HStack(spacing: Spacing.sm) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(switchingProgressMessage)
+                            .lineLimit(2)
+                    }
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.accent)
+                }
+
+                // Results appear here, next to the list that triggered them.
+                if let switchError {
+                    SettingsNotice(kind: .error, message: "Couldn't switch models: \(switchError)") {
+                        self.switchError = nil
+                    }
+                }
+
+                if let deleteError {
+                    SettingsNotice(kind: .error, message: "Couldn't remove the model: \(deleteError)") {
+                        self.deleteError = nil
+                    }
+                }
+
+                if let migrationError {
+                    SettingsNotice(kind: .error, message: "Quantized migration failed: \(migrationError)") {
+                        self.migrationError = nil
+                    }
+                }
+
+                if let migrationSuccessMessage {
+                    SettingsNotice(kind: .success, message: migrationSuccessMessage) {
+                        self.migrationSuccessMessage = nil
+                    }
+                }
+            }
+            .padding(.bottom, Spacing.xs)
         }
-        .padding(Spacing.md)
-        .dashboardCard()
     }
 
     private var modelStorageCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                Text("Model Storage")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer(minLength: Spacing.md)
-
-                modelStorageStatusLabel
-            }
-
+        SettingsCard(
+            "Model Storage",
+            info: "Where downloaded models are kept. Choose a folder on an external drive to save space on your Mac."
+        ) {
+            modelStorageStatusLabel
+        } content: {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: modelStorage.isCustom ? "externaldrive" : "internaldrive")
                         .foregroundStyle(modelStorage.isAvailable ? Color.Orttaai.accent : Color.Orttaai.error)
+                        .accessibilityHidden(true)
 
                     Text(modelStorage.url.path)
                         .font(.Orttaai.mono)
                         .foregroundStyle(Color.Orttaai.textPrimary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
 
@@ -471,84 +446,66 @@ struct ModelSettingsView: View {
                     .foregroundStyle(Color.Orttaai.textTertiary)
 
                 if !modelStorage.isAvailable {
-                    Text("Folder unavailable. Reconnect the drive or choose another folder.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.error)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsNotice(kind: .error, message: "Folder unavailable. Reconnect the drive or choose another folder.")
                 } else if !modelStorage.isWritable {
-                    Text("Choose a writable folder for downloads.")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.warning)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsNotice(kind: .warning, message: "Choose a writable folder for downloads.")
                 }
 
                 if let modelStorageError {
-                    Text(modelStorageError)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.error)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(Spacing.md)
-            .background(Color.Orttaai.bgPrimary.opacity(0.42))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
-            )
-
-            HStack(spacing: Spacing.sm) {
-                Button {
-                    chooseModelStorageLocation()
-                } label: {
-                    Label("Choose Folder", systemImage: "folder.badge.plus")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-
-                Button {
-                    revealModelStorageLocation()
-                } label: {
-                    Label("Show in Finder", systemImage: "folder")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(!modelStorage.isAvailable)
-
-                if modelStorage.isCustom {
-                    Button("Use Default") {
-                        ModelStorageLocation.resetToDefault()
+                    SettingsNotice(kind: .error, message: modelStorageError) {
+                        self.modelStorageError = nil
                     }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
                 }
 
-                Spacer()
+                HStack(spacing: Spacing.sm) {
+                    Button {
+                        chooseModelStorageLocation()
+                    } label: {
+                        Label("Choose Folder…", systemImage: "folder.badge.plus")
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
 
-                Button {
-                    refreshModelStorage()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Button {
+                        revealModelStorageLocation()
+                    } label: {
+                        Label("Show in Finder", systemImage: "folder")
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                    .disabled(!modelStorage.isAvailable)
+
+                    if modelStorage.isCustom {
+                        Button("Use Default") {
+                            ModelStorageLocation.resetToDefault()
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        refreshModelStorage()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                    .help("Refresh model storage status")
+                    .accessibilityLabel("Refresh model storage status")
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .help("Refresh model storage status")
             }
+            .padding(.bottom, Spacing.xs)
         }
-        .padding(Spacing.md)
-        .dashboardCard()
     }
 
-    @ViewBuilder
     private var modelStorageStatusLabel: some View {
-        let title = modelStorage.isCustom ? "Custom folder" : "Default folder"
         let tint = modelStorage.isAvailable && modelStorage.isWritable
             ? Color.Orttaai.success
             : (modelStorage.isAvailable ? Color.Orttaai.warning : Color.Orttaai.error)
 
-        Label(title, systemImage: modelStorage.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-            .font(.Orttaai.caption)
-            .foregroundStyle(tint)
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, Spacing.xs)
-            .background(tint.opacity(0.1))
-            .clipShape(Capsule())
+        return StatusChip(
+            title: modelStorage.isCustom ? "Custom folder" : "Default folder",
+            systemImage: modelStorage.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+            tint: tint
+        )
     }
 
     private func chooseModelStorageLocation() {
@@ -587,290 +544,57 @@ struct ModelSettingsView: View {
         }
     }
 
-    private var modelParametersCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                Text("Compute & Decoding")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+    private var performanceCard: some View {
+        SettingsCard("Performance", info: "Changes apply from your next dictation.") {
+            SettingsToggleRow(
+                title: "Low Latency Mode",
+                info: "Optimizes for the fastest result. Accuracy may drop slightly on difficult audio, and the dictation language can't be Auto-detect.",
+                isOn: $lowLatencyModeEnabled
+            )
 
-                Spacer(minLength: Spacing.md)
+            SettingsDivider()
 
-                Label("Next dictation", systemImage: "arrow.forward.circle")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xs)
-                    .background(Color.Orttaai.bgTertiary.opacity(0.62))
-                    .clipShape(Capsule())
-            }
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                Toggle(isOn: $lowLatencyModeEnabled) {
-                    Text("Low Latency Mode")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                }
-                .toggleStyle(OrttaaiToggleStyle())
-                .padding(.vertical, Spacing.sm)
-                .padding(.horizontal, Spacing.md)
-                .background(Color.Orttaai.bgPrimary.opacity(0.42))
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                        .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+            SettingsRow(
+                title: "Compute Mode",
+                info: "Which chips run the speech model. CPU + Neural Engine is usually fastest on Apple silicon. Applies after the model reloads."
+            ) {
+                OrttaaiDropdown(
+                    selection: $computeMode,
+                    options: [
+                        .init("cpuAndNeuralEngine", "CPU + Neural Engine"),
+                        .init("cpuAndGPU", "CPU + GPU"),
+                        .init("cpuOnly", "CPU Only")
+                    ],
+                    width: SettingsLayout.controlWidth
                 )
-                .help("Optimize for lower latency. Accuracy may be slightly reduced in difficult audio.")
-
-                LazyVGrid(columns: computeControlColumns, spacing: Spacing.md) {
-                    computeControlPanel(
-                        title: "Dictation Language",
-                        systemImage: "textformat"
-                    ) {
-                        OrttaaiDropdown(
-                            selection: $dictationLanguage,
-                            options: supportedLanguages.map { .init($0.code, $0.name) },
-                            width: 180
-                        )
-                        .help("Sets decode language. Auto-detect can be slower.")
-                    }
-
-                    computeControlPanel(
-                        title: "Compute Mode",
-                        systemImage: "cpu"
-                    ) {
-                        OrttaaiDropdown(
-                            selection: $computeMode,
-                            options: [
-                                .init("cpuAndNeuralEngine", "CPU + Neural Engine"),
-                                .init("cpuAndGPU", "CPU + GPU"),
-                                .init("cpuOnly", "CPU Only")
-                            ],
-                            width: 220
-                        )
-                        .help("Changes take effect after model reload.")
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Label("Decoding Profile", systemImage: "dial.low")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                        .help(decodingPreset.summary)
-
-                    LazyVGrid(columns: decodingProfileColumns, spacing: Spacing.sm) {
-                        ForEach(DecodingPreset.allCases, id: \.rawValue) { preset in
-                            decodingProfileTile(preset)
-                        }
-                    }
-                }
-
-                expertOverridesSection
-            }
-            .padding(Spacing.md)
-            .dashboardCard()
-        }
-    }
-
-    private var computeControlColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 420), spacing: Spacing.md)]
-    }
-
-    private var decodingProfileColumns: [GridItem] {
-        // Three equal, flexible columns so each card grows and shrinks with the
-        // window instead of locking to a fixed minimum width (which forced the
-        // middle card's description to wrap at every size).
-        Array(
-            repeating: GridItem(.flexible(), spacing: Spacing.sm, alignment: .top),
-            count: 3
-        )
-    }
-
-    private func computeControlPanel<Control: View>(
-        title: String,
-        systemImage: String,
-        @ViewBuilder control: () -> Control
-    ) -> some View {
-        HStack(alignment: .center, spacing: Spacing.md) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.Orttaai.accent)
-                .frame(width: 30, height: 30)
-                .background(Color.Orttaai.accentSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
-
-            Text(title)
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Spacer(minLength: Spacing.md)
-
-            control()
-                .labelsHidden()
-        }
-        .padding(.vertical, Spacing.sm)
-        .padding(.horizontal, Spacing.md)
-        .frame(maxWidth: .infinity, minHeight: 46, alignment: .center)
-        .background(Color.Orttaai.bgPrimary.opacity(0.42))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
-        )
-    }
-
-    /// Bordered sub-panel matching the Compute & Decoding design language.
-    private func llmGroupBox<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            content()
-        }
-        .padding(.vertical, Spacing.sm + 2)
-        .padding(.horizontal, Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.Orttaai.bgPrimary.opacity(0.42))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
-        )
-    }
-
-    private func llmGroupHeader(icon: String, title: String, subtitle: String? = nil) -> some View {
-        HStack(alignment: .center, spacing: Spacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.Orttaai.accent)
-                .frame(width: 28, height: 28)
-                .background(Color.Orttaai.accentSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
             }
 
-            Spacer(minLength: 0)
-        }
-    }
+            SettingsDivider()
 
-    private func decodingProfileTile(_ preset: DecodingPreset) -> some View {
-        let isSelected = decodingPreset == preset
-
-        return Button {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                decodingPresetRaw = preset.rawValue
+            SettingsRow(
+                title: "Decoding Profile",
+                info: DecodingPreset.allCases
+                    .map { "\($0.title): \($0.summary)" }
+                    .joined(separator: "\n")
+            ) {
+                OrttaaiSegmentedControl(
+                    title: "Decoding Profile",
+                    selection: $decodingPresetRaw,
+                    options: DecodingPreset.allCases.map { .init($0.rawValue, $0.title) }
+                )
             }
-        } label: {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                HStack(alignment: .center, spacing: Spacing.sm) {
-                    Image(systemName: decodingProfileIcon(for: preset))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.Orttaai.bgPrimary : Color.Orttaai.accent)
-                        .frame(width: 24, height: 24)
-                        .background(isSelected ? Color.Orttaai.accent : Color.Orttaai.accentSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
 
-                    Text(preset.title)
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                        .lineLimit(1)
+            SettingsDivider()
 
-                    Spacer(minLength: 0)
-
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.Orttaai.accent)
-                    }
-                }
-
-                HStack(spacing: Spacing.xs) {
-                    ForEach(decodingProfileTraits(for: preset), id: \.self) { trait in
-                        Text(trait)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(isSelected ? Color.Orttaai.accent : Color.Orttaai.textTertiary)
-                            .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, 2)
-                            .background(
-                                (isSelected ? Color.Orttaai.accentSubtle : Color.Orttaai.bgTertiary.opacity(0.56))
-                                    .clipShape(Capsule())
-                            )
-                    }
-                }
-            }
-            .padding(Spacing.sm + 2)
-            .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
-            .background(isSelected ? Color.Orttaai.accentSubtle : Color.Orttaai.bgPrimary.opacity(0.42))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .stroke(
-                        isSelected ? Color.Orttaai.accent.opacity(0.48) : Color.Orttaai.border.opacity(0.72),
-                        lineWidth: BorderWidth.standard
-                    )
+            SettingsToggleRow(
+                title: "Advanced Decoding",
+                info: "Replaces the decoding profile with manual Whisper settings. Leave it off unless you are tuning accuracy.",
+                isOn: $advancedDecodingEnabled
             )
-        }
-        .buttonStyle(.plain)
-        .help(preset.summary)
-    }
-
-    private var expertOverridesSection: some View {
-        VStack(alignment: .leading, spacing: advancedDecodingEnabled ? Spacing.md : 0) {
-            Toggle(isOn: $advancedDecodingEnabled) {
-                HStack(alignment: .center, spacing: Spacing.md) {
-                    Text("Advanced Decoding")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Spacer(minLength: Spacing.sm)
-
-                    Text(advancedDecodingEnabled ? "Active" : "Off")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(
-                            advancedDecodingEnabled
-                                ? Color.Orttaai.accent
-                                : Color.Orttaai.textTertiary
-                        )
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, Spacing.xs)
-                        .background(
-                            (advancedDecodingEnabled
-                                ? Color.Orttaai.accentSubtle
-                                : Color.Orttaai.bgTertiary.opacity(0.56))
-                                .clipShape(Capsule())
-                        )
-                }
-            }
-            .toggleStyle(OrttaaiToggleStyle())
             .accessibilityIdentifier("advancedDecodingToggle")
-            .padding(Spacing.md)
-            .background(Color.Orttaai.bgPrimary.opacity(0.42))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
-            )
-            .help(
-                advancedDecodingEnabled
-                    ? "Manual values replace the selected decoding profile until Advanced Decoding is turned off."
-                    : "Turn on to override the selected decoding profile with manual Whisper settings."
-            )
 
             if advancedDecodingEnabled {
-                Label(
-                    "\(decodingPreset.title) remains selected, but its values are paused while Advanced Decoding is active.",
-                    systemImage: "info.circle"
-                )
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .padding(.horizontal, Spacing.xs)
-
+                SettingsFootnote("\(decodingPreset.title) stays selected, but its values are paused while Advanced Decoding is on.")
                 advancedDecodingControls
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -879,579 +603,384 @@ struct ModelSettingsView: View {
     }
 
     private var advancedDecodingControls: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack {
-                Text("Temperature")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                Spacer()
-                Text(String(format: "%.2f", decodingTemperature))
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-            }
-            Slider(value: $decodingTemperature, in: 0...1, step: 0.05)
-                .tint(Color.Orttaai.accent)
-                .help("Higher values increase randomness. Lower is more deterministic.")
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSliderRow(
+                title: "Temperature",
+                info: "Higher values increase randomness. Lower is more deterministic.",
+                value: $decodingTemperature,
+                range: 0...1,
+                step: 0.05,
+                valueText: String(format: "%.2f", decodingTemperature)
+            )
 
-            Stepper(value: $decodingTopK, in: 1...20) {
-                rowValueLabel("Top-K", value: "\(decodingTopK)")
-            }
-            .help("Limits candidate tokens considered at each decode step.")
+            SettingsStepperRow(
+                title: "Top-K",
+                info: "Limits the candidate tokens considered at each decode step.",
+                value: $decodingTopK,
+                range: 1...20
+            )
 
-            Stepper(value: $decodingFallbackCount, in: 0...10) {
-                rowValueLabel("Fallback Count", value: "\(decodingFallbackCount)")
-            }
-            .help("Number of retry attempts if decode confidence is low.")
+            SettingsStepperRow(
+                title: "Fallback Count",
+                info: "Retry attempts when decode confidence is low.",
+                value: $decodingFallbackCount,
+                range: 0...10
+            )
 
-            HStack {
-                Text("No-Speech Threshold")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                Spacer()
-                Text(String(format: "%.2f", decodingNoSpeechThreshold))
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-            }
-            Slider(value: $decodingNoSpeechThreshold, in: 0...1, step: 0.05)
-                .tint(Color.Orttaai.accent)
-                .help("Higher values make silence detection stricter.")
+            SettingsSliderRow(
+                title: "No-Speech Threshold",
+                info: "Higher values make silence detection stricter.",
+                value: $decodingNoSpeechThreshold,
+                range: 0...1,
+                step: 0.05,
+                valueText: String(format: "%.2f", decodingNoSpeechThreshold)
+            )
 
-            HStack {
-                Text("Log-Prob Threshold")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                Spacer()
-                Text(String(format: "%.1f", decodingLogProbThreshold))
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-            }
-            Slider(value: $decodingLogProbThreshold, in: -3.0...0.0, step: 0.1)
-                .tint(Color.Orttaai.accent)
-                .help("Minimum token confidence before fallback triggers.")
+            SettingsSliderRow(
+                title: "Log-Prob Threshold",
+                info: "Minimum token confidence before a fallback triggers.",
+                value: $decodingLogProbThreshold,
+                range: -3.0...0.0,
+                step: 0.1,
+                valueText: String(format: "%.1f", decodingLogProbThreshold)
+            )
 
-            HStack {
-                Text("Compression Threshold")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                Spacer()
-                Text(String(format: "%.1f", decodingCompressionRatioThreshold))
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-            }
-            Slider(value: $decodingCompressionRatioThreshold, in: 1.5...4.0, step: 0.1)
-                .tint(Color.Orttaai.accent)
-                .help("Detects repetitive output. Lower values can trigger more fallbacks.")
+            SettingsSliderRow(
+                title: "Compression Threshold",
+                info: "Detects repetitive output. Lower values can trigger more fallbacks.",
+                value: $decodingCompressionRatioThreshold,
+                range: 1.5...4.0,
+                step: 0.1,
+                valueText: String(format: "%.1f", decodingCompressionRatioThreshold)
+            )
 
-            Stepper(value: $decodingWorkerCount, in: 0...8) {
-                rowValueLabel(
-                    "Worker Count",
-                    value: decodingWorkerCount == 0 ? "Auto" : "\(decodingWorkerCount)"
-                )
-            }
-            .help("Parallel decode workers. Auto uses model-aware defaults.")
+            SettingsStepperRow(
+                title: "Worker Count",
+                info: "Parallel decode workers. Auto uses model-aware defaults.",
+                value: $decodingWorkerCount,
+                range: 0...8,
+                format: { $0 == 0 ? "Auto" : "\($0)" }
+            )
         }
-        .padding(Spacing.md)
-        .background(Color.Orttaai.bgPrimary.opacity(0.42))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.72), lineWidth: BorderWidth.standard)
+        .padding(.leading, Spacing.md)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.Orttaai.border)
+                .frame(width: 1)
+        }
+        .padding(.bottom, Spacing.xs)
+    }
+
+    // MARK: - AI Features tab
+
+    private var providerBinding: Binding<LocalLLMProviderKind> {
+        Binding(
+            get: { providerKind },
+            set: { newKind in
+                localLLMProviderRaw = newKind.rawValue
+                if newKind.isLocal {
+                    // Remembered so on-device features (polish, embeddings)
+                    // keep a local provider while a cloud one is active.
+                    lastLocalLLMProviderRaw = newKind.rawValue
+                }
+                ollamaStatusReachable = nil
+                ollamaStatusMessage = newKind.isLocal
+                    ? "Check connection to validate local model availability."
+                    : "Check connection to validate CLI sign-in and cloud models."
+                installedOllamaModels = []
+                Task { await checkOllamaAvailability() }
+            }
         )
     }
 
-    private func decodingProfileIcon(for preset: DecodingPreset) -> String {
-        switch preset {
-        case .fast:
-            return "bolt.fill"
-        case .balanced:
-            return "slider.horizontal.3"
-        case .accuracy:
-            return "scope"
+    /// One line: provider, its model (or the local server address), and a
+    /// connection check that turns green when ready. Rows below appear only
+    /// when the provider needs something: consent, sign-in, or a fix.
+    private var providerCard: some View {
+        SettingsCard(
+            "AI Provider",
+            info: "Where AI features run. Ollama and LM Studio run models on this Mac; LM Studio manages its own downloads. ChatGPT and Grok use your signed-in account in the cloud."
+        ) {
+            HStack(spacing: Spacing.sm) {
+                OrttaaiDropdown(
+                    selection: providerBinding,
+                    options: LocalLLMProviderKind.allCases.map { .init($0, $0.displayName) },
+                    width: 150
+                )
+
+                providerDetailControl
+
+                ConnectionCheckButton(
+                    isChecking: isCheckingOllama,
+                    isReady: ollamaStatusReachable,
+                    message: ollamaStatusMessage
+                ) {
+                    Task { await checkOllamaAvailability() }
+                }
+                .disabled(isInstallingOllamaModel || isLoadingOllamaCatalog)
+            }
+        } content: {
+            switch providerKind {
+            case .codex:
+                CodexProviderRows {
+                    Task { await checkOllamaAvailability() }
+                }
+            case .grok:
+                GrokProviderRows(
+                    isReady: ollamaStatusReachable,
+                    statusMessage: ollamaStatusMessage
+                ) {
+                    Task { await checkOllamaAvailability() }
+                }
+            default:
+                localProviderRows
+            }
+        }
+        .onChange(of: installedOllamaModels) { _, _ in
+            normalizeCloudModelSelection()
         }
     }
 
-    private func decodingProfileTraits(for preset: DecodingPreset) -> [String] {
-        switch preset {
-        case .fast:
-            return ["Lowest delay", "Lean"]
-        case .balanced:
-            return ["Steady", "Default"]
-        case .accuracy:
-            return ["Difficult audio", "Resilient"]
+    /// The model for a cloud provider, or the server address for a local one
+    /// (local models are chosen per feature in the cards below).
+    @ViewBuilder
+    private var providerDetailControl: some View {
+        switch providerKind {
+        case .codex:
+            OrttaaiDropdown(
+                selection: $codexModel,
+                options: cloudModelOptions(current: codexModel),
+                width: 190
+            )
+        case .grok:
+            OrttaaiDropdown(
+                selection: $grokModel,
+                options: cloudModelOptions(current: grokModel),
+                width: 190
+            )
+        default:
+            OrttaaiTextField(
+                placeholder: providerKind.defaultEndpoint,
+                text: activeLLMEndpointBinding
+            )
+            .frame(width: 190)
+            .id(providerKind)
+            .help("\(providerKind.displayName) server address")
         }
     }
 
-    private var localLLMCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Local LLM")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+    private func cloudModelOptions(current: String) -> [OrttaaiDropdown<String>.Option] {
+        var names = installedOllamaModels
+        if !current.isEmpty, !names.contains(current) {
+            names.insert(current, at: 0)
+        }
+        return names.map { .init($0, $0) }
+    }
 
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                if AppleIntelligencePolishProcessor.isModelAvailable {
-                    llmGroupBox {
-                        Toggle(isOn: $appleIntelligencePolishEnabled) {
-                            Text("Apple Intelligence Polish")
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        .toggleStyle(OrttaaiToggleStyle())
-                    }
-                }
+    /// Keeps a cloud model selection on a model the account actually offers.
+    private func normalizeCloudModelSelection() {
+        guard let first = installedOllamaModels.first else { return }
+        switch providerKind {
+        case .grok where !installedOllamaModels.contains(grokModel):
+            grokModel = first
+        case .codex where codexModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
+            codexModel = first
+        default:
+            break
+        }
+    }
 
-                llmGroupBox {
-                    Toggle(isOn: $localLLMPolishEnabled) {
-                        Text("Enable Local Text Polish")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-                    }
-                    .toggleStyle(OrttaaiToggleStyle())
-                }
+    @ViewBuilder
+    private var localProviderRows: some View {
+        if ollamaStatusReachable == false {
+            SettingsNotice(kind: .error, message: ollamaStatusMessage)
+        }
 
-                llmGroupBox {
-                    HStack(alignment: .center, spacing: Spacing.sm) {
-                        llmGroupHeader(
-                            icon: "server.rack",
-                            title: "\(providerKind.displayName) Connection"
-                        )
-
-                        OrttaaiDropdown(
-                            selection: Binding(
-                                get: { providerKind },
-                                set: { newKind in
-                                    localLLMProviderRaw = newKind.rawValue
-                                    if newKind.isLocal {
-                                        // Remembered so on-device features
-                                        // (polish, embeddings) keep a local
-                                        // provider while a cloud one is active.
-                                        lastLocalLLMProviderRaw = newKind.rawValue
-                                    }
-                                    ollamaStatusReachable = nil
-                                    ollamaStatusMessage = newKind.isLocal
-                                        ? "Check connection to validate local model availability."
-                                        : "Check connection to validate CLI sign-in and cloud models."
-                                    installedOllamaModels = []
-                                    Task { await checkOllamaAvailability() }
-                                }
-                            ),
-                            options: LocalLLMProviderKind.allCases.map { .init($0, $0.displayName) },
-                            width: 140
-                        )
-                    }
-
-                    HStack(alignment: .center, spacing: Spacing.sm) {
-                        if providerKind.usesHTTPEndpoint {
-                            OrttaaiTextField(
-                                placeholder: providerKind.defaultEndpoint,
-                                text: activeLLMEndpointBinding
-                            )
-                            .id(providerKind)
-                        }
-
-                        Button {
-                            Task { await checkOllamaAvailability() }
-                        } label: {
-                            Label("Check", systemImage: "bolt.horizontal.circle")
-                        }
-                        .buttonStyle(OrttaaiButtonStyle(.secondary))
-                        .disabled(isCheckingOllama || isInstallingOllamaModel || isLoadingOllamaCatalog)
-
-                        if !providerKind.usesHTTPEndpoint {
-                            Spacer()
-                        }
-                    }
-
-                    if providerKind == .codex {
-                        CodexSettingsCard()
-                    }
-
-                    if providerKind == .grok {
-                        GrokSettingsCard()
-                    }
-
-                    if providerKind == .lmStudio {
-                        Text("Manage model downloads in LM Studio.")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                    }
-
-                    if providerKind.isLocal {
-                    HStack(spacing: Spacing.sm) {
-                        Button {
-                            Task {
-                                if ollamaStatusReachable != true {
-                                    await checkOllamaAvailability()
-                                }
-                                await warmEnabledOllamaModelsIfNeeded(silent: false)
-                            }
-                        } label: {
-                            if isWarmingOllamaModels {
-                                Label("Warming Models...", systemImage: "bolt.badge.clock")
-                            } else {
-                                Label("Warm Enabled Models", systemImage: "bolt.fill")
-                            }
-                        }
-                        .buttonStyle(OrttaaiButtonStyle(.secondary))
-                        .disabled(
-                            isCheckingOllama ||
-                            isInstallingOllamaModel ||
-                            isLoadingOllamaCatalog ||
-                            isWarmingOllamaModels
-                        )
-
-                        if let ollamaWarmStatusMessage {
-                            HStack(spacing: Spacing.xs) {
-                                if isWarmingOllamaModels {
-                                    ProgressView().controlSize(.small)
-                                }
-                                Text(ollamaWarmStatusMessage)
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                            }
-                        }
-                    }
-                    }
-
-                    HStack(spacing: Spacing.xs) {
-                        if isCheckingOllama {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: ollamaStatusIconName)
-                                .foregroundStyle(ollamaStatusTint)
-                        }
-                        Text(ollamaStatusMessage)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-
-                    if !installedOllamaModels.isEmpty {
-                        Text(providerKind.isLocal
-                             ? "Available on this Mac: \(installedOllamaModels.prefix(6).joined(separator: ", "))"
-                             : "Available models: \(installedOllamaModels.prefix(6).joined(separator: ", "))")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                            .lineLimit(2)
-                    }
-
-                }
-
-                if providerKind.supportsModelInstall {
-                llmGroupBox {
-                    llmGroupHeader(
-                        icon: "arrow.down.circle",
-                        title: "Curated Downloads"
-                    )
-
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        if isLoadingOllamaCatalog {
-                            HStack(spacing: Spacing.xs) {
-                                ProgressView().controlSize(.small)
-                                Text("Loading curated lightweight models...")
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                            }
-                        } else if !downloadableOllamaModels.isEmpty {
-                            HStack(spacing: Spacing.sm) {
-                                Text("Polish")
-                                    .font(.Orttaai.secondary)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                                    .frame(width: 76, alignment: .leading)
-                                OrttaaiDropdown(
-                                    selection: $selectedPolishDownloadModel,
-                                    options: downloadableOllamaModels.map { .init($0.name, ollamaCatalogLabel(for: $0)) },
-                                    width: 300
-                                )
-
-                                Button {
-                                    let model = normalizedSelectedPolishDownloadModel
-                                    Task {
-                                        await installOllamaModel(named: model)
-                                        await MainActor.run { localLLMPolishModel = model }
-                                    }
-                                } label: {
-                                    if isInstallingOllamaModel && installingOllamaModelName == normalizedSelectedPolishDownloadModel {
-                                        Label("Installing Polish...", systemImage: "arrow.down.circle")
-                                    } else if isOllamaModelInstalled(normalizedSelectedPolishDownloadModel) {
-                                        Label("Polish Installed", systemImage: "checkmark.circle")
-                                    } else {
-                                        Label("Install Polish", systemImage: "arrow.down.circle")
-                                    }
-                                }
-                                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                                .disabled(
-                                    !canInstallPolishModel ||
-                                        isCheckingOllama ||
-                                        isLoadingOllamaCatalog ||
-                                        isInstallingOllamaModel ||
-                                        isOllamaModelInstalled(normalizedSelectedPolishDownloadModel)
-                                )
-                            }
-
-                            HStack(spacing: Spacing.sm) {
-                                Text("Insights")
-                                    .font(.Orttaai.secondary)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                                    .frame(width: 76, alignment: .leading)
-                                OrttaaiDropdown(
-                                    selection: $selectedInsightsDownloadModel,
-                                    options: downloadableOllamaModels.map { .init($0.name, ollamaCatalogLabel(for: $0)) },
-                                    width: 300
-                                )
-
-                                Button {
-                                    let model = normalizedSelectedInsightsDownloadModel
-                                    Task {
-                                        await installOllamaModel(named: model)
-                                        await MainActor.run { localLLMInsightsModel = model }
-                                    }
-                                } label: {
-                                    if isInstallingOllamaModel && installingOllamaModelName == normalizedSelectedInsightsDownloadModel {
-                                        Label("Installing Insights...", systemImage: "arrow.down.circle")
-                                    } else if isOllamaModelInstalled(normalizedSelectedInsightsDownloadModel) {
-                                        Label("Insights Installed", systemImage: "checkmark.circle")
-                                    } else {
-                                        Label("Install Insights", systemImage: "arrow.down.circle")
-                                    }
-                                }
-                                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                                .disabled(
-                                    !canInstallInsightsModel ||
-                                    isCheckingOllama ||
-                                        isLoadingOllamaCatalog ||
-                                        isInstallingOllamaModel ||
-                                    isOllamaModelInstalled(normalizedSelectedInsightsDownloadModel)
-                                )
-                            }
-
-                            HStack(spacing: Spacing.sm) {
-                                Text("Semantic")
-                                    .font(.Orttaai.secondary)
-                                    .foregroundStyle(Color.Orttaai.textSecondary)
-                                    .frame(width: 76, alignment: .leading)
-                                OrttaaiDropdown(
-                                    selection: $selectedSemanticDownloadModel,
-                                    options: downloadableOllamaModels.map { .init($0.name, ollamaCatalogLabel(for: $0)) },
-                                    width: 300
-                                )
-
-                                Button {
-                                    let model = normalizedSelectedSemanticDownloadModel
-                                    Task {
-                                        await installOllamaModel(named: model)
-                                        await MainActor.run {
-                                            semanticEmbeddingModel = model
-                                            semanticActiveIndexModelID = ""
-                                        }
-                                    }
-                                } label: {
-                                    if isInstallingOllamaModel && installingOllamaModelName == normalizedSelectedSemanticDownloadModel {
-                                        Label("Installing Semantic...", systemImage: "arrow.down.circle")
-                                    } else if isOllamaModelInstalled(normalizedSelectedSemanticDownloadModel) {
-                                        Label("Semantic Installed", systemImage: "checkmark.circle")
-                                    } else {
-                                        Label("Install Semantic", systemImage: "arrow.down.circle")
-                                    }
-                                }
-                                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                                .disabled(
-                                    !canInstallSemanticModel ||
-                                    isCheckingOllama ||
-                                    isLoadingOllamaCatalog ||
-                                    isInstallingOllamaModel ||
-                                    isOllamaModelInstalled(normalizedSelectedSemanticDownloadModel)
-                                )
-                            }
-                        } else {
-                            Text(ollamaCatalogMessage)
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                        }
-
-                        if let ollamaInstallStatusMessage {
-                            if let ollamaInstallProgress {
-                                ProgressView(value: ollamaInstallProgress) {
-                                    Text(ollamaInstallStatusMessage)
-                                        .font(.Orttaai.caption)
-                                        .foregroundStyle(Color.Orttaai.textSecondary)
-                                }
-                                .tint(Color.Orttaai.accent)
-                            } else {
-                                HStack(spacing: Spacing.xs) {
-                                    if isInstallingOllamaModel {
-                                        ProgressView().controlSize(.small)
-                                    }
-                                    Text(ollamaInstallStatusMessage)
-                                        .font(.Orttaai.caption)
-                                        .foregroundStyle(Color.Orttaai.textSecondary)
-                                }
-                            }
-                        }
-
-                        if let ollamaInstallSuccessMessage {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.Orttaai.success)
-                                Text(ollamaInstallSuccessMessage)
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.success)
-                            }
-                        }
-
-                        if let ollamaInstallError {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(Color.Orttaai.error)
-                                Text(ollamaInstallError)
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.error)
-                            }
-                        }
-
-                        if let ollamaWarmSuccessMessage {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.Orttaai.success)
-                                Text(ollamaWarmSuccessMessage)
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.success)
-                            }
-                        }
-
-                        if let ollamaWarmError {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(Color.Orttaai.error)
-                                Text(ollamaWarmError)
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.error)
-                            }
-                        }
-                    }
-                }
-                }
-
-                llmGroupBox {
-                    llmGroupHeader(
-                        icon: "wand.and.stars",
-                        title: "Polish Model"
-                    )
-                    if providerKind.isLocal {
-                        OrttaaiDropdown(
-                            selection: Binding(
-                                get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
-                                set: { localLLMPolishModel = $0 }
-                            ),
-                            options: modelDropdownOptions(current: normalizedPolishOllamaModel),
-                            width: 280
-                        )
-                    } else {
-                        Text("Local fallback: \(localFallbackProviderKind.displayName), \"\(normalizedPolishOllamaModel)\".")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-
-                    HStack {
-                        Text("Polish Timeout")
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                        Spacer()
-                        Text("\(localLLMPolishTimeoutMs) ms")
-                            .font(.Orttaai.mono)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-                    }
-                    Slider(
-                        value: Binding(
-                            get: { Double(localLLMPolishTimeoutMs) },
-                            set: { localLLMPolishTimeoutMs = Int($0) }
-                        ),
-                        in: 80...4_000,
-                        step: 10
-                    )
-                    .tint(Color.Orttaai.accent)
-
-                    Stepper(value: $localLLMPolishMaxChars, in: 80...2_000, step: 20) {
-                        rowValueLabel("Max Characters", value: "\(localLLMPolishMaxChars)")
-                    }
-                    .help("Long transcripts skip local polish to protect responsiveness.")
-
-                    Text(polishRecommendationMessage)
+        SettingsRow(
+            title: "Warm Models",
+            info: "Loads the enabled models into memory so the first polish after launch is fast."
+        ) {
+            HStack(spacing: Spacing.sm) {
+                if let ollamaWarmStatusMessage, isWarmingOllamaModels {
+                    ProgressView().controlSize(.small)
+                    Text(ollamaWarmStatusMessage)
                         .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .lineLimit(1)
                 }
 
-                llmGroupBox {
-                    Toggle(isOn: $localLLMInsightsEnabled) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Use \(providerKind.displayName) for Writing Insights")
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                            Text(providerKind.isLocal
-                                 ? "Uses local LLM analysis to surface speaking and writing patterns."
-                                 : "Uses your authenticated \(providerKind.displayName) account to surface speaking and writing patterns.")
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
+                Button {
+                    Task {
+                        if ollamaStatusReachable != true {
+                            await checkOllamaAvailability()
                         }
+                        await warmEnabledOllamaModelsIfNeeded(silent: false)
                     }
-                    .toggleStyle(OrttaaiToggleStyle())
+                } label: {
+                    Label(isWarmingOllamaModels ? "Warming…" : "Warm Now", systemImage: "bolt.fill")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                .disabled(
+                    isCheckingOllama ||
+                    isInstallingOllamaModel ||
+                    isLoadingOllamaCatalog ||
+                    isWarmingOllamaModels
+                )
+            }
+        }
 
-                    if localLLMInsightsEnabled {
-                        divider
+        if let ollamaWarmSuccessMessage {
+            SettingsNotice(kind: .success, message: ollamaWarmSuccessMessage) {
+                self.ollamaWarmSuccessMessage = nil
+            }
+        }
 
-                        VStack(alignment: .leading, spacing: Spacing.sm) {
-                        if providerKind.isLocal {
-                        Text("Insights Model")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
+        if let ollamaWarmError {
+            SettingsNotice(kind: .error, message: ollamaWarmError) {
+                self.ollamaWarmError = nil
+            }
+        }
+    }
+
+    private var polishCard: some View {
+        SettingsCard(
+            "Text Polish",
+            info: "Fixes grammar and punctuation in each dictation with a language model before it's inserted. Voice editing uses the same model."
+        ) {
+            if AppleIntelligencePolishProcessor.isModelAvailable {
+                SettingsToggleRow(
+                    title: "Apple Intelligence Polish",
+                    info: "Polishes with Apple's on-device model.",
+                    isOn: $appleIntelligencePolishEnabled
+                )
+
+                SettingsDivider()
+            }
+
+            SettingsToggleRow(
+                title: "Local Text Polish",
+                info: "Polishes each dictation with the model below. If it doesn't answer within the timeout, the unpolished text is inserted.",
+                isOn: $localLLMPolishEnabled
+            )
+
+            SettingsDivider()
+
+            if providerKind.isLocal {
+                SettingsRow(title: "Polish Model") {
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
+                            set: { localLLMPolishModel = $0 }
+                        ),
+                        options: modelDropdownOptions(current: normalizedPolishOllamaModel),
+                        width: SettingsLayout.controlWidth
+                    )
+                }
+            } else {
+                SettingsRow(
+                    title: "Polish Model",
+                    info: "Polish always runs locally, on \(localFallbackProviderKind.displayName), even while a cloud provider is selected."
+                ) {
+                    Text(normalizedPolishOllamaModel)
+                        .font(.Orttaai.mono)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
+            }
+
+            SettingsDivider()
+
+            SettingsSliderRow(
+                title: "Polish Timeout",
+                info: "How long to wait for polish before inserting the unpolished text.",
+                value: Binding(
+                    get: { Double(localLLMPolishTimeoutMs) },
+                    set: { localLLMPolishTimeoutMs = Int($0) }
+                ),
+                range: 80...4_000,
+                step: 10,
+                valueText: "\(localLLMPolishTimeoutMs) ms"
+            )
+
+            SettingsDivider()
+
+            SettingsStepperRow(
+                title: "Max Characters",
+                info: "Longer dictations skip polish to stay responsive.",
+                value: $localLLMPolishMaxChars,
+                range: 80...2_000,
+                step: 20
+            )
+
+            SettingsFootnote(polishRecommendationMessage)
+        }
+    }
+
+    private var insightsCard: some View {
+        SettingsCard(
+            "Writing Insights",
+            info: providerKind.isLocal
+                ? "Uses local LLM analysis to surface speaking and writing patterns."
+                : "Uses your signed-in \(providerKind.displayName) account to surface speaking and writing patterns."
+        ) {
+            OrttaaiSwitch(title: "Writing Insights", isOn: $localLLMInsightsEnabled)
+        } content: {
+            if localLLMInsightsEnabled {
+                if providerKind.isLocal {
+                    SettingsRow(title: "Insights Model") {
                         OrttaaiDropdown(
                             selection: Binding(
                                 get: { resolvedModelSelection(for: normalizedInsightsOllamaModel) },
                                 set: { localLLMInsightsModel = $0 }
                             ),
                             options: modelDropdownOptions(current: normalizedInsightsOllamaModel),
-                            width: 280
+                            width: SettingsLayout.controlWidth
                         )
-
-                        Stepper(value: $localLLMInsightsContextTokens, in: 8_192...262_144, step: 8_192) {
-                            rowValueLabel("Context Window", value: "\(formattedInsightsContextTokens) tokens")
-                        }
-
-                        Toggle(isOn: $localLLMInsightsThinkingEnabled) {
-                            Text("Enable Thinking")
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        .toggleStyle(OrttaaiToggleStyle())
-
-                        Text(insightsRecommendationMessage)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                        } else {
-                            Text(providerKind == .codex
-                                 ? "Writing insights and graph interpretation use \"\(codexModel)\" through your ChatGPT subscription. Change the model and reasoning effort in the ChatGPT Account section above."
-                                 : "Writing insights and graph interpretation use \"\(grokModel)\" through your authenticated Grok CLI account. Change the model in the Grok Account section above.")
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                        }
-                        }
                     }
+
+                    SettingsDivider()
+
+                    SettingsStepperRow(
+                        title: "Context Window",
+                        info: "How much of your history the model reads at once. Larger windows need more memory.",
+                        value: $localLLMInsightsContextTokens,
+                        range: 8_192...262_144,
+                        step: 8_192,
+                        format: { "\($0 / 1_024)K tokens" }
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: "Thinking",
+                        info: "Lets the model reason step by step for deeper analysis. Slower, and uses more tokens.",
+                        isOn: $localLLMInsightsThinkingEnabled
+                    )
+
+                    SettingsFootnote(insightsRecommendationMessage)
+                } else {
+                    SettingsFootnote(
+                        providerKind == .codex
+                            ? "Writing insights and graph interpretation use \u{201C}\(codexModel)\u{201D} through your ChatGPT subscription. Change the model and reasoning effort under AI Provider."
+                            : "Writing insights and graph interpretation use \u{201C}\(grokModel)\u{201D} through your Grok CLI account. Change the model under AI Provider."
+                    )
                 }
+            }
+        }
+    }
 
-                llmGroupBox {
-                    Toggle(isOn: $semanticMemoryEnabled) {
-                        Text("Enable Semantic Memory")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-                    }
-                    .toggleStyle(OrttaaiToggleStyle())
-
-                    if semanticMemoryEnabled {
-                        divider
-
-                        VStack(alignment: .leading, spacing: Spacing.sm) {
-                        if providerKind.supportsEmbeddings {
-                        Text("Semantic Embedding Model")
-                            .font(.Orttaai.bodyMedium)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
+    private var semanticMemoryCard: some View {
+        SettingsCard(
+            "Semantic Memory",
+            info: "Indexes your dictations by meaning so ChatAI and Memory can find related notes, not only exact words."
+        ) {
+            OrttaaiSwitch(title: "Semantic Memory", isOn: $semanticMemoryEnabled)
+        } content: {
+            if semanticMemoryEnabled {
+                if providerKind.supportsEmbeddings {
+                    SettingsRow(
+                        title: "Embedding Model",
+                        info: "Changing the model rebuilds the index."
+                    ) {
                         OrttaaiDropdown(
                             selection: Binding(
                                 get: { resolvedModelSelection(for: normalizedSemanticEmbeddingModel) },
@@ -1461,34 +990,165 @@ struct ModelSettingsView: View {
                                 }
                             ),
                             options: modelDropdownOptions(current: normalizedSemanticEmbeddingModel),
-                            width: 280
+                            width: SettingsLayout.controlWidth
                         )
-                        } else {
-                            Text("Local fallback: \(localFallbackProviderKind.displayName), \"\(normalizedSemanticEmbeddingModel)\".")
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                        }
-
-                        Toggle(isOn: $semanticMemoryAutoIndexEnabled) {
-                            Text("Auto-index for ChatAI")
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        .toggleStyle(OrttaaiToggleStyle())
-
-                        Toggle(isOn: $semanticEmbeddingFallbackEnabled) {
-                            Text("Use Lexical Fallback")
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
-                        .toggleStyle(OrttaaiToggleStyle())
-
-                        }
+                    }
+                } else {
+                    SettingsRow(
+                        title: "Embedding Model",
+                        info: "Embeddings always run locally, on \(localFallbackProviderKind.displayName), even while a cloud provider is selected."
+                    ) {
+                        Text(normalizedSemanticEmbeddingModel)
+                            .font(.Orttaai.mono)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
                     }
                 }
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: "Auto-index for ChatAI",
+                    info: "Indexes new dictations in the background so ChatAI can use them right away.",
+                    isOn: $semanticMemoryAutoIndexEnabled
+                )
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: "Keyword Fallback",
+                    info: "Falls back to keyword search when the embedding model isn't available.",
+                    isOn: $semanticEmbeddingFallbackEnabled
+                )
             }
-            .padding(Spacing.md)
-            .dashboardCard()
+        }
+    }
+
+    private var modelDownloadsCard: some View {
+        SettingsCard(
+            "Model Downloads",
+            info: "Curated lightweight models from \(providerKind.displayName). Installing one also selects it for that feature."
+        ) {
+            if isLoadingOllamaCatalog {
+                HStack(spacing: Spacing.xs) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading curated models…")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
+                .padding(.bottom, Spacing.xs)
+            } else if !downloadableOllamaModels.isEmpty {
+                downloadRow(
+                    title: "Polish",
+                    selection: $selectedPolishDownloadModel,
+                    model: normalizedSelectedPolishDownloadModel,
+                    canInstall: canInstallPolishModel
+                ) { model in
+                    localLLMPolishModel = model
+                }
+
+                SettingsDivider()
+
+                downloadRow(
+                    title: "Insights",
+                    selection: $selectedInsightsDownloadModel,
+                    model: normalizedSelectedInsightsDownloadModel,
+                    canInstall: canInstallInsightsModel
+                ) { model in
+                    localLLMInsightsModel = model
+                }
+
+                SettingsDivider()
+
+                downloadRow(
+                    title: "Semantic",
+                    selection: $selectedSemanticDownloadModel,
+                    model: normalizedSelectedSemanticDownloadModel,
+                    canInstall: canInstallSemanticModel
+                ) { model in
+                    semanticEmbeddingModel = model
+                    semanticActiveIndexModelID = ""
+                }
+            } else {
+                SettingsFootnote(ollamaCatalogMessage)
+            }
+
+            if let ollamaInstallStatusMessage {
+                if let ollamaInstallProgress {
+                    ProgressView(value: ollamaInstallProgress) {
+                        Text(ollamaInstallStatusMessage)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
+                    .tint(Color.Orttaai.accent)
+                    .padding(.vertical, Spacing.xs)
+                } else {
+                    HStack(spacing: Spacing.xs) {
+                        if isInstallingOllamaModel {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(ollamaInstallStatusMessage)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
+                    .padding(.vertical, Spacing.xs)
+                }
+            }
+
+            if let ollamaInstallSuccessMessage {
+                SettingsNotice(kind: .success, message: ollamaInstallSuccessMessage) {
+                    self.ollamaInstallSuccessMessage = nil
+                }
+            }
+
+            if let ollamaInstallError {
+                SettingsNotice(kind: .error, message: ollamaInstallError) {
+                    self.ollamaInstallError = nil
+                }
+            }
+        }
+    }
+
+    /// One curated-download row: pick a model, install it, and select it for
+    /// the feature once the download finishes.
+    private func downloadRow(
+        title: String,
+        selection: Binding<String>,
+        model: String,
+        canInstall: Bool,
+        onInstalled: @escaping (String) -> Void
+    ) -> some View {
+        SettingsRow(title: title) {
+            HStack(spacing: Spacing.sm) {
+                OrttaaiDropdown(
+                    selection: selection,
+                    options: downloadableOllamaModels.map { .init($0.name, ollamaCatalogLabel(for: $0)) },
+                    width: 260
+                )
+
+                Button {
+                    Task {
+                        await installOllamaModel(named: model)
+                        await MainActor.run { onInstalled(model) }
+                    }
+                } label: {
+                    if isInstallingOllamaModel && installingOllamaModelName == model {
+                        Label("Installing…", systemImage: "arrow.down.circle")
+                    } else if isOllamaModelInstalled(model) {
+                        Label("Installed", systemImage: "checkmark.circle")
+                    } else {
+                        Label("Install", systemImage: "arrow.down.circle")
+                    }
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                .frame(minWidth: 96, alignment: .leading)
+                .disabled(
+                    !canInstall ||
+                    isCheckingOllama ||
+                    isLoadingOllamaCatalog ||
+                    isInstallingOllamaModel ||
+                    isOllamaModelInstalled(model)
+                )
+            }
         }
     }
 
@@ -1624,19 +1284,10 @@ struct ModelSettingsView: View {
                     pendingDeleteModel = model
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, 7)
-                        .background(Color.Orttaai.bgPrimary.opacity(0.6))
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
-                                .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
-                        )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true, size: .small))
                 .help("Remove this model's downloaded files")
+                .accessibilityLabel("Remove downloaded files for \(model.name)")
                 .disabled(isSwitching || isDeletingModel || migratingFamilyID != nil)
             }
             }
@@ -1871,12 +1522,6 @@ struct ModelSettingsView: View {
             .background(color.opacity(0.12))
             .clipShape(Capsule())
             .lineLimit(1)
-    }
-
-    private var divider: some View {
-        Divider()
-            .background(Color.Orttaai.border.opacity(0.75))
-            .padding(.vertical, Spacing.md)
     }
 
     private func applyLowLatencyDefaults(enabled: Bool) {
@@ -2262,18 +1907,6 @@ struct ModelSettingsView: View {
             return trimmed
         }
         return "\(trimmed):latest"
-    }
-
-    private func rowValueLabel(_ title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-            Spacer()
-            Text(value)
-                .font(.Orttaai.mono)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-        }
     }
 
     private func loadInitialModels() {

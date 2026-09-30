@@ -343,7 +343,7 @@ struct AnalyticsDashboardView: View {
 
                     performanceCard
                 }
-                .padding(.horizontal, Spacing.lg)
+                .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
                 .padding(.bottom, Spacing.lg)
             }
         }

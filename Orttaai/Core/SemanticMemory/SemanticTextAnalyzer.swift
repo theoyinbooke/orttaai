@@ -5,7 +5,7 @@ import Foundation
 import NaturalLanguage
 
 /// A concept extracted from dictated text.
-struct SemanticConcept: Hashable {
+nonisolated struct SemanticConcept: Hashable {
     /// Canonical key (lemmatized, lowercased) used for node identity so that
     /// surface variants ("insights", "Insight") merge into one concept.
     let key: String
@@ -14,7 +14,7 @@ struct SemanticConcept: Hashable {
 }
 
 /// A named entity extracted from dictated text.
-struct SemanticNamedEntity: Hashable {
+nonisolated struct SemanticNamedEntity: Hashable {
     let key: String
     let title: String
     /// "Person", "Place", "Organization", or "Name" when the source is the
@@ -26,7 +26,7 @@ struct SemanticNamedEntity: Hashable {
 /// Replaces raw word-frequency topics (which surfaced stopword-grade tokens
 /// like "going"/"here") with lemmatized, part-of-speech-filtered concepts and
 /// real named-entity recognition. Deterministic — no model download, no LLM.
-enum SemanticTextAnalyzer {
+nonisolated enum SemanticTextAnalyzer {
 
     // MARK: - Topics
 

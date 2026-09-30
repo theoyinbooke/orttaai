@@ -72,6 +72,15 @@ struct HomeView: View {
             value: viewModel.hasLoaded
         )
         .background(Color.Orttaai.bgPrimary)
+        .workspaceHeader("Welcome back", leading: { EmptyView() }) {
+            HomeHeaderView(
+                stats: viewModel.payload.header,
+                isRefreshing: viewModel.isLoading && viewModel.hasLoaded,
+                isCompact: isCompact,
+                isInsightsVisible: viewModel.isInsightsPanelVisible,
+                onToggleInsights: viewModel.toggleInsightsPanel
+            )
+        }
         .onAppear {
             if !viewModel.hasLoaded {
                 viewModel.load()
@@ -91,13 +100,6 @@ struct HomeView: View {
         HStack(alignment: .top, spacing: Spacing.md) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.md) {
-                    HomeHeaderView(
-                        stats: viewModel.payload.header,
-                        isRefreshing: viewModel.isLoading && viewModel.hasLoaded,
-                        isCompact: isCompact,
-                        isInsightsVisible: viewModel.isInsightsPanelVisible,
-                        onToggleInsights: viewModel.toggleInsightsPanel
-                    )
 
                     if let errorMessage = viewModel.errorMessage {
                         Text(errorMessage)
