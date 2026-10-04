@@ -25,6 +25,10 @@ final class GrokIntegrationTests: XCTestCase {
         guard GrokBinaryLocator.discover() != nil else {
             throw XCTSkip("Grok CLI is not installed on this machine.")
         }
+        let health = await GrokClient().checkHealth(baseURLString: "", timeoutMs: 15_000)
+        guard health.message.localizedCaseInsensitiveContains("not signed in") == false else {
+            throw XCTSkip("Grok CLI is installed but not signed in.")
+        }
         let key = "grokConsentAcknowledged"
         let previous = UserDefaults.standard.object(forKey: key)
         UserDefaults.standard.set(true, forKey: key)

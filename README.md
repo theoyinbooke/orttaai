@@ -8,25 +8,32 @@
 
 **Native macOS voice keyboard powered by WhisperKit.**
 
-Giving you back your second hand. Press a hotkey, speak, and your words appear at the cursor — in any app. All processing happens on-device. Your voice never leaves your Mac.
+Giving you back your second hand. Press a hotkey, speak, and your words appear at the cursor — in any app. Speech recognition always happens on-device, and by default everything else does too. Your voice never leaves your Mac.
 
 ## Features
 
 - **Push-to-talk dictation** — Hold `Ctrl+Shift+Space`, speak, release. Text appears at your cursor.
-- **100% on-device** — Uses WhisperKit for local speech recognition. No internet required. No data sent anywhere.
-- **Works everywhere** — Text injection via clipboard simulation works across 25+ apps including Safari, Chrome, VS Code, Slack, Notes, and more.
-- **Secure field detection** — Automatically blocks dictation into password fields. Your transcription is never stored when blocked.
+- **Hands-free dictation** — Tap the hotkey (or the pill's mic button) to start recording without holding it, then tap again to stop, or let it stop on its own after you go quiet.
+- **On-device by default** — Uses WhisperKit for local speech recognition, so audio is never uploaded. No account is required, and your text is sent nowhere unless you turn on iCloud sync or a cloud AI provider (see below).
+- **Works everywhere** — Inserts text by simulated paste, with Accessibility and typing fallbacks, into the app that was focused when you started — Safari, Chrome, VS Code, Slack, Notes, and more.
+- **Secure field detection** — Automatically blocks insertion into password fields, before the clipboard is touched.
 - **Clipboard preservation** — Saves and restores your clipboard after each dictation. Copy an image, dictate, and your image is still on the clipboard.
-- **Recording cap** — 45-second maximum with countdown at 35 seconds.
+- **Recording limits** — Set separate caps in Settings > Dictation: Push-to-Talk Limit (30s, 60s, 90s, 2 min, or 5 min; default 90s) and Hands-Free Limit (5, 10, 15, or 30 min; default 10 min), with a countdown in the pill for the final 20 seconds.
+- **Stop After Silence** — Ends a hands-free recording once you stop talking for 2, 4, 6, 8, or 10 seconds (default 4s), counting only after it has heard you speak; choose Off to keep recording until you stop it.
+- **Voice editing** — Select text, press `Ctrl+Shift+E`, and say how to change it ("make this more formal"); it uses your local Ollama or LM Studio model, and the selection is left untouched if the edit fails.
 - **Menu bar app** — Lives in your menu bar with status icon showing current state.
 - **History** — Searchable history of all transcriptions with live updates.
 - **Personal Memory (Dictionary + Snippets)** — Save your own term replacements and phrase expansions, then apply them automatically during dictation.
 - **AI Suggestions from History** — Generate suggested dictionary/snippet entries from your recent local history (Apple Foundation Models when available, with fallback).
-- **Writing Insights panel** — Generate on-demand insights about your dictation patterns from recent history (Apple Foundation Models when available, with fallback).
-- **Semantic Memory Graph** — Build a local embedding index from dictation history to explore topics, apps, named contexts, and related transcript chunks.
+- **Writing Insights panel (beta)** — Generate on-demand insights about your dictation patterns from recent history, using your selected AI provider when enabled, otherwise Apple Foundation Models when available, with a local heuristic fallback.
+- **Semantic Memory Graph (beta)** — Build a local embedding index from dictation history to explore topics, apps, named contexts, and related transcript chunks.
+- **Chat AI (beta)** — A writing assistant grounded in your own dictation history, with a My Tone mode that writes in your voice, file attachments, and voice input; it runs on your selected AI provider.
+- **Optional AI providers** — Connect Ollama or LM Studio for on-device models, or opt in to ChatGPT through the Codex CLI or Grok through the Grok CLI using your own account. The cloud providers send the text they process (Chat AI, Writing Insights, tone profile, and graph summaries) to OpenAI or xAI; dictation polish, voice editing, and embeddings always stay on a local provider.
+- **iCloud sync** — Optional, through your private iCloud account: syncs History, Personal Memory (dictionary, snippets, suggestions), insights, Chat AI conversations, your tone profile, and settings; downloaded models, audio devices, and other per-Mac settings stay on each Mac.
 - **Personal Home dashboard** — Sleek at-a-glance view for 7-day activity, speed trends, top apps, and quick actions.
 - **Model management** — Download and switch between Whisper models based on your hardware.
 - **Auto-updates** — Sparkle integration for direct downloads; Homebrew-managed updates when installed from the custom cask tap.
+- **One-click updates** — Turn on "Automatically download updates" in About, and an Update button appears at the bottom of the sidebar when a downloaded update is ready to install and relaunch (direct downloads only).
 
 ## Requirements
 
@@ -74,13 +81,13 @@ Regenerate all exports and app assets with `scripts/generate_brand_assets.sh`.
 
 ## Permissions
 
-Orttaai requires three macOS permissions:
+Orttaai requires two macOS permissions, plus one optional:
 
 1. **Microphone** — Captures your voice for transcription
 2. **Accessibility** — Simulates paste to inject text at your cursor
-3. **Input Monitoring** — Detects your push-to-talk hotkey
+3. **Input Monitoring (optional)** — Compatibility fallback for detecting your hotkey
 
-All processing happens locally. Your voice and text never leave your Mac.
+Speech recognition always runs locally. Your voice never leaves your Mac, and your text stays on it too unless you enable iCloud sync or a cloud AI provider (ChatGPT via Codex, or Grok).
 
 ## Apple Foundation Models Integration
 
@@ -90,15 +97,17 @@ Orttaai uses **Apple Foundation Models** (on supported macOS versions/devices) f
 - **Writing insights generation** — Summarizes writing/speaking patterns in the Insights panel so you can spot habits and trends.
 - **Safe fallback path** — If Apple Foundation Models is unavailable, Orttaai automatically falls back to a local heuristic analyzer.
 
-These features are designed to stay local-first and work without sending your transcription history to external services.
+These features are designed to stay local-first and work without sending your transcription history to external services. If you choose ChatGPT (Codex) or Grok as your AI provider, Writing Insights uses that provider instead.
 
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Shift+Space` | Push-to-talk (hold to record, release to transcribe) |
+| `Ctrl+Shift+Space` (hold) | Push-to-talk (hold to record, release to transcribe) |
+| `Ctrl+Shift+Space` (tap) | Hands-free (tap to start, tap again to stop) |
+| `Ctrl+Shift+E` | Voice editing (rewrite the selected text by voice) |
 
-Shortcuts can be customized in Settings > General.
+A quick tap (under about a third of a second) starts hands-free mode; turn Hands-Free Dictation off in Settings > Dictation to make every press push-to-talk. Change the dictation shortcut in Settings > Dictation and the edit shortcut in Settings > Text.
 
 ## Models
 
