@@ -16,7 +16,7 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 - **Hands-free dictation** — Tap the hotkey (or the pill's mic button) to start recording without holding it, then tap again to stop, or let it stop on its own after you go quiet.
 - **On-device by default** — Uses WhisperKit for local speech recognition, so audio is never uploaded. No account is required, and your text is sent nowhere unless you turn on iCloud sync or a cloud AI provider (see below).
 - **Works everywhere** — Inserts text by simulated paste, with Accessibility and typing fallbacks, into the app that was focused when you started — Safari, Chrome, VS Code, Slack, Notes, and more.
-- **Secure field detection** — Automatically blocks insertion into password fields, before the clipboard is touched.
+- **Secure field detection** — Automatically blocks insertion into password fields, before the clipboard is touched. A blocked dictation is not saved to History.
 - **Clipboard preservation** — Saves and restores your clipboard after each dictation. Copy an image, dictate, and your image is still on the clipboard.
 - **Recording limits** — Set separate caps in Settings > Dictation: Push-to-Talk Limit (30s, 60s, 90s, 2 min, or 5 min; default 90s) and Hands-Free Limit (5, 10, 15, or 30 min; default 10 min), with a countdown in the pill for the final 20 seconds.
 - **Stop After Silence** — Ends a hands-free recording once you stop talking for 2, 4, 6, 8, or 10 seconds (default 4s), counting only after it has heard you speak; choose Off to keep recording until you stop it.
@@ -37,9 +37,9 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 
 ## Requirements
 
-- macOS 14.0 (Sonoma) or later
+- macOS 14.6 (Sonoma) or later
 - Apple Silicon (M1 or later)
-- ~1GB disk space for the default model
+- About 500MB of disk space for the default model (Whisper Small)
 
 ## Installation
 
@@ -113,16 +113,16 @@ A quick tap (under about a third of a second) starts hands-free mode; turn Hands
 
 | Model | Size | RAM Required | Best For |
 |-------|------|-------------|----------|
-| Whisper Tiny | ~70MB | 8GB+ | Quick notes, commands |
-| Whisper Tiny (English) | ~70MB | 8GB+ | Fast English dictation |
-| Whisper Base | ~140MB | 8GB+ | Short dictation |
-| Whisper Base (English) | ~140MB | 8GB+ | Short English dictation |
-| Whisper Small | ~300MB | 8GB+ | General dictation |
-| Whisper Small (English) | ~300MB | 8GB+ | General English dictation |
-| Whisper Medium | ~770MB | 16GB+ | Longer dictation |
-| Whisper Medium (English) | ~770MB | 16GB+ | Longer English dictation |
-| Whisper Large V3 Turbo | ~950MB | 16GB+ | Maximum accuracy, optimized speed |
-| Whisper Large V3 | ~1500MB | 16GB+ | Highest accuracy, slowest |
+| Whisper Tiny | ~75MB | 8GB+ | Quick notes, commands |
+| Whisper Tiny (English) | ~75MB | 8GB+ | Fast English dictation |
+| Whisper Base | ~145MB | 8GB+ | Short dictation |
+| Whisper Base (English) | ~145MB | 8GB+ | Short English dictation |
+| Whisper Small | ~465MB | 8GB+ | General dictation |
+| Whisper Small (English) | ~465MB | 8GB+ | General English dictation |
+| Whisper Medium | ~1,450MB | 16GB+ | Longer dictation |
+| Whisper Medium (English) | ~1,450MB | 16GB+ | Longer English dictation |
+| Whisper Large V3 Turbo | ~1,550MB | 16GB+ | Maximum accuracy, optimized speed |
+| Whisper Large V3 | ~2,950MB | 16GB+ | Highest accuracy, slowest |
 
 ## Building from Source
 
