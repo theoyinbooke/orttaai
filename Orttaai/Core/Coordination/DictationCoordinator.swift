@@ -730,7 +730,8 @@ final class DictationCoordinator {
             speechFrameCount: autoStopPolicy.speechFrameCount,
             peakFrameRMS: autoStopPolicy.peakFrameRMS,
             trailingSilenceMs: autoStopPolicy.trailingSilenceMs,
-            handsFreeArmed: isHandsFree && autoStopPolicy.isArmed
+            handsFreeArmed: isHandsFree && autoStopPolicy.isArmed,
+            silenceThresholdRMS: isHandsFree ? autoStopPolicy.silenceThresholdRMS : nil
         ))
     }
 
@@ -1126,7 +1127,7 @@ final class DictationCoordinator {
         ) else { return }
 
         Logger.dictation.info(
-            "Hands-free auto-stop: window=\(silenceStop, format: .fixed(precision: 1))s trailingSilence=\(self.autoStopPolicy.trailingSilenceMs)ms speechFrames=\(self.autoStopPolicy.speechFrameCount) peakRMS=\(self.autoStopPolicy.peakFrameRMS, format: .fixed(precision: 3)) duration=\(duration, format: .fixed(precision: 1))s"
+            "Hands-free auto-stop: window=\(silenceStop, format: .fixed(precision: 1))s trailingSilence=\(self.autoStopPolicy.trailingSilenceMs)ms speechFrames=\(self.autoStopPolicy.speechFrameCount) peakRMS=\(self.autoStopPolicy.peakFrameRMS, format: .fixed(precision: 3)) silenceThreshold=\(self.autoStopPolicy.silenceThresholdRMS, format: .fixed(precision: 4)) duration=\(duration, format: .fixed(precision: 1))s"
         )
         stopRecording(reason: .silenceAutoStop)
     }
