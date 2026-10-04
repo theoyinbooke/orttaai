@@ -179,7 +179,8 @@ final class FinalizeTraceTests: XCTestCase {
             speechFrameCount: 212,
             peakFrameRMS: 0.31,
             trailingSilenceMs: 4_100,
-            handsFreeArmed: true
+            handsFreeArmed: true,
+            silenceThresholdRMS: 0.006
         )
 
         log.append(FinalizeTrace(), at: Date(timeIntervalSince1970: 0))
@@ -199,10 +200,12 @@ final class FinalizeTraceTests: XCTestCase {
         XCTAssertEqual(objects[1]["speech_frame_count"] as? Int, 212)
         XCTAssertEqual(objects[1]["trailing_silence_ms"] as? Int, 4_100)
         XCTAssertEqual(objects[1]["hands_free_armed"] as? Bool, true)
+        XCTAssertEqual(try XCTUnwrap(objects[1]["silence_threshold_rms"] as? Double), 0.006, accuracy: 0.0001)
         XCTAssertEqual(
             Set(objects[1].keys),
             ["ts", "kind", "reason", "recording_duration_ms", "mode", "silence_stop_seconds",
-             "speech_frame_count", "peak_frame_rms", "trailing_silence_ms", "hands_free_armed"],
+             "speech_frame_count", "peak_frame_rms", "trailing_silence_ms", "hands_free_armed",
+             "silence_threshold_rms"],
             "A recording-end line carries numbers and enums only"
         )
     }
@@ -223,6 +226,7 @@ final class FinalizeTraceTests: XCTestCase {
 
         XCTAssertEqual(object["mode"] as? String, "push_to_talk")
         XCTAssertTrue(object["silence_stop_seconds"] is NSNull)
+        XCTAssertTrue(object["silence_threshold_rms"] is NSNull)
     }
 
     func testLogRotatesOnceSizeCapIsReached() throws {

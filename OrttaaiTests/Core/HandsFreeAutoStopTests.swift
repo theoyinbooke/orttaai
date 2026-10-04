@@ -15,6 +15,21 @@ final class HandsFreeAutoStopTests: XCTestCase {
         [Float](repeating: 0, count: Int(seconds * Double(sampleRate)))
     }
 
+    /// Constant-level audio; a frame of it has exactly this RMS.
+    private func level(_ rms: Float, seconds: Double) -> [Float] {
+        [Float](repeating: rms, count: Int((seconds * Double(sampleRate)).rounded()))
+    }
+
+    /// Soft speech below the 0.02 VAD threshold: 300ms syllables at `rms`
+    /// separated by 100ms gaps at room noise.
+    private func softSpeech(seconds: Double, rms: Float = 0.012, room: Float = 0.002) -> [Float] {
+        var samples: [Float] = []
+        while Double(samples.count) < seconds * Double(sampleRate) {
+            samples += level(rms, seconds: 0.3) + level(room, seconds: 0.1)
+        }
+        return samples
+    }
+
     private func policy(scanning samples: [Float]) -> HandsFreeAutoStopPolicy {
         var policy = HandsFreeAutoStopPolicy()
         policy.advance(totalSampleCount: samples.count, samplesFrom: { Array(samples.dropFirst($0)) })
@@ -98,6 +113,57 @@ final class HandsFreeAutoStopTests: XCTestCase {
         let samples = speech(seconds: 1.0) + silence(seconds: 3.0)
         XCTAssertFalse(shouldStop(samples, window: 0))
         XCTAssertFalse(shouldStop(samples, window: -1))
+    }
+
+    // MARK: - Quiet speakers
+
+    func testSoftSpeechBelowVADThresholdKeepsRecording() {
+        // The 2026-10-04 report: a hands-free session armed on louder speech,
+        // then stopped at 52s while the speaker kept talking softly because
+        // no frame reached 0.02 RMS for 6s.
+        let samples = level(0.002, seconds: 1) + speech(seconds: 1) + softSpeech(seconds: 20)
+        XCTAssertFalse(shouldStop(samples, window: 6), "Soft continuous speech is not silence")
+    }
+
+    func testSilenceAfterSoftSpeechStillStops() {
+        let samples = level(0.002, seconds: 1) + speech(seconds: 1) + softSpeech(seconds: 10)
+            + level(0.002, seconds: 6.5)
+        XCTAssertTrue(shouldStop(samples, window: 6))
+    }
+
+    func testSteadyRoomNoiseStillStops() {
+        // Noise below 0.02 but well above the quiet-room threshold: the
+        // threshold rises with the measured background, as before.
+        let samples = speech(seconds: 1) + level(0.012, seconds: 8)
+        XCTAssertTrue(shouldStop(samples, window: 6))
+    }
+
+    func testIsolatedClicksDoNotHoldRecordingOpen() {
+        var samples = speech(seconds: 1)
+        for _ in 0..<7 {
+            samples += level(0.012, seconds: 0.1) + silence(seconds: 0.9)
+        }
+        XCTAssertTrue(shouldStop(samples, window: 6), "One-frame bumps are not voice")
+    }
+
+    func testSoftSpeechAloneNeverArms() {
+        let scanned = policy(scanning: softSpeech(seconds: 3) + silence(seconds: 6))
+        XCTAssertFalse(scanned.isArmed, "Arming still needs speech at the VAD threshold")
+    }
+
+    func testSilenceThresholdTracksRoomNoise() {
+        XCTAssertEqual(
+            policy(scanning: speech(seconds: 1) + silence(seconds: 9)).silenceThresholdRMS,
+            TranscriptionService.faintEnergyFloor,
+            "Dead silence keeps the floor"
+        )
+        let quietRoom = policy(scanning: speech(seconds: 1) + level(0.003, seconds: 9)).silenceThresholdRMS
+        XCTAssertEqual(quietRoom, 0.003 * 1.8, accuracy: 0.0005)
+        XCTAssertEqual(
+            policy(scanning: speech(seconds: 1) + level(0.015, seconds: 9)).silenceThresholdRMS,
+            TranscriptionService.speechEnergyThreshold,
+            "Never stricter than the VAD threshold"
+        )
     }
 
     // MARK: - Incremental accounting

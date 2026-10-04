@@ -36,7 +36,7 @@ struct GrokProviderRows: View {
 
         SettingsToggleRow(
             title: "Send Text to Grok",
-            info: "Voice edits and writing insights send your text to Grok through your CLI account. Grok stays off until this is on.",
+            info: "Chat AI, writing insights, tone profile and graph summaries send your text to Grok through your CLI account. Dictation polish and voice edits always stay on this Mac. Grok stays off until this is on.",
             isOn: $consentAcknowledged
         )
     }

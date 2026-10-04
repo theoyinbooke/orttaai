@@ -2947,6 +2947,8 @@ protocol TranscriptionHistoryStoring: AnyObject {
         latency: DictationLatencyTelemetry,
         injectionMethod: String
     ) throws
+    /// Removes a saved entry, for a transcript that must not stay in History.
+    func deleteTranscriptionEntry(id: Int64) throws
     func logSkippedRecording(duration: TimeInterval)
 }
 
@@ -2985,6 +2987,10 @@ extension DatabaseManager: TranscriptionHistoryStoring {
             latency: latency,
             injectionMethod: injectionMethod
         )
+    }
+
+    func deleteTranscriptionEntry(id: Int64) throws {
+        try deleteTranscription(id: id)
     }
 
     func saveEditCommandEntry(

@@ -614,6 +614,17 @@ final class DictationCoordinator {
             }()
             settings.activeModelId = resolvedModelID
 
+            // Text meant for a password field is never saved: check before
+            // the History write below. `inject` checks again in case focus
+            // moves into a secure field after this point.
+            if injectionService.isFocusedElementSecure(in: self.targetApp) {
+                Logger.dictation.info("Dictation discarded; focused element is a secure field")
+                state = .error(message: "Can't dictate into password fields")
+                endSessionContext()
+                autoDismissError()
+                return
+            }
+
             // Persist the final transcript before interacting with another
             // application. A destination crash or failed paste must never make
             // a completed dictation disappear from History.
@@ -666,7 +677,9 @@ final class DictationCoordinator {
                     return nil
                 }
             }()
-            if let historyEntryID {
+            if let historyEntryID, result == .blockedSecureField {
+                discardPersistedTranscription(id: historyEntryID)
+            } else if let historyEntryID {
                 await completePersistedTranscription(
                     id: historyEntryID,
                     processingMs: processingMs,
@@ -730,7 +743,8 @@ final class DictationCoordinator {
             speechFrameCount: autoStopPolicy.speechFrameCount,
             peakFrameRMS: autoStopPolicy.peakFrameRMS,
             trailingSilenceMs: autoStopPolicy.trailingSilenceMs,
-            handsFreeArmed: isHandsFree && autoStopPolicy.isArmed
+            handsFreeArmed: isHandsFree && autoStopPolicy.isArmed,
+            silenceThresholdRMS: isHandsFree ? autoStopPolicy.silenceThresholdRMS : nil
         ))
     }
 
@@ -941,6 +955,18 @@ final class DictationCoordinator {
         )
     }
 
+    /// Removes an entry saved before delivery when the destination turned out
+    /// to be a secure field.
+    private func discardPersistedTranscription(id: Int64) {
+        do {
+            try historyStore.deleteTranscriptionEntry(id: id)
+        } catch {
+            Logger.dictation.error(
+                "Couldn't remove secure-field transcript from History: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
     @MainActor
     private func ensureTranscriptionModelLoaded() async throws {
         let selectedModelID = settings.applyLanguageOptimizedSmallModelSelection()
@@ -1126,7 +1152,7 @@ final class DictationCoordinator {
         ) else { return }
 
         Logger.dictation.info(
-            "Hands-free auto-stop: window=\(silenceStop, format: .fixed(precision: 1))s trailingSilence=\(self.autoStopPolicy.trailingSilenceMs)ms speechFrames=\(self.autoStopPolicy.speechFrameCount) peakRMS=\(self.autoStopPolicy.peakFrameRMS, format: .fixed(precision: 3)) duration=\(duration, format: .fixed(precision: 1))s"
+            "Hands-free auto-stop: window=\(silenceStop, format: .fixed(precision: 1))s trailingSilence=\(self.autoStopPolicy.trailingSilenceMs)ms speechFrames=\(self.autoStopPolicy.speechFrameCount) peakRMS=\(self.autoStopPolicy.peakFrameRMS, format: .fixed(precision: 3)) silenceThreshold=\(self.autoStopPolicy.silenceThresholdRMS, format: .fixed(precision: 4)) duration=\(duration, format: .fixed(precision: 1))s"
         )
         stopRecording(reason: .silenceAutoStop)
     }
