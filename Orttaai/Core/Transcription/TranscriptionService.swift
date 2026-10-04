@@ -51,8 +51,8 @@ actor TranscriptionService: Transcribing {
     }
 
     /// Live session state. Audio is committed as the recording progresses —
-    /// in fixed 15s clips (matching the clip grid the final batch decode has
-    /// always used) and early at speech pauses — so finalize only has to
+    /// in clips of up to 15s, preferring nearby pauses, and early at speech
+    /// pauses — so finalize only has to
     /// decode the short uncommitted tail no matter how long the dictation ran.
     private struct LiveTranscriptionSession {
         let id = UUID()
@@ -75,8 +75,16 @@ actor TranscriptionService: Transcribing {
     private static let mergedTranscriptSeparator = " "
     private static let liveTranscriptionReuseMaxAudioSeconds = 15.0
     private static let finalDecodeClipSeconds: Float = 15.0
-    /// Live clips are committed on the same 15s grid the final decode uses.
+    /// Maximum regular live clip length; shared with final decoding.
     private static let liveCommitClipSampleCount = Int(finalDecodeClipSeconds) * transcriptionSampleRate
+    /// Search the final 3s of a clip for a 200ms gap with resumed speech,
+    /// using the same conservative, noise-aware threshold as pause commits.
+    private static let clipBoundarySearchSampleCount = 3 * transcriptionSampleRate
+    private static let clipBoundaryGapSampleCount = transcriptionSampleRate / 5
+    /// Keep the pause threshold below quiet speech while allowing normal
+    /// variation around a measured room-noise floor. The ceiling is below
+    /// half the VAD threshold, which is too high for quiet word endings.
+    private static let maxPauseEnergyThreshold: Float = 0.009
     /// Energy framing matches WhisperKit's EnergyVAD (100ms frames, 0.02 RMS).
     static let energyFrameSampleCount = transcriptionSampleRate / 10
     static let speechEnergyThreshold: Float = 0.02
@@ -342,17 +350,16 @@ actor TranscriptionService: Transcribing {
         guard session.commitTask == nil else { return }
         guard audioSamples.count >= session.committedSampleCount else { return }
 
-        // Commit finished 15s clips as soon as they exist so finalize only has
-        // to decode the short tail, regardless of total recording length. A
+        // Commit a finished clip as soon as it exists, choosing a nearby
+        // pause when available so a word isn't cut at the 15s boundary. A
         // due commit preempts tail speculation: the commit invalidates the
         // speculative base anyway, and waiting a poll cycle only grows the
         // tail left for finalize.
         let pendingSamples = audioSamples.count - session.committedSampleCount
         if pendingSamples >= Self.liveCommitClipSampleCount {
             session.speculativeTask?.cancel()
-            let clipCount = pendingSamples / Self.liveCommitClipSampleCount
             let start = session.committedSampleCount
-            let end = start + clipCount * Self.liveCommitClipSampleCount
+            let end = start + Self.decodeClipSampleCount(pendingAudio: audioSamples[start...])
             let clipAudio = Array(audioSamples[start..<end])
             let sessionID = session.id
             session.commitTask = Task { [weak self] in
@@ -835,10 +842,10 @@ actor TranscriptionService: Transcribing {
         return false
     }
 
-    /// Decodes a committed clip — one or more complete 15s clips, or a
+    /// Decodes a committed clip — a pause-aligned clip of up to 15s, or a
     /// shorter pause-bounded clip — and folds it into the session's committed
     /// prefix. On failure the clip stays uncommitted so finalize re-decodes
-    /// it; an empty (silent) clip commits as empty text.
+    /// it; only an empty, effectively silent clip commits as empty text.
     private func runLiveCommit(clipAudio: [Float], startSample: Int, sessionID: UUID) async {
         let promptTokens: [Int]? = {
             guard let session = liveSession, session.id == sessionID,
@@ -853,7 +860,7 @@ actor TranscriptionService: Transcribing {
                 audioSamples: clipAudio,
                 promptTokens: promptTokens
             )
-            committed = outcome.text ?? ""
+            committed = Self.liveCommitText(decodedText: outcome.text, audioSamples: clipAudio)
             trippedFallback = outcome.trippedFallback
         } catch {
             if !Task.isCancelled {
@@ -934,6 +941,16 @@ actor TranscriptionService: Transcribing {
         let trippedFallback: Bool
     }
 
+    /// An empty decode is not proof of silence. Advancing over undecoded
+    /// speech would permanently lose words from the committed prefix.
+    nonisolated static func liveCommitText(decodedText: String?, audioSamples: [Float]) -> String? {
+        if let decodedText {
+            let normalized = normalizedTranscriptionText(decodedText)
+            if !normalized.isEmpty { return normalized }
+        }
+        return containsSpeechEnergy(audioSamples[...], threshold: faintEnergyFloor) ? nil : ""
+    }
+
     private struct DecodeOutcome {
         let text: String
         let trippedFallback: Bool
@@ -984,7 +1001,7 @@ actor TranscriptionService: Transcribing {
         )
     }
 
-    /// Decode used for committing live clips: same fixed clip grid as the
+    /// Decode used for committing live clips: same pause-aligned clipping as the
     /// final decode, cancellable, no relaxed retry.
     private func performClipTranscription(
         audioSamples: [Float],
@@ -1001,7 +1018,7 @@ actor TranscriptionService: Transcribing {
         }
         var options = Self.finalTranscriptionOptions(
             from: makeDecodingOptions(),
-            sampleCount: audioSamples.count
+            audioSamples: audioSamples
         )
         options.promptTokens = promptTokens
 
@@ -1072,7 +1089,7 @@ actor TranscriptionService: Transcribing {
         if !allowCancellation {
             primaryOptions = Self.finalTranscriptionOptions(
                 from: primaryOptions,
-                sampleCount: audioSamples.count
+                audioSamples: audioSamples
             )
         }
         primaryOptions.promptTokens = promptTokens
@@ -1141,7 +1158,7 @@ actor TranscriptionService: Transcribing {
         return DecodeOutcome(text: retriedText, trippedFallback: true)
     }
 
-    private func makeDecodingOptions() -> DecodingOptions {
+    func makeDecodingOptions() -> DecodingOptions {
         let decodingLanguage: String? = (language == "auto") ? nil : language
         let resolvedDecoding = resolvedDecodingOptions()
 
@@ -1187,36 +1204,61 @@ actor TranscriptionService: Transcribing {
 
     nonisolated static func finalTranscriptionOptions(
         from options: DecodingOptions,
-        sampleCount: Int
+        audioSamples: [Float]
     ) -> DecodingOptions {
         var finalOptions = options
         finalOptions.chunkingStrategy = ChunkingStrategy.none
-        finalOptions.clipTimestamps = fixedDecodeClipTimestamps(sampleCount: sampleCount)
+        finalOptions.clipTimestamps = decodeClipTimestamps(audioSamples: audioSamples)
         return finalOptions
     }
 
-    nonisolated static func fixedDecodeClipTimestamps(
-        sampleCount: Int,
-        clipSeconds: Float = finalDecodeClipSeconds
-    ) -> [Float] {
-        guard sampleCount > 0, clipSeconds > 0 else { return [] }
+    /// Prefer the latest 200ms quiet gap near the nominal clip end. Split in
+    /// its middle, leaving acoustic padding on both sides. Continuous speech
+    /// retains the existing bounded 15s behavior; no overlapping audio or text
+    /// deduplication is needed.
+    nonisolated static func decodeClipSampleCount(pendingAudio: ArraySlice<Float>) -> Int {
+        let limit = min(pendingAudio.count, liveCommitClipSampleCount)
+        guard pendingAudio.count >= liveCommitClipSampleCount else {
+            return limit
+        }
+        let searchStart = pendingAudio.startIndex + limit - clipBoundarySearchSampleCount
+        let searchEnd = pendingAudio.startIndex + limit
+        let pauseThreshold = pauseEnergyThreshold(in: pendingAudio.prefix(limit))
+        var quietSamples = 0
+        var boundary = limit
+        var frameStart = searchStart
+        while frameStart + energyFrameSampleCount <= searchEnd {
+            let frameEnd = frameStart + energyFrameSampleCount
+            if frameRMS(pendingAudio[frameStart..<frameEnd]) < pauseThreshold {
+                quietSamples += energyFrameSampleCount
+            } else {
+                // Require speech to resume after the gap. A trailing quiet
+                // run might be a soft word still being spoken at the clip
+                // edge, so it cannot establish a safer cut than the grid.
+                if quietSamples >= clipBoundaryGapSampleCount {
+                    boundary = frameStart - pendingAudio.startIndex - clipBoundaryGapSampleCount / 2
+                }
+                quietSamples = 0
+            }
+            frameStart = frameEnd
+        }
+        return boundary
+    }
 
-        let audioSeconds = Float(sampleCount) / Float(transcriptionSampleRate)
-        guard audioSeconds > clipSeconds else { return [] }
+    nonisolated static func decodeClipTimestamps(audioSamples: [Float]) -> [Float] {
+        guard audioSamples.count > liveCommitClipSampleCount else { return [] }
 
         // A trailing piece shorter than WhisperKit's window padding would be
         // skipped outright and its words lost; fold it into the previous clip.
-        let minTrailingSeconds = Float(minDecodableSampleCount) / Float(transcriptionSampleRate)
-
         var timestamps: [Float] = []
-        var start: Float = 0
-        while start < audioSeconds {
-            var end = min(start + clipSeconds, audioSeconds)
-            if audioSeconds - end < minTrailingSeconds {
-                end = audioSeconds
+        var start = 0
+        while start < audioSamples.count {
+            var end = start + decodeClipSampleCount(pendingAudio: audioSamples[start...])
+            if audioSamples.count - end < minDecodableSampleCount {
+                end = audioSamples.count
             }
-            timestamps.append(start)
-            timestamps.append(end)
+            timestamps.append(Float(start) / Float(transcriptionSampleRate))
+            timestamps.append(Float(end) / Float(transcriptionSampleRate))
             start = end
         }
         return timestamps
@@ -1418,6 +1460,24 @@ actor TranscriptionService: Transcribing {
         return (sum / Float(samples.count)).squareRoot()
     }
 
+    /// Estimate the background from the quietest tenth of full 100ms frames.
+    /// The small, capped margin tolerates room noise without using the much
+    /// higher speech-onset threshold to decide whether a word has ended.
+    /// Below-floor recordings retain the existing conservative floor.
+    nonisolated static func pauseEnergyThreshold(in samples: ArraySlice<Float>) -> Float {
+        var energies: [Float] = []
+        var start = samples.startIndex
+        while start + energyFrameSampleCount <= samples.endIndex {
+            let end = start + energyFrameSampleCount
+            energies.append(frameRMS(samples[start..<end]))
+            start = end
+        }
+        guard !energies.isEmpty else { return faintEnergyFloor }
+        energies.sort()
+        let background = energies[(energies.count - 1) / 10]
+        return min(maxPauseEnergyThreshold, max(faintEnergyFloor, background * 1.8))
+    }
+
     /// A speculative tail result can stand in for the final decode only when
     /// it covers the complete recording or everything recorded after it is
     /// effectively silent. Never accept a time-based coverage slack: at normal
@@ -1453,13 +1513,19 @@ actor TranscriptionService: Transcribing {
     }
 
     /// Length of the pending-audio prefix to commit early because the speaker
-    /// paused: the pending audio must contain speech, end in a sustained
-    /// silence gap, and yield a clip long enough to decode reliably.
+    /// paused: require audible speech, then locate its end above background
+    /// noise. The higher VAD threshold alone mistakes soft final words for
+    /// silence, cutting them between the committed clip and its tail.
     nonisolated static func pauseCommitSampleCount(pendingAudio: ArraySlice<Float>) -> Int? {
         guard pendingAudio.count >= pauseCommitMinClipSampleCount + pauseCommitSilenceSampleCount else {
             return nil
         }
-        guard let lastSpeechEnd = lastSpeechSampleIndex(in: pendingAudio) else { return nil }
+        guard containsSpeechEnergy(pendingAudio),
+              let lastSpeechEnd = lastSpeechSampleIndex(
+                in: pendingAudio, threshold: pauseEnergyThreshold(in: pendingAudio)
+              ) else {
+            return nil
+        }
         guard pendingAudio.count - lastSpeechEnd >= pauseCommitSilenceSampleCount else { return nil }
         let clipSampleCount = min(pendingAudio.count, lastSpeechEnd + silencePadSampleCount)
         guard clipSampleCount >= pauseCommitMinClipSampleCount else { return nil }
@@ -1555,12 +1621,15 @@ actor TranscriptionService: Transcribing {
             logProbThreshold = -1.0
             noSpeechThreshold = 0.6
         case .accuracy:
-            temperature = 0.2
-            topK = 8
+            // Start greedily, then sample only when the quality gate requests
+            // a fallback. Starting at 0.2 randomized even clean dictation;
+            // topK is a sampling limit, not a beam-search accuracy setting.
+            temperature = 0.0
+            topK = 5
             fallbackCount = 5
-            compressionRatioThreshold = 2.8
-            logProbThreshold = -1.2
-            noSpeechThreshold = 0.5
+            compressionRatioThreshold = 2.4
+            logProbThreshold = -1.0
+            noSpeechThreshold = 0.6
         }
 
         var workerCount = autoWorkerCount

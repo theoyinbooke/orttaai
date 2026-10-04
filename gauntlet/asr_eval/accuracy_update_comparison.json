@@ -1,0 +1,612 @@
+{
+  "evaluated_at": "2026-10-02",
+  "baseline_commit": "cc2f269",
+  "candidate": "working tree",
+  "model": "openai_whisper-large-v3-v20240930",
+  "configuration": "Release",
+  "hardware": "Apple M5 Max Mac Studio",
+  "language": "en",
+  "compute": "cpuAndNeuralEngine",
+  "speedup": 4,
+  "vocabulary_prompt": false,
+  "corpus_origin": "synthetic speech; deterministic realistic remixes",
+  "test_validation": {
+    "passed": 671,
+    "skipped": 7,
+    "failed": 0,
+    "excluded": [
+      "OrttaaiUITests",
+      "CodexIntegrationTests",
+      "GrokIntegrationTests"
+    ]
+  },
+  "source_sha256": {
+    "Orttaai/Core/Transcription/TranscriptionService.swift": "09f15b4f06321a0e567b064c4b9a8f76443dc5658082249574269698d9b0b62f",
+    "Orttaai/UI/Settings/ModelSettingsView.swift": "117ac20df33d5ad6bccb292a207972f7dcd0cef12071bc7a4c44558934253683"
+  },
+  "comparisons": {
+    "clean_balanced": {
+      "before": {
+        "aggregate_wer": 0.0538,
+        "total_errors": 29,
+        "total_ref_words": 539,
+        "items_scored": 16,
+        "latency_ms_p50": 655.0,
+        "latency_ms_p90": 859,
+        "hard_vocab_recall_strict": 0.4375,
+        "hard_vocab_recall_lenient": 0.625,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0
+      },
+      "after": {
+        "aggregate_wer": 0.0538,
+        "total_errors": 29,
+        "total_ref_words": 539,
+        "items_scored": 16,
+        "latency_ms_p50": 689.0,
+        "latency_ms_p90": 901,
+        "hard_vocab_recall_strict": 0.4375,
+        "hard_vocab_recall_lenient": 0.625,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0
+      },
+      "per_item": {
+        "pn-001": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 834,
+          "after_ms": 843,
+          "after_artifacts": []
+        },
+        "pn-008": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 587,
+          "after_ms": 585,
+          "after_artifacts": []
+        },
+        "tech-001": {
+          "before_errors": 3,
+          "after_errors": 3,
+          "before_ms": 822,
+          "after_ms": 822,
+          "after_artifacts": []
+        },
+        "tech-009": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 596,
+          "after_ms": 596,
+          "after_artifacts": []
+        },
+        "num-001": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 610,
+          "after_ms": 610,
+          "after_artifacts": []
+        },
+        "num-010": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 650,
+          "after_ms": 637,
+          "after_artifacts": []
+        },
+        "ev-001": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 799,
+          "after_ms": 797,
+          "after_artifacts": []
+        },
+        "ev-005": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 634,
+          "after_ms": 626,
+          "after_artifacts": []
+        },
+        "long-001": {
+          "before_errors": 3,
+          "after_errors": 3,
+          "before_ms": 763,
+          "after_ms": 1054,
+          "after_artifacts": []
+        },
+        "long-004": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 859,
+          "after_ms": 856,
+          "after_artifacts": []
+        },
+        "long-011": {
+          "before_errors": 5,
+          "after_errors": 5,
+          "before_ms": 859,
+          "after_ms": 859,
+          "after_artifacts": []
+        },
+        "long-019": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 873,
+          "after_ms": 901,
+          "after_artifacts": []
+        },
+        "adv-001": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 660,
+          "after_ms": 656,
+          "after_artifacts": []
+        },
+        "adv-003": {
+          "before_errors": 2,
+          "after_errors": 2,
+          "before_ms": 555,
+          "after_ms": 490,
+          "after_artifacts": []
+        },
+        "adv-006": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 583,
+          "after_ms": 722,
+          "after_artifacts": []
+        },
+        "adv-009": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 604,
+          "after_ms": 595,
+          "after_artifacts": []
+        }
+      }
+    },
+    "clean_accuracy": {
+      "before": {
+        "aggregate_wer": 0.1354,
+        "total_errors": 73,
+        "total_ref_words": 539,
+        "items_scored": 16,
+        "latency_ms_p50": 1060.0,
+        "latency_ms_p90": 1984,
+        "hard_vocab_recall_strict": 0.3125,
+        "hard_vocab_recall_lenient": 0.5,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0
+      },
+      "after": {
+        "aggregate_wer": 0.0538,
+        "total_errors": 29,
+        "total_ref_words": 539,
+        "items_scored": 16,
+        "latency_ms_p50": 695.0,
+        "latency_ms_p90": 835,
+        "hard_vocab_recall_strict": 0.4375,
+        "hard_vocab_recall_lenient": 0.625,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0
+      },
+      "per_item": {
+        "pn-001": {
+          "before_errors": 13,
+          "after_errors": 4,
+          "before_ms": 2213,
+          "after_ms": 837,
+          "after_artifacts": []
+        },
+        "pn-008": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 857,
+          "after_ms": 588,
+          "after_artifacts": []
+        },
+        "tech-001": {
+          "before_errors": 3,
+          "after_errors": 3,
+          "before_ms": 927,
+          "after_ms": 820,
+          "after_artifacts": []
+        },
+        "tech-009": {
+          "before_errors": 12,
+          "after_errors": 0,
+          "before_ms": 1975,
+          "after_ms": 594,
+          "after_artifacts": []
+        },
+        "num-001": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 1140,
+          "after_ms": 607,
+          "after_artifacts": []
+        },
+        "num-010": {
+          "before_errors": 16,
+          "after_errors": 4,
+          "before_ms": 1984,
+          "after_ms": 645,
+          "after_artifacts": []
+        },
+        "ev-001": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 871,
+          "after_ms": 784,
+          "after_artifacts": []
+        },
+        "ev-005": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 752,
+          "after_ms": 619,
+          "after_artifacts": []
+        },
+        "long-001": {
+          "before_errors": 3,
+          "after_errors": 3,
+          "before_ms": 1227,
+          "after_ms": 781,
+          "after_artifacts": []
+        },
+        "long-004": {
+          "before_errors": 9,
+          "after_errors": 4,
+          "before_ms": 1043,
+          "after_ms": 775,
+          "after_artifacts": []
+        },
+        "long-011": {
+          "before_errors": 10,
+          "after_errors": 5,
+          "before_ms": 1245,
+          "after_ms": 792,
+          "after_artifacts": []
+        },
+        "long-019": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 1093,
+          "after_ms": 835,
+          "after_artifacts": []
+        },
+        "adv-001": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 1077,
+          "after_ms": 664,
+          "after_artifacts": []
+        },
+        "adv-003": {
+          "before_errors": 3,
+          "after_errors": 2,
+          "before_ms": 723,
+          "after_ms": 484,
+          "after_artifacts": []
+        },
+        "adv-006": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 605,
+          "after_ms": 726,
+          "after_artifacts": []
+        },
+        "adv-009": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 726,
+          "after_ms": 595,
+          "after_artifacts": []
+        }
+      }
+    },
+    "realistic_balanced": {
+      "before": {
+        "aggregate_wer": 0.075,
+        "total_errors": 154,
+        "total_ref_words": 2054,
+        "items_scored": 36,
+        "latency_ms_p50": 723.5,
+        "latency_ms_p90": 1141,
+        "hard_vocab_recall_strict": 0.425,
+        "hard_vocab_recall_lenient": 0.675,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 2,
+        "trailing_stock_phrase": 0,
+        "soft_last": {
+          "items": 6,
+          "last_word_recall_strict": 0.6667,
+          "last_word_recall_lenient": 0.8333,
+          "missed_item_ids": [
+            "soft-last-04",
+            "soft-last-06"
+          ]
+        }
+      },
+      "after": {
+        "aggregate_wer": 0.0351,
+        "total_errors": 72,
+        "total_ref_words": 2054,
+        "items_scored": 36,
+        "latency_ms_p50": 620.5,
+        "latency_ms_p90": 1200,
+        "hard_vocab_recall_strict": 0.4,
+        "hard_vocab_recall_lenient": 0.65,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 2,
+        "trailing_stock_phrase": 0,
+        "soft_last": {
+          "items": 6,
+          "last_word_recall_strict": 0.8333,
+          "last_word_recall_lenient": 0.8333,
+          "missed_item_ids": [
+            "soft-last-04"
+          ]
+        }
+      },
+      "per_item": {
+        "noisy-long-01": {
+          "before_errors": 7,
+          "after_errors": 4,
+          "before_ms": 1183,
+          "after_ms": 1387,
+          "after_artifacts": []
+        },
+        "noisy-long-02": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 698,
+          "after_ms": 832,
+          "after_artifacts": []
+        },
+        "noisy-long-03": {
+          "before_errors": 47,
+          "after_errors": 6,
+          "before_ms": 706,
+          "after_ms": 633,
+          "after_artifacts": []
+        },
+        "noisy-long-04": {
+          "before_errors": 2,
+          "after_errors": 3,
+          "before_ms": 1141,
+          "after_ms": 1144,
+          "after_artifacts": []
+        },
+        "noisy-long-05": {
+          "before_errors": 1,
+          "after_errors": 1,
+          "before_ms": 689,
+          "after_ms": 875,
+          "after_artifacts": []
+        },
+        "noisy-long-06": {
+          "before_errors": 6,
+          "after_errors": 5,
+          "before_ms": 1279,
+          "after_ms": 789,
+          "after_artifacts": []
+        },
+        "noisy-long-07": {
+          "before_errors": 45,
+          "after_errors": 10,
+          "before_ms": 970,
+          "after_ms": 1056,
+          "after_artifacts": []
+        },
+        "noisy-long-08": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 885,
+          "after_ms": 810,
+          "after_artifacts": []
+        },
+        "hold-01": {
+          "before_errors": 2,
+          "after_errors": 2,
+          "before_ms": 800,
+          "after_ms": 1253,
+          "after_artifacts": []
+        },
+        "hold-02": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 1011,
+          "after_ms": 596,
+          "after_artifacts": []
+        },
+        "hold-03": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 824,
+          "after_ms": 946,
+          "after_artifacts": []
+        },
+        "hold-04": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 1290,
+          "after_ms": 1200,
+          "after_artifacts": []
+        },
+        "hold-05": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 976,
+          "after_ms": 940,
+          "after_artifacts": []
+        },
+        "hold-06": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 547,
+          "after_ms": 551,
+          "after_artifacts": []
+        },
+        "hold-07": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 947,
+          "after_ms": 1016,
+          "after_artifacts": []
+        },
+        "hold-08": {
+          "before_errors": 1,
+          "after_errors": 1,
+          "before_ms": 1020,
+          "after_ms": 607,
+          "after_artifacts": []
+        },
+        "hold-09": {
+          "before_errors": 8,
+          "after_errors": 8,
+          "before_ms": 1068,
+          "after_ms": 610,
+          "after_artifacts": []
+        },
+        "hold-10": {
+          "before_errors": 5,
+          "after_errors": 5,
+          "before_ms": 741,
+          "after_ms": 802,
+          "after_artifacts": []
+        },
+        "hold-11": {
+          "before_errors": 8,
+          "after_errors": 6,
+          "before_ms": 677,
+          "after_ms": 891,
+          "after_artifacts": []
+        },
+        "hold-12": {
+          "before_errors": 7,
+          "after_errors": 7,
+          "before_ms": 589,
+          "after_ms": 601,
+          "after_artifacts": []
+        },
+        "soft-last-01": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 394,
+          "after_ms": 460,
+          "after_artifacts": []
+        },
+        "soft-last-02": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 932,
+          "after_ms": 464,
+          "after_artifacts": []
+        },
+        "soft-last-03": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 467,
+          "after_ms": 541,
+          "after_artifacts": []
+        },
+        "soft-last-04": {
+          "before_errors": 1,
+          "after_errors": 1,
+          "before_ms": 407,
+          "after_ms": 434,
+          "after_artifacts": []
+        },
+        "soft-last-05": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 865,
+          "after_ms": 981,
+          "after_artifacts": []
+        },
+        "soft-last-06": {
+          "before_errors": 1,
+          "after_errors": 0,
+          "before_ms": 1042,
+          "after_ms": 541,
+          "after_artifacts": []
+        },
+        "noise-only-01": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 196,
+          "after_ms": 185,
+          "after_artifacts": []
+        },
+        "noise-only-02": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 180,
+          "after_ms": 264,
+          "after_artifacts": []
+        },
+        "noise-only-03": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 445,
+          "after_ms": 444,
+          "after_artifacts": []
+        },
+        "noise-only-04": {
+          "before_errors": 1,
+          "after_errors": 1,
+          "before_ms": 1022,
+          "after_ms": 1470,
+          "after_artifacts": []
+        },
+        "noise-only-05": {
+          "before_errors": 1,
+          "after_errors": 1,
+          "before_ms": 462,
+          "after_ms": 460,
+          "after_artifacts": []
+        },
+        "noise-only-06": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 456,
+          "after_ms": 457,
+          "after_artifacts": []
+        },
+        "quiet-01": {
+          "before_errors": 4,
+          "after_errors": 4,
+          "before_ms": 629,
+          "after_ms": 631,
+          "after_artifacts": []
+        },
+        "quiet-02": {
+          "before_errors": 1,
+          "after_errors": 1,
+          "before_ms": 497,
+          "after_ms": 523,
+          "after_artifacts": []
+        },
+        "quiet-03": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 565,
+          "after_ms": 568,
+          "after_artifacts": []
+        },
+        "quiet-04": {
+          "before_errors": 0,
+          "after_errors": 0,
+          "before_ms": 456,
+          "after_ms": 528,
+          "after_artifacts": []
+        }
+      }
+    }
+  }
+}

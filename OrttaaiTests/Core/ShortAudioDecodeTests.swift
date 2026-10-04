@@ -36,16 +36,16 @@ final class ShortAudioDecodeTests: XCTestCase {
         XCTAssertEqual(TranscriptionService.paddedForDecode(audio), audio)
     }
 
-    // MARK: - fixedDecodeClipTimestamps
+    // MARK: - decodeClipTimestamps
 
     func testClipTimestampsAreEmptyForSingleWindowAudio() {
-        XCTAssertTrue(TranscriptionService.fixedDecodeClipTimestamps(sampleCount: 10 * rate).isEmpty)
-        XCTAssertTrue(TranscriptionService.fixedDecodeClipTimestamps(sampleCount: 15 * rate).isEmpty)
+        XCTAssertTrue(TranscriptionService.decodeClipTimestamps(audioSamples: [Float](repeating: 0.1, count: 10 * rate)).isEmpty)
+        XCTAssertTrue(TranscriptionService.decodeClipTimestamps(audioSamples: [Float](repeating: 0.1, count: 15 * rate)).isEmpty)
     }
 
-    func testClipTimestampsSplitOnTheFifteenSecondGrid() {
+    func testContinuousSpeechSplitsOnTheFifteenSecondGrid() {
         XCTAssertEqual(
-            TranscriptionService.fixedDecodeClipTimestamps(sampleCount: 30 * rate),
+            TranscriptionService.decodeClipTimestamps(audioSamples: [Float](repeating: 0.1, count: 30 * rate)),
             [0, 15, 15, 30]
         )
     }
@@ -53,18 +53,18 @@ final class ShortAudioDecodeTests: XCTestCase {
     func testTrailingPieceUnderMinimumIsFoldedIntoThePreviousClip() {
         // A 0.4s remainder would be skipped by WhisperKit and its words lost.
         XCTAssertEqual(
-            TranscriptionService.fixedDecodeClipTimestamps(sampleCount: 15 * rate + rate * 4 / 10),
+            TranscriptionService.decodeClipTimestamps(audioSamples: [Float](repeating: 0.1, count: 15 * rate + rate * 4 / 10)),
             [0, 15.4]
         )
         XCTAssertEqual(
-            TranscriptionService.fixedDecodeClipTimestamps(sampleCount: 30 * rate + rate * 9 / 10),
+            TranscriptionService.decodeClipTimestamps(audioSamples: [Float](repeating: 0.1, count: 30 * rate + rate * 9 / 10)),
             [0, 15, 15, 30.9]
         )
     }
 
     func testTrailingPieceAtOrAboveMinimumKeepsItsOwnClip() {
         XCTAssertEqual(
-            TranscriptionService.fixedDecodeClipTimestamps(sampleCount: 30 * rate + rate * 8 / 5),
+            TranscriptionService.decodeClipTimestamps(audioSamples: [Float](repeating: 0.1, count: 30 * rate + rate * 8 / 5)),
             [0, 15, 15, 30, 30, 31.6]
         )
     }
@@ -72,7 +72,7 @@ final class ShortAudioDecodeTests: XCTestCase {
     func testEveryClipCoversMoreThanTheWindowPaddingAndTheAudioIsFullyCovered() {
         for tenths in stride(from: 150, through: 1_000, by: 7) {
             let sampleCount = tenths * rate / 10
-            let stamps = TranscriptionService.fixedDecodeClipTimestamps(sampleCount: sampleCount)
+            let stamps = TranscriptionService.decodeClipTimestamps(audioSamples: [Float](repeating: 0.1, count: sampleCount))
             guard !stamps.isEmpty else { continue }
             XCTAssertEqual(stamps.count % 2, 0)
             XCTAssertEqual(stamps.first, 0)

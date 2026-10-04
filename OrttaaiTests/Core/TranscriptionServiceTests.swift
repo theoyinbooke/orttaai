@@ -151,7 +151,7 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(relaxed.topK, 5)
     }
 
-    func testFinalTranscriptionOptionsUseFixedDecodeClips() {
+    func testFinalTranscriptionOptionsUseBoundedDecodeClips() {
         let options = DecodingOptions(
             temperature: 0.0,
             temperatureFallbackCount: 1,
@@ -161,7 +161,7 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let finalOptions = TranscriptionService.finalTranscriptionOptions(
             from: options,
-            sampleCount: 16_000 * 32
+            audioSamples: [Float](repeating: 0.1, count: 16_000 * 32)
         )
 
         XCTAssertEqual(finalOptions.chunkingStrategy, ChunkingStrategy.none)
@@ -178,7 +178,7 @@ final class TranscriptionServiceTests: XCTestCase {
 
         let finalOptions = TranscriptionService.finalTranscriptionOptions(
             from: options,
-            sampleCount: 16_000 * 12
+            audioSamples: [Float](repeating: 0.1, count: 16_000 * 12)
         )
 
         XCTAssertEqual(finalOptions.chunkingStrategy, ChunkingStrategy.none)

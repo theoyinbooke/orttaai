@@ -615,7 +615,7 @@ struct ModelSettingsView: View {
 
             SettingsStepperRow(
                 title: "Top-K",
-                info: "Limits the candidate tokens considered at each decode step.",
+                info: "Limits candidate tokens when Temperature is above zero.",
                 value: $decodingTopK,
                 range: 1...20
             )

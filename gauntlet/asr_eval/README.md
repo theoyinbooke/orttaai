@@ -6,7 +6,7 @@ each other and against a recorded baseline:
 - **whole** — `TranscriptionService.transcribe(audioSamples:)`, the single
   whole-utterance decode (the reference standard).
 - **live** — the real live-session machinery: `beginLiveTranscriptionSession`,
-  incremental `processLiveAudioSnapshot` polling (15 s clip commits, pause
+  incremental `processLiveAudioSnapshot` polling (clips of up to 15 s, aligned to nearby quiet gaps, pause
   commits, speculative tail), then `finalizeLiveTranscription`.
 
 The eval runs the REAL `TranscriptionService` actor inside the app process —
@@ -148,3 +148,11 @@ finalize 907 ms -> 1843 ms, and every long-* and adv-* item degraded (the
 prompt is re-applied per clip and the decoder degenerates). Do not re-enable
 it; vocabulary recall on the live path comes from the deterministic fuzzy
 dictionary pass in the rule-based text processor instead.
+
+
+## Speech accuracy tuning (2026-10-02)
+
+See [the speech accuracy investigation](../../docs/speech-accuracy-investigation.md)
+for the Accuracy preset correction, pause-aligned clipping, protection against
+empty speech commits, quiet-ending regression checks, and measured WER/latency
+comparisons. The live path still decodes without vocabulary prompt tokens.
