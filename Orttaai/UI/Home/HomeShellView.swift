@@ -5,6 +5,7 @@ import SwiftUI
 
 struct HomeShellView: View {
     @ObservedObject var navigation: HomeNavigationState
+    @ObservedObject var appUpdates = AppUpdateService.shared
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     let onRunSetup: () -> Void
@@ -16,6 +17,7 @@ struct HomeShellView: View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 HomeSidebarView(
                     selection: sidebarSelection,
+                    appUpdates: appUpdates,
                     onRunSetup: onRunSetup
                 )
                 .toolbar(removing: .sidebarToggle)
@@ -95,6 +97,7 @@ struct HomeShellView: View {
 
 private struct HomeSidebarView: View {
     @Binding var selection: HomeSection?
+    @ObservedObject var appUpdates: AppUpdateService
     let onRunSetup: () -> Void
 
     private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics]
@@ -132,6 +135,21 @@ private struct HomeSidebarView: View {
             }
 
             Divider()
+
+            if let version = appUpdates.readyVersion {
+                Button {
+                    appUpdates.installReadyUpdate()
+                } label: {
+                    Label("Update", systemImage: "arrow.down.circle.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.md)
+                .help("Install Orttaai \(version) and relaunch")
+                .accessibilityLabel("Update to Orttaai \(version)")
+                .accessibilityIdentifier("InstallReadyUpdate")
+            }
 
             Button {
                 onRunSetup()

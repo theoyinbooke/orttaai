@@ -4,7 +4,6 @@
 import Cocoa
 import KeyboardShortcuts
 import os
-import Sparkle
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -13,7 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowManager: WindowManager?
     private var appState: AppState?
     private var floatingPanel: FloatingPanelController?
-    private var updaterController: SPUStandardUpdaterController?
+    private let appUpdates = AppUpdateService.shared
 
     // Core services
     private var audioService: AudioCaptureService?
@@ -226,24 +225,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureUpdater() {
-        #if DEBUG
-        updaterController = nil
-        #else
-        guard !Bundle.main.isHomebrewInstall else {
-            updaterController = nil
-            return
-        }
-
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
+        #if !DEBUG
+        appUpdates.start()
         #endif
     }
 
     private func checkForUpdates() {
-        updaterController?.checkForUpdates(nil)
+        appUpdates.checkForUpdates()
     }
 
     private func setupCoreServices(settings: AppSettings) {

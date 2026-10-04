@@ -4,6 +4,7 @@
 import SwiftUI
 
 struct AboutView: View {
+    @ObservedObject private var appUpdates = AppUpdateService.shared
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     private let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     private let isHomebrew = Bundle.main.isHomebrewInstall
@@ -95,6 +96,21 @@ struct AboutView: View {
                         NotificationCenter.default.post(name: .checkForUpdatesRequested, object: nil)
                     }
                     .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                    .disabled(!appUpdates.isSupported)
+                }
+
+                SettingsDivider()
+                SettingsRow(
+                    title: "Automatically download updates",
+                    info: "Downloads updates in the background. When ready, use Update at the bottom left to install and relaunch. Updates also install when you quit."
+                ) {
+                    Toggle("Automatically download updates", isOn: Binding(
+                        get: { appUpdates.automaticallyDownloadsUpdates },
+                        set: { appUpdates.setAutomaticallyDownloadsUpdates($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!appUpdates.isSupported)
                 }
             }
         }
