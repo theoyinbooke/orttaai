@@ -13,11 +13,11 @@ Drop `-skip-testing:OrttaaiUITests` to also run the UI test target (`OrttaaiUITe
 
 ### Test Coverage
 
-`OrttaaiTests/` has 694 test methods in 52 test files (counted with `grep -c "func test"`; `ModelProbeTestSupport.swift` holds shared fakes only). The latest full run: 685 passed, 9 skipped, 0 failed.
+`OrttaaiTests/` has 696 test methods in 52 test files (counted with `grep -c "func test"`; `ModelProbeTestSupport.swift` holds shared fakes only). The latest full run: 687 passed, 9 skipped, 0 failed.
 
 | Area | Test files | Tests |
 |------|-----------|-------|
-| Dictation coordination (`DictationCoordinator`, hands-free auto-stop, hotkey tap/hold, finalize trace) | 4 | 115 |
+| Dictation coordination (`DictationCoordinator`, hands-free auto-stop, hotkey tap/hold, finalize trace, secure-field discard) | 4 | 117 |
 | Transcription and decoding (`TranscriptionService`, model loading, conditioning, decode accuracy, short audio, live transcript) | 6 | 104 |
 | Text processing and personal memory (rule-based processor, disfluency cleanup, fuzzy dictionary, local LLM and Apple Intelligence polish) | 6 | 102 |
 | Model management and hardware (`ModelManager`, variant resolver, directory/tokenizer/storage location, launch safety, quantized migration, quick start, `HardwareDetector`) | 9 | 90 |
@@ -28,7 +28,7 @@ Drop `-skip-testing:OrttaaiUITests` to also run the UI test target (`OrttaaiUITe
 | Audio capture (`AudioCaptureService`) | 1 | 7 |
 | UI (floating panel shape) | 1 | 2 |
 | Eval harnesses (ASR eval runner, text accuracy replay) | 2 | 2 |
-| **Total** | **52** | **694** |
+| **Total** | **52** | **696** |
 
 iCloud sync has no dedicated test file: its database snapshot, tombstone, and backup-retention paths are covered in `DatabaseManagerTests`, but `CloudSyncService` itself is untested.
 
@@ -96,7 +96,7 @@ Test each app with:
 
 ### Secure Field Tests
 
-| Scenario | Blocked? | lastTranscript set? | Clipboard touched? | Error shown? |
+| Scenario | Blocked? | Saved to History? (should be no) | Clipboard touched? | Error shown? |
 |----------|----------|--------------------|--------------------|-------------|
 | Safari login form | | | | |
 | Chrome login form | | | | |

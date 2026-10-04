@@ -157,8 +157,13 @@ final class MockTextProcessor: TextProcessor, VocabularyBiasProviding {
 final class MockInjectionService: TextInjecting {
     var lowLatencyModeEnabled: Bool = false
     var mockResult: InjectionResult = .success(method: .paste)
+    var focusedElementIsSecure = false
     var onInject: ((String) -> Void)?
     private(set) var injectedTexts: [String] = []
+
+    func isFocusedElementSecure(in targetApp: NSRunningApplication?) -> Bool {
+        focusedElementIsSecure
+    }
 
     func inject(text: String, targetApp: NSRunningApplication? = nil) async -> InjectionResult {
         onInject?(text)
@@ -220,6 +225,10 @@ final class FailingHistoryStore: TranscriptionHistoryStoring {
         lock.lock()
         _saveAttempts += 1
         lock.unlock()
+        throw WriteError()
+    }
+
+    func deleteTranscriptionEntry(id: Int64) throws {
         throw WriteError()
     }
 
@@ -676,6 +685,45 @@ final class DictationCoordinatorTests: XCTestCase {
 
         let saved = try await waitForTranscription()
         XCTAssertEqual(saved.injectionMethod, "failed", "Failed injection keeps its history entry, marked failed")
+    }
+
+    @MainActor
+    func testSecureFieldDictationIsNeverSavedToHistory() async throws {
+        injectionService.focusedElementIsSecure = true
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        let errored = await waitUntil {
+            if case .error(let message) = self.coordinator.state {
+                return message == "Can't dictate into password fields"
+            }
+            return false
+        }
+        XCTAssertTrue(errored, "A secure field must surface the password-field error")
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty, "Nothing may be delivered to a secure field")
+        XCTAssertTrue(try databaseManager.fetchRecent(limit: 1).isEmpty, "A blocked transcript must not reach History")
+    }
+
+    @MainActor
+    func testSecureFieldBlockedAtDeliveryRemovesSavedEntry() async throws {
+        // Focus moves into a password field after the pre-save check passed.
+        injectionService.mockResult = .blockedSecureField
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        let errored = await waitUntil {
+            if case .error(let message) = self.coordinator.state {
+                return message == "Can't dictate into password fields"
+            }
+            return false
+        }
+        XCTAssertTrue(errored, "A secure field must surface the password-field error")
+        XCTAssertEqual(injectionService.injectedTexts.count, 1)
+        XCTAssertTrue(try databaseManager.fetchRecent(limit: 1).isEmpty, "The entry saved before delivery must be removed")
     }
 
     // MARK: - Tap vs hold (hands-free toggle)

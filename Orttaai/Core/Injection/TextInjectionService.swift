@@ -79,6 +79,10 @@ struct InjectionTelemetry: Sendable {
 protocol TextInjecting: AnyObject {
     var lastInjectionTelemetry: InjectionTelemetry? { get }
     var lowLatencyModeEnabled: Bool { get set }
+    /// Whether the focused element in `targetApp` is a password/secure field.
+    /// Checked before a transcript is saved so a blocked dictation never
+    /// reaches History.
+    func isFocusedElementSecure(in targetApp: NSRunningApplication?) -> Bool
     func inject(text: String, targetApp: NSRunningApplication?) async -> InjectionResult
 }
 

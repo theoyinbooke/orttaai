@@ -614,6 +614,17 @@ final class DictationCoordinator {
             }()
             settings.activeModelId = resolvedModelID
 
+            // Text meant for a password field is never saved: check before
+            // the History write below. `inject` checks again in case focus
+            // moves into a secure field after this point.
+            if injectionService.isFocusedElementSecure(in: self.targetApp) {
+                Logger.dictation.info("Dictation discarded; focused element is a secure field")
+                state = .error(message: "Can't dictate into password fields")
+                endSessionContext()
+                autoDismissError()
+                return
+            }
+
             // Persist the final transcript before interacting with another
             // application. A destination crash or failed paste must never make
             // a completed dictation disappear from History.
@@ -666,7 +677,9 @@ final class DictationCoordinator {
                     return nil
                 }
             }()
-            if let historyEntryID {
+            if let historyEntryID, result == .blockedSecureField {
+                discardPersistedTranscription(id: historyEntryID)
+            } else if let historyEntryID {
                 await completePersistedTranscription(
                     id: historyEntryID,
                     processingMs: processingMs,
@@ -940,6 +953,18 @@ final class DictationCoordinator {
         Logger.dictation.error(
             "History delivery metadata update failed after \(Self.historySaveAttempts) attempts: \(lastError?.localizedDescription ?? "unknown error", privacy: .public)"
         )
+    }
+
+    /// Removes an entry saved before delivery when the destination turned out
+    /// to be a secure field.
+    private func discardPersistedTranscription(id: Int64) {
+        do {
+            try historyStore.deleteTranscriptionEntry(id: id)
+        } catch {
+            Logger.dictation.error(
+                "Couldn't remove secure-field transcript from History: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     @MainActor
