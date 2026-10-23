@@ -21,12 +21,13 @@ enum AnalyticsTab: String, CaseIterable, Identifiable {
 
 struct AnalyticsView: View {
     @State private var selectedTab: AnalyticsTab = .dashboard
+    @AppStorage("analyticsTimeRange") private var range: AnalyticsTimeRange = .thirtyDays
 
     var body: some View {
         Group {
             switch selectedTab {
             case .dashboard:
-                AnalyticsDashboardView()
+                AnalyticsDashboardView(range: range)
             case .toneOfVoice:
                 ToneOfVoiceView()
             case .history:
@@ -43,6 +44,15 @@ struct AnalyticsView: View {
                 title: \.rawValue,
                 icon: \.icon
             )
+        } trailing: {
+            // Only the dashboard has a range to pick.
+            if selectedTab == .dashboard {
+                HeaderSegmentedPicker(
+                    options: AnalyticsTimeRange.allCases,
+                    selection: $range,
+                    title: \.rawValue
+                )
+            }
         }
     }
 }

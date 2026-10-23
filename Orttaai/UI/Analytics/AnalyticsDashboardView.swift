@@ -58,6 +58,10 @@ final class AnalyticsDashboardViewModel {
     private(set) var hourlyActivity: [HourlyActivityPoint] = []
     private(set) var durationBuckets: [DurationBucket] = []
     private(set) var wordsByApp: [AppWordCount] = []
+    private(set) var weekdayActivity: [WeekdayActivityPoint] = []
+    /// Seconds spoken on each day of `trendPoints`, in the same order.
+    private(set) var dailyActiveSeconds: [Int] = []
+    private(set) var medianDurationMs: Int?
     private(set) var totalSessions: Int = 0
     private(set) var totalWords: Int = 0
     private(set) var totalRecordingMinutes: Int = 0
@@ -68,9 +72,11 @@ final class AnalyticsDashboardViewModel {
     var errorMessage: String?
 
     private var observation: DatabaseCancellable?
+    private let makeDatabase: () throws -> DatabaseManager
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, makeDatabase: @escaping () throws -> DatabaseManager = { try DatabaseManager() }) {
         self.settings = settings
+        self.makeDatabase = makeDatabase
     }
 
     convenience init() {
@@ -85,7 +91,7 @@ final class AnalyticsDashboardViewModel {
         }
 
         do {
-            let db = try DatabaseManager()
+            let db = try makeDatabase()
             let service = DashboardStatsService(databaseManager: db)
             try refresh(using: db, service: service)
 
@@ -104,7 +110,7 @@ final class AnalyticsDashboardViewModel {
 
     func refresh() {
         do {
-            let db = try DatabaseManager()
+            let db = try makeDatabase()
             let service = DashboardStatsService(databaseManager: db)
             try refresh(using: db, service: service)
             errorMessage = nil
@@ -172,30 +178,48 @@ final class AnalyticsDashboardViewModel {
             HourlyActivityPoint(hour: hour, count: countByHour[hour, default: 0])
         }
 
+        // Weekdays, starting on the calendar's first day of the week
+        var countByWeekday = [Int: Int]()
+        for record in records {
+            countByWeekday[calendar.component(.weekday, from: record.createdAt), default: 0] += 1
+        }
+        weekdayActivity = (0..<7).map { offset in
+            let weekday = (calendar.firstWeekday - 1 + offset) % 7 + 1
+            return WeekdayActivityPoint(
+                weekday: weekday,
+                shortName: calendar.shortWeekdaySymbols[weekday - 1],
+                name: calendar.weekdaySymbols[weekday - 1],
+                sessions: countByWeekday[weekday, default: 0]
+            )
+        }
+
+        let durations = records.map { max(0, $0.recordingDurationMs) }.sorted()
+        medianDurationMs = durations.isEmpty ? nil : durations[durations.count / 2]
+
         // Duration buckets
-        let bucketDefs: [(String, Int)] = [
-            ("0-5s", 5_000),
-            ("5-15s", 15_000),
-            ("15-30s", 30_000),
-            ("30s-1m", 60_000),
-            ("1-2m", 120_000),
-            ("2-5m", 300_000),
-            ("5m+", Int.max),
+        let bucketDefs: [(String, String, Int)] = [
+            ("<5s", "under 5 seconds", 5_000),
+            ("5–15s", "5 to 15 seconds", 15_000),
+            ("15–30s", "15 to 30 seconds", 30_000),
+            ("30s–1m", "30 seconds to a minute", 60_000),
+            ("1–2m", "1 to 2 minutes", 120_000),
+            ("2–5m", "2 to 5 minutes", 300_000),
+            ("5m+", "over 5 minutes", Int.max),
         ]
         var counts = Array(repeating: 0, count: bucketDefs.count)
         for record in records {
             let ms = max(0, record.recordingDurationMs)
             var prevMax = 0
             for (index, def) in bucketDefs.enumerated() {
-                if ms >= prevMax && (ms < def.1 || index == bucketDefs.count - 1) {
+                if ms >= prevMax && (ms < def.2 || index == bucketDefs.count - 1) {
                     counts[index] += 1
                     break
                 }
-                prevMax = def.1
+                prevMax = def.2
             }
         }
         durationBuckets = bucketDefs.enumerated().map { index, def in
-            DurationBucket(label: def.0, count: counts[index], order: index)
+            DurationBucket(label: def.0, phrase: def.1, count: counts[index], order: index)
         }
 
         // Words by app
@@ -208,7 +232,7 @@ final class AnalyticsDashboardViewModel {
         wordsByApp = appWords
             .map { AppWordCount(name: $0.key, words: $0.value) }
             .sorted { $0.words > $1.words }
-            .prefix(6)
+            .prefix(5)
             .map { $0 }
     }
 
@@ -228,6 +252,7 @@ final class AnalyticsDashboardViewModel {
         } else if let oldestDate = records.map(\.createdAt).min() {
             startDay = calendar.startOfDay(for: oldestDate)
         } else {
+            dailyActiveSeconds = []
             return []
         }
 
@@ -247,10 +272,9 @@ final class AnalyticsDashboardViewModel {
             aggregatesByDay[day] = aggregate
         }
 
-        return (0...daySpan).compactMap { offset in
-            guard let day = calendar.date(byAdding: .day, value: offset, to: startDay) else {
-                return nil
-            }
+        let days = (0...daySpan).compactMap { calendar.date(byAdding: .day, value: $0, to: startDay) }
+        dailyActiveSeconds = days.map { aggregatesByDay[$0, default: (0, 0, 0)].recordingMs / 1_000 }
+        return days.map { day in
             let aggregate = aggregatesByDay[day, default: (0, 0, 0)]
             return DashboardTrendPoint(
                 dayStart: day,
@@ -291,9 +315,20 @@ struct HourlyActivityPoint: Identifiable {
 
 struct DurationBucket: Identifiable {
     let label: String
+    /// How the bucket reads in a sentence ("5 to 15 seconds").
+    let phrase: String
     let count: Int
     let order: Int
     var id: String { label }
+}
+
+struct WeekdayActivityPoint: Identifiable {
+    /// Calendar weekday, 1 = Sunday.
+    let weekday: Int
+    let shortName: String
+    let name: String
+    let sessions: Int
+    var id: Int { weekday }
 }
 
 struct AppWordCount: Identifiable {
@@ -304,524 +339,446 @@ struct AppWordCount: Identifiable {
 
 // MARK: - Dashboard View
 
+/// The Analytics dashboard: a row of totals, the trend, when and where you
+/// dictate, and how fast it runs. The range is picked in the page header.
 struct AnalyticsDashboardView: View {
-    @State private var viewModel = AnalyticsDashboardViewModel()
+    let range: AnalyticsTimeRange
+    @State private var viewModel: AnalyticsDashboardViewModel
+
+    @MainActor
+    init(range: AnalyticsTimeRange, viewModel: AnalyticsDashboardViewModel? = nil) {
+        self.range = range
+        _viewModel = State(initialValue: viewModel ?? AnalyticsDashboardViewModel())
+    }
 
     var body: some View {
         GeometryReader { proxy in
-            let isCompact = proxy.size.width < 1_000
-
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    if let error = viewModel.errorMessage {
-                        Text(error)
-                            .font(.Orttaai.secondary)
-                            .foregroundStyle(Color.Orttaai.error)
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(Color.Orttaai.errorSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
-                    }
-
-                    rangeControl
-
-                    summaryCards()
-
-                    trendChart
-
-                    responsiveRow(isCompact: isCompact) {
-                        sessionsPerDayChart
-                    } right: {
-                        hourlyActivityChart
-                    }
-
-                    responsiveRow(isCompact: isCompact) {
-                        topAppsChart
-                    } right: {
-                        durationDistributionChart
-                    }
-
-                    performanceCard
-                }
+                AnalyticsDashboardContent(
+                    range: range,
+                    viewModel: viewModel,
+                    isCompact: proxy.size.width < 760
+                )
                 .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
                 .padding(.bottom, Spacing.lg)
             }
         }
         .onAppear {
             if !viewModel.hasLoaded {
+                viewModel.selectedRange = range
                 viewModel.load()
             }
+        }
+        .onChange(of: range) { _, newRange in
+            viewModel.setSelectedRange(newRange)
         }
         .onDisappear {
             viewModel.cancelObservation()
         }
     }
+}
 
-    private var rangeControl: some View {
-        HStack(spacing: Spacing.md) {
-            Text("Trend Range")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+/// The dashboard's cards, top to bottom.
+struct AnalyticsDashboardContent: View {
+    let range: AnalyticsTimeRange
+    let viewModel: AnalyticsDashboardViewModel
+    let isCompact: Bool
+    @State private var hoveredWeekday: String?
+    @State private var hoveredHour: String?
 
-            Spacer()
+    private let chartHeight: CGFloat = 132
 
-            HStack(spacing: Spacing.sm) {
-                rangePicker
-                    .frame(width: 280)
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            if let error = viewModel.errorMessage {
+                Text(error)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.error)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.Orttaai.errorSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
             }
+
+            summaryCards
+
+            TrendCardView(
+                title: range.trendTitle,
+                points: viewModel.trendPoints,
+                showsLegend: !isCompact,
+                axisTickCount: range.axisTickCount,
+                emptyMessage: "No activity in this range yet."
+            )
+
+            pairedRow {
+                weekdayCard
+            } right: {
+                hourCard
+            }
+
+            pairedRow {
+                appsCard
+            } right: {
+                durationCard
+            }
+
+            performanceCard
         }
-        .accessibilityElement(children: .contain)
     }
 
-    private var rangePicker: some View {
-        HStack(spacing: 4) {
-            ForEach(AnalyticsTimeRange.allCases) { range in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        viewModel.setSelectedRange(range)
-                    }
-                } label: {
-                    Text(range.rawValue)
-                        .font(.Orttaai.bodyMedium)
-                        .lineLimit(1)
-                        .foregroundStyle(viewModel.selectedRange == range ? Color.Orttaai.bgPrimary : Color.Orttaai.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 28)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(viewModel.selectedRange == range ? Color.Orttaai.accent : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
+    // MARK: - Summary
 
-    // MARK: - Summary Cards
-
-    private func summaryCards() -> some View {
-        DashboardBalancedCardGrid(itemCount: 4, minimumColumnWidth: 280) {
+    private var summaryCards: some View {
+        let today = viewModel.payload.today
+        return DashboardBalancedCardGrid(itemCount: 4, minimumColumnWidth: 200) {
             summaryMetric(
-                title: "Total Words",
+                title: "Words",
                 value: viewModel.totalWords.formatted(),
-                subtitle: "\(viewModel.selectedRange.shortLabel) total",
+                detail: wordsDetail,
                 icon: "character.cursor.ibeam",
-                accentColor: Color.Orttaai.accent
+                series: viewModel.trendPoints.map(\.words)
             )
             summaryMetric(
                 title: "Sessions",
                 value: viewModel.totalSessions.formatted(),
-                subtitle: "\(viewModel.payload.today.sessions) today",
+                detail: "\(today.sessions.formatted()) today",
                 icon: "waveform",
-                accentColor: Color(hex: "5E9CF5")
+                series: viewModel.trendPoints.map(\.sessions)
             )
             summaryMetric(
                 title: "Active Time",
-                value: formatMinutes(viewModel.totalRecordingMinutes),
-                subtitle: "\(viewModel.payload.today.activeMinutes)m today",
+                value: formatMinutes(viewModel.totalRecordingMinutes, hasSessions: viewModel.totalSessions > 0),
+                detail: "\(formatMinutes(today.activeMinutes, hasSessions: today.sessions > 0)) today",
                 icon: "timer",
-                accentColor: Color(hex: "34C759")
+                series: viewModel.dailyActiveSeconds
             )
             summaryMetric(
                 title: "Avg WPM",
-                value: viewModel.averageWPM.formatted(),
-                subtitle: "\(viewModel.activeDays) active days",
+                value: viewModel.averageWPM > 0 ? viewModel.averageWPM.formatted() : "–",
+                detail: viewModel.activeDays == 1 ? "over 1 active day" : "over \(viewModel.activeDays.formatted()) active days",
                 icon: "speedometer",
-                accentColor: Color(hex: "FF9F0A")
+                // Quiet days have no speed, so they'd only draw dips.
+                series: viewModel.trendPoints.filter { $0.sessions > 0 }.map(\.averageWPM)
             )
         }
     }
 
+    private var wordsDetail: String {
+        guard viewModel.activeDays > 0 else { return "No dictation yet" }
+        return "\((viewModel.totalWords / viewModel.activeDays).formatted()) per active day"
+    }
+
+    /// Icon and title, then the number with a sparkline of the range beside
+    /// it: one compact card, four to a row.
     private func summaryMetric(
         title: String,
         value: String,
-        subtitle: String,
+        detail: String,
         icon: String,
-        accentColor: Color
+        series: [Int]
     ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.sm) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: 7) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(accentColor)
-                    .frame(width: 28, height: 28)
-                    .background(accentColor.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.Orttaai.accent)
+                    .frame(width: 22, height: 22)
+                    .background(Color.Orttaai.accentSubtle, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Text(title)
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
             }
 
-            Text(value)
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.Orttaai.textPrimary)
+            HStack(alignment: .bottom, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 26, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .contentTransition(.numericText())
+                    Text(detail)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .lineLimit(1)
+                }
+                .layoutPriority(1)
 
-            Text(subtitle)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
+                Spacer(minLength: Spacing.sm)
+
+                AnalyticsSparkline(values: series)
+                    .frame(width: 84, height: 30)
+                    .padding(.bottom, 3)
+            }
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title): \(value), \(detail)")
     }
 
-    // MARK: - Trend Chart (Words + WPM)
+    // MARK: - When
 
-    private var trendChart: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack {
-                Text(viewModel.selectedRange.trendTitle)
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+    private var weekdayCard: some View {
+        let days = viewModel.weekdayActivity
+        let total = days.reduce(0) { $0 + $1.sessions }
+        let busiest = days.max { $0.sessions < $1.sessions }
+        let focus = days.first { $0.shortName == hoveredWeekday } ?? busiest
 
-                Spacer()
-
-                HStack(spacing: Spacing.lg) {
-                    legendDot(color: Color.Orttaai.accent.opacity(0.5), label: "Words")
-                    legendDot(color: Color(hex: "5E9CF5"), label: "WPM")
-                }
-            }
-
-            if viewModel.trendPoints.isEmpty || viewModel.trendPoints.allSatisfy({ $0.words == 0 && $0.sessions == 0 }) {
-                emptyChartPlaceholder("No activity in this range yet.")
+        return analyticsCard(title: "Weekly Rhythm", detail: "Sessions by weekday") {
+            if total == 0 {
+                emptyChartPlaceholder("No sessions in this range yet.")
             } else {
-                Chart(viewModel.trendPoints) { point in
+                if let focus {
+                    headline(
+                        focus.id == busiest?.id && hoveredWeekday == nil ? "Busiest on \(focus.name)s" : focus.name,
+                        detail: "\(sessionCount(focus.sessions)) · \(percent(focus.sessions, of: total)) of the range"
+                    )
+                }
+
+                Chart(days) { day in
                     BarMark(
-                        x: .value("Day", point.dayStart, unit: .day),
-                        y: .value("Words", point.words)
+                        x: .value("Day", day.shortName),
+                        y: .value("Sessions", day.sessions)
                     )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.Orttaai.accent.opacity(0.6), Color.Orttaai.accent.opacity(0.2)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(day.id == focus?.id ? Color.Orttaai.accent : Color.Orttaai.accent.opacity(0.3))
                     .cornerRadius(4)
-
-                    LineMark(
-                        x: .value("Day", point.dayStart, unit: .day),
-                        y: .value("WPM", point.averageWPM)
-                    )
-                    .foregroundStyle(Color(hex: "5E9CF5"))
-                    .lineStyle(.init(lineWidth: 2.5))
-                    .interpolationMethod(.catmullRom)
-
-                    PointMark(
-                        x: .value("Day", point.dayStart, unit: .day),
-                        y: .value("WPM", point.averageWPM)
-                    )
-                    .foregroundStyle(Color(hex: "5E9CF5"))
-                    .symbolSize(30)
-                }
-                .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: viewModel.selectedRange.axisTickCount)) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.Orttaai.border.opacity(0.3))
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                            .font(.Orttaai.caption)
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.Orttaai.border.opacity(0.3))
-                        AxisValueLabel {
-                            if let intValue = value.as(Int.self) {
-                                Text(intValue.formatted())
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textTertiary)
-                            }
+                    .annotation(position: .top, spacing: 3) {
+                        if day.sessions > 0 {
+                            Text(day.sessions.formatted())
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textTertiary)
                         }
                     }
                 }
-                .frame(height: 220)
-            }
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
-    }
-
-    // MARK: - Sessions Per Day
-
-    private var sessionsPerDayChart: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Sessions Per Day")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            if viewModel.trendPoints.isEmpty || viewModel.trendPoints.allSatisfy({ $0.sessions == 0 }) {
-                emptyChartPlaceholder("No sessions recorded in this range.")
-            } else {
-                Chart(viewModel.trendPoints) { point in
-                    BarMark(
-                        x: .value("Day", point.dayStart, unit: .day),
-                        y: .value("Sessions", point.sessions)
-                    )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(hex: "5E9CF5").opacity(0.8), Color(hex: "5E9CF5").opacity(0.3)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .cornerRadius(4)
-                }
+                .chartXSelection(value: $hoveredWeekday)
+                .chartYAxis(.hidden)
                 .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: viewModel.selectedRange.axisTickCount)) { _ in
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                            .foregroundStyle(Color.Orttaai.textTertiary)
+                    AxisMarks { _ in
+                        AxisValueLabel()
                             .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
                     }
                 }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.Orttaai.border.opacity(0.3))
-                        AxisValueLabel {
-                            if let intValue = value.as(Int.self) {
-                                Text("\(intValue)")
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textTertiary)
-                            }
-                        }
-                    }
-                }
-                .frame(height: 180)
+                .frame(height: chartHeight)
+                .accessibilityLabel("Sessions by weekday")
             }
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
     }
 
-    // MARK: - Hourly Activity
+    private var hourCard: some View {
+        let hours = viewModel.hourlyActivity
+        let total = hours.reduce(0) { $0 + $1.count }
+        let peak = hours.max { $0.count < $1.count }
+        let focus = hours.first { $0.hourLabel == hoveredHour } ?? peak
 
-    private var hourlyActivityChart: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Activity by Hour")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            if viewModel.hourlyActivity.allSatisfy({ $0.count == 0 }) {
-                emptyChartPlaceholder("Not enough data yet.")
+        return analyticsCard(title: "Time of Day", detail: "Sessions by hour") {
+            if total == 0 {
+                emptyChartPlaceholder("No sessions in this range yet.")
             } else {
-                let maxCount = viewModel.hourlyActivity.map(\.count).max() ?? 1
+                if let focus {
+                    headline(
+                        hoveredHour == nil ? "Most active around \(hourName(focus.hour))" : "\(hourName(focus.hour)) to \(hourName((focus.hour + 1) % 24))",
+                        detail: "\(sessionCount(focus.count)) · \(percent(focus.count, of: total)) of the range"
+                    )
+                }
 
-                Chart(viewModel.hourlyActivity) { point in
+                Chart(hours) { point in
                     BarMark(
                         x: .value("Hour", point.hourLabel),
                         y: .value("Sessions", point.count)
                     )
-                    .foregroundStyle(
-                        barGradient(
-                            for: point.count,
-                            max: maxCount,
-                            baseColor: Color(hex: "34C759")
-                        )
-                    )
-                    .cornerRadius(3)
+                    .foregroundStyle(point.id == focus?.id ? Color.Orttaai.accent : Color.Orttaai.accent.opacity(point.count > 0 ? 0.3 : 0.12))
+                    .cornerRadius(2)
                 }
+                .chartXSelection(value: $hoveredHour)
+                .chartYAxis(.hidden)
                 .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 8)) { _ in
-                        AxisValueLabel()
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                            .font(.Orttaai.caption)
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.Orttaai.border.opacity(0.3))
-                        AxisValueLabel {
-                            if let intValue = value.as(Int.self) {
-                                Text("\(intValue)")
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textTertiary)
-                            }
+                    AxisMarks { value in
+                        // Every sixth hour, so the labels breathe.
+                        if let label = value.as(String.self), ["12a", "6a", "12p", "6p"].contains(label) {
+                            AxisValueLabel()
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textTertiary)
                         }
                     }
                 }
-                .frame(height: 180)
+                .frame(height: chartHeight)
+                .accessibilityLabel("Sessions by hour of day")
             }
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
     }
 
-    // MARK: - Top Apps (Words)
+    // MARK: - What and how long
 
-    private var topAppsChart: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Words by App")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+    private var appsCard: some View {
+        let apps = viewModel.wordsByApp
+        let total = max(1, viewModel.totalWords)
 
-            if viewModel.wordsByApp.isEmpty {
+        return analyticsCard(title: "Words by App", detail: "Top \(max(1, apps.count))") {
+            if apps.isEmpty {
                 emptyChartPlaceholder("No app data yet.")
             } else {
-                let appColors: [Color] = [
-                    Color.Orttaai.accent,
-                    Color(hex: "5E9CF5"),
-                    Color(hex: "34C759"),
-                    Color(hex: "FF9F0A"),
-                    Color(hex: "FF453A"),
-                    Color(hex: "BF5AF2"),
-                ]
-
-                Chart(Array(viewModel.wordsByApp.enumerated()), id: \.element.id) { index, app in
-                    BarMark(
-                        x: .value("Words", app.words),
-                        y: .value("App", app.name)
+                if let top = apps.first {
+                    headline(
+                        "\(top.name) gets the most",
+                        detail: "\(percent(top.words, of: total)) of your words in this range"
                     )
-                    .foregroundStyle(appColors[index % appColors.count].opacity(0.8))
-                    .cornerRadius(4)
-                    .annotation(position: .trailing) {
-                        Text(app.words.formatted())
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textTertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
+                        appRow(app, share: Double(app.words) / Double(total), rank: index)
                     }
                 }
-                .chartYAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel()
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                            .font(.Orttaai.secondary)
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks(position: .bottom) { _ in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.Orttaai.border.opacity(0.3))
-                    }
-                }
-                .frame(height: max(CGFloat(viewModel.wordsByApp.count) * 36, 120))
             }
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
     }
 
-    // MARK: - Duration Distribution
+    private func appRow(_ app: AppWordCount, share: Double, rank: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: Spacing.sm) {
+                Text(app.name)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: Spacing.sm)
+                Text(app.words.formatted())
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .monospacedDigit()
+                Text("\(Int((share * 100).rounded()))%")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .monospacedDigit()
+                    .frame(width: 34, alignment: .trailing)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.Orttaai.textTertiary.opacity(0.15))
+                    Capsule()
+                        .fill(Color.Orttaai.accent.opacity(max(0.35, 1 - Double(rank) * 0.16)))
+                        .frame(width: max(4, geometry.size.width * share))
+                }
+            }
+            .frame(height: 5)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(app.name), \(app.words) words, \(Int((share * 100).rounded())) percent")
+    }
 
-    private var durationDistributionChart: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Session Duration")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+    private var durationCard: some View {
+        let buckets = viewModel.durationBuckets
+        let total = buckets.reduce(0) { $0 + $1.count }
+        let common = buckets.max { $0.count < $1.count }
 
-            if viewModel.durationBuckets.allSatisfy({ $0.count == 0 }) {
+        return analyticsCard(title: "Session Length", detail: "How long you speak") {
+            if total == 0 {
                 emptyChartPlaceholder("No session data yet.")
             } else {
-                Chart(viewModel.durationBuckets) { bucket in
+                if let common {
+                    headline(
+                        "Most last \(common.phrase)",
+                        detail: viewModel.medianDurationMs.map { "Median \(formatDuration($0)) · \(sessionCount(total))" } ?? sessionCount(total)
+                    )
+                }
+
+                Chart(buckets) { bucket in
                     BarMark(
-                        x: .value("Duration", bucket.label),
-                        y: .value("Count", bucket.count)
+                        x: .value("Length", bucket.label),
+                        y: .value("Sessions", bucket.count)
                     )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(hex: "BF5AF2").opacity(0.7), Color(hex: "BF5AF2").opacity(0.25)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(bucket.id == common?.id ? Color.Orttaai.accent : Color.Orttaai.accent.opacity(0.3))
                     .cornerRadius(4)
-                }
-                .chartXAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel()
-                            .foregroundStyle(Color.Orttaai.textTertiary)
-                            .font(.Orttaai.caption)
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.Orttaai.border.opacity(0.3))
-                        AxisValueLabel {
-                            if let intValue = value.as(Int.self) {
-                                Text("\(intValue)")
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textTertiary)
-                            }
+                    .annotation(position: .top, spacing: 3) {
+                        if bucket.count > 0 {
+                            Text(bucket.count.formatted())
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textTertiary)
                         }
                     }
                 }
-                .frame(height: 180)
+                .chartYAxis(.hidden)
+                .chartXAxis {
+                    AxisMarks { _ in
+                        AxisValueLabel()
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                    }
+                }
+                .frame(height: chartHeight)
+                .accessibilityLabel("Sessions by length")
             }
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
     }
 
-    // MARK: - Performance Card
+    // MARK: - Performance
 
     private var performanceCard: some View {
         let health = viewModel.payload.performance
         let hasData = health.sampleCount > 0
+        // One scale for all three, so their bars compare.
+        let scale = max(1, [
+            health.processingP95Ms, health.averageProcessingMs,
+            health.transcriptionP95Ms, health.injectionP95Ms,
+        ].compactMap { $0 }.max() ?? 1)
 
         return VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack {
-                Text("Performance Breakdown")
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text("Performance")
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
-                Spacer()
+                Spacer(minLength: Spacing.sm)
 
                 if hasData {
-                    Text("\(health.sampleCount) samples")
+                    Text("\(health.sampleCount == 1 ? "1 dictation" : "\(health.sampleCount.formatted()) dictations") · \(ModelManager.formatDisplayName(health.currentModelId))")
                         .font(.Orttaai.caption)
                         .foregroundStyle(Color.Orttaai.textTertiary)
-
-                    Text(health.currentModelId)
-                        .font(.Orttaai.mono)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-
-                    Text(performanceLevelLabel(health.level))
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(performanceLevelColor(health.level))
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, Spacing.xs)
-                        .background(performanceLevelColor(health.level).opacity(0.15))
-                        .clipShape(Capsule())
+                        .help(health.currentModelId)
                 }
+
+                Text(performanceLevelLabel(health.level))
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(performanceLevelColor(health.level))
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 2)
+                    .background(performanceLevelColor(health.level).opacity(0.15), in: Capsule())
             }
 
             if !hasData {
-                emptyChartPlaceholder("Not enough performance data yet.")
+                emptyChartPlaceholder("Timings appear after your first dictation.")
             } else {
-                HStack(spacing: Spacing.lg) {
-                    performanceMetricStack(
-                        title: "Pipeline",
-                        avgMs: health.averageProcessingMs,
-                        p50Ms: health.processingP50Ms,
-                        p95Ms: health.processingP95Ms,
+                HStack(spacing: Spacing.sm) {
+                    latencyColumn(
+                        "Total",
+                        average: health.averageProcessingMs,
+                        p50: health.processingP50Ms,
+                        p95: health.processingP95Ms,
+                        scale: scale,
                         color: Color.Orttaai.accent
                     )
-                    performanceMetricStack(
-                        title: "Transcription",
-                        avgMs: health.averageTranscriptionMs,
-                        p50Ms: health.transcriptionP50Ms,
-                        p95Ms: health.transcriptionP95Ms,
-                        color: Color(hex: "5E9CF5")
+                    latencyColumn(
+                        "Transcribe",
+                        average: health.averageTranscriptionMs,
+                        p50: health.transcriptionP50Ms,
+                        p95: health.transcriptionP95Ms,
+                        scale: scale,
+                        color: Color.Orttaai.accent.opacity(0.7)
                     )
-                    performanceMetricStack(
-                        title: "Injection",
-                        avgMs: health.averageInjectionMs,
-                        p50Ms: health.injectionP50Ms,
-                        p95Ms: health.injectionP95Ms,
-                        color: Color(hex: "34C759")
+                    latencyColumn(
+                        "Insert",
+                        average: health.averageInjectionMs,
+                        p50: health.injectionP50Ms,
+                        p95: health.injectionP95Ms,
+                        scale: scale,
+                        color: Color.Orttaai.accent.opacity(0.45)
                     )
                 }
             }
@@ -831,81 +788,132 @@ struct AnalyticsDashboardView: View {
         .dashboardCard()
     }
 
-    private func performanceMetricStack(
-        title: String,
-        avgMs: Int?,
-        p50Ms: Int?,
-        p95Ms: Int?,
+    /// The average as the number and the solid bar; the slowest 5% (p95)
+    /// as the faint bar behind it.
+    private func latencyColumn(
+        _ title: String,
+        average: Int?,
+        p50: Int?,
+        p95: Int?,
+        scale: Int,
         color: Color
     ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.sm) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: 5) {
                 Circle()
                     .fill(color)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 7, height: 7)
                 Text(title)
-                    .font(.Orttaai.bodyMedium)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(average.map { $0.formatted() } ?? "–")
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.Orttaai.textPrimary)
+                    .monospacedDigit()
+                Text("ms avg")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
             }
 
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                latencyRow("Avg", value: avgMs)
-                latencyRow("P50", value: p50Ms)
-                latencyRow("P95", value: p95Ms)
-            }
-
-            if let avgMs {
-                GeometryReader { geo in
-                    let barWidth = min(CGFloat(avgMs) / 3_000 * geo.size.width, geo.size.width)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(
-                            LinearGradient(
-                                colors: [color.opacity(0.6), color.opacity(0.2)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: max(barWidth, 4), height: 6)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.Orttaai.textTertiary.opacity(0.15))
+                    if let p95 {
+                        Capsule()
+                            .fill(color.opacity(0.3))
+                            .frame(width: geometry.size.width * min(1, CGFloat(p95) / CGFloat(scale)))
+                    }
+                    if let average {
+                        Capsule()
+                            .fill(color)
+                            .frame(width: max(4, geometry.size.width * min(1, CGFloat(average) / CGFloat(scale))))
+                    }
                 }
-                .frame(height: 6)
             }
+            .frame(height: 6)
+
+            Text(percentileLine(p50: p50, p95: p95))
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .monospacedDigit()
+                .lineLimit(1)
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.Orttaai.bgPrimary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+        .background(Color.Orttaai.bgPrimary.opacity(0.7), in: RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .help("\(title): the solid bar is the average, the faint one the slowest 5% (p95)")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title): average \(average.map { "\($0) milliseconds" } ?? "no data"). \(percentileLine(p50: p50, p95: p95)).")
     }
 
-    private func latencyRow(_ label: String, value: Int?) -> some View {
-        HStack {
-            Text(label)
+    private func percentileLine(p50: Int?, p95: Int?) -> String {
+        let typical = p50.map { "typical \($0.formatted()) ms" } ?? "typical –"
+        let slow = p95.map { "slowest \($0.formatted()) ms" } ?? "slowest –"
+        return "\(typical) · \(slow)"
+    }
+
+    // MARK: - Building blocks
+
+    /// Title and a quiet caption on one line, then the card's content; fills
+    /// its row so paired cards match in height.
+    private func analyticsCard<Content: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text(title)
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Spacer(minLength: Spacing.sm)
+                Text(detail)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+            }
+            content()
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .dashboardCard()
+    }
+
+    /// The one thing the chart below says, in words.
+    private func headline(_ text: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(text)
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .lineLimit(1)
+                .contentTransition(.opacity)
+            Text(detail)
                 .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-                .frame(width: 28, alignment: .leading)
-            Text(value.map { "\($0) ms" } ?? "N/A")
-                .font(.Orttaai.mono)
                 .foregroundStyle(Color.Orttaai.textSecondary)
+                .lineLimit(1)
         }
     }
 
-    // MARK: - Helpers
-
     @ViewBuilder
-    private func responsiveRow<Left: View, Right: View>(
-        isCompact: Bool,
+    private func pairedRow<Left: View, Right: View>(
         @ViewBuilder left: () -> Left,
         @ViewBuilder right: () -> Right
     ) -> some View {
         if isCompact {
-            VStack(spacing: Spacing.lg) {
+            VStack(spacing: Spacing.md) {
                 left()
                 right()
             }
         } else {
-            HStack(alignment: .top, spacing: Spacing.lg) {
-                left().frame(maxWidth: .infinity)
-                right().frame(maxWidth: .infinity)
+            HStack(alignment: .top, spacing: Spacing.md) {
+                left()
+                right()
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -917,27 +925,37 @@ struct AnalyticsDashboardView: View {
             .padding(.vertical, Spacing.xl)
     }
 
-    private func legendDot(color: Color, label: String) -> some View {
-        HStack(spacing: Spacing.xs) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
+    private func sessionCount(_ count: Int) -> String {
+        count == 1 ? "1 session" : "\(count.formatted()) sessions"
+    }
+
+    private func percent(_ part: Int, of total: Int) -> String {
+        guard total > 0 else { return "0%" }
+        return "\(Int((Double(part) / Double(total) * 100).rounded()))%"
+    }
+
+    private func hourName(_ hour: Int) -> String {
+        switch hour {
+        case 0: return "12 am"
+        case 12: return "12 pm"
+        case 1..<12: return "\(hour) am"
+        default: return "\(hour - 12) pm"
         }
     }
 
-    private func barGradient(for value: Int, max: Int, baseColor: Color) -> LinearGradient {
-        let intensity = max > 0 ? Double(value) / Double(max) : 0
-        return LinearGradient(
-            colors: [baseColor.opacity(0.3 + intensity * 0.5), baseColor.opacity(0.1 + intensity * 0.2)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    private func formatDuration(_ ms: Int) -> String {
+        let seconds = Int((Double(ms) / 1_000).rounded())
+        if seconds < 60 { return "\(seconds) s" }
+        let minutes = seconds / 60
+        let remainder = seconds % 60
+        return remainder == 0 ? "\(minutes) min" : "\(minutes) min \(remainder) s"
     }
 
-    private func formatMinutes(_ minutes: Int) -> String {
+    /// Dictations shorter than a minute still count as time spent.
+    private func formatMinutes(_ minutes: Int, hasSessions: Bool) -> String {
+        if minutes == 0 {
+            return hasSessions ? "<1m" : "0m"
+        }
         if minutes < 60 {
             return "\(minutes)m"
         }
@@ -965,6 +983,66 @@ struct AnalyticsDashboardView: View {
         case .normal: return Color.Orttaai.warning
         case .slow: return Color.Orttaai.error
         }
+    }
+}
+
+/// A small area line of a range's daily values, for the summary cards. Long
+/// ranges are averaged into at most 45 points so the shape stays readable.
+private struct AnalyticsSparkline: View {
+    let values: [Int]
+
+    private var points: [Double] {
+        let limit = 45
+        guard values.count > limit else { return values.map(Double.init) }
+        let size = Double(values.count) / Double(limit)
+        return (0..<limit).map { index in
+            let chunk = values[Int(Double(index) * size)..<min(values.count, Int(Double(index + 1) * size))]
+            return chunk.isEmpty ? 0 : Double(chunk.reduce(0, +)) / Double(chunk.count)
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let values = points
+            let peak = max(1, values.max() ?? 1)
+            let inset: CGFloat = 1.5
+            let height = geometry.size.height - inset * 2
+            let line = values.enumerated().map { index, value in
+                CGPoint(
+                    x: values.count > 1 ? geometry.size.width * CGFloat(index) / CGFloat(values.count - 1) : geometry.size.width,
+                    y: inset + height * (1 - CGFloat(value / peak))
+                )
+            }
+
+            if line.count >= 2, values.contains(where: { $0 > 0 }) {
+                ZStack {
+                    Path { path in
+                        path.move(to: CGPoint(x: line[0].x, y: geometry.size.height))
+                        line.forEach { path.addLine(to: $0) }
+                        path.addLine(to: CGPoint(x: line[line.count - 1].x, y: geometry.size.height))
+                        path.closeSubpath()
+                    }
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.Orttaai.accent.opacity(0.28), Color.Orttaai.accent.opacity(0.02)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    Path { path in
+                        path.addLines(line)
+                    }
+                    .stroke(Color.Orttaai.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                }
+            } else {
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: geometry.size.height - inset))
+                    path.addLine(to: CGPoint(x: geometry.size.width, y: geometry.size.height - inset))
+                }
+                .stroke(Color.Orttaai.textTertiary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
