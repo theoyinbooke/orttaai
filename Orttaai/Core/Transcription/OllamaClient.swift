@@ -504,6 +504,14 @@ actor OllamaClient: LocalLLMServing {
         return embeddings
     }
 
+    func downloadModel(
+        baseURLString: String,
+        model: String,
+        onProgress: @escaping @Sendable (OllamaPullProgress) -> Void
+    ) async throws {
+        try await pullModel(baseURLString: baseURLString, model: model, onProgress: onProgress)
+    }
+
     func pullModel(
         baseURLString: String,
         model: String,

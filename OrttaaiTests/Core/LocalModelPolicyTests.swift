@@ -116,4 +116,40 @@ final class LocalModelPolicyTests: XCTestCase {
         XCTAssertEqual(models.map(\.key), ["qwen3.5-2b", "google/gemma-3-4b", "text-embedding-nomic-embed-text-v1.5"])
         XCTAssertEqual(models.map(\.type), ["llm", "llm", "embedding"])
     }
+
+    // MARK: - Recommended embedding model
+
+    func testRecommendedEmbeddingModelIsFoundUnderEachServersName() {
+        XCTAssertEqual(
+            LocalLLMProviderKind.installedRecommendedEmbeddingModel(in: ["gemma4:e2b", "nomic-embed-text:latest"]),
+            "nomic-embed-text:latest"
+        )
+        XCTAssertEqual(
+            LocalLLMProviderKind.installedRecommendedEmbeddingModel(in: ["qwen3.5-2b", "text-embedding-nomic-embed-text-v1.5"]),
+            "text-embedding-nomic-embed-text-v1.5"
+        )
+        XCTAssertNil(LocalLLMProviderKind.installedRecommendedEmbeddingModel(in: ["all-minilm:latest"]))
+        XCTAssertFalse(LocalModelPolicy.isOllamaCloudModelName(LocalLLMProviderKind.ollama.recommendedEmbeddingDownload))
+    }
+
+    /// Shapes from LM Studio's download docs: the start response, a poll
+    /// mid-download, and an already-downloaded model.
+    func testLMStudioDownloadStatusReadsProgress() {
+        let started = LMStudioClient.downloadState(
+            from: ["job_id": "job_493c7c9ded", "status": "downloading", "total_size_bytes": 2_279_145_003],
+            model: "nomic"
+        )
+        XCTAssertEqual(started.status, "downloading")
+        XCTAssertNil(started.progress.fractionCompleted)
+
+        let midway = LMStudioClient.downloadState(
+            from: ["job_id": "job_493c7c9ded", "status": "downloading", "total_size_bytes": 1_000, "downloaded_bytes": 250],
+            model: "nomic"
+        )
+        XCTAssertEqual(midway.progress.fractionCompleted, 0.25)
+
+        let done = LMStudioClient.downloadState(from: ["status": "already_downloaded"], model: "nomic")
+        XCTAssertEqual(done.status, "already_downloaded")
+        XCTAssertEqual(done.progress.status, "Downloaded")
+    }
 }

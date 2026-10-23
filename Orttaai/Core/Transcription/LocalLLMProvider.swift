@@ -38,6 +38,37 @@ enum LocalLLMProviderKind: String, CaseIterable, Identifiable, Sendable {
     var supportsThinkFlag: Bool { self == .ollama }
 }
 
+/// nomic-embed-text, the embedding model Orttaai recommends for semantic
+/// memory. Optional: without it, semantic memory falls back to keywords.
+/// The user's own server downloads, stores and serves it; Orttaai never
+/// hosts model files.
+extension LocalLLMProviderKind {
+    static let recommendedEmbeddingName = "nomic-embed-text"
+
+    /// What to ask the server to download: Ollama's library name, or for LM
+    /// Studio the model's Hugging Face repository.
+    var recommendedEmbeddingDownload: String {
+        switch self {
+        case .ollama: return "nomic-embed-text"
+        case .lmStudio: return "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF"
+        }
+    }
+
+    /// Roughly how much the server downloads, when known.
+    var recommendedEmbeddingSize: String? {
+        switch self {
+        case .ollama: return "274 MB"
+        case .lmStudio: return nil
+        }
+    }
+
+    /// The installed copy, under whatever name the server gave it
+    /// ("nomic-embed-text:latest", "text-embedding-nomic-embed-text-v1.5").
+    static func installedRecommendedEmbeddingModel(in models: [String]) -> String? {
+        models.first { $0.lowercased().contains(recommendedEmbeddingName) }
+    }
+}
+
 /// The local-LLM surface the app actually uses. `OllamaClient` implements it
 /// with Ollama's native API; `LMStudioClient` implements it over the
 /// OpenAI-compatible API — which also makes any other OpenAI-compatible server
@@ -50,6 +81,14 @@ protocol LocalLLMServing: Sendable {
     /// What a model can do as the provider reports it ("completion",
     /// "thinking", "embedding"…), or nil when the provider doesn't say.
     func modelCapabilities(baseURLString: String, model: String, timeoutMs: Int) async -> Set<String>?
+
+    /// Asks the server to download a model, which it then stores and serves.
+    /// `onProgress` reports the download as it goes; returns when it's done.
+    func downloadModel(
+        baseURLString: String,
+        model: String,
+        onProgress: @escaping @Sendable (OllamaPullProgress) -> Void
+    ) async throws
 
     func generate(
         baseURLString: String,
@@ -116,6 +155,14 @@ protocol LocalLLMServing: Sendable {
 extension LocalLLMServing {
     func modelCapabilities(baseURLString: String, model: String, timeoutMs: Int) async -> Set<String>? {
         nil
+    }
+
+    func downloadModel(
+        baseURLString: String,
+        model: String,
+        onProgress: @escaping @Sendable (OllamaPullProgress) -> Void
+    ) async throws {
+        throw OllamaClientError.requestFailed(message: "\(providerKind.displayName) can't download models from Orttaai.")
     }
 
     /// `chatStream` for callers that don't show reasoning.

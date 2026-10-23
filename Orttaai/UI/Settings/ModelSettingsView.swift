@@ -95,6 +95,10 @@ struct ModelSettingsView: View {
     @State private var installedOllamaModels: [String] = []
     /// Installed models that make embeddings rather than chat.
     @State private var embeddingModelNames: Set<String> = []
+    @State private var isDownloadingRecommendedEmbedding = false
+    @State private var recommendedEmbeddingProgress: Double?
+    @State private var recommendedEmbeddingStatus: String?
+    @State private var recommendedEmbeddingError: String?
     @State private var isCheckingOllama: Bool = false
     @State private var isInstallingOllamaModel: Bool = false
     @State private var installingOllamaModelName: String?
@@ -922,6 +926,10 @@ struct ModelSettingsView: View {
 
                 SettingsDivider()
 
+                recommendedEmbeddingRow
+
+                SettingsDivider()
+
                 SettingsToggleRow(
                     title: "Auto-index for ChatAI",
                     info: "Indexes new dictations in the background so ChatAI can use them right away.",
@@ -1627,6 +1635,122 @@ struct ModelSettingsView: View {
     /// Installed models, with the stored value injected at the top (flagged as
     /// not installed) when the current provider doesn't have it — so the
     /// dropdown always displays the active model without a separate text field.
+    // MARK: - Recommended embedding model
+
+    /// nomic-embed-text: optional, downloaded and served by the user's own
+    /// server. Download when it's missing, Use when it's installed but not
+    /// chosen, In use when it is.
+    @ViewBuilder
+    private var recommendedEmbeddingRow: some View {
+        let installed = LocalLLMProviderKind.installedRecommendedEmbeddingModel(in: installedOllamaModels)
+        SettingsRow(
+            title: "Recommended",
+            info: "nomic-embed-text finds related notes by meaning. It's optional: without it, semantic memory uses keywords. \(providerKind.displayName) downloads, stores and serves it; Orttaai doesn't host models."
+        ) {
+            HStack(spacing: Spacing.sm) {
+                Text(LocalLLMProviderKind.recommendedEmbeddingName)
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+
+                if let installed, canonicalOllamaModelName(installed) == canonicalOllamaModelName(normalizedSemanticEmbeddingModel) {
+                    Label("In use", systemImage: "checkmark.circle.fill")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.success)
+                } else if let installed {
+                    Button {
+                        useEmbeddingModel(installed)
+                    } label: {
+                        Label("Use", systemImage: "checkmark.circle")
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                    .help("Use \(installed) for semantic memory. The index rebuilds with it.")
+                } else if ollamaStatusReachable == true {
+                    Button {
+                        Task { await downloadRecommendedEmbeddingModel() }
+                    } label: {
+                        if isDownloadingRecommendedEmbedding {
+                            Label("Downloading…", systemImage: "arrow.down.circle")
+                        } else {
+                            Label(
+                                providerKind.recommendedEmbeddingSize.map { "Download (\($0))" } ?? "Download",
+                                systemImage: "arrow.down.circle"
+                            )
+                        }
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                    .disabled(isDownloadingRecommendedEmbedding || isInstallingOllamaModel)
+                    .help("\(providerKind.displayName) downloads it and serves it from this Mac.")
+                } else {
+                    Text("Start \(providerKind.displayName) to download")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                }
+            }
+        }
+
+        if let recommendedEmbeddingStatus {
+            ProgressView(value: recommendedEmbeddingProgress ?? 0) {
+                Text(recommendedEmbeddingStatus)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+            .progressViewStyle(.linear)
+            .tint(Color.Orttaai.accent)
+            .padding(.vertical, Spacing.xs)
+        }
+
+        if let recommendedEmbeddingError {
+            SettingsNotice(kind: .error, message: recommendedEmbeddingError) {
+                self.recommendedEmbeddingError = nil
+            }
+        }
+    }
+
+    private func useEmbeddingModel(_ model: String) {
+        semanticEmbeddingModel = model
+        // A different model means a different index.
+        semanticActiveIndexModelID = ""
+    }
+
+    private func downloadRecommendedEmbeddingModel() async {
+        let provider = providerKind
+        let client = activeLLMClient
+        let endpoint = activeLLMEndpoint
+        await MainActor.run {
+            isDownloadingRecommendedEmbedding = true
+            recommendedEmbeddingProgress = nil
+            recommendedEmbeddingStatus = "Asking \(provider.displayName) to download nomic-embed-text…"
+            recommendedEmbeddingError = nil
+        }
+        do {
+            try await client.downloadModel(
+                baseURLString: endpoint,
+                model: provider.recommendedEmbeddingDownload
+            ) { progress in
+                let message = formattedInstallMessage(progress)
+                Task { @MainActor in
+                    recommendedEmbeddingStatus = message
+                    recommendedEmbeddingProgress = progress.fractionCompleted
+                }
+            }
+            await checkOllamaAvailability()
+            await MainActor.run {
+                if let installed = LocalLLMProviderKind.installedRecommendedEmbeddingModel(in: installedOllamaModels) {
+                    useEmbeddingModel(installed)
+                }
+            }
+        } catch {
+            await MainActor.run {
+                recommendedEmbeddingError = "Couldn't download nomic-embed-text: \(error.localizedDescription)"
+            }
+        }
+        await MainActor.run {
+            isDownloadingRecommendedEmbedding = false
+            recommendedEmbeddingProgress = nil
+            recommendedEmbeddingStatus = nil
+        }
+    }
+
     /// Asks the server what each model does (Ollama's capabilities, LM
     /// Studio's model type), falling back to the name.
     private static func embeddingModels(

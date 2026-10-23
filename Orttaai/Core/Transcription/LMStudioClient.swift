@@ -134,6 +134,68 @@ actor LMStudioClient: LocalLLMServing {
         }
     }
 
+    // MARK: - Downloads
+
+    /// Asks LM Studio to download a model (a catalog id or a Hugging Face
+    /// link) through POST /api/v1/models/download, then follows the job until
+    /// it ends. LM Studio stores and serves the model; Orttaai only asks.
+    func downloadModel(
+        baseURLString: String,
+        model: String,
+        onProgress: @escaping @Sendable (OllamaPullProgress) -> Void
+    ) async throws {
+        let url = try endpointURL(baseURLString: baseURLString, path: "/api/v1/models/download")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["model": model])
+
+        let (data, response) = try await session.data(for: request)
+        try validateHTTPResponse(response, data: data)
+        var json = try parseJSONObject(data)
+        let jobID = json["job_id"] as? String
+
+        while true {
+            let state = Self.downloadState(from: json, model: model)
+            onProgress(state.progress)
+            switch state.status {
+            case "completed", "already_downloaded":
+                cachedModelNamesAt = nil
+                return
+            case "failed":
+                throw OllamaClientError.requestFailed(message: "LM Studio couldn't download \(model).")
+            default:
+                guard let jobID else {
+                    throw OllamaClientError.requestFailed(message: "LM Studio didn't start the download.")
+                }
+                try await Task.sleep(for: .seconds(1))
+                let statusURL = try endpointURL(baseURLString: baseURLString, path: "/api/v1/models/download/status/\(jobID)")
+                var statusRequest = URLRequest(url: statusURL)
+                statusRequest.timeoutInterval = 15
+                let (statusData, statusResponse) = try await session.data(for: statusRequest)
+                try validateHTTPResponse(statusResponse, data: statusData)
+                json = try parseJSONObject(statusData)
+            }
+        }
+    }
+
+    /// A download job's status and progress, from either the start response
+    /// or a status poll.
+    nonisolated static func downloadState(from json: [String: Any], model: String) -> (status: String, progress: OllamaPullProgress) {
+        let status = (json["status"] as? String) ?? "downloading"
+        let total = (json["total_size_bytes"] as? NSNumber)?.int64Value
+        let done = (json["downloaded_bytes"] as? NSNumber)?.int64Value
+            ?? ((status == "completed" || status == "already_downloaded") ? total : nil)
+        let label: String
+        switch status {
+        case "paused": label = "Paused in LM Studio"
+        case "completed", "already_downloaded": label = "Downloaded"
+        default: label = "Downloading in LM Studio"
+        }
+        return (status, OllamaPullProgress(model: model, status: label, completedBytes: done, totalBytes: total))
+    }
+
     /// Bionic runs LM Studio's server on the same port; say so when it's the
     /// one answering.
     nonisolated static var isBionicRunning: Bool {
