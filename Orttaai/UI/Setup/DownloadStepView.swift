@@ -92,8 +92,14 @@ struct DownloadStepView: View {
 
     private var quickStartModelSummary: String {
         ModelManager.normalizedModelID(quickStartModelId) == "openai_whisper-small.en"
-            ? "Fast English model."
-            : "Fast multilingual model."
+            ? "OpenAI's Whisper, tuned for English. A dependable alternative."
+            : "OpenAI's Whisper. Works in many languages."
+    }
+
+    /// Express can be chosen: supported on this Mac and the dictation
+    /// language is English.
+    private var isExpressAvailable: Bool {
+        express != nil && expressSupportsLanguage
     }
 
     private var expressSupportsLanguage: Bool {
@@ -114,17 +120,19 @@ struct DownloadStepView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
+            // Express first and recommended; Whisper Small is the
+            // alternative, and the recommendation when Express can't be used.
+            if let express {
+                expressCard(express)
+            }
+
             modelCard(
-                title: "Quick Start Model",
-                badge: "Recommended",
+                title: "Whisper Small",
+                badge: isExpressAvailable ? nil : "Recommended",
                 modelId: quickStartModelId,
                 detail: quickStartModelSummary,
                 accentColor: .Orttaai.accent
             )
-
-            if let express {
-                expressCard(express)
-            }
 
             if let express, isExpressBusy {
                 expressProgress(express)
@@ -154,26 +162,10 @@ struct DownloadStepView: View {
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
                 }
-            } else if isExpressSelected {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Color.Orttaai.success)
-                    Text("Express downloaded and ready")
-                        .font(.Orttaai.body)
-                        .foregroundStyle(Color.Orttaai.success)
-                }
             } else if case .failed(let message) = express?.status {
                 Text("Express couldn't start: \(message)")
                     .font(.Orttaai.body)
                     .foregroundStyle(Color.Orttaai.error)
-            } else if let installedModelId {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Color.Orttaai.success)
-                    Text("\(installedModelId) downloaded and ready")
-                        .font(.Orttaai.body)
-                        .foregroundStyle(Color.Orttaai.success)
-                }
             } else if let error = errorMessage {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text(error)
@@ -274,7 +266,7 @@ struct DownloadStepView: View {
 
     private func modelCard(
         title: String,
-        badge: String,
+        badge: String?,
         modelId: String,
         detail: String,
         accentColor: Color
@@ -286,7 +278,6 @@ struct DownloadStepView: View {
             subtitle: modelId,
             detail: detail,
             isSelected: isSelectedForSetup(modelId),
-            isDownloaded: isDownloaded(modelId),
             actionTitle: actionTitle(for: modelId),
             isActionDisabled: isAnyDownloadRunning
                 || isSelectedForSetup(modelId)
@@ -303,13 +294,12 @@ struct DownloadStepView: View {
         engineCard(
             icon: "bolt.fill",
             title: "Express",
-            badge: "Experimental",
+            badge: expressSupportsLanguage ? "Recommended" : nil,
             subtitle: "\(ExpressEngine.displayName) + Word Boost",
             detail: expressSupportsLanguage
-                ? "Fastest dictation. English only; downloads \(Self.expressDownloadSize) once."
+                ? "The fastest dictation, and best with names. English only; downloads \(Self.expressDownloadSize) once."
                 : "English only. Set dictation to English to use it.",
             isSelected: isExpressSelected,
-            isDownloaded: express.status == .installed,
             actionTitle: expressActionTitle(express),
             isActionDisabled: isAnyDownloadRunning
                 || isExpressSelected
@@ -325,11 +315,10 @@ struct DownloadStepView: View {
     private func engineCard(
         icon: String,
         title: String,
-        badge: String,
+        badge: String?,
         subtitle: String,
         detail: String,
         isSelected: Bool,
-        isDownloaded: Bool,
         actionTitle: String,
         isActionDisabled: Bool,
         action: @escaping () -> Void
@@ -348,12 +337,14 @@ struct DownloadStepView: View {
                     Text(title)
                         .font(.Orttaai.subheading)
                         .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text(badge)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.accent)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Color.Orttaai.accentSubtle, in: Capsule())
+                    if let badge {
+                        Text(badge)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.accent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Color.Orttaai.accentSubtle, in: Capsule())
+                    }
                 }
                 Text(subtitle)
                     .font(.Orttaai.mono)
@@ -364,17 +355,6 @@ struct DownloadStepView: View {
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if isSelected {
-                    Label("Selected", systemImage: "checkmark.circle.fill")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.success)
-                        .padding(.top, 2)
-                } else if isDownloaded {
-                    Label("Already on this Mac", systemImage: "externaldrive.fill.badge.checkmark")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                        .padding(.top, 2)
-                }
             }
 
             Spacer(minLength: Spacing.sm)
