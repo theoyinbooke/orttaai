@@ -23,5 +23,8 @@ DerivedData/
 # Voiced polish golden set (rebuilt by build_polish_corpus.py)
 /gauntlet/asr_eval/corpus_polish/
 
+# Long hands-free recordings (rebuilt by build_long_corpus.py)
+/gauntlet/asr_eval/corpus_long/
+
 # Real-voice ASR eval recordings (the user's own voice — never commit)
 /gauntlet/asr_eval/corpus_real/

@@ -125,6 +125,92 @@ final class ExpressRoutingTests: XCTestCase {
         XCTAssertEqual(calls, [audio.count], "no live clips: one decode of the full recording")
     }
 
+    func testRecordingHandsEachCompletedWordBoostChunkToTheBackendOnce() async throws {
+        let backend = FakeExpressBackend(text: "Ship it on Friday.")
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.setWordBoostVocabulary([WordBoostTerm(text: "Olanrewaju", aliases: [])])
+        let audio = speech(seconds: 30)
+
+        await service.beginLiveTranscriptionSession()
+        // Under 15 s there is no complete chunk yet.
+        await service.processLiveAudioSnapshot(Array(audio.prefix(16_000 * 10)))
+        await service.processLiveAudioSnapshot(Array(audio.prefix(16_000 * 16)))
+        // The first chunk is still with the backend: nothing new is sent.
+        await service.processLiveAudioSnapshot(Array(audio.prefix(16_000 * 17)))
+        _ = try await service.finalizeLiveTranscriptionDetailed(audioSamples: audio)
+
+        let prepared = await backend.preparedSampleCounts
+        XCTAssertEqual(prepared, [16_000 * 16])
+        let decodes = await backend.sampleCounts
+        XCTAssertEqual(decodes, [audio.count])
+    }
+
+    func testExpressAsksForAudioOnlyWhenAWordBoostChunkCompletes() async throws {
+        let backend = FakeExpressBackend(text: "Ship it on Friday.")
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        let chunk = WordBoostChunks.chunkSampleCount
+        let stride = WordBoostChunks.strideSampleCount
+
+        // Nothing loaded: the Whisper path takes the whole recording.
+        var start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk)
+        XCTAssertEqual(start, 0)
+
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.beginLiveTranscriptionSession()
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk)
+        XCTAssertNil(start, "without Word Boost terms Express needs no audio until key release")
+
+        await service.setWordBoostVocabulary([WordBoostTerm(text: "Olanrewaju", aliases: [])])
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk - 1)
+        XCTAssertNil(start)
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk)
+        XCTAssertEqual(start, 0, "Word Boost chunks are scored on the whole recording")
+
+        await service.processLiveAudioSnapshot(speech(seconds: 15))
+        while await !(backend.preparedSampleCounts.count == 1) {
+            await Task.yield()
+        }
+        for _ in 0..<50 {
+            if await service.liveAudioSnapshotStart(capturedSampleCount: chunk + stride - 1) == nil { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk + stride - 1)
+        XCTAssertNil(start, "the first chunk was already sent")
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk + stride)
+        XCTAssertEqual(start, 0, "the second chunk is complete")
+    }
+
+    func testRecordingSendsNothingToPrepareWithoutWordBoostTerms() async throws {
+        let backend = FakeExpressBackend(text: "Ship it on Friday.")
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+
+        await service.beginLiveTranscriptionSession()
+        await service.processLiveAudioSnapshot(speech(seconds: 20))
+        _ = try await service.finalizeLiveTranscriptionDetailed(audioSamples: speech(seconds: 20))
+
+        let prepared = await backend.preparedSampleCounts
+        XCTAssertEqual(prepared, [])
+    }
+
+    func testCancelledRecordingDiscardsPreparedWordBoostScores() async throws {
+        let backend = FakeExpressBackend(text: "Ship it on Friday.")
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.setWordBoostVocabulary([WordBoostTerm(text: "Olanrewaju", aliases: [])])
+
+        await service.beginLiveTranscriptionSession()
+        await service.processLiveAudioSnapshot(speech(seconds: 16))
+        await service.cancelLiveTranscriptionSession()
+
+        for _ in 0..<50 where await backend.discardCount == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let discards = await backend.discardCount
+        XCTAssertEqual(discards, 1)
+    }
+
     func testEmptyExpressResultIsNoTranscription() async throws {
         let service = makeService(base: try makeInstalledBase(), backend: FakeExpressBackend(text: ""))
         try await service.loadModel(named: ExpressEngine.modelID)
@@ -251,6 +337,8 @@ private actor FakeExpressBackend: ExpressBackend {
     private let text: String
     private(set) var sampleCounts: [Int] = []
     private(set) var wordBoostTerms: [WordBoostTerm] = []
+    private(set) var preparedSampleCounts: [Int] = []
+    private(set) var discardCount = 0
 
     init(text: String) {
         self.text = text
@@ -264,6 +352,14 @@ private actor FakeExpressBackend: ExpressBackend {
     func setWordBoost(_ terms: [WordBoostTerm]) async -> Int {
         wordBoostTerms = terms
         return terms.count
+    }
+
+    func prepareWordBoost(_ audioPrefix: [Float]) async {
+        preparedSampleCounts.append(audioPrefix.count)
+    }
+
+    func discardPreparedWordBoost() async {
+        discardCount += 1
     }
 }
 

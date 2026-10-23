@@ -1083,8 +1083,16 @@ final class DictationCoordinator {
             await self.transcriptionService.beginLiveTranscriptionSession()
 
             while !Task.isCancelled {
-                let snapshot = self.audioService.currentSamplesSnapshot()
-                await self.transcriptionService.processLiveAudioSnapshot(snapshot)
+                // Copies the recording only when the live session will read
+                // it: every poll for Whisper, once per Express Word Boost
+                // chunk.
+                let captured = self.audioService.capturedSampleCount
+                if let start = await self.transcriptionService.liveAudioSnapshotStart(capturedSampleCount: captured) {
+                    let audio = start == 0
+                        ? self.audioService.currentSamplesSnapshot()
+                        : self.audioService.currentSamplesSnapshot(from: start)
+                    await self.transcriptionService.processLiveAudio(audio, startingAt: start)
+                }
                 try? await Task.sleep(nanoseconds: self.backgroundDecodePollIntervalNs)
             }
         }

@@ -266,3 +266,26 @@ python3 gauntlet/polish_eval.py --transcripts /tmp/raw_polish_express.json --out
 Express. The 5.8-point end-to-end gap is already there in the transcripts (no
 Word Boost here, since the golden set has no dictionary). End to end, Express
 finishes in 96 ms p50 / 171 ms p90 against turbo's 725 ms / 963 ms.
+
+## Long recordings and quiet endings (Phase 4)
+
+`build_long_corpus.py` joins the realistic clips into 10- and 31-minute
+recordings in `corpus_long/` (git-ignored). Run them through the live path,
+as dictation does, to measure finalize time and memory; each item's raw JSON
+now carries the process footprint (`footprint_mb`, `peak_footprint_mb`) and the
+run records `footprint_before_load_mb`:
+
+```bash
+python3 gauntlet/asr_eval/build_long_corpus.py
+./gauntlet/asr_eval/run_eval.sh /tmp/raw_long.json ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini \
+  ORTTAAI_ASR_EVAL_MODEL_ROOT=/path/to/storage-base ORTTAAI_ASR_EVAL_BIAS=1 ORTTAAI_ASR_EVAL_PATHS=live \
+  ORTTAAI_ASR_EVAL_MANIFEST=$PWD/gauntlet/asr_eval/corpus_long/manifest_long.json
+```
+
+`express_long_recordings_eval.json` (2026-10-23): Word Boost now scores each
+15 s chunk while the user speaks, so a 10-minute recording finalizes in 1.9 s
+instead of 7.3 s (30 minutes: 5.5 s instead of 22.2 s) with identical text.
+Taking a recording copy only when a chunk completes cut the 10-minute peak
+footprint from 2.9 GB to 723 MB. Lifting a quiet last word keeps 6 of 6
+synthetic soft endings (3 before) and takes realistic WER from 2.53% to 2.34%,
+with no change on real voice.

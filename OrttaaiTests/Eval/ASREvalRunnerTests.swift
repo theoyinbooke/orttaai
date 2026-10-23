@@ -76,6 +76,10 @@ final class ASREvalRunnerTests: XCTestCase {
         /// How the live finalize got its transcript; nil when the live path
         /// was not run or finalize threw.
         let finalize_trace: FinalizeTrace?
+        /// The process's physical footprint after the item and its peak so
+        /// far, in MB (what Activity Monitor reports as Memory).
+        let footprint_mb: Int?
+        let peak_footprint_mb: Int?
     }
 
     private struct RunOutput: Encodable {
@@ -84,6 +88,8 @@ final class ASREvalRunnerTests: XCTestCase {
         let speedup: Double
         let biasEnabled: Bool
         let biasTermCount: Int
+        /// The test host's footprint before any speech model loaded.
+        let footprint_before_load_mb: Int?
         let items: [ItemResult]
     }
 
@@ -169,6 +175,7 @@ final class ASREvalRunnerTests: XCTestCase {
             await service.setWordBoostVocabulary(manifest.bias_vocabulary.map { WordBoostTerm(text: $0, aliases: []) })
         }
 
+        let footprintBeforeLoad = Self.footprintMB()?.current
         print("ASR-EVAL: loading model \(modelName)")
         try await service.loadModel(named: modelName)
         await service.warmUp()
@@ -192,13 +199,15 @@ final class ASREvalRunnerTests: XCTestCase {
                 await service.beginLiveTranscriptionSession()
                 // Growing-snapshot polling: 250 ms of audio per poll, sleep
                 // scaled by the speedup factor. Same call sequence as
-                // DictationCoordinator.startLiveDecodeLoop.
+                // DictationCoordinator.startBackgroundDecodeLoop.
                 let increment = manifest.sample_rate / 4
                 let sleepNs = UInt64(250_000_000.0 / speedup)
                 var fed = 0
                 while fed < samples.count {
                     fed = min(fed + increment, samples.count)
-                    await service.processLiveAudioSnapshot(Array(samples[0..<fed]))
+                    if let start = await service.liveAudioSnapshotStart(capturedSampleCount: fed) {
+                        await service.processLiveAudio(Array(samples[start..<fed]), startingAt: start)
+                    }
                     try? await Task.sleep(nanoseconds: sleepNs)
                 }
                 live = await Self.timedDecode {
@@ -213,7 +222,15 @@ final class ASREvalRunnerTests: XCTestCase {
                 if let text = live?.text { live?.rules_text = Self.ruleStageText(text) }
             }
 
-            results.append(ItemResult(id: item.id, whole: whole, live: live, finalize_trace: finalizeTrace))
+            let footprint = Self.footprintMB()
+            results.append(ItemResult(
+                id: item.id,
+                whole: whole,
+                live: live,
+                finalize_trace: finalizeTrace,
+                footprint_mb: footprint?.current,
+                peak_footprint_mb: footprint?.peak
+            ))
             print("ASR-EVAL [\(index + 1)/\(items.count)] \(item.id) whole=\(whole?.ms ?? -1)ms live_finalize=\(live?.ms ?? -1)ms")
         }
 
@@ -223,12 +240,25 @@ final class ASREvalRunnerTests: XCTestCase {
             speedup: speedup,
             biasEnabled: biasEnabled,
             biasTermCount: biasEnabled ? manifest.bias_vocabulary.count : 0,
+            footprint_before_load_mb: footprintBeforeLoad,
             items: results
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(output).write(to: URL(fileURLWithPath: outPath))
         print("ASR-EVAL: wrote \(results.count) item results to \(outPath)")
+    }
+
+    private static func footprintMB() -> (current: Int, peak: Int)? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        return (Int(info.phys_footprint >> 20), Int(info.ledger_phys_footprint_peak >> 20))
     }
 
     private static func ruleStageText(_ text: String) -> String {

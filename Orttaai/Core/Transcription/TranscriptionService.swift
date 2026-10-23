@@ -12,6 +12,16 @@ protocol Transcribing: Actor {
     func loadModel(named modelName: String) async throws
     func transcribe(audioSamples: [Float]) async throws -> String
     func beginLiveTranscriptionSession()
+    /// The sample a recording that has reached `capturedSampleCount` samples
+    /// should be copied from for `processLiveAudio`, or nil when this poll
+    /// needs no audio. Copying the whole recording on every poll costs
+    /// memory: each copy is a little larger than the last, so macOS cannot
+    /// reuse the freed ones, and a 10-minute dictation would leave about 2 GB
+    /// to reclaim.
+    func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int?
+    /// Live audio from sample `start` of the recording to its current end.
+    func processLiveAudio(_ audio: [Float], startingAt start: Int)
+    /// `processLiveAudio` with the whole recording so far.
     func processLiveAudioSnapshot(_ audioSamples: [Float])
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String
     func cancelLiveTranscriptionSession()
@@ -30,6 +40,13 @@ protocol Transcribing: Actor {
 extension Transcribing {
     /// Engines without Word Boost ignore the vocabulary.
     func setWordBoostVocabulary(_ terms: [WordBoostTerm]) async {}
+
+    func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? { 0 }
+
+    func processLiveAudio(_ audio: [Float], startingAt start: Int) {
+        guard start == 0 else { return }
+        processLiveAudioSnapshot(audio)
+    }
 }
 
 enum SetupModelLoadStage: Sendable {
@@ -418,7 +435,29 @@ actor TranscriptionService: Transcribing {
         finalizeTraceSink = sink
     }
 
+    /// Whisper's live clips take the whole recording on every poll. Express
+    /// only needs it when the recording has completed a new Word Boost chunk,
+    /// about every 13 s.
+    func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? {
+        guard expressBackend != nil else { return 0 }
+        guard wordBoostTermCount > 0, let session = liveSession, session.commitTask == nil,
+              let completeEnd = WordBoostChunks.completeChunks(inPrefixOf: capturedSampleCount).last?.upperBound,
+              completeEnd > session.committedSampleCount
+        else { return nil }
+        return 0
+    }
+
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {
+        processLiveAudio(audioSamples, startingAt: 0)
+    }
+
+    func processLiveAudio(_ audio: [Float], startingAt start: Int) {
+        guard start == 0 else { return }
+        if let expressBackend {
+            prepareExpressWordBoost(audio, backend: expressBackend)
+            return
+        }
+        let audioSamples = audio
         guard whisperKit != nil else { return }
         guard var session = liveSession else { return }
         // One commit in flight at a time; the ANE serializes work anyway.
@@ -495,6 +534,28 @@ actor TranscriptionService: Transcribing {
         return result
     }
 
+    /// Express decodes the whole recording at the end, but Word Boost scores
+    /// each 15 s chunk as soon as the recording completes it, so a long
+    /// recording leaves only its last chunk to score after key release. The
+    /// session's committed sample count marks how far chunks were requested.
+    private func prepareExpressWordBoost(_ audioSamples: [Float], backend: any ExpressBackend) {
+        guard wordBoostTermCount > 0, var session = liveSession, session.commitTask == nil else { return }
+        guard let completeEnd = WordBoostChunks.completeChunks(inPrefixOf: audioSamples.count).last?.upperBound,
+              completeEnd > session.committedSampleCount else { return }
+        session.committedSampleCount = completeEnd
+        let sessionID = session.id
+        session.commitTask = Task { [weak self] in
+            await backend.prepareWordBoost(audioSamples)
+            await self?.finishExpressPreparation(sessionID: sessionID)
+        }
+        liveSession = session
+    }
+
+    private func finishExpressPreparation(sessionID: UUID) {
+        guard liveSession?.id == sessionID else { return }
+        liveSession?.commitTask = nil
+    }
+
     /// Express has no live clips: the whole recording is decoded once, which
     /// costs less than WhisperKit's tail decode alone.
     private func finalizeExpress(
@@ -504,6 +565,8 @@ actor TranscriptionService: Transcribing {
         defer { liveSession = nil }
         let clock = ContinuousClock()
         let started = clock.now
+        // Chunks still being scored are part of this decode's work.
+        await liveSession?.commitTask?.value
         var trace = FinalizeTrace(
             totalAudioSeconds: Double(audioSamples.count) / Double(Self.transcriptionSampleRate)
         )
@@ -746,6 +809,9 @@ actor TranscriptionService: Transcribing {
     func cancelLiveTranscriptionSession() {
         liveSession?.commitTask?.cancel()
         liveSession?.speculativeTask?.cancel()
+        if liveSession != nil, let expressBackend {
+            Task { await expressBackend.discardPreparedWordBoost() }
+        }
         liveSession = nil
     }
 

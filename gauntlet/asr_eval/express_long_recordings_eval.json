@@ -1,0 +1,67 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "Phase 4: quiet final words (P4.1) and long recordings (P4.3)",
+  "setup": "ASREvalRunnerTests, ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini with Word Boost (36 terms), Release, Apple M5 Max. Long recordings from build_long_corpus.py (realistic clips joined with 0.8 s of room noise): 10.0 and 31.1 minutes, fed through the live path at 4x real time with the same snapshot polling as dictation. Memory is the process's physical footprint (Activity Monitor's Memory); the test host uses 18 MB before a model loads.",
+  "quiet_final_words": {
+    "change": "ExpressAudioConditioner lifts the last 1.5 s toward the recording's typical speech level when its speech sits below half of it (gain up to 4x, 100 ms ramp).",
+    "synthetic_soft_last_kept": {
+      "before": "3/6",
+      "after": "6/6"
+    },
+    "real_voice_quiet_endings_kept": {
+      "before": "5/5",
+      "after": "5/5"
+    },
+    "wer": {
+      "clean": {
+        "before": 0.0214,
+        "after": 0.0214
+      },
+      "realistic": {
+        "before": 0.0253,
+        "after": 0.0234
+      },
+      "real_voice": {
+        "before": 0.0791,
+        "after": 0.0791
+      }
+    },
+    "alternatives_tried": "1 s of trailing silence kept 4/6 (realistic 2.48%)."
+  },
+  "long_recordings": {
+    "finalize_ms": {
+      "long_10min": {
+        "before": 7322,
+        "after": 1935,
+        "without_word_boost": 1544
+      },
+      "long_30min": {
+        "before": 22216,
+        "after": 5457,
+        "without_word_boost": 4492
+      }
+    },
+    "wer": {
+      "long_10min": 0.0209,
+      "long_30min": 0.0299
+    },
+    "live_text_equals_whole_decode": true,
+    "peak_footprint_mb": {
+      "short_dictation": 484,
+      "long_10min": {
+        "before": 2862,
+        "after": 723
+      },
+      "long_30min": {
+        "before": 7837,
+        "after": 1485
+      }
+    }
+  },
+  "notes": [
+    "Word Boost's CTC pass was 5.1 s of the 7.3 s on 10 minutes. It now scores each 15 s chunk (FluidAudio's own chunking, 2 s overlap) while the user is still speaking; stitched, the chunks give exactly FluidAudio's whole-recording scores, and every output matched the earlier runs.",
+    "The memory blow-up came from the dictation loop copying the whole recording every 250 ms: each copy is slightly larger than the last, so macOS cannot reuse the freed ones (a standalone repro grows 235 MB per minute; fixed-size copies stay flat). Express now takes a copy only when a Word Boost chunk completes, about every 13 s. Whisper's live path still copies on every poll.",
+    "The 450 MB target is not met: Fluid Speech Mini and Parakeet CTC 110M account for about 480 MB once loaded, before any recording.",
+    "Live preview in the pill (P4.2) was dropped: the pill shows no text by the user's decision of July 2026, reaffirmed 2026-10-23."
+  ]
+}

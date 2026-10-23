@@ -14,14 +14,25 @@ protocol ExpressBackend: Actor {
     /// many terms it will use: 0 when the list is empty or Word Boost's model
     /// is not loaded.
     func setWordBoost(_ terms: [WordBoostTerm]) async -> Int
+    /// Scores the Word Boost chunks a recording in progress has completed,
+    /// so the final decode only has to score what came after them.
+    func prepareWordBoost(_ audioPrefix: [Float]) async
+    /// Drops scores kept for a recording that will not be decoded.
+    func discardPreparedWordBoost() async
+}
+
+extension ExpressBackend {
+    func prepareWordBoost(_ audioPrefix: [Float]) async {}
+    func discardPreparedWordBoost() async {}
 }
 
 /// Fluid Speech Mini through FluidAudio. Decoding is fast enough (about 40 ms
-/// for a short dictation, under 300 ms for a 35 s one on the Neural Engine)
+/// for a short dictation, 1.5 s for a 10-minute one on the Neural Engine)
 /// that it decodes the whole recording once at the end, with no live clips.
 /// With Word Boost, a second small model (Parakeet CTC 110M) checks the
 /// user's dictionary words against the audio and `WordBoostGuard` decides
-/// which of its proposed replacements to keep.
+/// which of its proposed replacements to keep. That model's scores are
+/// computed in 15 s chunks as the recording grows (`prepareWordBoost`).
 @available(macOS 15, *)
 actor ExpressTranscriber: ExpressBackend {
     private static let sampleRate = 16_000
@@ -41,9 +52,21 @@ actor ExpressTranscriber: ExpressBackend {
         let sizeConfig: ContextBiasingConstants.VocabSizeConfig
     }
 
+    /// One Word Boost chunk's CTC scores and the audio they were computed on.
+    private struct ScoredChunk {
+        let range: Range<Int>
+        let fingerprint: Int
+        let logProbs: [[Float]]
+        let frameDuration: Double
+    }
+
     private let asr: AsrManager
     private let wordBoostModel: WordBoostModel?
     private var wordBoost: WordBoostSession?
+    /// Chunks scored for the current recording, by first sample.
+    private var scoredChunks: [Int: ScoredChunk] = [:]
+    private var preparing: Task<Void, Never>?
+    private var isTranscribing = false
 
     private init(asr: AsrManager, wordBoostModel: WordBoostModel?) {
         self.asr = asr
@@ -121,8 +144,39 @@ actor ExpressTranscriber: ExpressBackend {
         }
     }
 
+    func prepareWordBoost(_ audioPrefix: [Float]) async {
+        guard let session = wordBoost, let model = wordBoostModel, preparing == nil, !isTranscribing else { return }
+        let task = Task {
+            for range in WordBoostChunks.completeChunks(inPrefixOf: audioPrefix.count) {
+                guard !Task.isCancelled else { return }
+                _ = try? await self.scoredChunk(range, of: audioPrefix, model: model, session: session)
+            }
+        }
+        preparing = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        preparing = nil
+    }
+
+    func discardPreparedWordBoost() async {
+        preparing?.cancel()
+        await preparing?.value
+        scoredChunks = [:]
+    }
+
     func transcribe(_ audioSamples: [Float]) async throws -> String {
-        var samples = audioSamples
+        isTranscribing = true
+        defer {
+            isTranscribing = false
+            // A recording's scores are used once.
+            scoredChunks = [:]
+        }
+        await preparing?.value
+
+        var samples = ExpressAudioConditioner.liftingQuietTail(audioSamples)
         if samples.count < Self.minimumSampleCount {
             samples.append(contentsOf: [Float](repeating: 0, count: Self.minimumSampleCount - samples.count))
         }
@@ -146,17 +200,13 @@ actor ExpressTranscriber: ExpressBackend {
         model: WordBoostModel
     ) async -> String {
         do {
-            let spot = try await model.spotter.spotKeywordsWithLogProbs(
-                audioSamples: samples,
-                customVocabulary: session.vocabulary,
-                minScore: nil
-            )
-            guard !spot.logProbs.isEmpty else { return text }
+            let scores = try await wordBoostScores(for: samples, model: model, session: session)
+            guard !scores.logProbs.isEmpty else { return text }
             let evidence = session.rescorer.ctcTokenEvaluateCandidates(
                 transcript: text,
                 tokenTimings: timings,
-                logProbs: spot.logProbs,
-                frameDuration: spot.frameDuration,
+                logProbs: scores.logProbs,
+                frameDuration: scores.frameDuration,
                 cbw: session.sizeConfig.cbw,
                 marginSeconds: 0.5,
                 minSimilarity: max(session.sizeConfig.minSimilarity, session.vocabulary.minSimilarity)
@@ -178,6 +228,41 @@ actor ExpressTranscriber: ExpressBackend {
             Logger.transcription.error("Word Boost skipped: \(error.localizedDescription, privacy: .public)")
             return text
         }
+    }
+
+    /// The CTC scores for the whole recording, reusing chunks scored while it
+    /// was being recorded.
+    private func wordBoostScores(
+        for samples: [Float],
+        model: WordBoostModel,
+        session: WordBoostSession
+    ) async throws -> (logProbs: [[Float]], frameDuration: Double) {
+        var chunks: [ScoredChunk] = []
+        for range in WordBoostChunks.chunks(forSampleCount: samples.count) {
+            chunks.append(try await scoredChunk(range, of: samples, model: model, session: session))
+        }
+        guard let frameDuration = chunks.first?.frameDuration else { return ([], 0) }
+        return (WordBoostChunks.stitch(chunks.map(\.logProbs), frameDuration: frameDuration), frameDuration)
+    }
+
+    private func scoredChunk(
+        _ range: Range<Int>,
+        of samples: [Float],
+        model: WordBoostModel,
+        session: WordBoostSession
+    ) async throws -> ScoredChunk {
+        let fingerprint = WordBoostChunks.fingerprint(samples[range])
+        if let cached = scoredChunks[range.lowerBound], cached.range == range, cached.fingerprint == fingerprint {
+            return cached
+        }
+        let spot = try await model.spotter.spotKeywordsWithLogProbs(
+            audioSamples: Array(samples[range]),
+            customVocabulary: session.vocabulary,
+            minScore: nil
+        )
+        let chunk = ScoredChunk(range: range, fingerprint: fingerprint, logProbs: spot.logProbs, frameDuration: spot.frameDuration)
+        scoredChunks[range.lowerBound] = chunk
+        return chunk
     }
 
     /// Replaces UTF-8 byte ranges of `text` with terms, keeping punctuation
