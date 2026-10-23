@@ -10,10 +10,7 @@ final class SemanticMemoryViewModel: ObservableObject {
     @Published var stats: SemanticMemoryStats?
     @Published var graph = SemanticMemoryGraph(nodes: [], edges: [])
     @Published var insightReport: SemanticInsightReport?
-    @Published var query: String = ""
-    @Published var results: [SemanticRetrievedContext] = []
     @Published var isIndexing = false
-    @Published var isSearching = false
     @Published var isGeneratingInsights = false
     @Published var statusMessage: String?
     @Published var errorMessage: String?
@@ -73,33 +70,12 @@ final class SemanticMemoryViewModel: ObservableObject {
     func clearIndex() {
         do {
             try service.clearIndex()
-            results = []
-            query = ""
             statusMessage = "Semantic memory cleared."
             errorMessage = nil
             load()
         } catch {
             errorMessage = "Could not clear semantic memory: \(error.localizedDescription)"
         }
-    }
-
-    func search() async {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            results = []
-            return
-        }
-
-        isSearching = true
-        errorMessage = nil
-        results = await service.retrieveContext(for: trimmed, limit: 8, minimumScore: 0.08)
-        if results.isEmpty {
-            statusMessage = "No semantic matches yet."
-        } else {
-            statusMessage = "Found \(results.count) semantic match\(results.count == 1 ? "" : "es")."
-        }
-        load()
-        isSearching = false
     }
 
     func generateInsights() async {
@@ -140,7 +116,6 @@ final class SemanticMemoryViewModel: ObservableObject {
 private enum SemanticMemoryTab: String, CaseIterable, Identifiable {
     case activity = "Activity"
     case map = "Map"
-    case search = "Search"
     case insights = "Insights"
 
     var id: String { rawValue }
@@ -149,18 +124,24 @@ private enum SemanticMemoryTab: String, CaseIterable, Identifiable {
         switch self {
         case .activity: return "chart.bar.doc.horizontal"
         case .map: return "point.3.connected.trianglepath.dotted"
-        case .search: return "magnifyingglass"
         case .insights: return "lightbulb"
         }
     }
 
-    /// Search and Insights read the semantic index; the other tabs don't.
-    var usesSemanticIndex: Bool { self == .search || self == .insights }
+    /// Insights reads the semantic index; the other tabs don't. (Searching
+    /// your dictation happens in Chat AI, which reads the same index.)
+    var usesSemanticIndex: Bool { self == .insights }
+
+    /// Activity and Map read a time range; Insights covers everything.
+    var usesRange: Bool { self == .activity || self == .map }
 }
 
 struct SemanticMemoryView: View {
+    /// Opens Chat AI with a question about your dictation.
+    var onAskChat: (String) -> Void = { _ in }
     @StateObject private var viewModel = SemanticMemoryViewModel()
     @State private var selectedTab: SemanticMemoryTab = .activity
+    @AppStorage("memoryGraphRange") private var range: ConceptTimeRange = .month
     @State private var isSetupPresented = false
     @State private var isInfoPresented = false
     @State private var installedOllamaModels: [String] = []
@@ -195,22 +176,32 @@ struct SemanticMemoryView: View {
     @AppStorage("semanticInsightSummaryModel") private var semanticInsightSummaryModel = "qwen3.5:0.8b"
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                statusStrip
+        Group {
+            if selectedTab == .map {
+                // The map fills the page instead of scrolling.
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    statusStrip
+                    ConceptMapView(range: range)
+                }
+                .padding(WorkspaceLayout.contentInsets)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        statusStrip
 
-                switch selectedTab {
-                case .activity:
-                    ActivityOverviewView()
-                case .map:
-                    ConceptMapView()
-                case .search:
-                    searchCard
-                case .insights:
-                    insightsContent
+                        switch selectedTab {
+                        case .activity:
+                            ActivityOverviewView(range: range, onAskChat: onAskChat)
+                        case .map:
+                            EmptyView()
+                        case .insights:
+                            insightsContent
+                        }
+                    }
+                    .padding(WorkspaceLayout.contentInsets)
                 }
             }
-            .padding(WorkspaceLayout.contentInsets)
         }
         .background(Color.Orttaai.bgPrimary)
         .workspaceHeader("Memory Graph") {
@@ -387,6 +378,12 @@ struct SemanticMemoryView: View {
     private var headerActions: some View {
         if selectedTab.usesSemanticIndex {
             indexActions
+        } else if selectedTab.usesRange {
+            HeaderSegmentedPicker(
+                options: ConceptTimeRange.allCases,
+                selection: $range,
+                title: \.title
+            )
         }
     }
 
@@ -674,51 +671,6 @@ struct SemanticMemoryView: View {
         } else {
             Label("Download", systemImage: "arrow.down.circle")
         }
-    }
-
-    private var searchCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack {
-                Text("Semantic Search")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Spacer()
-            }
-
-            HStack(spacing: Spacing.sm) {
-                OrttaaiTextField(placeholder: "Search a project, person, idea, or commitment", text: $viewModel.query)
-                    .onSubmit {
-                        Task { await viewModel.search() }
-                    }
-
-                Button {
-                    Task { await viewModel.search() }
-                } label: {
-                    if viewModel.isSearching {
-                        Label("Searching...", systemImage: "magnifyingglass")
-                    } else {
-                        Label("Search", systemImage: "magnifyingglass")
-                    }
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(viewModel.isSearching || viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-
-            if viewModel.results.isEmpty {
-                Text("Build the index to search.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                    .padding(.vertical, Spacing.sm)
-            } else {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    ForEach(viewModel.results) { result in
-                        resultRow(result)
-                    }
-                }
-            }
-        }
-        .padding(Spacing.md)
-        .dashboardCard()
     }
 
     private var insightsContent: some View {
@@ -1759,38 +1711,6 @@ struct SemanticMemoryView: View {
             normalized.contains("minilm") ||
             normalized.contains("nomic")
     }
-
-    private func resultRow(_ result: SemanticRetrievedContext) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(spacing: Spacing.sm) {
-                Text(result.targetAppName?.isEmpty == false ? result.targetAppName! : "Unknown App")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Text(Self.resultDateFormatter.string(from: result.sourceCreatedAt))
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                Spacer()
-                Text("\(Int((result.score * 100).rounded()))%")
-                    .font(.Orttaai.mono)
-                    .foregroundStyle(Color.Orttaai.accent)
-            }
-
-            Text(result.text)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .lineLimit(4)
-        }
-        .padding(Spacing.md)
-        .background(Color.Orttaai.bgTertiary.opacity(0.4))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
-    }
-
-    private static let resultDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
 
     private static let insightDateFormatter: DateFormatter = {
         let formatter = DateFormatter()

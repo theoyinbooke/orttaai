@@ -66,6 +66,9 @@ protocol LocalLLMServing: Sendable {
 
     func checkHealth(baseURLString: String, timeoutMs: Int) async -> OllamaHealthStatus
     func fetchModelNames(baseURLString: String, timeoutMs: Int) async throws -> [String]
+    /// What a model can do as the provider reports it ("completion",
+    /// "thinking", "embedding"…), or nil when the provider doesn't say.
+    func modelCapabilities(baseURLString: String, model: String, timeoutMs: Int) async -> Set<String>?
 
     func generate(
         baseURLString: String,
@@ -111,8 +114,9 @@ protocol LocalLLMServing: Sendable {
 
     /// Streaming variant of `chat`. `onDelta` receives the accumulated
     /// response text so far (not the increment) each time more arrives, so a
-    /// consumer can replace its display content wholesale; the complete reply
-    /// is still returned at the end exactly like `chat`.
+    /// consumer can replace its display content wholesale; `onThinking` does
+    /// the same for a thinking model's reasoning, when the provider streams
+    /// it. The complete reply is still returned at the end exactly like `chat`.
     func chatStream(
         baseURLString: String,
         model: String,
@@ -123,13 +127,17 @@ protocol LocalLLMServing: Sendable {
         numPredict: Int,
         numContext: Int?,
         keepAlive: String,
-        onDelta: @escaping @Sendable (String) -> Void
+        onDelta: @escaping @Sendable (String) -> Void,
+        onThinking: @escaping @Sendable (String) -> Void
     ) async throws -> String
 }
 
 extension LocalLLMServing {
-    /// Providers without token streaming fall back to the blocking call;
-    /// `onDelta` is never invoked and the caller renders the returned reply.
+    func modelCapabilities(baseURLString: String, model: String, timeoutMs: Int) async -> Set<String>? {
+        nil
+    }
+
+    /// `chatStream` for callers that don't show reasoning.
     func chatStream(
         baseURLString: String,
         model: String,
@@ -141,6 +149,36 @@ extension LocalLLMServing {
         numContext: Int?,
         keepAlive: String,
         onDelta: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        try await chatStream(
+            baseURLString: baseURLString,
+            model: model,
+            messages: messages,
+            timeoutMs: timeoutMs,
+            think: think,
+            temperature: temperature,
+            numPredict: numPredict,
+            numContext: numContext,
+            keepAlive: keepAlive,
+            onDelta: onDelta,
+            onThinking: { _ in }
+        )
+    }
+
+    /// Providers without token streaming fall back to the blocking call;
+    /// the callbacks are never invoked and the caller renders the returned reply.
+    func chatStream(
+        baseURLString: String,
+        model: String,
+        messages: [OllamaChatMessage],
+        timeoutMs: Int?,
+        think: Bool?,
+        temperature: Double,
+        numPredict: Int,
+        numContext: Int?,
+        keepAlive: String,
+        onDelta: @escaping @Sendable (String) -> Void,
+        onThinking: @escaping @Sendable (String) -> Void
     ) async throws -> String {
         try await chat(
             baseURLString: baseURLString,

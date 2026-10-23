@@ -198,9 +198,10 @@ actor CodexClient: LocalLLMServing {
         numPredict: Int,
         numContext: Int?,
         keepAlive: String,
-        onDelta: @escaping @Sendable (String) -> Void
+        onDelta: @escaping @Sendable (String) -> Void,
+        onThinking: @escaping @Sendable (String) -> Void
     ) async throws -> String {
-        _ = (think, temperature, numPredict, numContext, keepAlive)
+        _ = (think, temperature, numPredict, numContext, keepAlive, onThinking)
         let prompt = Self.flattenedPrompt(messages: messages)
         guard !prompt.isEmpty else {
             throw OllamaClientError.requestFailed(message: "Missing chat messages for Codex.")

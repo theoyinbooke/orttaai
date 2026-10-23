@@ -121,16 +121,24 @@ private struct ChatAIUploadedDocument: Identifiable, Equatable {
 private struct ChatAIStarterPrompt: Identifiable {
     let id = UUID()
     let title: String
+    /// One line under the title saying what it does.
+    let detail: String
     let prompt: String
     let systemImage: String
     let prefersMyTone: Bool
+    /// Sends at once; otherwise the prompt seeds the composer to finish.
+    var sendsImmediately = false
 }
 
 private struct HiddenScrollbarTextView: NSViewRepresentable {
     @Binding var text: String
+    /// Return sends; Shift-Return inserts a new line.
+    var onSubmit: () -> Void = {}
+    /// Escape.
+    var onCancel: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, onSubmit: onSubmit, onCancel: onCancel)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -175,6 +183,8 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.onSubmit = onSubmit
+        context.coordinator.onCancel = onCancel
         guard let textView = context.coordinator.textView else { return }
         if textView.string != text {
             textView.string = text
@@ -188,10 +198,29 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
+        var onSubmit: () -> Void
+        var onCancel: () -> Void
         weak var textView: NSTextView?
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, onSubmit: @escaping () -> Void, onCancel: @escaping () -> Void) {
             _text = text
+            self.onSubmit = onSubmit
+            self.onCancel = onCancel
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                onCancel()
+                return true
+            }
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)),
+                  !textView.hasMarkedText() else { return false }
+            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                textView.insertNewlineIgnoringFieldEditor(nil)
+            } else {
+                onSubmit()
+            }
+            return true
         }
 
         func textDidChange(_ notification: Notification) {
@@ -284,95 +313,6 @@ private struct ChatAIRichMessageText: View {
         )
 
         return AttributedString(nsAttributedString)
-    }
-}
-
-private struct ChatAIActivityIndicator: View {
-    let title: String
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shimmerOffset: CGFloat = -1
-
-    var body: some View {
-        HStack(spacing: Spacing.sm) {
-            animatedDots
-
-            Text(title)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-        }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .fill(Color.Orttaai.bgSecondary.opacity(0.7))
-
-                if !reduceMotion {
-                    GeometryReader { geometry in
-                        RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.clear,
-                                        Color.Orttaai.accent.opacity(0.16),
-                                        Color.clear
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: max(geometry.size.width, 1) * 0.45)
-                            .offset(x: shimmerOffset * max(geometry.size.width, 1))
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-                }
-            }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border.opacity(0.52), lineWidth: BorderWidth.standard)
-        )
-        .onAppear {
-            guard !reduceMotion else { return }
-            shimmerOffset = -1
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: false)) {
-                shimmerOffset = 1.5
-            }
-        }
-    }
-
-    private var animatedDots: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(Color.Orttaai.accent.opacity(0.72))
-                    .frame(width: 6, height: 6)
-                    .modifier(ChatAIDotPulse(index: index, reduceMotion: reduceMotion))
-            }
-        }
-        .frame(width: 28, height: 16)
-    }
-}
-
-private struct ChatAIDotPulse: ViewModifier {
-    let index: Int
-    let reduceMotion: Bool
-
-    func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-        } else {
-            content.phaseAnimator([false, true]) { view, phase in
-                view
-                    .offset(y: phase ? -3 : 3)
-                    .opacity(phase ? 1 : 0.42)
-            } animation: { _ in
-                .easeInOut(duration: 0.54)
-                    .delay(Double(index) * 0.14)
-                    .repeatForever(autoreverses: true)
-            }
-        }
     }
 }
 
@@ -483,6 +423,13 @@ private final class ChatAIViewModel: ObservableObject {
     /// Partial assistant reply while a streaming provider is generating;
     /// nil when idle or when the provider doesn't stream.
     @Published var streamingReply: String?
+    /// The model's reasoning so far, when it streams any, updated at most
+    /// once per `thoughtHoldSeconds` so each thought stays readable.
+    @Published var streamingThought: String?
+    private var thoughtShownAt: Date?
+    private static let thoughtHoldSeconds: TimeInterval = 1.2
+    /// When the reply in progress was requested; nil when idle.
+    @Published var replyStartedAt: Date?
     @Published var isLoadingModels: Bool = false
     @Published var isVoiceRecording: Bool = false
     @Published var isVoiceProcessing: Bool = false
@@ -496,6 +443,9 @@ private final class ChatAIViewModel: ObservableObject {
     /// Resolved per use so provider switches take effect without a restart.
     private var client: any LocalLLMServing { settings.activeLocalLLMClient }
     private let semanticMemory = SemanticMemoryService()
+    /// The Memory Graph's Activity reading of the last 30 days, kept ready so
+    /// "what did I decide?" doesn't wait on it; refreshed after each reply.
+    private var workSummary = ""
     private let voiceAudioService = AudioCaptureService()
     /// Only used when the app-wide service isn't available (e.g. previews).
     private lazy var fallbackVoiceTranscriptionService = TranscriptionService()
@@ -506,7 +456,14 @@ private final class ChatAIViewModel: ObservableObject {
     }
     private var voiceModelWarmupTask: Task<Void, Never>?
     private var didLoad = false
-    private var voiceRecordingStartedAt: Date?
+    @Published private(set) var voiceRecordingStartedAt: Date?
+    /// Models the provider says can't chat (an Ollama model without the
+    /// completion capability) are left out of `availableModels`; this holds
+    /// which of the rest can think, when the provider says.
+    private var modelThinkingSupport: [String: Bool] = [:]
+
+    /// The microphone level while recording, 0...1.
+    var voiceInputLevel: Float { voiceAudioService.audioLevel }
 
     var selectedConversation: ChatAIConversation? {
         guard let selectedConversationID else { return nil }
@@ -536,7 +493,8 @@ private final class ChatAIViewModel: ObservableObject {
     }
 
     var selectedModelSupportsThinking: Bool {
-        settings.localLLMProvider.supportsThinkFlag && Self.modelSupportsThinking(selectedModel)
+        guard settings.localLLMProvider.supportsThinkFlag else { return false }
+        return modelThinkingSupport[selectedModel] ?? Self.modelSupportsThinking(selectedModel)
     }
 
     var hasMessages: Bool {
@@ -561,27 +519,54 @@ private final class ChatAIViewModel: ObservableObject {
             daypart = "Late night"
         }
 
-        if mode == .myTone || hasToneProfile {
-            return "\(daypart). Ready to write in your voice?"
-        }
+        return daypart
+    }
 
-        return "\(daypart). What should we write with ChatAI?"
+    var emptySubtitle: String {
+        hasToneProfile
+            ? "Draft, rewrite in your own voice, or ask how you write. Everything stays on this Mac."
+            : "Draft, rewrite, or ask about how you write. Everything stays on this Mac."
+    }
+
+    /// The latest conversations with something in them, newest first.
+    var recentConversations: [ChatAIConversation] {
+        Array(conversations
+            .filter { !$0.messages.isEmpty && $0.id != selectedConversationID }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(3))
     }
 
     var starterPrompts: [ChatAIStarterPrompt] {
         [
             ChatAIStarterPrompt(
+                title: "Draft a polished reply",
+                detail: "Turn a rough idea into a clear message",
+                prompt: "Draft a polished, concise reply for this situation:",
+                systemImage: "pencil.line",
+                prefersMyTone: false
+            ),
+            ChatAIStarterPrompt(
                 title: "Rewrite in my tone",
+                detail: hasToneProfile ? "Sounds like you, not a template" : "Builds on Tone of Voice in Analytics",
                 prompt: "Rewrite this in my tone while keeping it clear and natural:",
                 systemImage: "person.wave.2",
                 prefersMyTone: true
             ),
             ChatAIStarterPrompt(
-                title: "Draft a polished reply",
-                prompt: "Draft a polished, concise reply for this situation:",
-                systemImage: "pencil.line",
+                title: "Search my dictations",
+                detail: "Ask what you said about anything",
+                prompt: "What have I said about ",
+                systemImage: "magnifyingglass",
                 prefersMyTone: false
-            )
+            ),
+            ChatAIStarterPrompt(
+                title: "How do I write?",
+                detail: "Patterns from your recent dictation",
+                prompt: "Look at how I've been writing lately. What patterns, habits and favourite phrases stand out, and what could I tighten?",
+                systemImage: "text.magnifyingglass",
+                prefersMyTone: false,
+                sendsImmediately: true
+            ),
         ]
     }
 
@@ -597,6 +582,37 @@ private final class ChatAIViewModel: ObservableObject {
         Task {
             await refreshModels()
         }
+        Task {
+            await refreshWorkSummary()
+        }
+    }
+
+    func refreshWorkSummary() async {
+        guard let report = try? await WorkActivityStore.shared.report(range: .month), report.sessionCount > 0 else {
+            workSummary = ""
+            return
+        }
+        workSummary = Self.workSummary(from: report)
+    }
+
+    /// The headline, projects, decisions and open questions, each line short.
+    static func workSummary(from report: ActivityReport) -> String {
+        func day(_ date: Date) -> String { date.formatted(.dateTime.month(.abbreviated).day()) }
+        var lines = [report.headline.joined(separator: " ")]
+        if !report.projects.isEmpty {
+            lines.append("Projects: " + report.projects.prefix(5).map {
+                "\($0.title) (\($0.sessions) sessions, last \(day($0.lastActive)))"
+            }.joined(separator: "; "))
+        }
+        if !report.decisions.isEmpty {
+            lines.append("Decisions:")
+            lines += report.decisions.prefix(5).map { "- \(day($0.date)): \($0.text)" }
+        }
+        if !report.openQuestions.isEmpty {
+            lines.append("Still open:")
+            lines += report.openQuestions.prefix(5).map { "- \(day($0.date)): \($0.text)" }
+        }
+        return lines.joined(separator: "\n")
     }
 
     func refreshModels() async {
@@ -606,11 +622,19 @@ private final class ChatAIViewModel: ObservableObject {
 
         let providerName = settings.localLLMProvider.displayName
         do {
-            let models = try await client.fetchModelNames(
-                baseURLString: settings.activeLocalLLMEndpoint,
-                timeoutMs: 2_400
-            )
-            availableModels = models.sorted()
+            let endpoint = settings.activeLocalLLMEndpoint
+            let client = self.client
+            let models = try await client.fetchModelNames(baseURLString: endpoint, timeoutMs: 2_400)
+            let capabilities = await withTaskGroup(of: (String, Set<String>?).self) { group in
+                for model in models {
+                    group.addTask { (model, await client.modelCapabilities(baseURLString: endpoint, model: model, timeoutMs: 2_000)) }
+                }
+                return await group.reduce(into: [String: Set<String>?]()) { $0[$1.0] = $1.1 }
+            }
+            modelThinkingSupport = capabilities.compactMapValues { $0.map { $0.contains("thinking") } }
+            availableModels = models
+                .filter { capabilities[$0].flatMap { $0 }?.contains("completion") ?? true }
+                .sorted()
             if selectedModel.isEmpty {
                 selectedModel = availableModels.first ?? settings.normalizedLocalLLMInsightsModel
             } else if !availableModels.isEmpty && !availableModels.contains(selectedModel) {
@@ -686,7 +710,7 @@ private final class ChatAIViewModel: ObservableObject {
             if uploadedDocuments.isEmpty {
                 errorMessage = "No readable text was found in the selected file."
             } else {
-                statusMessage = "\(uploadedDocuments.count) document\(uploadedDocuments.count == 1 ? "" : "s") available for RAG."
+                statusMessage = "\(uploadedDocuments.count) document\(uploadedDocuments.count == 1 ? "" : "s") attached."
                 errorMessage = nil
             }
         } catch {
@@ -710,9 +734,15 @@ private final class ChatAIViewModel: ObservableObject {
         errorMessage = nil
         isSending = true
         streamingReply = nil
+        streamingThought = nil
+        thoughtShownAt = nil
+        replyStartedAt = Date()
         defer {
             isSending = false
             streamingReply = nil
+            streamingThought = nil
+            thoughtShownAt = nil
+            replyStartedAt = nil
         }
 
         appendMessage(ChatAIMessage(role: .user, content: prompt), to: selectedConversationID)
@@ -732,12 +762,23 @@ private final class ChatAIViewModel: ObservableObject {
                 onDelta: { [weak self] partial in
                     Task { @MainActor [weak self] in
                         guard let self, self.isSending else { return }
-                        self.streamingReply = partial
+                        let parts = ChatAIReplyStatus.splitInlineThinking(partial)
+                        self.streamingReply = parts.visible.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let thought = parts.thought {
+                            self.showThought(thought)
+                        }
+                    }
+                },
+                onThinking: { [weak self] thinking in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.isSending else { return }
+                        self.showThought(thinking)
                     }
                 }
             )
             appendMessage(ChatAIMessage(role: .assistant, content: assistantVisibleContent(from: response)), to: selectedConversationID)
             statusMessage = "Generated with \(selectedModelDisplayName)."
+            Task { await refreshWorkSummary() }
         } catch {
             appendMessage(
                 ChatAIMessage(
@@ -750,6 +791,17 @@ private final class ChatAIViewModel: ObservableObject {
         }
     }
 
+    /// A fast thinking model finishes a sentence many times a second; a new
+    /// one replaces the status line only after the last has been readable.
+    private func showThought(_ thinking: String) {
+        let latest = ChatAIReplyStatus.latestThought(in: thinking)
+        guard latest != nil, latest != ChatAIReplyStatus.latestThought(in: streamingThought) else { return }
+        let now = Date()
+        if let shownAt = thoughtShownAt, now.timeIntervalSince(shownAt) < Self.thoughtHoldSeconds { return }
+        streamingThought = thinking
+        thoughtShownAt = now
+    }
+
     func toggleVoiceInput() {
         guard canRecordVoice else { return }
         if isVoiceRecording {
@@ -757,6 +809,17 @@ private final class ChatAIViewModel: ObservableObject {
         } else {
             startVoiceInput()
         }
+    }
+
+    /// Escape while recording: the recording is dropped.
+    func cancelVoiceInput() {
+        guard isVoiceRecording else { return }
+        isVoiceRecording = false
+        voiceModelWarmupTask?.cancel()
+        voiceModelWarmupTask = nil
+        _ = voiceAudioService.stopCapture()
+        voiceRecordingStartedAt = nil
+        statusMessage = nil
     }
 
     private func startVoiceInput() {
@@ -785,7 +848,7 @@ private final class ChatAIViewModel: ObservableObject {
 
             await self.settings.syncTranscriptionSettings(to: service)
             if await !service.isLoaded {
-                try? await service.loadModel(named: self.settings.selectedModelId)
+                try? await service.loadModel(named: self.settings.dictationModelID())
             }
         }
     }
@@ -812,7 +875,7 @@ private final class ChatAIViewModel: ObservableObject {
                 let service = voiceTranscriptionService
                 if await !service.isLoaded {
                     await settings.syncTranscriptionSettings(to: service)
-                    try await service.loadModel(named: settings.selectedModelId)
+                    try await service.loadModel(named: settings.dictationModelID())
                 }
                 let transcript = try await service.transcribe(audioSamples: samples)
                 await MainActor.run {
@@ -937,13 +1000,25 @@ private final class ChatAIViewModel: ObservableObject {
             }
         }
 
-        let semanticContext = await semanticMemory.contextBlock(for: latestPrompt, limit: 6)
+        let semanticContext = await semanticMemory.contextBlock(for: latestPrompt, limit: 8)
         if !semanticContext.isEmpty {
             sections.append("""
-            Relevant semantic memory from Orttaai dictation history:
+            Relevant excerpts from the user's own Orttaai dictation history (app, date, relevance):
             \(semanticContext)
+            """)
+        }
 
-            Use this memory as evidence from the user's own prior context. Do not invent facts beyond these excerpts.
+        if !workSummary.isEmpty {
+            sections.append("""
+            What the user has been working on, read from their dictation over the last 30 days:
+            \(workSummary)
+            """)
+        }
+
+        if !semanticContext.isEmpty || !workSummary.isEmpty {
+            sections.append("""
+            Answering about the user's own past:
+            When they ask what they said, did, decided or left open, answer from the excerpts and summary above. Lead with the answer, then a few short bullets. Say briefly when and where (for example "Oct 21, Slack"). Summarise instead of quoting long passages. If the memory doesn't cover it, say so plainly; never invent facts beyond it.
             """)
         }
 
@@ -1136,12 +1211,14 @@ private final class ChatAIViewModel: ObservableObject {
 }
 
 struct ChatAIView: View {
+    /// A question handed over from another page, sent in a new chat.
+    @Binding var pendingPrompt: String?
     @StateObject private var viewModel = ChatAIViewModel()
     @State private var isImportingDocument = false
+    @State private var isSendHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let activeComposerMaxWidth: CGFloat = 760
     private let emptyComposerMaxWidth: CGFloat = 700
-    private let starterPromptMaxWidth: CGFloat = 560
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -1185,6 +1262,26 @@ struct ChatAIView: View {
         )
         .onAppear {
             viewModel.load()
+            sendPendingPrompt()
+        }
+        .onChange(of: pendingPrompt) { _, _ in
+            sendPendingPrompt()
+        }
+        .onChange(of: viewModel.isSending) { _, isSending in
+            if !isSending {
+                sendPendingPrompt()
+            }
+        }
+    }
+
+    /// Starts a new chat with a question another page handed over.
+    private func sendPendingPrompt() {
+        guard let prompt = pendingPrompt, !viewModel.isSending else { return }
+        pendingPrompt = nil
+        viewModel.newConversation()
+        viewModel.draft = prompt
+        Task {
+            await viewModel.sendMessage()
         }
     }
 
@@ -1294,18 +1391,30 @@ struct ChatAIView: View {
             } else {
                 Spacer(minLength: 0)
 
-                VStack(spacing: Spacing.xxl) {
-                    Text(viewModel.emptyGreeting)
-                        .font(.system(size: 28, weight: .medium))
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                        .multilineTextAlignment(.center)
+                VStack(spacing: Spacing.xl) {
+                    VStack(spacing: Spacing.sm) {
+                        OrttaaiBrandMark()
+                            .frame(width: 30 * SignalCursorGlyph.aspectRatio, height: 30)
+                            .padding(.bottom, Spacing.xs)
+                        Text(viewModel.emptyGreeting)
+                            .font(.system(size: 28, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                            .accessibilityAddTraits(.isHeader)
+                        Text(viewModel.emptySubtitle)
+                            .font(.Orttaai.body)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                    }
+                    .multilineTextAlignment(.center)
 
-                    VStack(spacing: Spacing.md) {
-                        composer
+                    composer
+                        .frame(maxWidth: emptyComposerMaxWidth)
+
+                    starterPromptGrid
+                        .frame(maxWidth: emptyComposerMaxWidth)
+
+                    if !viewModel.recentConversations.isEmpty {
+                        recentChats
                             .frame(maxWidth: emptyComposerMaxWidth)
-
-                        starterPromptRow
-                            .frame(maxWidth: starterPromptMaxWidth)
                     }
                 }
                 .padding(.horizontal, Spacing.xxxl)
@@ -1329,12 +1438,8 @@ struct ChatAIView: View {
                     }
 
                     if viewModel.isSending {
-                        if let partial = viewModel.streamingReply, !partial.isEmpty {
-                            streamingBubble(partial)
-                                .id("streaming-reply")
-                        } else {
-                            assistantActivityRow
-                        }
+                        replyInProgress
+                            .id("streaming-reply")
                     }
                 }
                 .padding(.horizontal, Spacing.xxxl)
@@ -1363,9 +1468,7 @@ struct ChatAIView: View {
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 if message.role == .assistant {
-                    Text("ChatAI")
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
+                    ChatAIReplyHeader(startedAt: nil, hasWords: true, thinking: false, thought: nil)
                 }
 
                 if message.role == .assistant {
@@ -1388,74 +1491,140 @@ struct ChatAIView: View {
         }
     }
 
-    private var assistantActivityRow: some View {
-        ChatAIActivityIndicator(
-            title: viewModel.thinkingEnabled && viewModel.selectedModelSupportsThinking
-                ? "Thinking..."
-                : "Writing..."
-        )
-        .padding(.top, Spacing.xs)
-    }
-
-    /// In-progress assistant reply, styled like a finished assistant bubble.
-    private func streamingBubble(_ partial: String) -> some View {
-        HStack(alignment: .top, spacing: Spacing.md) {
+    /// The reply being written: the beating mark with what it is doing,
+    /// then its words streaming straight onto the background.
+    private var replyInProgress: some View {
+        let text = viewModel.streamingReply ?? ""
+        return HStack(alignment: .top, spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("ChatAI")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
+                ChatAIReplyHeader(
+                    startedAt: viewModel.replyStartedAt ?? Date(),
+                    hasWords: !text.isEmpty,
+                    thinking: viewModel.thinkingEnabled && viewModel.selectedModelSupportsThinking,
+                    thought: viewModel.streamingThought
+                )
 
-                ChatAIRichMessageText(content: partial)
+                if !text.isEmpty {
+                    ChatAIRichMessageText(content: text)
+                }
             }
 
             Spacer(minLength: 80)
         }
     }
 
-    private var starterPromptRow: some View {
-        HStack(spacing: Spacing.sm) {
+    private var starterPromptGrid: some View {
+        LazyVGrid(
+            columns: [GridItem(.flexible(), spacing: Spacing.sm), GridItem(.flexible(), spacing: Spacing.sm)],
+            spacing: Spacing.sm
+        ) {
             ForEach(viewModel.starterPrompts) { starter in
                 Button {
                     if starter.prefersMyTone, viewModel.hasToneProfile {
                         viewModel.mode = .myTone
                     }
                     viewModel.draft = starter.prompt
+                    if starter.sendsImmediately {
+                        Task {
+                            await viewModel.sendMessage()
+                        }
+                    }
+                } label: {
+                    HStack(spacing: Spacing.md) {
+                        Image(systemName: starter.systemImage)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.Orttaai.accent)
+                            .frame(width: 30, height: 30)
+                            .background(Color.Orttaai.accentSubtle, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(starter.title)
+                                .font(.Orttaai.bodyMedium)
+                                .foregroundStyle(Color.Orttaai.textPrimary)
+                            Text(starter.detail)
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textTertiary)
+                        }
+                        .lineLimit(1)
+                        Spacer(minLength: 0)
+                        if starter.sendsImmediately {
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color.Orttaai.textTertiary)
+                        }
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(ChatAIStarterCardStyle())
+                .help(starter.sendsImmediately ? "Ask now" : starter.prompt)
+            }
+        }
+    }
+
+    private var recentChats: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Recent")
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.bottom, 2)
+            ForEach(viewModel.recentConversations) { conversation in
+                Button {
+                    viewModel.selectConversation(conversation)
                 } label: {
                     HStack(spacing: Spacing.sm) {
-                        Image(systemName: starter.systemImage)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(starter.prefersMyTone ? Color.Orttaai.accent : Color.Orttaai.textSecondary)
-
-                        Text(starter.title)
+                        Image(systemName: "bubble.left")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                        Text(conversation.title)
                             .font(.Orttaai.secondary)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.86)
+                        Spacer(minLength: Spacing.sm)
+                        Text(conversation.updatedAt, format: .relative(presentation: .named))
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
                     }
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .padding(.horizontal, Spacing.md)
-                    .frame(height: 30)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.Orttaai.bgTertiary.opacity(0.44))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.Orttaai.border.opacity(0.52), lineWidth: BorderWidth.standard)
-                    )
+                    .padding(.horizontal, Spacing.sm)
+                    .frame(height: 28)
                 }
-                .buttonStyle(.plain)
-                .help(starter.prompt)
+                .buttonStyle(ChatAIComposerChipStyle())
             }
         }
     }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            HiddenScrollbarTextView(text: $viewModel.draft)
+            HiddenScrollbarTextView(
+                text: $viewModel.draft,
+                onSubmit: {
+                    if viewModel.isVoiceRecording {
+                        viewModel.toggleVoiceInput()
+                        return
+                    }
+                    guard viewModel.canSend else { return }
+                    Task {
+                        await viewModel.sendMessage()
+                    }
+                },
+                onCancel: { viewModel.cancelVoiceInput() }
+            )
                 .frame(height: viewModel.hasMessages ? 54 : 82)
+                .opacity(isVoiceActive ? 0 : 1)
+                .allowsHitTesting(!isVoiceActive)
                 .padding(.horizontal, Spacing.xl)
                 .padding(.top, viewModel.hasMessages ? Spacing.md : Spacing.lg)
                 .overlay(alignment: .topLeading) {
-                    if viewModel.draft.isEmpty {
+                    if isVoiceActive {
+                        ChatAIVoiceStrip(
+                            isProcessing: viewModel.isVoiceProcessing,
+                            startedAt: viewModel.voiceRecordingStartedAt,
+                            level: { viewModel.voiceInputLevel },
+                            onCancel: { viewModel.cancelVoiceInput() }
+                        )
+                        .padding(.horizontal, Spacing.xl)
+                        .padding(.top, viewModel.hasMessages ? Spacing.md : Spacing.lg)
+                    } else if viewModel.draft.isEmpty {
                         Text("Ask about your writing pattern or generate content")
                             .font(.Orttaai.body)
                             .foregroundStyle(Color.Orttaai.textTertiary)
@@ -1476,39 +1645,20 @@ struct ChatAIView: View {
                 }
             }
 
-            HStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
                 Button {
                     isImportingDocument = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .help("Upload files for RAG")
-
-                Label(viewModel.uploadedDocuments.isEmpty ? "RAG" : "RAG on", systemImage: "doc.text.magnifyingglass")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(viewModel.uploadedDocuments.isEmpty ? Color.Orttaai.textTertiary : Color.Orttaai.accent)
-
-                Spacer(minLength: Spacing.sm)
-
-                Button {
-                    Task {
-                        await viewModel.refreshModels()
-                    }
-                } label: {
-                    Image(systemName: viewModel.isLoadingModels ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-                .disabled(viewModel.isLoadingModels)
-                .help("Refresh available models")
+                .buttonStyle(ChatAIComposerChipStyle())
+                .help("Attach documents")
 
                 modeMenu
+
+                Spacer(minLength: Spacing.sm)
 
                 modelMenu
 
@@ -1519,15 +1669,12 @@ struct ChatAIView: View {
                         }
                     } label: {
                         Image(systemName: "brain")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 34, height: 30)
+                            .font(.system(size: 13, weight: .medium))
+                            .frame(width: 28, height: 28)
                             .contentTransition(.symbolEffect(.replace))
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(viewModel.thinkingEnabled ? Color.Orttaai.accent : Color.Orttaai.textSecondary)
-                    .background(viewModel.thinkingEnabled ? Color.Orttaai.accentSubtle : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .help("Thinking mode")
+                    .buttonStyle(ChatAIComposerChipStyle(isActive: viewModel.thinkingEnabled))
+                    .help(viewModel.thinkingEnabled ? "Thinking on" : "Thinking off")
                 }
 
                 depthMenu
@@ -1543,7 +1690,9 @@ struct ChatAIView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!viewModel.canRecordVoice && !viewModel.isVoiceRecording)
-                .help(viewModel.isVoiceRecording ? "Stop voice input" : "Start voice input")
+                .pointingHandCursor(when: viewModel.canRecordVoice || viewModel.isVoiceRecording)
+                .help(viewModel.isVoiceRecording ? "Finish voice input (Return)" : "Speak your message")
+                .padding(.leading, Spacing.xs)
 
                 Button {
                     Task {
@@ -1551,16 +1700,20 @@ struct ChatAIView: View {
                     }
                 } label: {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .frame(width: 34, height: 34)
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(width: 32, height: 32)
                         .background(viewModel.canSend ? Color.Orttaai.textPrimary : Color.Orttaai.bgTertiary)
                         .foregroundStyle(viewModel.canSend ? Color.Orttaai.bgPrimary : Color.Orttaai.textTertiary)
                         .clipShape(Circle())
+                        .scaleEffect(isSendHovered && viewModel.canSend ? 1.08 : 1)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSendHovered)
                 }
                 .buttonStyle(.plain)
                 .disabled(!viewModel.canSend)
+                .onHover { isSendHovered = $0 }
+                .pointingHandCursor(when: viewModel.canSend)
                 .keyboardShortcut(.return, modifiers: [.command])
-                .help("Send")
+                .help("Send (Return). Shift-Return adds a new line.")
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.bottom, Spacing.md)
@@ -1594,28 +1747,42 @@ struct ChatAIView: View {
             .stroke(message.role == .user ? Color.Orttaai.border.opacity(0.58) : Color.clear, lineWidth: BorderWidth.standard)
     }
 
+    private var isVoiceActive: Bool {
+        viewModel.isVoiceRecording || viewModel.isVoiceProcessing
+    }
+
     private var modelMenu: some View {
         Menu {
             if viewModel.availableModels.isEmpty {
-                Button(viewModel.selectedModelDisplayName) {}
-                    .disabled(true)
+                Text("No chat models found")
             } else {
                 ForEach(viewModel.availableModels, id: \.self) { model in
-                    Button(model) {
+                    Button {
                         viewModel.selectedModel = model
+                    } label: {
+                        if model == viewModel.selectedModel {
+                            Label(model, systemImage: "checkmark")
+                        } else {
+                            Text(model)
+                        }
                     }
                 }
             }
+
+            Divider()
+
+            Button {
+                Task {
+                    await viewModel.refreshModels()
+                }
+            } label: {
+                Label("Refresh Models", systemImage: "arrow.clockwise")
+            }
+            .disabled(viewModel.isLoadingModels)
         } label: {
-            Text(viewModel.selectedModelDisplayName)
-                .font(.Orttaai.bodyMedium)
-                .lineLimit(1)
-            .foregroundStyle(Color.Orttaai.textPrimary)
-            .padding(.horizontal, Spacing.md)
-            .frame(height: 30)
-            .frame(maxWidth: 164)
+            ChatAIComposerMenuLabel(title: viewModel.selectedModelDisplayName, maxTitleWidth: 150)
         }
-        .menuStyle(.borderlessButton)
+        .chatAIComposerMenu()
         .help("Chat model")
     }
 
@@ -1627,49 +1794,37 @@ struct ChatAIView: View {
                 } label: {
                     Label(mode.title, systemImage: mode.systemImage)
                 }
-            }
-
-            if !viewModel.hasToneProfile {
-                Divider()
-                Text("Run Tone of Voice in Analytics to improve My Tone.")
+                .disabled(mode == .myTone && !viewModel.hasToneProfile)
             }
         } label: {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: viewModel.mode.systemImage)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(viewModel.mode.title)
-                    .font(.Orttaai.bodyMedium)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-            .foregroundStyle(viewModel.mode == .myTone ? Color.Orttaai.accent : Color.Orttaai.textPrimary)
-            .padding(.horizontal, Spacing.md)
-            .frame(height: 30)
-            .background(viewModel.mode == .myTone ? Color.Orttaai.accentSubtle : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            ChatAIComposerMenuLabel(
+                systemImage: viewModel.mode.systemImage,
+                title: viewModel.mode.title,
+                isActive: viewModel.mode == .myTone
+            )
         }
-        .menuStyle(.borderlessButton)
-        .help("ChatAI mode")
+        .chatAIComposerMenu()
+        .help(viewModel.hasToneProfile ? "Chat mode" : "Chat mode. My Tone needs a Tone of Voice profile from Analytics.")
     }
 
     private var depthMenu: some View {
         Menu {
             ForEach(ChatAIThinkingDepth.allCases) { depth in
-                Button(depth.title) {
+                Button {
                     viewModel.thinkingDepth = depth
+                } label: {
+                    if depth == viewModel.thinkingDepth {
+                        Label(depth.title, systemImage: "checkmark")
+                    } else {
+                        Text(depth.title)
+                    }
                 }
             }
         } label: {
-            Text(viewModel.thinkingDepth.title)
-                .font(.Orttaai.bodyMedium)
-            .foregroundStyle(Color.Orttaai.textPrimary)
-            .padding(.horizontal, Spacing.md)
-            .frame(height: 30)
+            ChatAIComposerMenuLabel(title: viewModel.thinkingDepth.title)
         }
-        .menuStyle(.borderlessButton)
-        .help("Thinking depth")
+        .chatAIComposerMenu()
+        .help("Reply length and context")
     }
 
     private func documentChip(_ document: ChatAIUploadedDocument) -> some View {
@@ -1697,4 +1852,209 @@ struct ChatAIView: View {
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
     }
 
+}
+
+/// A starter on the empty chat: a quiet card that lifts on hover.
+private struct ChatAIStarterCardStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ChatAIStarterCard(isPressed: configuration.isPressed) {
+            configuration.label
+        }
+    }
+}
+
+private struct ChatAIStarterCard<Content: View>: View {
+    var isPressed = false
+    @ViewBuilder let content: () -> Content
+    @State private var isHovered = false
+
+    var body: some View {
+        content()
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isHovered ? Color.Orttaai.bgSecondary : Color.Orttaai.bgSecondary.opacity(0.45))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isHovered ? Color.Orttaai.accentRing : Color.Orttaai.border.opacity(0.5), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .scaleEffect(isPressed ? 0.985 : 1)
+            .onHover { isHovered = $0 }
+            .pointingHandCursor(when: true)
+            .animation(.easeOut(duration: 0.14), value: isHovered)
+    }
+}
+
+/// The look every composer control shares: quiet until hovered, accent
+/// when on, and the hand pointer whenever it can be clicked.
+private struct ChatAIComposerChipStyle: ButtonStyle {
+    var isActive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        ChatAIComposerChip(isActive: isActive, isPressed: configuration.isPressed) {
+            configuration.label
+        }
+    }
+}
+
+private struct ChatAIComposerChip<Content: View>: View {
+    var isActive = false
+    var isPressed = false
+    @ViewBuilder let content: () -> Content
+
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    var body: some View {
+        content()
+            .foregroundStyle(isActive ? Color.Orttaai.accent : (isHovered && isEnabled ? Color.Orttaai.textPrimary : Color.Orttaai.textSecondary))
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isActive ? Color.Orttaai.accentSubtle : (isHovered && isEnabled ? Color.Orttaai.bgTertiary.opacity(0.7) : Color.clear))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.45)
+            .scaleEffect(isPressed ? 0.96 : 1)
+            .onHover { isHovered = $0 }
+            .pointingHandCursor(when: isEnabled)
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+    }
+}
+
+private struct ChatAIComposerMenuLabel: View {
+    var systemImage: String?
+    let title: String
+    var isActive = false
+    var maxTitleWidth: CGFloat?
+
+    var body: some View {
+        ChatAIComposerChip(isActive: isActive) {
+            HStack(spacing: 5) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .medium))
+                }
+                Text(title)
+                    .font(.Orttaai.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: maxTitleWidth, alignment: .leading)
+                    .fixedSize(horizontal: maxTitleWidth == nil, vertical: false)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .opacity(0.6)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 28)
+        }
+    }
+}
+
+/// Shown in place of the text while a voice message is recorded or
+/// transcribed: a live level meter and the time, with how to finish.
+private struct ChatAIVoiceStrip: View {
+    let isProcessing: Bool
+    let startedAt: Date?
+    let level: () -> Float
+    let onCancel: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            if isProcessing {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Transcribing your voice…")
+                    .font(.Orttaai.body)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                Spacer(minLength: 0)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 24, paused: reduceMotion)) { context in
+                    HStack(spacing: Spacing.sm) {
+                        Circle()
+                            .fill(Color.Orttaai.error)
+                            .frame(width: 8, height: 8)
+                            .opacity(reduceMotion ? 1 : 0.55 + 0.45 * abs(sin(context.date.timeIntervalSinceReferenceDate * 2.4)))
+                        Text(elapsed(at: context.date))
+                            .font(.Orttaai.mono)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                            .monospacedDigit()
+                        meter(at: context.date)
+                    }
+                }
+                Spacer(minLength: Spacing.sm)
+                Text("Return to finish · Esc to cancel")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(ChatAIComposerChipStyle())
+                    .font(.Orttaai.caption)
+            }
+        }
+        .frame(height: 28)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isProcessing ? "Transcribing your voice" : "Recording your voice")
+    }
+
+    private func elapsed(at now: Date) -> String {
+        let seconds = Int(now.timeIntervalSince(startedAt ?? now))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func meter(at now: Date) -> some View {
+        let boosted = Double(min(Float(1), level() * 2.5 + 0.08))
+        let time = now.timeIntervalSinceReferenceDate
+        return HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<24, id: \.self) { index in
+                let wave = reduceMotion ? 0.6 : 0.45 + 0.55 * abs(sin(Double(index) * 0.9 + time * 7))
+                Capsule()
+                    .fill(Color.Orttaai.accent.opacity(0.85))
+                    .frame(width: 2.5, height: max(3, 20 * boosted * wave))
+            }
+        }
+        .frame(height: 20)
+    }
+}
+
+private extension View {
+    func chatAIComposerMenu() -> some View {
+        menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+    }
+}
+
+private extension View {
+    /// The hand pointer over a control that can be clicked, and the arrow
+    /// over one that can't. Saying so explicitly matters next to the
+    /// composer's text view, whose I-beam otherwise lingers over buttons.
+    @ViewBuilder
+    func pointingHandCursor(when enabled: Bool) -> some View {
+        if #available(macOS 15, *) {
+            pointerStyle(enabled ? .link : .default)
+        } else {
+            modifier(ChatAILegacyPointer(enabled: enabled))
+        }
+    }
+}
+
+/// macOS 14 has no `pointerStyle`; push the cursor while hovered.
+private struct ChatAILegacyPointer: ViewModifier {
+    let enabled: Bool
+    @State private var pushed = false
+
+    func body(content: Content) -> some View {
+        content.onHover { inside in
+            if inside, !pushed {
+                (enabled ? NSCursor.pointingHand : NSCursor.arrow).push()
+                pushed = true
+            } else if !inside, pushed {
+                NSCursor.pop()
+                pushed = false
+            }
+        }
+    }
 }

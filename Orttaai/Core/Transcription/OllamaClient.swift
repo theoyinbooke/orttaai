@@ -131,6 +131,23 @@ actor OllamaClient: LocalLLMServing {
         .filter { !$0.isEmpty }
     }
 
+    /// Reads `capabilities` from `/api/show`; nil for an Ollama too old to
+    /// report them, or when the request fails.
+    func modelCapabilities(baseURLString: String, model: String, timeoutMs: Int) async -> Set<String>? {
+        guard let url = try? endpointURL(baseURLString: baseURLString, path: "/api/show"),
+              let body = try? JSONSerialization.data(withJSONObject: ["model": model]) else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = max(0.08, Double(timeoutMs) / 1_000.0)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        guard let (data, response) = try? await session.data(for: request),
+              (try? validateHTTPResponse(response, data: data)) != nil,
+              let json = try? parseJSONObject(data),
+              let capabilities = json["capabilities"] as? [String] else { return nil }
+        return Set(capabilities)
+    }
+
     func generate(
         baseURLString: String,
         model: String,
@@ -227,6 +244,125 @@ actor OllamaClient: LocalLLMServing {
         numContext: Int? = nil,
         keepAlive: String = "5m"
     ) async throws -> String {
+        let request = try chatRequest(
+            baseURLString: baseURLString,
+            model: model,
+            messages: messages,
+            timeoutMs: timeoutMs,
+            think: think,
+            temperature: temperature,
+            numPredict: numPredict,
+            numContext: numContext,
+            keepAlive: keepAlive,
+            stream: false
+        )
+
+        let (data, response) = try await session.data(for: request)
+        try validateHTTPResponse(response, data: data)
+
+        let json = try parseJSONObject(data)
+        let responseText: String
+        if let message = json["message"] as? [String: Any] {
+            responseText = (message["content"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        } else {
+            responseText = (json["response"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
+
+        guard !responseText.isEmpty else {
+            let fields = json.keys.sorted().joined(separator: ", ")
+            let doneReason = (json["done_reason"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let thinkingMessage = ((json["thinking"] as? String)?.isEmpty == false)
+                ? " Thinking content was present, but no final response was returned."
+                : ""
+            let reasonMessage = doneReason.map { " done_reason=\($0)." } ?? ""
+            throw OllamaClientError.requestFailed(
+                message: "Ollama returned an empty chat response. fields=\(fields).\(reasonMessage)\(thinkingMessage)"
+            )
+        }
+        return responseText
+    }
+
+    /// Streams `/api/chat`: Ollama sends one JSON object per line, with the
+    /// reply in `message.content` and, for thinking models, the reasoning in
+    /// `message.thinking`. Each callback gets the accumulated text so far.
+    func chatStream(
+        baseURLString: String,
+        model: String,
+        messages: [OllamaChatMessage],
+        timeoutMs: Int?,
+        think: Bool?,
+        temperature: Double,
+        numPredict: Int,
+        numContext: Int?,
+        keepAlive: String,
+        onDelta: @escaping @Sendable (String) -> Void,
+        onThinking: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        let request = try chatRequest(
+            baseURLString: baseURLString,
+            model: model,
+            messages: messages,
+            timeoutMs: timeoutMs,
+            think: think,
+            temperature: temperature,
+            numPredict: numPredict,
+            numContext: numContext,
+            keepAlive: keepAlive,
+            stream: true
+        )
+        let (bytes, response) = try await session.bytes(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var body = Data()
+            for try await byte in bytes {
+                body.append(byte)
+            }
+            try validateHTTPResponse(response, data: body)
+        }
+
+        var content = ""
+        var thinking = ""
+        for try await line in bytes.lines {
+            guard let data = line.data(using: .utf8),
+                  let json = try? parseJSONObject(data) else { continue }
+            if let error = json["error"] as? String, !error.isEmpty {
+                throw OllamaClientError.requestFailed(message: error)
+            }
+            if let message = json["message"] as? [String: Any] {
+                if let piece = message["thinking"] as? String, !piece.isEmpty {
+                    thinking += piece
+                    onThinking(thinking)
+                }
+                if let piece = message["content"] as? String, !piece.isEmpty {
+                    content += piece
+                    onDelta(content)
+                }
+            }
+            if json["done"] as? Bool == true { break }
+        }
+
+        let reply = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reply.isEmpty else {
+            let thinkingMessage = thinking.isEmpty ? "" : " Thinking content was present, but no final response was returned."
+            throw OllamaClientError.requestFailed(message: "Ollama returned an empty chat response.\(thinkingMessage)")
+        }
+        return reply
+    }
+
+    private func chatRequest(
+        baseURLString: String,
+        model: String,
+        messages: [OllamaChatMessage],
+        timeoutMs: Int?,
+        think: Bool?,
+        temperature: Double,
+        numPredict: Int,
+        numContext: Int?,
+        keepAlive: String,
+        stream: Bool
+    ) throws -> URLRequest {
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedMessages = messages
             .map { message in
@@ -270,7 +406,7 @@ actor OllamaClient: LocalLLMServing {
                     "content": message.content,
                 ]
             },
-            "stream": false,
+            "stream": stream,
             "options": options,
             "keep_alive": keepAlive,
         ]
@@ -278,33 +414,7 @@ actor OllamaClient: LocalLLMServing {
             payload["think"] = think
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
-
-        let (data, response) = try await session.data(for: request)
-        try validateHTTPResponse(response, data: data)
-
-        let json = try parseJSONObject(data)
-        let responseText: String
-        if let message = json["message"] as? [String: Any] {
-            responseText = (message["content"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        } else {
-            responseText = (json["response"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        }
-
-        guard !responseText.isEmpty else {
-            let fields = json.keys.sorted().joined(separator: ", ")
-            let doneReason = (json["done_reason"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let thinkingMessage = ((json["thinking"] as? String)?.isEmpty == false)
-                ? " Thinking content was present, but no final response was returned."
-                : ""
-            let reasonMessage = doneReason.map { " done_reason=\($0)." } ?? ""
-            throw OllamaClientError.requestFailed(
-                message: "Ollama returned an empty chat response. fields=\(fields).\(reasonMessage)\(thinkingMessage)"
-            )
-        }
-        return responseText
+        return request
     }
 
     func embed(

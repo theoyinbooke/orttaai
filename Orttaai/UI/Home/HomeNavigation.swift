@@ -46,4 +46,12 @@ enum HomeSection: String, CaseIterable, Identifiable, Hashable {
 
 final class HomeNavigationState: ObservableObject {
     @Published var selectedSection: HomeSection = .overview
+    /// A question another page handed to Chat AI; Chat AI sends it in a new
+    /// chat and clears it.
+    @Published var pendingChatPrompt: String?
+
+    func askChatAI(_ prompt: String) {
+        pendingChatPrompt = prompt
+        selectedSection = .chatAI
+    }
 }

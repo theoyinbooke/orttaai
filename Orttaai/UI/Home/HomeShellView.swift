@@ -67,9 +67,9 @@ struct HomeShellView: View {
                 layoutMode: compactOverview ? .compact : .regular
             )
         case .chatAI:
-            ChatAIView()
+            ChatAIView(pendingPrompt: $navigation.pendingChatPrompt)
         case .graph:
-            SemanticMemoryView()
+            SemanticMemoryView(onAskChat: navigation.askChatAI)
         case .memory:
             MemoryView()
         case .analytics:

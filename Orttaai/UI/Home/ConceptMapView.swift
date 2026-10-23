@@ -28,7 +28,8 @@ struct ConceptMapView: View {
         }
     }
 
-    @State private var range: ConceptTimeRange = .quarter
+    /// Picked in the page header.
+    let range: ConceptTimeRange
     @State private var kindFilter: KindFilter = .all
     @State private var graph: ConceptGraph?
     @State private var extraction: (done: Int, total: Int)?
@@ -60,6 +61,7 @@ struct ConceptMapView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: range) { await load() }
         .onChange(of: selectedID) { _, _ in loadSelection() }
     }
@@ -94,11 +96,6 @@ struct ConceptMapView: View {
 
     private var controls: some View {
         HStack(spacing: Spacing.md) {
-            OrttaaiSegmentedControl(
-                title: "Time range",
-                selection: $range,
-                options: ConceptTimeRange.allCases.map { .init($0, $0.title) }
-            )
             OrttaaiSegmentedControl(
                 title: "Show",
                 selection: $kindFilter,
@@ -203,7 +200,7 @@ struct ConceptMapView: View {
                     .clipShape(Capsule())
                     .padding(Spacing.sm)
             }
-            .frame(minHeight: 460)
+            .frame(minHeight: 360)
 
             Divider()
                 .overlay(Color.Orttaai.border)
@@ -221,7 +218,8 @@ struct ConceptMapView: View {
             }
             .frame(width: 290)
         }
-        .frame(height: 480)
+        // Fills the rest of the page; the page itself doesn't scroll.
+        .frame(minHeight: 400, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                 .fill(Color.Orttaai.bgSecondary)
