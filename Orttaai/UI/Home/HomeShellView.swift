@@ -69,7 +69,7 @@ struct HomeShellView: View {
         case .chatAI:
             ChatAIView(pendingPrompt: $navigation.pendingChatPrompt)
         case .graph:
-            SemanticMemoryView(onAskChat: navigation.askChatAI)
+            SemanticMemoryView(onAskChat: navigation.askChatAI, onOpenAISettings: navigation.openAISettings)
         case .memory:
             MemoryView()
         case .analytics:
@@ -77,9 +77,10 @@ struct HomeShellView: View {
         case .settings:
             HomeSettingsWorkspaceView()
         case .model:
-            ModelSettingsView()
+            ModelSettingsView(initialSection: navigation.pendingModelSection ?? .speech)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(Color.Orttaai.bgPrimary)
+                .onAppear { navigation.pendingModelSection = nil }
         case .about:
             ScrollView(showsIndicators: false) {
                 AboutView()

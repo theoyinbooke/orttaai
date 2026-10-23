@@ -75,6 +75,8 @@ struct ModelSettingsView: View {
     @AppStorage("semanticEmbeddingFallbackEnabled") private var semanticEmbeddingFallbackEnabled = true
     @AppStorage("semanticEmbeddingModel") private var semanticEmbeddingModel = "all-minilm"
     @AppStorage("semanticActiveIndexModelID") private var semanticActiveIndexModelID = ""
+    @AppStorage("semanticInsightSummaryEnabled") private var semanticInsightSummaryEnabled = true
+    @AppStorage("semanticInsightSummaryModel") private var semanticInsightSummaryModel = "gemma4:e2b"
     @State private var diskUsage: String = "Checking downloaded models..."
     @State private var downloadedModelIDs: Set<String> = []
     @State private var downloadedVariants: [DownloadedVariantRecord] = []
@@ -95,10 +97,13 @@ struct ModelSettingsView: View {
     @State private var installedOllamaModels: [String] = []
     /// Installed models that make embeddings rather than chat.
     @State private var embeddingModelNames: Set<String> = []
-    @State private var isDownloadingRecommendedEmbedding = false
-    @State private var recommendedEmbeddingProgress: Double?
-    @State private var recommendedEmbeddingStatus: String?
-    @State private var recommendedEmbeddingError: String?
+    /// Asks before a missing model is downloaded by the server, then runs
+    /// what needed it.
+    @StateObject private var modelDownloader = LocalModelDownloader()
+    @State private var semanticStats: SemanticMemoryStats?
+    @State private var isIndexing = false
+    @State private var indexMessage: String?
+    @State private var isConfirmingClearIndex = false
     @State private var isCheckingOllama: Bool = false
     @State private var isInstallingOllamaModel: Bool = false
     @State private var installingOllamaModelName: String?
@@ -150,12 +155,14 @@ struct ModelSettingsView: View {
                     polishCard
                     insightsCard
                     semanticMemoryCard
+                    graphInsightsCard
                     if providerKind.supportsModelInstall {
                         modelDownloadsCard
                     }
                 }
             }
         }
+        .localModelDownloadPrompt(modelDownloader)
         .onAppear {
             loadInitialModels()
             normalizeAdvancedDecodingValues()
@@ -928,6 +935,12 @@ struct ModelSettingsView: View {
 
                 recommendedEmbeddingRow
 
+                LocalModelDownloadStatus(downloader: modelDownloader)
+
+                SettingsDivider()
+
+                indexRow
+
                 SettingsDivider()
 
                 SettingsToggleRow(
@@ -943,8 +956,123 @@ struct ModelSettingsView: View {
                     info: "Falls back to keyword search when the embedding model isn't available.",
                     isOn: $semanticEmbeddingFallbackEnabled
                 )
+
+                SettingsDivider()
+
+                SettingsRow(
+                    title: "Clear Index",
+                    info: "Deletes the index and the Memory Graph built from it. Your dictations stay; the index rebuilds from them."
+                ) {
+                    Button(role: .destructive) {
+                        isConfirmingClearIndex = true
+                    } label: {
+                        Label("Clear…", systemImage: "trash")
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true, size: .small))
+                    .disabled(isIndexing || (semanticStats?.chunkCount ?? 0) == 0)
+                }
             }
         }
+        .task {
+            refreshSemanticStats()
+        }
+        .confirmationDialog(
+            "Clear the semantic memory index?",
+            isPresented: $isConfirmingClearIndex,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Index", role: .destructive) { clearSemanticIndex() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This deletes the index and the Memory Graph built from it. Your dictations stay, and the index rebuilds from them.")
+        }
+    }
+
+    /// Memory Graph insights: always computed from your notes; a model only
+    /// phrases them.
+    private var graphInsightsCard: some View {
+        SettingsCard(
+            "Graph Insights",
+            info: "Memory Graph insights are computed from the connections between your notes. A local model phrases them; with it off, they use plain phrasing."
+        ) {
+            OrttaaiSwitch(title: "Graph Insights Model", isOn: $semanticInsightSummaryEnabled)
+        } content: {
+            if semanticInsightSummaryEnabled {
+                SettingsRow(
+                    title: "Insight Model",
+                    info: "If it isn't on \(providerKind.displayName) yet, Generate Insights offers to download it first."
+                ) {
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { resolvedModelSelection(for: semanticInsightSummaryModel) },
+                            set: { semanticInsightSummaryModel = $0 }
+                        ),
+                        options: modelDropdownOptions(current: semanticInsightSummaryModel),
+                        width: SettingsLayout.controlWidth
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Semantic index
+
+    /// How much is indexed and with what, with Index Now.
+    private var indexRow: some View {
+        SettingsRow(title: "Index", info: "Auto-index keeps this current; Index Now catches up straight away.") {
+            HStack(spacing: Spacing.sm) {
+                Text(indexStatusText)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button {
+                    Task {
+                        await modelDownloader.run(model: normalizedSemanticEmbeddingModel, purpose: "Semantic memory") {
+                            await indexSemanticMemory()
+                        }
+                    }
+                } label: {
+                    Label(isIndexing ? "Indexing…" : "Index Now", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                .disabled(isIndexing || modelDownloader.isDownloading)
+            }
+        }
+    }
+
+    private var indexStatusText: String {
+        if let indexMessage { return indexMessage }
+        guard let stats = semanticStats, stats.chunkCount > 0 else { return "Nothing indexed yet" }
+        let model = stats.activeModelID.isEmpty ? "keywords" : stats.activeModelID
+        return "\(stats.embeddedChunkCount.formatted()) of \(stats.chunkCount.formatted()) notes · \(model)"
+    }
+
+    private func refreshSemanticStats() {
+        semanticStats = SemanticMemoryService().stats()
+    }
+
+    private func indexSemanticMemory() async {
+        isIndexing = true
+        indexMessage = "Indexing…"
+        let result = await SemanticMemoryService().indexPendingTranscriptions(limit: 1_000)
+        if let error = result.errorMessage {
+            indexMessage = error
+        } else {
+            indexMessage = nil
+        }
+        refreshSemanticStats()
+        isIndexing = false
+    }
+
+    private func clearSemanticIndex() {
+        do {
+            try SemanticMemoryService().clearIndex()
+            indexMessage = nil
+        } catch {
+            indexMessage = "Couldn't clear the index: \(error.localizedDescription)"
+        }
+        refreshSemanticStats()
     }
 
     private var modelDownloadsCard: some View {
@@ -1668,7 +1796,7 @@ struct ModelSettingsView: View {
                     Button {
                         Task { await downloadRecommendedEmbeddingModel() }
                     } label: {
-                        if isDownloadingRecommendedEmbedding {
+                        if modelDownloader.isDownloading {
                             Label("Downloading…", systemImage: "arrow.down.circle")
                         } else {
                             Label(
@@ -1678,30 +1806,13 @@ struct ModelSettingsView: View {
                         }
                     }
                     .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
-                    .disabled(isDownloadingRecommendedEmbedding || isInstallingOllamaModel)
+                    .disabled(modelDownloader.isDownloading || isInstallingOllamaModel)
                     .help("\(providerKind.displayName) downloads it and serves it from this Mac.")
                 } else {
                     Text("Start \(providerKind.displayName) to download")
                         .font(.Orttaai.caption)
                         .foregroundStyle(Color.Orttaai.textTertiary)
                 }
-            }
-        }
-
-        if let recommendedEmbeddingStatus {
-            ProgressView(value: recommendedEmbeddingProgress ?? 0) {
-                Text(recommendedEmbeddingStatus)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
-            .progressViewStyle(.linear)
-            .tint(Color.Orttaai.accent)
-            .padding(.vertical, Spacing.xs)
-        }
-
-        if let recommendedEmbeddingError {
-            SettingsNotice(kind: .error, message: recommendedEmbeddingError) {
-                self.recommendedEmbeddingError = nil
             }
         }
     }
@@ -1712,42 +1823,19 @@ struct ModelSettingsView: View {
         semanticActiveIndexModelID = ""
     }
 
+    /// Through the download prompt: the server downloads it, then it becomes
+    /// the embedding model.
     private func downloadRecommendedEmbeddingModel() async {
         let provider = providerKind
-        let client = activeLLMClient
-        let endpoint = activeLLMEndpoint
-        await MainActor.run {
-            isDownloadingRecommendedEmbedding = true
-            recommendedEmbeddingProgress = nil
-            recommendedEmbeddingStatus = "Asking \(provider.displayName) to download nomic-embed-text…"
-            recommendedEmbeddingError = nil
-        }
-        do {
-            try await client.downloadModel(
-                baseURLString: endpoint,
-                model: provider.recommendedEmbeddingDownload
-            ) { progress in
-                let message = formattedInstallMessage(progress)
-                Task { @MainActor in
-                    recommendedEmbeddingStatus = message
-                    recommendedEmbeddingProgress = progress.fractionCompleted
-                }
-            }
+        await modelDownloader.run(
+            model: LocalLLMProviderKind.recommendedEmbeddingName,
+            downloadName: provider.recommendedEmbeddingDownload,
+            purpose: "Semantic memory"
+        ) {
             await checkOllamaAvailability()
-            await MainActor.run {
-                if let installed = LocalLLMProviderKind.installedRecommendedEmbeddingModel(in: installedOllamaModels) {
-                    useEmbeddingModel(installed)
-                }
+            if let installed = LocalLLMProviderKind.installedRecommendedEmbeddingModel(in: installedOllamaModels) {
+                useEmbeddingModel(installed)
             }
-        } catch {
-            await MainActor.run {
-                recommendedEmbeddingError = "Couldn't download nomic-embed-text: \(error.localizedDescription)"
-            }
-        }
-        await MainActor.run {
-            isDownloadingRecommendedEmbedding = false
-            recommendedEmbeddingProgress = nil
-            recommendedEmbeddingStatus = nil
         }
     }
 

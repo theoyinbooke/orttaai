@@ -516,7 +516,7 @@ struct MemoryView: View {
                     emptyState(
                         title: searchText.isEmpty ? subsection.emptyTitle : "No suggestion matches",
                         message: searchText.isEmpty ? subsection.emptyMessage : "Try a different search query.",
-                        systemImage: "brain.head.profile"
+                        systemImage: "brain"
                     )
                 } else {
                     tableHeader([("Type", 84), ("Heard as", nil), ("Suggested", nil), ("Confidence", 80), ("", 150)])

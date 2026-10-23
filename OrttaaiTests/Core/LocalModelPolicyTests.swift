@@ -152,4 +152,20 @@ final class LocalModelPolicyTests: XCTestCase {
         XCTAssertEqual(done.status, "already_downloaded")
         XCTAssertEqual(done.progress.status, "Downloaded")
     }
+
+    // MARK: - Download prompt
+
+    @MainActor
+    func testDownloadPromptKnowsWhatsInstalledAndHowBigItIs() {
+        let ollama = ["gemma4:e2b", "nomic-embed-text:latest", "qwen3:1.7b"]
+        XCTAssertTrue(LocalModelDownloader.isInstalled("gemma4:e2b", in: ollama))
+        XCTAssertTrue(LocalModelDownloader.isInstalled("nomic-embed-text", in: ollama))
+        XCTAssertTrue(LocalModelDownloader.isInstalled("NOMIC-EMBED-TEXT:latest", in: ollama))
+        XCTAssertFalse(LocalModelDownloader.isInstalled("gemma4:e4b", in: ollama))
+        XCTAssertFalse(LocalModelDownloader.isInstalled("qwen3.5-2b", in: ["qwen3.5-4b"]))
+
+        XCTAssertNotNil(LocalModelDownloader.sizeText(for: "gemma4:e2b", provider: .ollama))
+        XCTAssertEqual(LocalModelDownloader.sizeText(for: "nomic-embed-text", provider: .ollama), "274 MB")
+        XCTAssertNil(LocalModelDownloader.sizeText(for: "qwen3.5-2b", provider: .lmStudio))
+    }
 }

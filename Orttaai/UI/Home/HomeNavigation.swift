@@ -50,8 +50,16 @@ final class HomeNavigationState: ObservableObject {
     /// chat and clears it.
     @Published var pendingChatPrompt: String?
 
+    /// The Model page tab to open on next; cleared once it has opened.
+    @Published var pendingModelSection: ModelPageSection?
+
     func askChatAI(_ prompt: String) {
         pendingChatPrompt = prompt
         selectedSection = .chatAI
+    }
+
+    func openAISettings() {
+        pendingModelSection = .ai
+        selectedSection = .model
     }
 }

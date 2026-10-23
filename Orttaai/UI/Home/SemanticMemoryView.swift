@@ -67,17 +67,6 @@ final class SemanticMemoryViewModel: ObservableObject {
         isIndexing = false
     }
 
-    func clearIndex() {
-        do {
-            try service.clearIndex()
-            statusMessage = "Semantic memory cleared."
-            errorMessage = nil
-            load()
-        } catch {
-            errorMessage = "Could not clear semantic memory: \(error.localizedDescription)"
-        }
-    }
-
     func generateInsights() async {
         guard !isGeneratingInsights else { return }
         isGeneratingInsights = true
@@ -139,41 +128,16 @@ private enum SemanticMemoryTab: String, CaseIterable, Identifiable {
 struct SemanticMemoryView: View {
     /// Opens Chat AI with a question about your dictation.
     var onAskChat: (String) -> Void = { _ in }
+    /// Opens Model › AI Features, where semantic memory is set up.
+    var onOpenAISettings: () -> Void = {}
     @StateObject private var viewModel = SemanticMemoryViewModel()
+    /// Asks before a missing model is downloaded by the local server.
+    @StateObject private var modelDownloader = LocalModelDownloader()
     @State private var selectedTab: SemanticMemoryTab = .activity
     @AppStorage("memoryGraphRange") private var range: ConceptTimeRange = .month
-    @State private var isSetupPresented = false
     @State private var isInfoPresented = false
-    @State private var installedOllamaModels: [String] = []
-    @State private var embeddingCatalogModels: [OllamaCatalogModel] = []
-    @State private var insightCatalogModels: [OllamaCatalogModel] = []
-    @State private var selectedEmbeddingCatalogModel = ""
-    @State private var selectedInsightCatalogModel = ""
-    @State private var isCheckingEmbeddingModels = false
-    @State private var isLoadingEmbeddingCatalog = false
-    @State private var isLoadingInsightCatalog = false
-    @State private var isInstallingEmbeddingModel = false
-    @State private var isInstallingInsightModel = false
-    @State private var installingEmbeddingModelName: String?
-    @State private var installingInsightModelName: String?
-    @State private var embeddingInstallStatusMessage: String?
-    @State private var insightInstallStatusMessage: String?
-    @State private var embeddingInstallProgress: Double?
-    @State private var insightInstallProgress: Double?
-    @State private var embeddingInstallError: String?
-    @State private var insightInstallError: String?
-    @State private var embeddingInstallSuccessMessage: String?
-    @State private var insightInstallSuccessMessage: String?
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
-    @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
-    @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
-    @AppStorage("semanticMemoryEnabled") private var semanticMemoryEnabled = true
-    @AppStorage("semanticMemoryAutoIndexEnabled") private var semanticMemoryAutoIndexEnabled = true
-    @AppStorage("semanticEmbeddingFallbackEnabled") private var semanticEmbeddingFallbackEnabled = true
-    @AppStorage("semanticEmbeddingModel") private var semanticEmbeddingModel = "all-minilm"
-    @AppStorage("semanticActiveIndexModelID") private var semanticActiveIndexModelID = ""
     @AppStorage("semanticInsightSummaryEnabled") private var semanticInsightSummaryEnabled = true
-    @AppStorage("semanticInsightSummaryModel") private var semanticInsightSummaryModel = "gemma4:e2b"
 
     var body: some View {
         Group {
@@ -217,138 +181,10 @@ struct SemanticMemoryView: View {
         } trailing: {
             headerActions
         }
-        .sheet(isPresented: $isSetupPresented) {
-            setupSheet
-        }
+        .localModelDownloadPrompt(modelDownloader)
         .onAppear {
             viewModel.load()
         }
-    }
-
-    private var normalizedSemanticEmbeddingModel: String {
-        semanticEmbeddingModel.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var normalizedSelectedEmbeddingModel: String {
-        selectedEmbeddingCatalogModel.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var normalizedSemanticInsightSummaryModel: String {
-        semanticInsightSummaryModel.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var normalizedSelectedInsightModel: String {
-        selectedInsightCatalogModel.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var embeddingModelOptions: [OllamaCatalogModel] {
-        var seen: Set<String> = []
-        var options: [OllamaCatalogModel] = []
-
-        func append(_ model: OllamaCatalogModel) {
-            let canonical = canonicalOllamaModelName(model.name)
-            guard !canonical.isEmpty, !seen.contains(canonical) else { return }
-            seen.insert(canonical)
-            options.append(model)
-        }
-
-        embeddingCatalogModels.forEach(append)
-
-        for modelName in installedOllamaModels where isLikelyEmbeddingModel(modelName) {
-            append(OllamaCatalogModel(name: modelName, sizeBytes: nil))
-        }
-
-        if !normalizedSemanticEmbeddingModel.isEmpty {
-            append(OllamaCatalogModel(name: normalizedSemanticEmbeddingModel, sizeBytes: nil))
-        }
-
-        return options.sorted { lhs, rhs in
-            let lhsInstalled = isOllamaModelInstalled(lhs.name)
-            let rhsInstalled = isOllamaModelInstalled(rhs.name)
-            if lhsInstalled != rhsInstalled {
-                return lhsInstalled
-            }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
-
-    private var embeddingDropdownOptions: [OrttaaiDropdown<String>.Option] {
-        guard !embeddingModelOptions.isEmpty else {
-            let fallback = normalizedSemanticEmbeddingModel.isEmpty ? "all-minilm" : normalizedSemanticEmbeddingModel
-            return [.init(fallback, fallback)]
-        }
-        return embeddingModelOptions.map { .init($0.name, embeddingModelOptionLabel(for: $0)) }
-    }
-
-    private var insightDropdownOptions: [OrttaaiDropdown<String>.Option] {
-        guard !insightModelOptions.isEmpty else {
-            let fallback = normalizedSemanticInsightSummaryModel.isEmpty ? "gemma4:e2b" : normalizedSemanticInsightSummaryModel
-            return [.init(fallback, fallback)]
-        }
-        return insightModelOptions.map { .init($0.name, insightModelOptionLabel(for: $0)) }
-    }
-
-    private var insightModelOptions: [OllamaCatalogModel] {
-        var seen: Set<String> = []
-        var options: [OllamaCatalogModel] = []
-
-        func append(_ model: OllamaCatalogModel) {
-            let canonical = canonicalOllamaModelName(model.name)
-            guard !canonical.isEmpty, !seen.contains(canonical) else { return }
-            seen.insert(canonical)
-            options.append(model)
-        }
-
-        insightCatalogModels.forEach(append)
-
-        for modelName in installedOllamaModels where !isLikelyEmbeddingModel(modelName) {
-            append(OllamaCatalogModel(name: modelName, sizeBytes: nil))
-        }
-
-        if !normalizedSemanticInsightSummaryModel.isEmpty {
-            append(OllamaCatalogModel(name: normalizedSemanticInsightSummaryModel, sizeBytes: nil))
-        }
-
-        return options.sorted { lhs, rhs in
-            let lhsInstalled = isOllamaModelInstalled(lhs.name)
-            let rhsInstalled = isOllamaModelInstalled(rhs.name)
-            if lhsInstalled != rhsInstalled {
-                return lhsInstalled
-            }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
-
-    private var isSelectedEmbeddingModelInstalled: Bool {
-        isOllamaModelInstalled(normalizedSelectedEmbeddingModel)
-    }
-
-    private var isSelectedEmbeddingModelCurrent: Bool {
-        canonicalOllamaModelName(normalizedSelectedEmbeddingModel) == canonicalOllamaModelName(normalizedSemanticEmbeddingModel)
-    }
-
-    private var isEmbeddingActionDisabled: Bool {
-        normalizedSelectedEmbeddingModel.isEmpty ||
-            isCheckingEmbeddingModels ||
-            isLoadingEmbeddingCatalog ||
-            isInstallingEmbeddingModel ||
-            (isSelectedEmbeddingModelInstalled && isSelectedEmbeddingModelCurrent)
-    }
-
-    private var isSelectedInsightModelInstalled: Bool {
-        isOllamaModelInstalled(normalizedSelectedInsightModel)
-    }
-
-    private var isSelectedInsightModelCurrent: Bool {
-        canonicalOllamaModelName(normalizedSelectedInsightModel) == canonicalOllamaModelName(normalizedSemanticInsightSummaryModel)
-    }
-
-    private var isInsightActionDisabled: Bool {
-        normalizedSelectedInsightModel.isEmpty ||
-            isCheckingEmbeddingModels ||
-            isLoadingInsightCatalog ||
-            isInstallingInsightModel ||
-            (isSelectedInsightModelInstalled && isSelectedInsightModelCurrent)
     }
 
     private var infoButton: some View {
@@ -377,45 +213,17 @@ struct SemanticMemoryView: View {
     @ViewBuilder
     private var headerActions: some View {
         if selectedTab.usesSemanticIndex {
-            indexActions
+            Button(action: onOpenAISettings) {
+                Label("AI Settings", systemImage: "slider.horizontal.3")
+            }
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+            .help("Semantic memory, its index and the insight model live in Model › AI Features")
         } else if selectedTab.usesRange {
             HeaderSegmentedPicker(
                 options: ConceptTimeRange.allCases,
                 selection: $range,
                 title: \.title
             )
-        }
-    }
-
-    private var indexActions: some View {
-        HStack(spacing: Spacing.sm) {
-            Button {
-                isSetupPresented = true
-            } label: {
-                Label("Setup", systemImage: "slider.horizontal.3")
-            }
-            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
-
-            Button {
-                Task { await viewModel.buildIndex() }
-            } label: {
-                if viewModel.isIndexing {
-                    Label("Building…", systemImage: "arrow.triangle.2.circlepath")
-                } else {
-                    Label("Build Index", systemImage: "bolt.horizontal.circle")
-                }
-            }
-            .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
-            .disabled(viewModel.isIndexing || !semanticMemoryEnabled)
-
-            Button {
-                viewModel.load()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
-            .help("Reload")
-            .accessibilityLabel("Reload")
         }
     }
 
@@ -436,264 +244,15 @@ struct SemanticMemoryView: View {
         }
     }
 
-    private var setupSheet: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Semantic Memory Setup")
-                    .font(.Orttaai.heading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer()
-
-                Button {
-                    isSetupPresented = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .help("Close")
-            }
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                HStack(spacing: Spacing.lg) {
-                    Toggle("Semantic Memory", isOn: $semanticMemoryEnabled)
-                        .toggleStyle(OrttaaiToggleStyle())
-                    Toggle("Auto Index", isOn: $semanticMemoryAutoIndexEnabled)
-                        .toggleStyle(OrttaaiToggleStyle())
-                    Toggle("Lexical Fallback", isOn: $semanticEmbeddingFallbackEnabled)
-                        .toggleStyle(OrttaaiToggleStyle())
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    embeddingModelPickerSection
-                }
-
-                Divider()
-                    .background(Color.Orttaai.border.opacity(0.7))
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    insightSummaryModelPickerSection
-                }
-
-                Button(role: .destructive) {
-                    viewModel.clearIndex()
-                } label: {
-                    Label("Clear Index", systemImage: "trash")
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary, destructive: true))
-                .disabled(viewModel.isIndexing)
-            }
-            .padding(Spacing.lg)
-            .dashboardCard()
-        }
-        .padding(Spacing.xxl)
-        .frame(width: 660)
-            .background(Color.Orttaai.bgPrimary)
-            .task {
-                normalizeSemanticEmbeddingSelection()
-                normalizeInsightSummarySelection()
-                await loadEmbeddingModelCatalog()
-            }
-    }
-
-    private var embeddingModelPickerSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .center, spacing: Spacing.sm) {
-                Text("Embedding Model")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer()
-
-                Button {
-                    Task { await loadEmbeddingModelCatalog() }
-                } label: {
-                    if isCheckingEmbeddingModels || isLoadingEmbeddingCatalog {
-                        Label("Syncing", systemImage: "arrow.triangle.2.circlepath")
-                    } else {
-                        Label("Sync", systemImage: "arrow.clockwise")
-                    }
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(isCheckingEmbeddingModels || isLoadingEmbeddingCatalog || isInstallingEmbeddingModel)
-            }
-
-            HStack(spacing: Spacing.sm) {
-                OrttaaiDropdown(
-                    selection: $selectedEmbeddingCatalogModel,
-                    options: embeddingDropdownOptions
-                )
-                .frame(maxWidth: .infinity)
-                .onChange(of: selectedEmbeddingCatalogModel) { _, newValue in
-                    selectEmbeddingModelIfInstalled(newValue)
-                }
-
-                Button {
-                    Task { await useOrInstallSelectedEmbeddingModel() }
-                } label: {
-                    embeddingActionLabel
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(isEmbeddingActionDisabled)
-            }
-
-            if let embeddingInstallStatusMessage {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack(spacing: Spacing.xs) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(embeddingInstallStatusMessage)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-                    if let embeddingInstallProgress {
-                        ProgressView(value: embeddingInstallProgress)
-                            .progressViewStyle(.linear)
-                    }
-                }
-            }
-
-            if let embeddingInstallSuccessMessage {
-                statusRow(message: embeddingInstallSuccessMessage, systemImage: "checkmark.circle.fill", color: Color.Orttaai.success)
-            }
-
-            if let embeddingInstallError {
-                statusRow(message: embeddingInstallError, systemImage: "exclamationmark.triangle.fill", color: Color.Orttaai.error)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var embeddingActionLabel: some View {
-        if isInstallingEmbeddingModel && installingEmbeddingModelName == normalizedSelectedEmbeddingModel {
-            Label("Installing", systemImage: "arrow.down.circle")
-        } else if isSelectedEmbeddingModelInstalled {
-            if isSelectedEmbeddingModelCurrent {
-                Label("Selected", systemImage: "checkmark.circle")
-            } else {
-                Label("Use Model", systemImage: "checkmark.circle")
-            }
-        } else {
-            Label("Download", systemImage: "arrow.down.circle")
-        }
-    }
-
-    private var insightSummaryModelPickerSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .center, spacing: Spacing.sm) {
-                Text("Graph Insight Model")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer()
-
-                Toggle("Model Insights", isOn: $semanticInsightSummaryEnabled)
-                    .toggleStyle(OrttaaiToggleStyle())
-
-                Button {
-                    Task { await loadEmbeddingModelCatalog() }
-                } label: {
-                    if isCheckingEmbeddingModels || isLoadingInsightCatalog {
-                        Label("Syncing", systemImage: "arrow.triangle.2.circlepath")
-                    } else {
-                        Label("Sync", systemImage: "arrow.clockwise")
-                    }
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(isCheckingEmbeddingModels || isLoadingInsightCatalog || isInstallingInsightModel)
-            }
-
-            HStack(spacing: Spacing.sm) {
-                OrttaaiDropdown(
-                    selection: $selectedInsightCatalogModel,
-                    options: insightDropdownOptions
-                )
-                .frame(maxWidth: .infinity)
-                .onChange(of: selectedInsightCatalogModel) { _, newValue in
-                    selectInsightModelIfInstalled(newValue)
-                }
-
-                Button {
-                    Task { await useOrInstallSelectedInsightModel() }
-                } label: {
-                    insightActionLabel
-                }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
-                .disabled(isInsightActionDisabled)
-            }
-            .disabled(!semanticInsightSummaryEnabled)
-
-            if let insightInstallStatusMessage {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack(spacing: Spacing.xs) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(insightInstallStatusMessage)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
-                    if let insightInstallProgress {
-                        ProgressView(value: insightInstallProgress)
-                            .progressViewStyle(.linear)
-                    }
-                }
-            }
-
-            if let insightInstallSuccessMessage {
-                statusRow(message: insightInstallSuccessMessage, systemImage: "checkmark.circle.fill", color: Color.Orttaai.success)
-            }
-
-            if let insightInstallError {
-                statusRow(message: insightInstallError, systemImage: "exclamationmark.triangle.fill", color: Color.Orttaai.error)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var insightActionLabel: some View {
-        if isInstallingInsightModel && installingInsightModelName == normalizedSelectedInsightModel {
-            Label("Installing", systemImage: "arrow.down.circle")
-        } else if isSelectedInsightModelInstalled {
-            if isSelectedInsightModelCurrent {
-                Label("Selected", systemImage: "checkmark.circle")
-            } else {
-                Label("Use Model", systemImage: "checkmark.circle")
-            }
-        } else {
-            Label("Download", systemImage: "arrow.down.circle")
-        }
-    }
+    // MARK: - Insights
 
     private var insightsContent: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .center, spacing: Spacing.md) {
-                Text("Graph Insights")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer()
-
-                Button {
-                    Task { await viewModel.generateInsights() }
-                } label: {
-                    if viewModel.isGeneratingInsights {
-                        Label("Generating", systemImage: "arrow.triangle.2.circlepath")
-                    } else if viewModel.insightReport != nil {
-                        Label("Regenerate", systemImage: "arrow.triangle.2.circlepath")
-                    } else {
-                        Label("Generate Insights", systemImage: "brain.head.profile")
-                    }
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
-                .disabled(viewModel.isGeneratingInsights || viewModel.graph.nodes.isEmpty)
-            }
+            LocalModelDownloadStatus(downloader: modelDownloader)
 
             if viewModel.graph.nodes.isEmpty {
                 emptyInsightsState
-            } else if viewModel.isGeneratingInsights && viewModel.insightReport == nil {
+            } else if viewModel.insightReport == nil, viewModel.isGeneratingInsights || modelDownloader.isDownloading {
                 generatingInsightsState
             } else if let report = viewModel.insightReport {
                 insightReportView(report)
@@ -703,31 +262,156 @@ struct SemanticMemoryView: View {
         }
     }
 
-    private var emptyInsightsState: some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "lightbulb.min")
-                .font(.system(size: 38, weight: .semibold))
-                .foregroundStyle(Color.Orttaai.accent)
-            Text("Build the graph before generating insights.")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+    private var insightIcon: some View {
+        Image(systemName: "brain")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(Color.Orttaai.accent)
+            .frame(width: 40, height: 40)
+            .background(Color.Orttaai.accentSubtle, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityHidden(true)
+    }
+
+    /// Before the first report: what insights are, what they'll read, which
+    /// model phrases them, and the one Generate button.
+    private var readyInsightsState: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                insightIcon
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("See what your notes add up to")
+                        .font(.Orttaai.heading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    Text("Orttaai reads how your notes connect across topics, people and projects, then points out patterns, open loops and what's changing. Every insight links back to what you said.")
+                        .font(.Orttaai.body)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: Spacing.sm) {
+                insightMetric((viewModel.stats?.chunkCount ?? 0).formatted(), "notes")
+                insightMetric(viewModel.graph.nodes.count.formatted(), "concepts")
+                insightMetric(viewModel.graph.edges.count.formatted(), "links")
+            }
+
+            HStack(alignment: .center, spacing: Spacing.md) {
+                modelLine
+                Spacer(minLength: Spacing.sm)
+                generateButton(prominent: true)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 180)
-        .background(Color.Orttaai.bgTertiary.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dashboardCard()
+    }
+
+    /// Which model phrases the insights, with a way to change it.
+    private var modelLine: some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "cpu")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.textTertiary)
+            Text(semanticInsightSummaryEnabled
+                 ? "Phrased by \(insightModel) on \(providerName)"
+                 : "Plain phrasing, no model")
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .lineLimit(1)
+            Button("Change", action: onOpenAISettings)
+                .buttonStyle(.plain)
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.accent)
+        }
+    }
+
+    private var emptyInsightsState: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                insightIcon
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Your memory graph is still empty")
+                        .font(.Orttaai.heading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    Text("It fills in as Orttaai indexes your dictations. Index now to build it from everything you've dictated so far.")
+                        .font(.Orttaai.body)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack {
+                Spacer()
+                Button {
+                    Task {
+                        await modelDownloader.run(model: AppSettings().normalizedSemanticEmbeddingModel, purpose: "Semantic memory") {
+                            await viewModel.buildIndex()
+                        }
+                    }
+                } label: {
+                    Label(viewModel.isIndexing ? "Indexing…" : "Index Now", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.primary))
+                .disabled(viewModel.isIndexing || modelDownloader.isDownloading)
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dashboardCard()
     }
 
     private var generatingInsightsState: some View {
-        HStack(spacing: Spacing.sm) {
-            ProgressView()
-                .controlSize(.small)
-            Text("Generating insights...")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
+        HStack(spacing: Spacing.md) {
+            ChatAIWaitingMark(size: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(modelDownloader.isDownloading
+                     ? "Getting the insight model ready"
+                     : "Reading \((viewModel.stats?.chunkCount ?? 0).formatted()) notes and how they connect")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text(semanticInsightSummaryEnabled ? "\(insightModel) on \(providerName) phrases what it finds" : "Plain phrasing, no model")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+            Spacer(minLength: 0)
         }
-        .padding(Spacing.md)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
+    }
+
+    private func generateButton(prominent: Bool) -> some View {
+        Button {
+            startGeneratingInsights()
+        } label: {
+            if viewModel.isGeneratingInsights {
+                Label("Generating…", systemImage: "brain")
+            } else {
+                Label(viewModel.insightReport == nil ? "Generate Insights" : "Regenerate", systemImage: "brain")
+            }
+        }
+        .buttonStyle(OrttaaiButtonStyle(prominent ? .primary : .secondary, size: prominent ? .regular : .small))
+        .disabled(viewModel.isGeneratingInsights || modelDownloader.isDownloading || viewModel.graph.nodes.isEmpty)
+    }
+
+    /// Makes sure the insight model is on the local server first; if it
+    /// isn't, the user is asked before the server downloads it.
+    private func startGeneratingInsights() {
+        Task {
+            guard semanticInsightSummaryEnabled else {
+                await viewModel.generateInsights()
+                return
+            }
+            await modelDownloader.run(model: insightModel, purpose: "Graph insights") {
+                await viewModel.generateInsights()
+            }
+        }
+    }
+
+    private var insightModel: String {
+        AppSettings().normalizedSemanticInsightSummaryModel
+    }
+
+    private var providerName: String {
+        (LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama).displayName
     }
 
     /// Honesty footer: sample size and how the words were produced. Insights
@@ -845,20 +529,6 @@ struct SemanticMemoryView: View {
         return Color.Orttaai.textTertiary
     }
 
-    private var readyInsightsState: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Button {
-                Task { await viewModel.generateInsights() }
-            } label: {
-                Label("Generate Insights", systemImage: "brain.head.profile")
-            }
-            .buttonStyle(OrttaaiButtonStyle(.secondary))
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
-    }
-
     private func insightReportView(_ report: SemanticInsightReport) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             insightSummaryCard(report)
@@ -934,9 +604,9 @@ struct SemanticMemoryView: View {
 
     private func insightSummaryCard(_ report: SemanticInsightReport) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Graph Insight Summary")
-                    .font(.Orttaai.bodyMedium)
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                Text("Summary")
+                    .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
 
                 Spacer()
@@ -954,6 +624,8 @@ struct SemanticMemoryView: View {
                 Text(Self.insightDateFormatter.string(from: report.generatedAt))
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.textTertiary)
+
+                generateButton(prominent: false)
             }
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1328,370 +1000,6 @@ struct SemanticMemoryView: View {
                 .foregroundStyle(color)
                 .lineLimit(1)
         }
-    }
-
-    private func normalizeSemanticEmbeddingSelection() {
-        semanticEmbeddingModel = normalizedSemanticEmbeddingModel.isEmpty ? "all-minilm" : normalizedSemanticEmbeddingModel
-        semanticActiveIndexModelID = semanticActiveIndexModelID.trimmingCharacters(in: .whitespacesAndNewlines)
-        if selectedEmbeddingCatalogModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            selectedEmbeddingCatalogModel = semanticEmbeddingModel
-        }
-    }
-
-    private func normalizeInsightSummarySelection() {
-        semanticInsightSummaryModel = normalizedSemanticInsightSummaryModel.isEmpty ? "gemma4:e2b" : normalizedSemanticInsightSummaryModel
-        if selectedInsightCatalogModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            selectedInsightCatalogModel = semanticInsightSummaryModel
-        }
-    }
-
-    private var providerKind: LocalLLMProviderKind {
-        LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama
-    }
-
-    private var activeLLMEndpoint: String {
-        providerKind == .ollama ? localLLMEndpoint : lmStudioEndpoint
-    }
-
-    private func loadEmbeddingModelCatalog() async {
-        await MainActor.run {
-            normalizeSemanticEmbeddingSelection()
-            normalizeInsightSummarySelection()
-            isCheckingEmbeddingModels = true
-            embeddingInstallError = nil
-            insightInstallError = nil
-        }
-
-        let health = await LocalLLM.client(for: providerKind).checkHealth(
-            baseURLString: activeLLMEndpoint,
-            timeoutMs: 1_500
-        )
-
-        await MainActor.run {
-            installedOllamaModels = health.installedModels
-            isCheckingEmbeddingModels = false
-        }
-
-        // Curated download catalogs are Ollama-specific; for LM Studio the
-        // option lists are built purely from installed models.
-        guard health.isReachable, providerKind.supportsModelInstall else {
-            await MainActor.run {
-                embeddingCatalogModels = []
-                insightCatalogModels = []
-                syncSelectedEmbeddingModel()
-                syncSelectedInsightModel()
-            }
-            return
-        }
-
-        await fetchEmbeddingLibraryModels()
-        await fetchInsightLibraryModels()
-    }
-
-    private func fetchEmbeddingLibraryModels() async {
-        await MainActor.run {
-            isLoadingEmbeddingCatalog = true
-        }
-
-        do {
-            let catalog = try await LocalLLM.ollamaClient.fetchEmbeddingLibraryModels(limit: 20)
-            await MainActor.run {
-                embeddingCatalogModels = catalog
-                syncSelectedEmbeddingModel()
-            }
-        } catch {
-            await MainActor.run {
-                embeddingCatalogModels = []
-                syncSelectedEmbeddingModel()
-            }
-        }
-
-        await MainActor.run {
-            isLoadingEmbeddingCatalog = false
-        }
-    }
-
-    private func fetchInsightLibraryModels() async {
-        await MainActor.run {
-            isLoadingInsightCatalog = true
-        }
-
-        do {
-            let catalog = try await LocalLLM.ollamaClient.fetchLibraryModels(limit: 80)
-            let textModels = catalog.filter { !isLikelyEmbeddingModel($0.name) }
-            await MainActor.run {
-                insightCatalogModels = textModels
-                syncSelectedInsightModel()
-            }
-        } catch {
-            await MainActor.run {
-                insightCatalogModels = []
-                syncSelectedInsightModel()
-            }
-        }
-
-        await MainActor.run {
-            isLoadingInsightCatalog = false
-        }
-    }
-
-    private func syncSelectedEmbeddingModel() {
-        let options = embeddingModelOptions.map(\.name)
-        if options.isEmpty {
-            selectedEmbeddingCatalogModel = normalizedSemanticEmbeddingModel.isEmpty ? "all-minilm" : normalizedSemanticEmbeddingModel
-            return
-        }
-
-        if !options.contains(where: { canonicalOllamaModelName($0) == canonicalOllamaModelName(selectedEmbeddingCatalogModel) }) {
-            selectedEmbeddingCatalogModel = options.first(where: {
-                canonicalOllamaModelName($0) == canonicalOllamaModelName(normalizedSemanticEmbeddingModel)
-            }) ?? options.first ?? "all-minilm"
-        }
-
-        selectEmbeddingModelIfInstalled(selectedEmbeddingCatalogModel)
-    }
-
-    private func syncSelectedInsightModel() {
-        let options = insightModelOptions.map(\.name)
-        if options.isEmpty {
-            selectedInsightCatalogModel = normalizedSemanticInsightSummaryModel.isEmpty ? "gemma4:e2b" : normalizedSemanticInsightSummaryModel
-            return
-        }
-
-        if !options.contains(where: { canonicalOllamaModelName($0) == canonicalOllamaModelName(selectedInsightCatalogModel) }) {
-            selectedInsightCatalogModel = options.first(where: {
-                canonicalOllamaModelName($0) == canonicalOllamaModelName(normalizedSemanticInsightSummaryModel)
-            }) ?? options.first ?? "gemma4:e2b"
-        }
-
-        selectInsightModelIfInstalled(selectedInsightCatalogModel)
-    }
-
-    private func selectEmbeddingModelIfInstalled(_ modelName: String) {
-        let normalized = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty, isOllamaModelInstalled(normalized) else { return }
-        guard canonicalOllamaModelName(normalized) != canonicalOllamaModelName(normalizedSemanticEmbeddingModel) else { return }
-        semanticEmbeddingModel = normalized
-        semanticActiveIndexModelID = ""
-        embeddingInstallSuccessMessage = "Selected \(normalized). Rebuild the index to use it."
-        embeddingInstallError = nil
-    }
-
-    private func selectInsightModelIfInstalled(_ modelName: String) {
-        let normalized = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty, isOllamaModelInstalled(normalized) else { return }
-        guard canonicalOllamaModelName(normalized) != canonicalOllamaModelName(normalizedSemanticInsightSummaryModel) else { return }
-        semanticInsightSummaryModel = normalized
-        insightInstallSuccessMessage = "Selected \(normalized) for graph insights."
-        insightInstallError = nil
-    }
-
-    private func useOrInstallSelectedEmbeddingModel() async {
-        let normalized = normalizedSelectedEmbeddingModel
-        guard !normalized.isEmpty else {
-            await MainActor.run {
-                embeddingInstallError = "Choose an embedding model first."
-                embeddingInstallSuccessMessage = nil
-            }
-            return
-        }
-
-        if isOllamaModelInstalled(normalized) {
-            await MainActor.run {
-                semanticEmbeddingModel = normalized
-                semanticActiveIndexModelID = ""
-                embeddingInstallSuccessMessage = "Selected \(normalized). Rebuild the index to use it."
-                embeddingInstallError = nil
-            }
-            return
-        }
-
-        guard providerKind.supportsModelInstall else {
-            await MainActor.run {
-                embeddingInstallError = "\(normalized) is not available in \(providerKind.displayName). Download it in the \(providerKind.displayName) app first."
-                embeddingInstallSuccessMessage = nil
-            }
-            return
-        }
-
-        await installEmbeddingModel(named: normalized)
-    }
-
-    private func useOrInstallSelectedInsightModel() async {
-        let normalized = normalizedSelectedInsightModel
-        guard !normalized.isEmpty else {
-            await MainActor.run {
-                insightInstallError = "Choose a graph insight model first."
-                insightInstallSuccessMessage = nil
-            }
-            return
-        }
-
-        if isOllamaModelInstalled(normalized) {
-            await MainActor.run {
-                semanticInsightSummaryModel = normalized
-                insightInstallSuccessMessage = "Selected \(normalized) for graph insights."
-                insightInstallError = nil
-            }
-            return
-        }
-
-        guard providerKind.supportsModelInstall else {
-            await MainActor.run {
-                insightInstallError = "\(normalized) is not available in \(providerKind.displayName). Download it in the \(providerKind.displayName) app first."
-                insightInstallSuccessMessage = nil
-            }
-            return
-        }
-
-        await installInsightModel(named: normalized)
-    }
-
-    private func installEmbeddingModel(named modelName: String) async {
-        await MainActor.run {
-            isInstallingEmbeddingModel = true
-            installingEmbeddingModelName = modelName
-            embeddingInstallStatusMessage = "Starting download for \(modelName)..."
-            embeddingInstallProgress = nil
-            embeddingInstallError = nil
-            embeddingInstallSuccessMessage = nil
-        }
-
-        do {
-            try await LocalLLM.ollamaClient.pullModel(baseURLString: localLLMEndpoint, model: modelName) { progress in
-                let message = formattedInstallMessage(progress)
-                Task { @MainActor in
-                    embeddingInstallStatusMessage = message
-                    embeddingInstallProgress = progress.fractionCompleted
-                }
-            }
-
-            await MainActor.run {
-                semanticEmbeddingModel = modelName
-                semanticActiveIndexModelID = ""
-                embeddingInstallStatusMessage = nil
-                embeddingInstallProgress = nil
-                embeddingInstallSuccessMessage = "Installed and selected \(modelName). Rebuild the index to use it."
-            }
-
-            await loadEmbeddingModelCatalog()
-        } catch {
-            await MainActor.run {
-                embeddingInstallProgress = nil
-                embeddingInstallError = "Install failed for \(modelName): \(error.localizedDescription)"
-            }
-        }
-
-        await MainActor.run {
-            isInstallingEmbeddingModel = false
-            installingEmbeddingModelName = nil
-            if embeddingInstallError != nil {
-                embeddingInstallStatusMessage = nil
-            }
-        }
-    }
-
-    private func installInsightModel(named modelName: String) async {
-        await MainActor.run {
-            isInstallingInsightModel = true
-            installingInsightModelName = modelName
-            insightInstallStatusMessage = "Starting download for \(modelName)..."
-            insightInstallProgress = nil
-            insightInstallError = nil
-            insightInstallSuccessMessage = nil
-        }
-
-        do {
-            try await LocalLLM.ollamaClient.pullModel(baseURLString: localLLMEndpoint, model: modelName) { progress in
-                let message = formattedInstallMessage(progress)
-                Task { @MainActor in
-                    insightInstallStatusMessage = message
-                    insightInstallProgress = progress.fractionCompleted
-                }
-            }
-
-            await MainActor.run {
-                semanticInsightSummaryModel = modelName
-                insightInstallStatusMessage = nil
-                insightInstallProgress = nil
-                insightInstallSuccessMessage = "Installed and selected \(modelName) for graph insights."
-            }
-
-            await loadEmbeddingModelCatalog()
-        } catch {
-            await MainActor.run {
-                insightInstallProgress = nil
-                insightInstallError = "Install failed for \(modelName): \(error.localizedDescription)"
-            }
-        }
-
-        await MainActor.run {
-            isInstallingInsightModel = false
-            installingInsightModelName = nil
-            if insightInstallError != nil {
-                insightInstallStatusMessage = nil
-            }
-        }
-    }
-
-    private func embeddingModelOptionLabel(for model: OllamaCatalogModel) -> String {
-        var parts = [model.name]
-        if let sizeBytes = model.sizeBytes, sizeBytes > 0 {
-            parts.append(formattedByteCount(sizeBytes))
-        }
-        parts.append(isOllamaModelInstalled(model.name) ? "Downloaded" : "Not downloaded")
-        return parts.joined(separator: " · ")
-    }
-
-    private func insightModelOptionLabel(for model: OllamaCatalogModel) -> String {
-        var parts = [model.name]
-        if let sizeBytes = model.sizeBytes, sizeBytes > 0 {
-            parts.append(formattedByteCount(sizeBytes))
-        }
-        parts.append(isOllamaModelInstalled(model.name) ? "Downloaded" : "Not downloaded")
-        return parts.joined(separator: " · ")
-    }
-
-    private func formattedInstallMessage(_ progress: OllamaPullProgress) -> String {
-        let status = progress.status.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanStatus = status.isEmpty ? "Downloading \(progress.model)..." : status
-        guard let completedBytes = progress.completedBytes, let totalBytes = progress.totalBytes, totalBytes > 0 else {
-            return cleanStatus
-        }
-
-        let completed = formattedByteCount(completedBytes)
-        let total = formattedByteCount(totalBytes)
-        let percent = Int((Double(completedBytes) / Double(totalBytes)) * 100)
-        return "\(cleanStatus) (\(percent)% · \(completed)/\(total))"
-    }
-
-    private func formattedByteCount(_ bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
-    }
-
-    private func isOllamaModelInstalled(_ modelName: String) -> Bool {
-        let canonical = canonicalOllamaModelName(modelName)
-        guard !canonical.isEmpty else { return false }
-        return installedOllamaModels.contains { canonicalOllamaModelName($0) == canonical }
-    }
-
-    private func canonicalOllamaModelName(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return "" }
-        if trimmed.contains(":") {
-            return trimmed
-        }
-        return "\(trimmed):latest"
-    }
-
-    private func isLikelyEmbeddingModel(_ modelName: String) -> Bool {
-        let normalized = modelName.lowercased()
-        return normalized.contains("embed") ||
-            normalized.contains("minilm") ||
-            normalized.contains("nomic")
     }
 
     private static let insightDateFormatter: DateFormatter = {

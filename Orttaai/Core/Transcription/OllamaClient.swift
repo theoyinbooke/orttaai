@@ -86,6 +86,14 @@ actor OllamaClient: LocalLLMServing {
         OllamaCatalogModel(name: "qwen3-embedding:0.6b", sizeBytes: 639_000_000),
     ]
 
+    /// Download size from the curated catalog, when it's listed there.
+    nonisolated static func catalogSize(of model: String) -> Int64? {
+        let target = model.lowercased().replacingOccurrences(of: ":latest", with: "")
+        return (curatedLightweightOllamaModels + curatedEmbeddingOllamaModels)
+            .first { $0.name.lowercased() == target }?
+            .sizeBytes
+    }
+
     private let session: URLSession
 
     init(session: URLSession = .shared) {
