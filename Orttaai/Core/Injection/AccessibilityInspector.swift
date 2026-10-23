@@ -35,6 +35,23 @@ nonisolated struct FocusedTextSnapshot: Equatable, Sendable {
     }
 }
 
+/// One read of the focused text field, for learning from the user's edits.
+nonisolated struct FocusedFieldRead: Equatable, Sendable {
+    /// Identifies the element, so a later read can tell the user moved on to
+    /// a different field.
+    var elementID: Int
+    /// Password and other secure fields are never read.
+    var isSecure: Bool
+    var text: String?
+    /// End of the selection (the caret) in UTF-16 units.
+    var caretUTF16: Int?
+}
+
+protocol FocusedFieldReading: AnyObject {
+    /// The focused element of the app, or nil when Accessibility can't read it.
+    func readFocusedField(processIdentifier: pid_t) -> FocusedFieldRead?
+}
+
 /// Result of an accessibility read. `.axError` means the AX API itself failed
 /// (no permission, timeout, no focused element) — callers fail open on it,
 /// matching the app's long-standing behavior. A successful read with missing
@@ -81,7 +98,7 @@ protocol AccessibilityInspecting: AnyObject {
 }
 
 /// Real implementation backed by the AX API.
-final class SystemAccessibilityInspector: AccessibilityInspecting {
+final class SystemAccessibilityInspector: AccessibilityInspecting, FocusedFieldReading {
     private let applyTimeout: (AXUIElement, Float) -> Void
     private let copyFocusedElement: (AXUIElement) -> AXUIElement?
 
@@ -133,6 +150,25 @@ final class SystemAccessibilityInspector: AccessibilityInspecting {
             selectedText: selectedText as? String,
             selectedRange: Self.textRange(from: selectedRange)
         ))
+    }
+
+    /// Reads the field's text only after checking it is not a secure field.
+    func readFocusedField(processIdentifier: pid_t) -> FocusedFieldRead? {
+        guard let element = focusedElement(processIdentifier: processIdentifier, policy: .verification),
+              let role = copyStringAttribute(element, kAXRoleAttribute) else { return nil }
+        let details = FocusedElementDetails(
+            role: role,
+            subrole: copyStringAttribute(element, kAXSubroleAttribute),
+            roleDescription: copyStringAttribute(element, kAXRoleDescriptionAttribute)
+        )
+        var read = FocusedFieldRead(elementID: Int(bitPattern: CFHash(element)), isSecure: true)
+        guard TextInjectionService.assessSecureField(.value(details)) != .blocked else { return read }
+        read.isSecure = false
+        guard case .value(let value) = readAttribute(element, kAXValueAttribute),
+              case .value(let selectedRange) = readAttribute(element, kAXSelectedTextRangeAttribute) else { return nil }
+        read.text = value as? String
+        read.caretUTF16 = Self.textRange(from: selectedRange).map { $0.location + $0.length }
+        return read
     }
 
     func insertTextAtFocus(_ text: String, processIdentifier: pid_t?) -> Bool {

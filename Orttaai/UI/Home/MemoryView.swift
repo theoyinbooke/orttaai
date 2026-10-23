@@ -55,6 +55,7 @@ struct MemoryView: View {
     @AppStorage("snippetsEnabled") private var snippetsEnabled = true
     @AppStorage("vocabularyBiasEnabled") private var vocabularyBiasEnabled = true
     @AppStorage("aiSuggestionsEnabled") private var aiSuggestionsEnabled = false
+    @AppStorage("learnFromEditsEnabled") private var learnFromEditsEnabled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -486,6 +487,14 @@ struct MemoryView: View {
     private var suggestionsContent: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             SettingsCard {
+                SettingsToggleRow(
+                    title: "Learn from My Edits",
+                    info: "When you fix a name or term right after dictating it, Orttaai suggests it here as a dictionary word. Only the word pair is kept, never the text around it, and password fields are never read.",
+                    isOn: $learnFromEditsEnabled
+                )
+
+                SettingsDivider()
+
                 SettingsToggleRow(
                     title: "Prefer Apple AI for Suggestions",
                     info: "Uses Apple's on-device model to propose dictionary words and snippets from your history.",

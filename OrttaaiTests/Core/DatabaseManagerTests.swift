@@ -329,6 +329,32 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertTrue(try db.fetchSnippetEntries().isEmpty)
     }
 
+    func testRejectedOrKnownPairsAreNotSuggestedAgain() throws {
+        let draft = LearningSuggestionDraft(
+            type: .dictionary,
+            candidateSource: "for Lash a day",
+            candidateTarget: "Folasade",
+            confidence: 0.9,
+            evidence: "Corrected after dictating"
+        )
+        XCTAssertEqual(try db.saveLearningSuggestions([draft]), 1)
+        let id = try XCTUnwrap(db.fetchLearningSuggestions(status: .pending).first?.id)
+        try db.updateLearningSuggestionStatus(id: id, status: .rejected)
+
+        XCTAssertEqual(try db.saveLearningSuggestions([draft]), 0)
+        XCTAssertTrue(try db.fetchLearningSuggestions(status: .pending).isEmpty)
+
+        _ = try db.upsertDictionaryEntry(source: "Adayemi", target: "Adeyemi")
+        let known = LearningSuggestionDraft(
+            type: .dictionary,
+            candidateSource: "Adayemi",
+            candidateTarget: "Adeyemi",
+            confidence: 0.9,
+            evidence: nil
+        )
+        XCTAssertEqual(try db.saveLearningSuggestions([known]), 0)
+    }
+
     func testLearningSuggestionSaveAndStatusUpdate() throws {
         let changeCount = try db.saveLearningSuggestions([
             LearningSuggestionDraft(

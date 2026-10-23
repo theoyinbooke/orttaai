@@ -143,6 +143,9 @@ final class AppSettings: ObservableObject {
     /// post-hoc dictionary replacement still applies to every path.
     @AppStorage("vocabularyBiasEnabled") var vocabularyBiasEnabled: Bool = true
     @AppStorage("aiSuggestionsEnabled") var aiSuggestionsEnabled: Bool = false
+    /// Suggests dictionary words from fixes the user makes right after a
+    /// dictation is inserted (`EditLearningWatcher`).
+    @AppStorage("learnFromEditsEnabled") var learnFromEditsEnabled: Bool = true
     @AppStorage("fastFirstOnboardingEnabled") var fastFirstOnboardingEnabled: Bool = false
     @AppStorage("fastFirstRecommendedModelId") var fastFirstRecommendedModelId: String = ""
     @AppStorage("fastFirstPrefetchStarted") var fastFirstPrefetchStarted: Bool = false

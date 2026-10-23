@@ -308,6 +308,7 @@ final class DictationCoordinatorTests: XCTestCase {
     var gestureNow = Date()
     /// Every recording-end trace the coordinator emitted, oldest first.
     var recordedEnds: [RecordingEndTrace] = []
+    let editLearner = RecordingEditLearner()
 
     @MainActor
     override func setUpWithError() throws {
@@ -343,6 +344,7 @@ final class DictationCoordinatorTests: XCTestCase {
             settings: settings,
             selectionCapture: selectionCapture,
             editProcessor: editProcessor,
+            editLearner: editLearner,
             now: { [weak self] in self?.gestureNow ?? Date() }
         )
         recordedEnds = []
@@ -451,6 +453,28 @@ final class DictationCoordinatorTests: XCTestCase {
     func testEstimateProcessingTime() {
         let estimate = coordinator.estimateProcessingTime(10.0)
         XCTAssertGreaterThanOrEqual(estimate, 1.0)
+    }
+
+    @MainActor
+    func testInsertedDictationIsWatchedForEdits() async {
+        coordinator.startRecording()
+        XCTAssertEqual(editLearner.finishCount, 1, "starting a dictation ends the previous watch")
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        _ = await waitUntil { self.coordinator.state == .idle }
+
+        XCTAssertEqual(editLearner.watchedTexts, ["Hello world"])
+    }
+
+    @MainActor
+    func testBlockedDictationIsNotWatched() async {
+        injectionService.mockResult = .blockedSecureField
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(editLearner.watchedTexts, [])
     }
 
     @MainActor
@@ -1695,5 +1719,18 @@ private extension MockTranscriptionService {
         isLoaded = true
         loadedModelNames = []
         mockLoadedModelID = modelID
+    }
+}
+
+final class RecordingEditLearner: InsertedTextWatching {
+    private(set) var watchedTexts: [String] = []
+    private(set) var finishCount = 0
+
+    func watch(insertedText: String, targetApp: NSRunningApplication?) {
+        watchedTexts.append(insertedText)
+    }
+
+    func finishCurrentWatch() {
+        finishCount += 1
     }
 }

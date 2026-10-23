@@ -256,6 +256,7 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         "disfluencyCleanupEnabled",
         "snippetsEnabled",
         "aiSuggestionsEnabled",
+        "learnFromEditsEnabled",
         "fastFirstOnboardingEnabled",
         "fastFirstUpgradeDismissed",
         "githubStarPromptCompleted",

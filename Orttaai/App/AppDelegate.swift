@@ -274,13 +274,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             databaseManager = db
 
+            let editLearner = EditLearningWatcher(
+                reader: SystemAccessibilityInspector(),
+                settings: settings
+            ) { [weak db] drafts in
+                do {
+                    _ = try db?.saveLearningSuggestions(drafts)
+                } catch {
+                    Logger.memory.error("Failed to save edit suggestions: \(error.localizedDescription)")
+                }
+            }
+
             let coord = DictationCoordinator(
                 audioService: audio,
                 transcriptionService: transcription,
                 textProcessor: textProcessor,
                 injectionService: injection,
                 databaseManager: db,
-                settings: settings
+                settings: settings,
+                editLearner: editLearner
             )
 
             audioService = audio

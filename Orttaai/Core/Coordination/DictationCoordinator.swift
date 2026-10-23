@@ -131,6 +131,8 @@ final class DictationCoordinator {
     private var processingTask: Task<Void, Never>?
     private var audioHealthTask: Task<Void, Never>?
     private var targetApp: NSRunningApplication?
+    /// Watches each inserted dictation for the user's fixes.
+    private let editLearner: (any InsertedTextWatching)?
     /// Per-session speech accounting behind the hands-free silence auto-stop
     /// and the recording-end diagnostics. Reset when the session ends.
     private var autoStopPolicy = HandsFreeAutoStopPolicy()
@@ -151,8 +153,10 @@ final class DictationCoordinator {
         settings: AppSettings,
         selectionCapture: (any SelectionCapturing)? = nil,
         editProcessor: (any EditCommandProcessing)? = nil,
+        editLearner: (any InsertedTextWatching)? = nil,
         now: @escaping () -> Date = Date.init
     ) {
+        self.editLearner = editLearner
         self.audioService = audioService
         self.transcriptionService = transcriptionService
         self.textProcessor = textProcessor
@@ -404,6 +408,8 @@ final class DictationCoordinator {
         recordingMode = .pushToTalk
         sessionKind = kind
         editSelection = selection
+        // The next insertion would mix into the field being watched.
+        editLearner?.finishCurrentWatch()
 
         do {
             // Capture the target app NOW, before the floating panel appears
@@ -679,6 +685,7 @@ final class DictationCoordinator {
             switch result {
             case .success(let method):
                 maybeStartFastFirstPrefetch(afterSuccessfulDictationWith: resolvedModelID)
+                editLearner?.watch(insertedText: output.text, targetApp: targetApp)
                 state = .idle
                 endSessionContext()
                 Logger.dictation.info(

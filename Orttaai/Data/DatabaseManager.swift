@@ -2142,6 +2142,23 @@ final class DatabaseManager {
 
                 let normalizedSource = PersonalMemoryNormalizer.normalizedKey(trimmedSource)
 
+                // A pair the user already rejected, or already has in the
+                // dictionary, is not suggested again.
+                let alreadyDecided = try LearningSuggestion
+                    .filter(Column("type") == draft.type.rawValue)
+                    .filter(Column("normalizedSource") == normalizedSource)
+                    .filter(Column("candidateTarget") == trimmedTarget)
+                    .filter(Column("status") == LearningSuggestionStatus.rejected.rawValue)
+                    .fetchCount(db) > 0
+                let dictionaryMatches = draft.type == .dictionary
+                    ? try DictionaryEntry
+                        .filter(Column("normalizedSource") == normalizedSource)
+                        .filter(Column("target") == trimmedTarget)
+                        .fetchCount(db)
+                    : 0
+                let alreadyInDictionary = dictionaryMatches > 0
+                guard !alreadyDecided, !alreadyInDictionary else { continue }
+
                 if var existing = try LearningSuggestion
                     .filter(Column("type") == draft.type.rawValue)
                     .filter(Column("normalizedSource") == normalizedSource)
