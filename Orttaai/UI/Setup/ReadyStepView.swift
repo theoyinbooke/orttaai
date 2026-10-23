@@ -28,17 +28,6 @@ struct ReadyStepView: View {
 
     var body: some View {
         VStack(spacing: Spacing.md) {
-            HStack(spacing: Spacing.md) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 34))
-                    .foregroundStyle(Color.Orttaai.success)
-                    .accessibilityHidden(true)
-
-                Text("Orttaai is ready!")
-                    .font(.Orttaai.title)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-            }
-
             HStack(spacing: Spacing.sm) {
                 Text("Press")
                     .font(.Orttaai.body)

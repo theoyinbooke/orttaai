@@ -3,93 +3,107 @@
 
 import SwiftUI
 
+/// First-run setup in four steps. Each step shows a connected step track,
+/// an animated scene for what it does, one title line, its content, and a
+/// footer that says what's still needed before Continue.
 struct SetupView: View {
     @State private var currentStep = 0
     @State private var permissionsGranted = false
     @State private var modelReady = false
     @State private var didActivateReadyTest = false
+    /// Which way the last step change went, so content slides with it.
+    @State private var movingForward = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var onComplete: (() -> Void)?
     var onReadyForTesting: (() -> Void)?
 
-    private let steps = ["About", "Permissions", "Download", "Ready"]
+    private let steps = ["Welcome", "Permissions", "Engine", "Ready"]
+
     private var canContinue: Bool {
         switch currentStep {
-        case 0:
-            return true
-        case 1:
-            return permissionsGranted
-        case 2:
-            return modelReady
-        default:
-            return true
+        case 1: return permissionsGranted
+        case 2: return modelReady
+        default: return true
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Step indicator
-            HStack(spacing: Spacing.sm) {
-                ForEach(0..<steps.count, id: \.self) { index in
-                    HStack(spacing: Spacing.xs) {
-                        Circle()
-                            .fill(index <= currentStep ? Color.Orttaai.accent : Color.Orttaai.bgTertiary)
-                            .frame(width: 8, height: 8)
-                        if index == currentStep {
-                            Text(steps[index])
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                        }
+            SetupStepTrack(titles: steps, current: currentStep)
+                .padding(.horizontal, 40)
+                .padding(.top, Spacing.lg)
+
+            SetupStepArt(step: currentStep, isComplete: isStepComplete)
+                .id(currentStep)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                .frame(height: 164)
+                .padding(.horizontal, 28)
+                .padding(.top, Spacing.lg)
+
+            ZStack {
+                VStack(spacing: 0) {
+                    VStack(spacing: 5) {
+                        Text(title)
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                        Text(subtitle)
+                            .font(.Orttaai.secondary)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .padding(.top, Spacing.lg)
+
+                    ScrollView(showsIndicators: false) {
+                        stepContent
+                            .padding(.horizontal, 28)
+                            .padding(.top, Spacing.lg)
+                            .padding(.bottom, Spacing.lg)
                     }
                 }
-            }
-            .padding(.top, Spacing.xxl)
-            .padding(.bottom, Spacing.xl)
-
-            Text("Step \(currentStep + 1) of \(steps.count)")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textTertiary)
-                .padding(.bottom, Spacing.lg)
-
-            ScrollView(showsIndicators: false) {
-                stepContent
-                    .padding(.bottom, Spacing.lg)
+                .id(currentStep)
+                .transition(stepTransition)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .clipped()
 
-            // Navigation
-            HStack {
-                if currentStep > 0 {
-                    Button("Back") {
-                        withAnimation {
-                            currentStep -= 1
-                        }
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-                }
-
-                Spacer()
-
-                if currentStep < steps.count - 1 {
-                    Button("Continue") {
-                        withAnimation {
-                            currentStep += 1
-                        }
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.primary))
-                    .disabled(!canContinue)
-                    .opacity(canContinue ? 1.0 : 0.55)
-                    .animation(.easeInOut(duration: 0.15), value: canContinue)
-                }
-            }
-            .padding(.bottom, Spacing.xxl)
+            footer
         }
-        .padding(.horizontal, Spacing.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.Orttaai.bgPrimary)
         .onChange(of: currentStep) { _, newValue in
             guard newValue == 3 else { return }
             activateReadyTestIfNeeded()
+        }
+    }
+
+    // MARK: - Steps
+
+    private var title: String {
+        switch currentStep {
+        case 0: return "Welcome to Orttaai"
+        case 1: return "Two quick permissions"
+        case 2: return "Choose your voice engine"
+        default: return "You're ready"
+        }
+    }
+
+    private var subtitle: String {
+        switch currentStep {
+        case 0: return "Hold a key, speak, and Orttaai types it into any app. Privately, on this Mac."
+        case 1: return "The microphone so it can hear you, and Accessibility so it can type where your cursor is."
+        case 2: return "It runs entirely on this Mac. Pick one now; you can switch any time."
+        default: return "Try your first dictation right here, then start using Orttaai."
+        }
+    }
+
+    private var isStepComplete: Bool {
+        switch currentStep {
+        case 1: return permissionsGranted
+        case 2: return modelReady
+        default: return false
         }
     }
 
@@ -114,6 +128,80 @@ struct SetupView: View {
         }
     }
 
+    private var stepTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: .move(edge: movingForward ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: movingForward ? .leading : .trailing).combined(with: .opacity)
+        )
+    }
+
+    private func go(to step: Int) {
+        movingForward = step > currentStep
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.86)) {
+            currentStep = step
+        }
+    }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        HStack(spacing: Spacing.md) {
+            if currentStep > 0 {
+                Button {
+                    go(to: currentStep - 1)
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.ghost))
+            }
+
+            Spacer(minLength: Spacing.sm)
+
+            if let hint = continueHint {
+                Text(hint)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+                    .transition(.opacity)
+            }
+
+            if currentStep < steps.count - 1 {
+                Button {
+                    go(to: currentStep + 1)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(currentStep == 0 ? "Get Started" : "Continue")
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                }
+                .buttonStyle(OrttaaiButtonStyle(.primary))
+                .disabled(!canContinue)
+                .animation(.easeInOut(duration: 0.15), value: canContinue)
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, Spacing.md)
+        .background(
+            Color.Orttaai.bgSecondary.opacity(0.55)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color.Orttaai.border.opacity(0.6)).frame(height: 1)
+                }
+        )
+        .animation(.easeInOut(duration: 0.2), value: continueHint)
+    }
+
+    /// Why Continue is off, in a few words.
+    private var continueHint: String? {
+        guard !canContinue else { return nil }
+        switch currentStep {
+        case 1: return "Allow Microphone and Accessibility to continue"
+        case 2: return "Choose an engine to continue"
+        default: return nil
+        }
+    }
+
     private func activateReadyTestIfNeeded() {
         guard !didActivateReadyTest else { return }
         didActivateReadyTest = true
@@ -121,85 +209,153 @@ struct SetupView: View {
     }
 }
 
-private struct AboutSetupStepView: View {
+// MARK: - Step track
+
+/// Four numbered nodes joined by a line that fills as setup moves on; the
+/// current node pulses, finished ones show a check.
+struct SetupStepTrack: View {
+    let titles: [String]
+    let current: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
+                node(index, title: title)
+                if index < titles.count - 1 {
+                    connector(filled: index < current)
+                        .padding(.top, 11)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Step \(current + 1) of \(titles.count): \(titles[min(current, titles.count - 1)])")
+    }
+
+    private func node(_ index: Int, title: String) -> some View {
+        let isDone = index < current
+        let isCurrent = index == current
+        return VStack(spacing: 6) {
+            ZStack {
+                if isCurrent {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                        Circle()
+                            .stroke(Color.Orttaai.accent.opacity(reduceMotion ? 0.3 : 0.5 * (1 - phase)), lineWidth: 2)
+                            .frame(width: 24, height: 24)
+                            .scaleEffect(reduceMotion ? 1.25 : 1 + phase * 0.6)
+                    }
+                }
+                Circle()
+                    .fill(isDone ? Color.Orttaai.accent : (isCurrent ? Color.Orttaai.accentSubtle : Color.Orttaai.bgTertiary))
+                    .overlay(
+                        Circle().stroke(isCurrent || isDone ? Color.Orttaai.accent : Color.Orttaai.border, lineWidth: 1.5)
+                    )
+                    .frame(width: 24, height: 24)
+                if isDone {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Color.Orttaai.bgPrimary)
+                } else {
+                    Text("\(index + 1)")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(isCurrent ? Color.Orttaai.accent : Color.Orttaai.textTertiary)
+                }
+            }
+            .frame(width: 24, height: 24)
+
+            Text(title)
+                .font(.Orttaai.caption)
+                .foregroundStyle(isCurrent ? Color.Orttaai.textPrimary : Color.Orttaai.textTertiary)
+                .fixedSize()
+        }
+        .frame(width: 70)
+    }
+
+    private func connector(filled: Bool) -> some View {
+        ZStack(alignment: .leading) {
+            Capsule().fill(Color.Orttaai.bgTertiary)
+            GeometryReader { geometry in
+                Capsule()
+                    .fill(LinearGradient(colors: [Color.Orttaai.accent, Color.Orttaai.accent.opacity(0.7)], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: filled ? geometry.size.width : 0)
+            }
+        }
+        .frame(height: 3)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, -10)
+        .animation(.easeInOut(duration: 0.45), value: filled)
+    }
+}
+
+// MARK: - Welcome
+
+struct AboutSetupStepView: View {
     private let githubURL = AppLinks.githubProfileURL
     private let repoURL = AppLinks.githubRepositoryURL
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.md) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            feature(
+                icon: "waveform",
+                title: "Hold a key, speak, let go",
+                detail: "Orttaai types what you said into whatever app you're in."
+            )
+            feature(
+                icon: "lock.shield",
+                title: "Stays on your Mac",
+                detail: "Speech and AI run on your own hardware. Nothing is uploaded."
+            )
+            feature(
+                icon: "text.badge.checkmark",
+                title: "Learns your words",
+                detail: "Names and terms you use get spelled right, and it improves as you fix them."
+            )
+
+            HStack(spacing: Spacing.sm) {
                 OrttaaiAppIcon()
-                    .frame(width: 52, height: 52)
-                Text("About Orttaai")
-                    .font(.Orttaai.title)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-            }
-
-            Text("Hold your hotkey to dictate into any app.")
-                .font(.Orttaai.body)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            featureCard(
-                icon: "mic.fill",
-                title: "Fast Dictation"
-            )
-
-            featureCard(
-                icon: "lock.shield.fill",
-                title: "Private by Default"
-            )
-
-            featureCard(
-                icon: "cpu.fill",
-                title: "Model Control"
-            )
-
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Creator")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Text("Built by Olanrewaju Oyinbooke.")
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: Spacing.sm) {
-                    Link(destination: githubURL) {
-                        Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-
-                    Link(destination: repoURL) {
-                        Label("Project", systemImage: "arrow.up.right.square")
-                    }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
+                    .frame(width: 22, height: 22)
+                Text("Made by Olanrewaju Oyinbooke")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                Spacer()
+                Link(destination: githubURL) {
+                    Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
+                .buttonStyle(OrttaaiButtonStyle(.ghost, size: .small))
+                Link(destination: repoURL) {
+                    Label("Project", systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(OrttaaiButtonStyle(.ghost, size: .small))
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.Orttaai.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+            .padding(.top, Spacing.sm)
         }
     }
 
-    private func featureCard(icon: String, title: String) -> some View {
+    private func feature(icon: String, title: String, detail: String) -> some View {
         HStack(spacing: Spacing.md) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Color.Orttaai.accent)
-                .frame(width: 40, height: 40)
-                .background(Color.Orttaai.bgPrimary.opacity(0.65))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            Text(title)
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+                .frame(width: 38, height: 38)
+                .background(Color.Orttaai.accentSubtle, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text(detail)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+        .background(Color.Orttaai.bgSecondary, in: RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                .stroke(Color.Orttaai.border.opacity(0.6), lineWidth: BorderWidth.standard)
+        )
     }
 }

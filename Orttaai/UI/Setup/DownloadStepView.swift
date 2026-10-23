@@ -113,31 +113,7 @@ struct DownloadStepView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Download Model")
-                .font(.Orttaai.title)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            // Hardware info card
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Your Hardware")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                HStack(spacing: Spacing.md) {
-                    Label(hardwareInfo.chipName, systemImage: "cpu")
-                    Label("\(hardwareInfo.ramGB)GB RAM", systemImage: "memorychip")
-                }
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-            }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.Orttaai.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
-
-            setupModelStorageCard
-
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             modelCard(
                 title: "Quick Start Model",
                 badge: "Recommended",
@@ -205,6 +181,9 @@ struct DownloadStepView: View {
                         .foregroundStyle(Color.Orttaai.error)
                 }
             }
+
+            setupModelStorageCard
+                .padding(.top, Spacing.xs)
         }
         .onAppear {
             refreshInstalledModelState()
@@ -228,36 +207,38 @@ struct DownloadStepView: View {
         }
     }
 
+    /// This Mac: where models go, and the chip and memory they run on.
     private var setupModelStorageCard: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .top, spacing: Spacing.md) {
+            HStack(alignment: .center, spacing: Spacing.md) {
                 Image(systemName: modelStorage.isCustom ? "externaldrive" : "internaldrive")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(modelStorage.isAvailable ? Color.Orttaai.accent : Color.Orttaai.error)
-                    .frame(width: 32, height: 32)
-                    .background(Color.Orttaai.accentSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(modelStorage.isAvailable ? Color.Orttaai.textSecondary : Color.Orttaai.error)
+                    .frame(width: 34, height: 34)
+                    .background(Color.Orttaai.bgTertiary, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Model Storage")
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
+                VStack(alignment: .leading, spacing: 2) {
                     Text(modelStorage.url.path)
                         .font(.Orttaai.mono)
                         .foregroundStyle(Color.Orttaai.textSecondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .truncationMode(.middle)
-
+                    HStack(spacing: Spacing.md) {
+                        Label(hardwareInfo.chipName, systemImage: "cpu")
+                        Label("\(hardwareInfo.ramGB) GB memory", systemImage: "memorychip")
+                    }
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
                 }
 
                 Spacer(minLength: Spacing.sm)
 
-                Button("Choose Folder") {
+                Button("Change…") {
                     chooseModelStorageLocation()
                 }
-                .buttonStyle(OrttaaiButtonStyle(.secondary))
+                .buttonStyle(OrttaaiButtonStyle(.ghost, size: .small))
                 .disabled(isDownloading)
+                .help("Where Orttaai keeps speech models")
             }
 
             if modelStorage.isCustom {
@@ -285,13 +266,12 @@ struct DownloadStepView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(Spacing.md)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+        .background(Color.Orttaai.bgSecondary.opacity(0.6), in: RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
     }
 
-    @ViewBuilder
     private func modelCard(
         title: String,
         badge: String,
@@ -299,117 +279,121 @@ struct DownloadStepView: View {
         detail: String,
         accentColor: Color
     ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(title)
-                        .font(.Orttaai.subheading)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    Text(badge)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(accentColor)
-                }
-
-                Spacer()
-
-                Button(actionTitle(for: modelId)) {
-                    startDownload(modelId: modelId)
-                }
-                .buttonStyle(OrttaaiButtonStyle(isSelectedForSetup(modelId) ? .secondary : .primary))
-                .disabled(
-                    isAnyDownloadRunning
-                        || isSelectedForSetup(modelId)
-                        || (!isDownloaded(modelId) && (!modelStorage.isAvailable || !modelStorage.isWritable))
-                )
-            }
-
-            Text(modelId)
-                .font(.Orttaai.mono)
-                .foregroundStyle(accentColor)
-
-            Text(detail)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-
-            if isSelectedForSetup(modelId) {
-                Label("Selected for setup", systemImage: "checkmark.circle.fill")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.success)
-            } else if isDownloaded(modelId) {
-                Label("Downloaded locally", systemImage: "externaldrive.fill.badge.checkmark")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
+        engineCard(
+            icon: "waveform",
+            title: title,
+            badge: badge,
+            subtitle: modelId,
+            detail: detail,
+            isSelected: isSelectedForSetup(modelId),
+            isDownloaded: isDownloaded(modelId),
+            actionTitle: actionTitle(for: modelId),
+            isActionDisabled: isAnyDownloadRunning
+                || isSelectedForSetup(modelId)
+                || (!isDownloaded(modelId) && (!modelStorage.isAvailable || !modelStorage.isWritable))
+        ) {
+            startDownload(modelId: modelId)
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
     }
 
     /// Express: the compact English engine, offered as experimental. Choosing
     /// it downloads Fluid Speech Mini and the Word Boost model, loads them and
     /// turns Express on; the Whisper model stays the fallback.
     private func expressCard(_ express: ExpressController) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack(spacing: Spacing.sm) {
-                        Text("Express")
-                            .font(.Orttaai.subheading)
-                            .foregroundStyle(Color.Orttaai.textPrimary)
-                        Text("Experimental")
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.accent)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Color.Orttaai.accentSubtle, in: Capsule())
-                    }
+        engineCard(
+            icon: "bolt.fill",
+            title: "Express",
+            badge: "Experimental",
+            subtitle: "\(ExpressEngine.displayName) + Word Boost",
+            detail: expressSupportsLanguage
+                ? "Fastest dictation. English only; downloads \(Self.expressDownloadSize) once."
+                : "English only. Set dictation to English to use it.",
+            isSelected: isExpressSelected,
+            isDownloaded: express.status == .installed,
+            actionTitle: expressActionTitle(express),
+            isActionDisabled: isAnyDownloadRunning
+                || isExpressSelected
+                || !expressSupportsLanguage
+                || (!modelStorage.isAvailable || !modelStorage.isWritable)
+        ) {
+            express.setEnabled(true)
+        }
+    }
 
-                    Text("Fastest dictation")
+    /// One engine choice: icon, name and badge, what it is, and its action;
+    /// the chosen one glows.
+    private func engineCard(
+        icon: String,
+        title: String,
+        badge: String,
+        subtitle: String,
+        detail: String,
+        isSelected: Bool,
+        isDownloaded: Bool,
+        actionTitle: String,
+        isActionDisabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        let tint = isSelected ? Color.Orttaai.success : Color.Orttaai.accent
+        return HStack(alignment: .top, spacing: Spacing.md) {
+            Image(systemName: isSelected ? "checkmark" : icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 42, height: 42)
+                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .contentTransition(.symbolEffect(.replace))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: Spacing.sm) {
+                    Text(title)
+                        .font(.Orttaai.subheading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    Text(badge)
                         .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .foregroundStyle(Color.Orttaai.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.Orttaai.accentSubtle, in: Capsule())
                 }
-
-                Spacer()
-
-                Button(expressActionTitle(express)) {
-                    express.setEnabled(true)
-                }
-                .buttonStyle(OrttaaiButtonStyle(isExpressSelected ? .secondary : .primary))
-                .disabled(
-                    isAnyDownloadRunning
-                        || isExpressSelected
-                        || !expressSupportsLanguage
-                        || (!modelStorage.isAvailable || !modelStorage.isWritable)
-                )
-            }
-
-            Text("\(ExpressEngine.displayName) + Word Boost")
-                .font(.Orttaai.mono)
-                .foregroundStyle(Color.Orttaai.accent)
-
-            Text(expressSupportsLanguage
-                 ? "English only. Downloads \(Self.expressDownloadSize) once."
-                 : "English only. Set dictation to English to use it.")
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-
-            if isExpressSelected {
-                Label("Selected for setup", systemImage: "checkmark.circle.fill")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.success)
-            } else if express.status == .installed {
-                Label("Downloaded locally", systemImage: "externaldrive.fill.badge.checkmark")
-                    .font(.Orttaai.caption)
+                Text(subtitle)
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(detail)
+                    .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if isSelected {
+                    Label("Selected", systemImage: "checkmark.circle.fill")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.success)
+                        .padding(.top, 2)
+                } else if isDownloaded {
+                    Label("Already on this Mac", systemImage: "externaldrive.fill.badge.checkmark")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .padding(.top, 2)
+                }
             }
+
+            Spacer(minLength: Spacing.sm)
+
+            Button(actionTitle, action: action)
+                .buttonStyle(OrttaaiButtonStyle(isSelected ? .secondary : .primary, size: .small))
+                .disabled(isActionDisabled)
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+        .background(
+            isSelected ? Color.Orttaai.success.opacity(0.06) : Color.Orttaai.bgSecondary,
+            in: RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                .stroke(isSelected ? Color.Orttaai.success.opacity(0.45) : Color.Orttaai.border.opacity(0.6), lineWidth: isSelected ? 1.5 : BorderWidth.standard)
+        )
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isSelected)
     }
 
     private static let expressDownloadSize = ByteCountFormatter.string(

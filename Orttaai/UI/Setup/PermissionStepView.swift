@@ -25,24 +25,13 @@ struct PermissionStepView: View {
     )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Permissions")
-                .font(.Orttaai.title)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            Text("Microphone and Accessibility are required.")
-                .font(.Orttaai.body)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-
-            progressCard
-                .padding(.bottom, Spacing.xs)
-
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             // Microphone
             PermissionRow(
                 icon: "mic.fill",
                 stepNumber: 1,
                 title: "Microphone",
-                description: "Record voice",
+                description: "So Orttaai can hear you while you hold the key.",
                 status: micGranted ? .granted : .notGranted,
                 action: {
                     requestMicrophonePermission()
@@ -51,10 +40,10 @@ struct PermissionStepView: View {
 
             // Accessibility
             PermissionRow(
-                icon: "accessibility",
+                icon: "cursorarrow.rays",
                 stepNumber: 2,
                 title: "Accessibility",
-                description: "Paste transcribed text",
+                description: "So it can type into the app you're using.",
                 status: accessibilityGranted ? .granted : .notGranted,
                 action: requestAccessibilityPermission
             )
@@ -91,8 +80,8 @@ struct PermissionStepView: View {
             PermissionRow(
                 icon: "keyboard",
                 stepNumber: nil,
-                title: "Input Monitoring (Optional)",
-                description: "Compatibility fallback",
+                title: "Input Monitoring",
+                description: "Helps the hotkey work in a few apps that need it.",
                 status: inputMonitoringGranted ? .granted : .notGranted,
                 action: requestInputMonitoringPermission
             )
@@ -126,24 +115,11 @@ struct PermissionStepView: View {
             }
 
             // Trust statement
-            HStack(spacing: Spacing.md) {
-                Rectangle()
-                    .fill(Color.Orttaai.accent)
-                    .frame(width: 3)
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Your privacy is protected")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                    Text("Transcription stays on your Mac.")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
-            }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.Orttaai.bgSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+            Label("Audio is transcribed on this Mac and never uploaded.", systemImage: "lock.fill")
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, Spacing.sm)
         }
         .onReceive(timer) { _ in
             checkPermissions()
@@ -154,34 +130,6 @@ struct PermissionStepView: View {
         .onAppear {
             checkPermissions()
         }
-    }
-
-    private var progressCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack {
-                Label("\(requiredPermissionCount)/2 required permissions ready", systemImage: allGranted ? "checkmark.seal.fill" : "flag.fill")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(allGranted ? Color.Orttaai.success : Color.Orttaai.accent)
-
-                Spacer()
-
-                Text(allGranted ? "Ready to continue" : "Recommended next step")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-
-        }
-        .padding(Spacing.md)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card)
-                .stroke(allGranted ? Color.Orttaai.success.opacity(0.35) : Color.Orttaai.border, lineWidth: BorderWidth.standard)
-        )
-    }
-
-    private var requiredPermissionCount: Int {
-        [micGranted, accessibilityGranted].filter { $0 }.count
     }
 
     private func checkPermissions() {
@@ -340,57 +288,68 @@ struct PermissionRow: View {
     }
 
     var body: some View {
+        let isGranted = status == .granted
+        let tint = isGranted ? Color.Orttaai.success : Color.Orttaai.accent
         HStack(spacing: Spacing.md) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.Orttaai.bgPrimary.opacity(0.65))
-                    .frame(width: 42, height: 42)
-
-                if let stepNumber {
-                    Text("\(stepNumber)")
-                        .font(.Orttaai.secondary.monospacedDigit())
-                        .foregroundStyle(status == .granted ? Color.Orttaai.success : Color.Orttaai.textSecondary)
-                } else {
-                    Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(statusIconColor)
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 40, height: 40)
+                    .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                if isGranted {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.Orttaai.success, Color.Orttaai.bgSecondary)
+                        .offset(x: 4, y: 4)
+                        .transition(.scale.combined(with: .opacity))
                 }
             }
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(title)
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Spacing.xs) {
+                    Text(title)
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    if stepNumber == nil {
+                        Text("Optional")
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Color.Orttaai.bgTertiary, in: Capsule())
+                    }
+                }
                 Text(description)
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
-                Text(statusLabel)
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(status == .granted ? Color.Orttaai.success : Color.Orttaai.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            Spacer(minLength: Spacing.sm)
 
             switch status {
             case .notGranted:
-                Button("Grant Access", action: action)
-                    .buttonStyle(OrttaaiButtonStyle(.primary))
+                Button("Allow", action: action)
+                    .buttonStyle(OrttaaiButtonStyle(stepNumber == nil ? .secondary : .primary, size: .small))
             case .granted:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 20))
+                Text("Allowed")
+                    .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.success)
             }
         }
         .padding(Spacing.md)
-        .background(Color.Orttaai.bgSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
-    }
-
-    private var statusIconColor: Color {
-        switch status {
-        case .notGranted: return Color.Orttaai.textSecondary
-        case .granted: return Color.Orttaai.success
-        }
+        .background(
+            (isGranted ? Color.Orttaai.success.opacity(0.06) : Color.Orttaai.bgSecondary),
+            in: RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
+                .stroke(isGranted ? Color.Orttaai.success.opacity(0.4) : Color.Orttaai.border.opacity(0.6), lineWidth: BorderWidth.standard)
+        )
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isGranted)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(statusLabel)")
     }
 
     private var statusLabel: String {
