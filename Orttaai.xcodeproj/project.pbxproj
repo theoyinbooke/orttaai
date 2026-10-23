@@ -11,6 +11,7 @@
 		DBD11A8E2F4BD2CB0058DD90 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = DBD11A8D2F4BD2CB0058DD90 /* GRDB */; };
 		DBD11A902F4BD2D60058DD90 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = DBD11A8F2F4BD2D60058DD90 /* KeyboardShortcuts */; };
 		DBD11A922F4BD2DD0058DD90 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DBD11A912F4BD2DD0058DD90 /* Sparkle */; };
+		DBD11A952F4BD2DD0058DD90 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = DBD11A942F4BD2DD0058DD90 /* FluidAudio */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +77,7 @@
 				DBD11A922F4BD2DD0058DD90 /* Sparkle in Frameworks */,
 				DBD11A8E2F4BD2CB0058DD90 /* GRDB in Frameworks */,
 				DBD11A902F4BD2D60058DD90 /* KeyboardShortcuts in Frameworks */,
+				DBD11A952F4BD2DD0058DD90 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -148,6 +150,7 @@
 				DBD11A8D2F4BD2CB0058DD90 /* GRDB */,
 				DBD11A8F2F4BD2D60058DD90 /* KeyboardShortcuts */,
 				DBD11A912F4BD2DD0058DD90 /* Sparkle */,
+				DBD11A942F4BD2DD0058DD90 /* FluidAudio */,
 			);
 			productName = Orttaai;
 			productReference = DBDBFF2D2F4BCC0800217055 /* Orttaai.app */;
@@ -236,6 +239,7 @@
 				DBD11A872F4BCE1E0058DD90 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 				DBD11A882F4BCE570058DD90 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				DBD11A892F4BCE7F0058DD90 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+				DBD11A932F4BD2DD0058DD90 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DBDBFF2E2F4BCC0800217055 /* Products */;
@@ -693,6 +697,14 @@
 				minimumVersion = 2.4.0;
 			};
 		};
+		DBD11A932F4BD2DD0058DD90 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = revision;
+				revision = c79c4106b954f81205113c3343e5a7e59a1089b5;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -715,6 +727,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DBD11A882F4BCE570058DD90 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		DBD11A942F4BD2DD0058DD90 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DBD11A932F4BD2DD0058DD90 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
