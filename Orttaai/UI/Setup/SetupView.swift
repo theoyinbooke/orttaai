@@ -37,9 +37,9 @@ struct SetupView: View {
             SetupStepArt(step: currentStep, isComplete: isStepComplete)
                 .id(currentStep)
                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                .frame(height: 164)
+                .frame(height: 148)
                 .padding(.horizontal, 28)
-                .padding(.top, Spacing.lg)
+                .padding(.top, Spacing.md)
 
             ZStack {
                 VStack(spacing: 0) {
@@ -54,12 +54,12 @@ struct SetupView: View {
                     }
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
-                    .padding(.top, Spacing.lg)
+                    .padding(.top, Spacing.md)
 
                     ScrollView(showsIndicators: false) {
                         stepContent
                             .padding(.horizontal, 28)
-                            .padding(.top, Spacing.lg)
+                            .padding(.top, Spacing.md)
                             .padding(.bottom, Spacing.lg)
                     }
                 }
@@ -71,7 +71,10 @@ struct SetupView: View {
 
             footer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The window takes its size from this view. A fixed size keeps it at
+        // 600 x 750 on every step; long steps scroll instead of stretching
+        // the window past the screen and hiding the footer.
+        .frame(width: WindowSize.setup.width, height: WindowSize.setup.height)
         .background(Color.Orttaai.bgPrimary)
         .onChange(of: currentStep) { _, newValue in
             guard newValue == 3 else { return }
