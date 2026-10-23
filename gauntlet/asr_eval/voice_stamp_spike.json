@@ -1,0 +1,87 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "P5.2 voice stamps research spike",
+  "setup": "VoiceStampSpikeTests on the 50 real-voice recordings. Every vocabulary term spoken in 2 or more recordings (18 terms, 39 occurrences) gives one-shot stamps: the occurrence's stretch of Parakeet CTC 110M token posteriors, located by the CTC keyword spotter. Each stamp is matched against the other 49 recordings with subsequence DTW (frame cost -log of the posterior dot product). Word Boost misses come from a production Express + Word Boost run on the same recordings. Scored with voice_stamp_spike.py.",
+  "decision_rule": "Fixed before the run: go if, at a threshold with at most 1% false alarms over (stamp, recording) pairs without the term, stamps find and place at least half of the occurrences Express + Word Boost misses.",
+  "word_boost_missed": [
+    "Folasade @ real-long-01",
+    "Folasade @ real-soft-05",
+    "Ngozi @ real-pn-07",
+    "Orttaai @ real-long-02",
+    "Orttaai @ real-pn-10",
+    "Temitope @ real-pn-09",
+    "Xcode @ real-bg-05",
+    "Yemisi @ real-pn-05",
+    "appcast @ real-tech-05"
+  ],
+  "variants": {
+    "full": {
+      "threshold": 0.2025,
+      "positive_pairs": 48,
+      "detected_pairs": 0,
+      "negative_pairs": 1863,
+      "false_alarms": 18,
+      "occurrences_found": 0,
+      "word_boost_missed": 9,
+      "word_boost_misses_recovered": 0,
+      "recovered": [],
+      "stamps": 39,
+      "best_match_is_right_recording": 0,
+      "go": false
+    },
+    "no_blank": {
+      "threshold": 3.0132,
+      "positive_pairs": 48,
+      "detected_pairs": 21,
+      "negative_pairs": 1863,
+      "false_alarms": 18,
+      "occurrences_found": 21,
+      "word_boost_missed": 9,
+      "word_boost_misses_recovered": 5,
+      "recovered": [
+        "Folasade @ real-long-01",
+        "Orttaai @ real-long-02",
+        "Orttaai @ real-pn-10",
+        "Xcode @ real-bg-05",
+        "appcast @ real-tech-05"
+      ],
+      "stamps": 39,
+      "best_match_is_right_recording": 26,
+      "go": true
+    }
+  },
+  "operating_points_no_blank": [
+    {
+      "false_alarms": 0,
+      "per_recording": 0.0,
+      "occurrences_found": 12,
+      "word_boost_misses_recovered": 2
+    },
+    {
+      "false_alarms": 2,
+      "per_recording": 0.04,
+      "occurrences_found": 14,
+      "word_boost_misses_recovered": 3
+    },
+    {
+      "false_alarms": 5,
+      "per_recording": 0.1,
+      "occurrences_found": 17,
+      "word_boost_misses_recovered": 5
+    },
+    {
+      "false_alarms": 18,
+      "per_recording": 0.36,
+      "occurrences_found": 21,
+      "word_boost_misses_recovered": 5
+    }
+  ],
+  "verdict": "Go for a prototype, not for shipping. With the blank token removed, stamps meet the rule (5 of 9 Word Boost misses at 1% pair false alarms) and still recover 5 at 0.1 false alarms per recording. With the blank kept they find nothing.",
+  "caveats": [
+    "Of the 5 recovered misses, 4 are product terms (Orttaai twice, Xcode, appcast); among names only Folasade in one recording, 1 of the 5 missed names (Folasade x2, Ngozi, Temitope, Yemisi).",
+    "One-shot stamps cut from running speech; the planned feature records a name deliberately three times, which should give cleaner stamps but is untested.",
+    "The worst false alarms come from very short stamps (2 frames, a soft trailing 'Folasade'); a minimum stamp length would remove several.",
+    "Where a term sits in a recording comes from the CTC spotter, which knows the spelling; for badly modelled names that placement is itself uncertain."
+  ],
+  "next_step": "Record three deliberate takes of each name, rerun this harness with them as stamps, and require a minimum stamp length and Word Boost's acoustic check before any replacement."
+}

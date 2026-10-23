@@ -279,7 +279,7 @@ final class ASREvalRunnerTests: XCTestCase {
 
     /// Minimal RIFF parser for the mono Float32 16 kHz WAVs the corpus
     /// builder emits.
-    private static func loadFloat32WAV(url: URL) throws -> [Float] {
+    static func loadFloat32WAV(url: URL) throws -> [Float] {
         let data = try Data(contentsOf: url)
         guard data.count > 44,
               data[0..<4].elementsEqual("RIFF".utf8),

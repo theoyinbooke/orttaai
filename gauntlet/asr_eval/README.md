@@ -292,3 +292,28 @@ with no change on real voice.
 Whisper's live path now copies only the audio after its committed clips:
 turbo's transcripts are identical on all 129 items checked, and its 10-minute
 peak footprint drops from 4.4 GB to 2.2 GB (2.1 GB on short clips).
+
+## Voice stamps spike (P5.2)
+
+`OrttaaiTests/Eval/VoiceStampSpikeTests.swift` (env-gated) cuts one-shot
+"voice stamps" out of Parakeet CTC 110M posteriors for every vocabulary term
+spoken in two or more real-voice recordings, and matches each against every
+recording with subsequence DTW; `voice_stamp_spike.py` scores it against a
+production Express + Word Boost run:
+
+```bash
+TEST_RUNNER_ORTTAAI_VOICESTAMP_SPIKE=1 \
+TEST_RUNNER_ORTTAAI_VOICESTAMP_MANIFEST=$PWD/gauntlet/asr_eval/corpus_real/manifest_real.json \
+TEST_RUNNER_ORTTAAI_VOICESTAMP_MODEL_ROOT=/path/to/storage-base \
+TEST_RUNNER_ORTTAAI_VOICESTAMP_OUT=/tmp/spike.json \
+xcodebuild ... -only-testing:OrttaaiTests/VoiceStampSpikeTests test
+python3 gauntlet/asr_eval/voice_stamp_spike.py /tmp/spike.json /tmp/raw_express_real.json \
+  --manifest gauntlet/asr_eval/corpus_real/manifest_real.json
+```
+
+`voice_stamp_spike.json` (2026-10-23): with the blank token removed, stamps
+recover 5 of the 9 occurrences Word Boost misses at 0.1 false alarms per
+recording, meeting the go rule set before the run; with the blank kept they
+find nothing. Four of the five are product terms, though, and only one missed
+name (Folasade) is recovered, so the verdict is a prototype measured with
+deliberate three-take recordings, not a shipped feature.
