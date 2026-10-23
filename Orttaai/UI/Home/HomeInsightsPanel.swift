@@ -128,11 +128,16 @@ struct HomeInsightsPanel: View {
     private var panelHeader: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Insights")
-                    .font(.Orttaai.subheading)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+                HStack(spacing: 6) {
+                    Text("Insights")
+                        .font(.Orttaai.subheading)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    if let snapshot {
+                        aboutButton(snapshot)
+                    }
+                }
                 if let snapshot {
-                    aboutButton(snapshot)
+                    modelLine(snapshot)
                 }
             }
 
@@ -302,33 +307,40 @@ struct HomeInsightsPanel: View {
         }
     }
 
-    /// The model that wrote it, with an info icon in front; clicking shows
-    /// when it ran, what it read, and whether there's newer dictation.
+    /// The info icon beside the title; clicking shows when it ran, what it
+    /// read, and whether there's newer dictation.
     private func aboutButton(_ snapshot: WritingInsightSnapshot) -> some View {
         Button {
             isAboutPresented.toggle()
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(Self.analyzerDisplayName(snapshot.analyzerName))
-                    .lineLimit(1)
-                if (freshness?.newSessionCount ?? 0) > 0, !isPreliminary {
-                    Circle()
-                        .fill(Color.Orttaai.warning)
-                        .frame(width: 5, height: 5)
-                        .accessibilityLabel("Newer dictation since this ran")
-                }
-            }
-            .font(.Orttaai.caption)
-            .foregroundStyle(Color.Orttaai.textTertiary)
-            .contentShape(Rectangle())
+            Image(systemName: "info.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("About this insight")
+        .accessibilityLabel("About this insight")
         .popover(isPresented: $isAboutPresented, arrowEdge: .bottom) {
             aboutCard(snapshot)
         }
+    }
+
+    /// The model that wrote it; an amber dot when newer dictation has come in.
+    private func modelLine(_ snapshot: WritingInsightSnapshot) -> some View {
+        HStack(spacing: 4) {
+            Text(Self.analyzerDisplayName(snapshot.analyzerName))
+                .lineLimit(1)
+            if (freshness?.newSessionCount ?? 0) > 0, !isPreliminary {
+                Circle()
+                    .fill(Color.Orttaai.warning)
+                    .frame(width: 5, height: 5)
+                    .accessibilityLabel("Newer dictation since this ran")
+            }
+        }
+        .font(.Orttaai.caption)
+        .foregroundStyle(Color.Orttaai.textTertiary)
     }
 
     private func aboutCard(_ snapshot: WritingInsightSnapshot) -> some View {
