@@ -36,6 +36,9 @@ struct HomeInsightsPanel: View {
     let onToggleCompareItem: (WritingInsightHistoryItem) -> Void
     let onClearComparison: () -> Void
     let onClose: () -> Void
+    @State private var isAboutPresented = false
+    @State private var isOptionsExpanded = false
+    @State private var isHistoryExpanded = false
 
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -115,9 +118,9 @@ struct HomeInsightsPanel: View {
                   !stats.contains(where: { $0.label.localizedCaseInsensitiveContains(label) }) else { return nil }
             let cleaned = signal.value.replacingOccurrences(of: ",", with: "")
             if let number = Double(cleaned) {
-                return InsightStat(id: "signal-\(label)", icon: "sparkles", number: number, label: label.lowercased())
+                return InsightStat(id: "signal-\(label)", icon: "number", number: number, label: label.lowercased())
             }
-            return InsightStat(id: "signal-\(label)", icon: "sparkles", text: signal.value, label: label.lowercased())
+            return InsightStat(id: "signal-\(label)", icon: "number", text: signal.value, label: label.lowercased())
         }
         return Array((stats + fromModel).prefix(6))
     }
@@ -129,7 +132,7 @@ struct HomeInsightsPanel: View {
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
                 if let snapshot {
-                    metaLine(snapshot)
+                    aboutButton(snapshot)
                 }
             }
 
@@ -196,21 +199,13 @@ struct HomeInsightsPanel: View {
 
     /// Range, depth and app filters, folded away until wanted.
     private var optionsSection: some View {
-        DisclosureGroup {
+        CollapsibleRow(
+            title: "Options",
+            detail: "\(request.timeRange.title) · \(request.generationMode.title) · \(request.appFilterMode.title)",
+            isExpanded: $isOptionsExpanded
+        ) {
             filterControls
-                .padding(.top, Spacing.sm)
-        } label: {
-            HStack(spacing: Spacing.xs) {
-                Text("Options")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Text("\(request.timeRange.title) · \(request.generationMode.title) · \(request.appFilterMode.title)")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                    .lineLimit(1)
-            }
         }
-        .tint(Color.Orttaai.textSecondary)
     }
 
     private var filterControls: some View {
@@ -307,38 +302,91 @@ struct HomeInsightsPanel: View {
         }
     }
 
-    /// Who wrote it, when, and whether newer dictation has arrived since.
-    private func metaLine(_ snapshot: WritingInsightSnapshot) -> some View {
-        HStack(spacing: 4) {
-            Text(snapshot.analyzerName.replacingOccurrences(of: "Apple Foundation Models", with: "Apple Intelligence"))
-            Text("·")
-            Text(isPreliminary ? "AI analysis running" : snapshot.generatedAt.formatted(.relative(presentation: .named)))
-                .help(Self.timestampFormatter.string(from: snapshot.generatedAt))
-            if let freshness, !isPreliminary {
-                Text("·")
-                Text(freshness.newSessionCount > 0 ? "\(freshness.newSessionCount) new since" : freshness.status.title)
-                    .foregroundStyle(freshnessStatusTint(freshness.status))
+    /// The model that wrote it, with an info icon in front; clicking shows
+    /// when it ran, what it read, and whether there's newer dictation.
+    private func aboutButton(_ snapshot: WritingInsightSnapshot) -> some View {
+        Button {
+            isAboutPresented.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(Self.analyzerDisplayName(snapshot.analyzerName))
+                    .lineLimit(1)
+                if (freshness?.newSessionCount ?? 0) > 0, !isPreliminary {
+                    Circle()
+                        .fill(Color.Orttaai.warning)
+                        .frame(width: 5, height: 5)
+                        .accessibilityLabel("Newer dictation since this ran")
+                }
             }
+            .font(.Orttaai.caption)
+            .foregroundStyle(Color.Orttaai.textTertiary)
+            .contentShape(Rectangle())
         }
-        .font(.Orttaai.caption)
-        .foregroundStyle(Color.Orttaai.textTertiary)
-        .lineLimit(1)
+        .buttonStyle(.plain)
+        .help("About this insight")
+        .popover(isPresented: $isAboutPresented, arrowEdge: .bottom) {
+            aboutCard(snapshot)
+        }
     }
 
-    private func freshnessStatusTint(_ status: WritingInsightFreshnessStatus) -> Color {
-        switch status {
-        case .fresh:
-            return Color.Orttaai.success
-        case .aging:
-            return Color.Orttaai.warning
-        case .stale:
-            return Color.Orttaai.error
+    private func aboutCard(_ snapshot: WritingInsightSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("About this insight")
+                .font(.Orttaai.bodyMedium)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+            aboutRow("cpu", "Analysed by \(Self.analyzerDisplayName(snapshot.analyzerName))")
+            aboutRow(
+                "clock",
+                isPreliminary
+                    ? "Quick look now; the AI analysis is running"
+                    : "Ran \(snapshot.generatedAt.formatted(.relative(presentation: .named))), \(Self.timestampFormatter.string(from: snapshot.generatedAt))"
+            )
+            aboutRow("doc.text.magnifyingglass", "Read \(snapshot.sampleCount == 1 ? "1 dictation" : "\(snapshot.sampleCount.formatted()) dictations")")
+            aboutRow("slider.horizontal.3", "\(request.timeRange.title) · \(request.generationMode.title) · \(request.appFilterMode.title)")
+            if let freshness, !isPreliminary {
+                if freshness.newSessionCount > 0 {
+                    aboutRow(
+                        "plus.circle",
+                        "\(freshness.newSessionCount) new \(freshness.newSessionCount == 1 ? "dictation" : "dictations") since. Regenerate to include them.",
+                        tint: Color.Orttaai.warning
+                    )
+                } else {
+                    aboutRow("checkmark.circle", "Up to date with your dictation", tint: Color.Orttaai.success)
+                }
+            }
         }
+        .padding(Spacing.md)
+        .frame(width: 280, alignment: .leading)
+        .presentationBackground(Color.Orttaai.bgSecondary)
+    }
+
+    private func aboutRow(_ icon: String, _ text: String, tint: Color = Color.Orttaai.textSecondary) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 16)
+            Text(text)
+                .font(.Orttaai.caption)
+                .foregroundStyle(tint == Color.Orttaai.textSecondary ? Color.Orttaai.textSecondary : tint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// "Apple Foundation Models" is Apple Intelligence to the person using it.
+    static func analyzerDisplayName(_ name: String) -> String {
+        name.replacingOccurrences(of: "Apple Foundation Models", with: "Apple Intelligence")
     }
 
     /// Earlier runs and comparison, folded away.
     private var historyDisclosure: some View {
-        DisclosureGroup {
+        CollapsibleRow(
+            title: "Recent runs",
+            detail: "\(historyItems.count)",
+            isExpanded: $isHistoryExpanded
+        ) {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 ForEach(Array(historyItems.prefix(8))) { item in
                     historyRow(item)
@@ -347,18 +395,7 @@ struct HomeInsightsPanel: View {
                     comparisonSection(comparison)
                 }
             }
-            .padding(.top, Spacing.sm)
-        } label: {
-            HStack(spacing: Spacing.xs) {
-                Text("Recent runs")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                Text("\(historyItems.count)")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
         }
-        .tint(Color.Orttaai.textSecondary)
     }
 
     private func historyRow(_ item: WritingInsightHistoryItem) -> some View {
@@ -570,5 +607,57 @@ struct HomeInsightsPanel: View {
         }
         .padding(Spacing.md)
         .dashboardCard()
+    }
+}
+
+/// A folding section whose whole header row opens and closes it, not just
+/// the chevron.
+private struct CollapsibleRow<Content: View>: View {
+    let title: String
+    let detail: String
+    @Binding var isExpanded: Bool
+    @ViewBuilder let content: Content
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 12)
+                    Text(title)
+                        .font(.Orttaai.bodyMedium)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    Text(detail)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous)
+                        .fill(isHovered ? Color.Orttaai.bgTertiary.opacity(0.5) : Color.clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+
+            if isExpanded {
+                content
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
     }
 }

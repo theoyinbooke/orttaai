@@ -334,7 +334,7 @@ struct ToneOfVoiceView: View {
             }
 
             if !profile.signatureApproaches.isEmpty {
-                listCard("Notable traits", icon: "sparkle.magnifyingglass", values: Array(profile.signatureApproaches.prefix(5)), tint: Color.Orttaai.accent)
+                listCard("Notable traits", icon: "text.quote", values: Array(profile.signatureApproaches.prefix(5)), tint: Color.Orttaai.accent)
             }
 
             if !profile.sampleExcerpts.isEmpty {

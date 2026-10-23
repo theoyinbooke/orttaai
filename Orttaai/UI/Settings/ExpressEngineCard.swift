@@ -214,7 +214,7 @@ struct ExpressEngineCard: View {
         case .installed:
             StatusChip(title: "Downloaded", systemImage: "checkmark.circle", tint: Color.Orttaai.textSecondary)
         case .notInstalled, .unsupported:
-            StatusChip(title: "Beta", systemImage: "sparkles", tint: Color.Orttaai.textSecondary)
+            StatusChip(title: "Not downloaded", systemImage: "arrow.down.circle", tint: Color.Orttaai.textSecondary)
         }
     }
 }

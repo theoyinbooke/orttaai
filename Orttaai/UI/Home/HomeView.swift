@@ -44,7 +44,15 @@ struct HomeView: View {
                         .transition(reduceMotion ? .identity : .opacity)
                 }
             }
-            .blur(radius: viewModel.githubStarPromptStep == nil ? 0 : 2)
+            // A dimming layer only while the GitHub prompt is up. A blur here,
+            // even at radius 0, made the whole page render offscreen and
+            // slowed every scroll.
+            .overlay {
+                if viewModel.githubStarPromptStep != nil {
+                    Color.black.opacity(0.35)
+                        .transition(.opacity)
+                }
+            }
             .allowsHitTesting(viewModel.githubStarPromptStep == nil)
 
             if let promptStep = viewModel.githubStarPromptStep {

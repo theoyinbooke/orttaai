@@ -14,7 +14,8 @@ struct DashboardCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
                     .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
             )
-            .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
+        // No drop shadow: on the dark background it barely showed, and a
+        // blurred shadow on every card had to be recomputed while scrolling.
     }
 }
 

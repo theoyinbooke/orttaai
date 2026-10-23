@@ -149,7 +149,7 @@ struct ConceptMapView: View {
     private func symbol(for kind: ConceptHighlightKind) -> String {
         switch kind {
         case .rising: return "arrow.up.right"
-        case .new: return "sparkle.magnifyingglass"
+        case .new: return "plus.magnifyingglass"
         case .pair: return "link"
         case .person: return "person"
         case .fading: return "moon.zzz"
