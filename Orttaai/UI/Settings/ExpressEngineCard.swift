@@ -3,14 +3,23 @@
 
 import SwiftUI
 
-/// Settings > Model > Speech: turns Express (Fluid Speech Mini) on and off.
-/// Shown only on macOS 15 and later.
+/// Settings > Model > Speech: the whole Express chain in one place, in the
+/// order it runs: the engine, Word Boost, then Polish. Polish is the app-wide
+/// text polish setting, not an Express copy of it. Shown only on macOS 15 and
+/// later.
 struct ExpressEngineCard: View {
     let controller: ExpressController
+    /// Opens Model > AI Features, where the polish model is chosen.
+    var onShowPolishSettings: (() -> Void)?
 
     @AppStorage("expressEngineEnabled") private var expressEngineEnabled = false
     @AppStorage("expressWordBoostEnabled") private var expressWordBoostEnabled = true
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
+    @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
+    @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
+    // Read so the polish footnote redraws when the model or provider changes.
+    @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma4:e2b"
+    @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
 
     private static let downloadSizeText = ByteCountFormatter.string(
         fromByteCount: ExpressModelStore.totalBytes,
@@ -44,6 +53,23 @@ struct ExpressEngineCard: View {
 
                 if let wordBoostStatus {
                     SettingsFootnote(wordBoostStatus)
+                }
+
+                SettingsRow(
+                    title: "Polish",
+                    info: "Cleans up punctuation, grammar and filler words with a local language model before the text is inserted. This is the same switch as Text Polish in AI Features, so it applies to Whisper dictations too."
+                ) {
+                    OrttaaiSwitch(title: "Polish", isOn: $localLLMPolishEnabled)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    SettingsFootnote(polishStatus)
+                    if let onShowPolishSettings {
+                        Button("Choose Model…", action: onShowPolishSettings)
+                            .buttonStyle(.plain)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.accent)
+                    }
                 }
 
                 progressView
@@ -105,6 +131,18 @@ struct ExpressEngineCard: View {
         case 1: return "Boosting 1 dictionary word."
         default: return "Boosting \(controller.boostedWordCount) dictionary words."
         }
+    }
+
+    private var polishStatus: String {
+        let settings = AppSettings()
+        let model = "\(settings.normalizedLocalLLMPolishModel) on \(settings.polishLLMProvider.displayName)"
+        guard localLLMPolishEnabled else {
+            return "Off. When on, polishes with \(model)."
+        }
+        if appleIntelligencePolishEnabled, AppleIntelligencePolishProcessor.isModelAvailable {
+            return "Polishes with \(model), then Apple Intelligence."
+        }
+        return "Polishes with \(model)."
     }
 
     private var canRemoveModel: Bool {

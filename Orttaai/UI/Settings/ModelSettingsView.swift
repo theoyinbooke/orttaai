@@ -132,7 +132,9 @@ struct ModelSettingsView: View {
             case .speech:
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     if ExpressEngine.isSupported, let express = ModelManager.shared?.express {
-                        ExpressEngineCard(controller: express)
+                        ExpressEngineCard(controller: express) {
+                            self.section = .ai
+                        }
                     }
                     modelSelectorCard
                     modelStorageCard
