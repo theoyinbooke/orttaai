@@ -1,0 +1,182 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "P0.4 real-voice corpus",
+  "corpus": "50 recordings of the developer reading record_real_corpus.py (391 s; 10 with another voice in the room, 5 with quiet endings). Audio is git-ignored; only scores are kept here.",
+  "hardware": "Apple M5 Max Mac Studio, macOS 27.0.1, wireless microphone",
+  "notes": [
+    "Whisper rows: production live path. Mini rows: whole-utterance decode, FluidAudio c79c410, CTC 110M Word Boost with the 36 bias terms.",
+    "About 16 words are wrong identically in turbo, Mini and small.en (read differently from the script, e.g. mum/mom, 6/six); they affect every row equally.",
+    "Mini number-group errors are all formatting (spelled-out phone numbers and amounts), not mishearing.",
+    "One Mini output contained <unk> for an apostrophe (I<unk>ll); apostrophes were correct in the other 7 references that have them.",
+    "The simulated word-list guard undid 6 boosts: 4 correct undos (code->Xcode, grab->GRDB, release->camelCase, Whisper->WhisperKit) and 2 wrong ones (upcast->appcast, common case->camelCase)."
+  ],
+  "results": {
+    "whisper_small_en": {
+      "aggregate_wer": 0.1944,
+      "total_errors": 145,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.3158,
+      "latency_ms_p50": 0.0,
+      "latency_ms_p90": 99,
+      "hallucination_item_ids": []
+    },
+    "whisper_small_en+dictionary": {
+      "aggregate_wer": 0.1649,
+      "total_errors": 123,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.4737,
+      "latency_ms_p50": 0.0,
+      "latency_ms_p90": 99,
+      "hallucination_item_ids": []
+    },
+    "whisper_turbo": {
+      "aggregate_wer": 0.1381,
+      "total_errors": 103,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.4035,
+      "latency_ms_p50": 571.5,
+      "latency_ms_p90": 815,
+      "hallucination_item_ids": []
+    },
+    "whisper_turbo+dictionary": {
+      "aggregate_wer": 0.1206,
+      "total_errors": 90,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.5088,
+      "latency_ms_p50": 571.5,
+      "latency_ms_p90": 815,
+      "hallucination_item_ids": []
+    },
+    "mini": {
+      "aggregate_wer": 0.1662,
+      "total_errors": 124,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.2807,
+      "latency_ms_p50": 39.0,
+      "latency_ms_p90": 42,
+      "hallucination_item_ids": []
+    },
+    "mini+dictionary": {
+      "aggregate_wer": 0.134,
+      "total_errors": 100,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.4912,
+      "latency_ms_p50": 39.0,
+      "latency_ms_p90": 42,
+      "hallucination_item_ids": []
+    },
+    "mini+word_boost": {
+      "aggregate_wer": 0.1046,
+      "total_errors": 78,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.8246,
+      "latency_ms_p50": 143.0,
+      "latency_ms_p90": 157,
+      "hallucination_item_ids": []
+    },
+    "mini+word_boost+dictionary": {
+      "aggregate_wer": 0.1046,
+      "total_errors": 78,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.8246,
+      "latency_ms_p50": 143.0,
+      "latency_ms_p90": 157,
+      "hallucination_item_ids": []
+    },
+    "mini+word_boost+guard_simulated": {
+      "aggregate_wer": 0.1032,
+      "total_errors": 77,
+      "total_ref_words": 746,
+      "hard_vocab_recall_strict": 0.7895,
+      "latency_ms_p50": 143.0,
+      "latency_ms_p90": 157,
+      "hallucination_item_ids": []
+    }
+  },
+  "by_group_errors": {
+    "real-pn": {
+      "words": 112,
+      "whisper_small_en": 30,
+      "whisper_small_en+dictionary": 30,
+      "whisper_turbo": 16,
+      "whisper_turbo+dictionary": 16,
+      "mini": 22,
+      "mini+dictionary": 20,
+      "mini+word_boost": 14,
+      "mini+word_boost+dictionary": 14,
+      "mini+word_boost+guard_simulated": 14
+    },
+    "real-tech": {
+      "words": 106,
+      "whisper_small_en": 37,
+      "whisper_small_en+dictionary": 20,
+      "whisper_turbo": 31,
+      "whisper_turbo+dictionary": 21,
+      "mini": 34,
+      "mini+dictionary": 19,
+      "mini+word_boost": 9,
+      "mini+word_boost+dictionary": 9,
+      "mini+word_boost+guard_simulated": 9
+    },
+    "real-num": {
+      "words": 68,
+      "whisper_small_en": 5,
+      "whisper_small_en+dictionary": 5,
+      "whisper_turbo": 2,
+      "whisper_turbo+dictionary": 2,
+      "mini": 12,
+      "mini+dictionary": 12,
+      "mini+word_boost": 12,
+      "mini+word_boost+dictionary": 12,
+      "mini+word_boost+guard_simulated": 12
+    },
+    "real-ev": {
+      "words": 52,
+      "whisper_small_en": 3,
+      "whisper_small_en+dictionary": 3,
+      "whisper_turbo": 3,
+      "whisper_turbo+dictionary": 3,
+      "mini": 2,
+      "mini+dictionary": 2,
+      "mini+word_boost": 2,
+      "mini+word_boost+dictionary": 2,
+      "mini+word_boost+guard_simulated": 2
+    },
+    "real-long": {
+      "words": 254,
+      "whisper_small_en": 39,
+      "whisper_small_en+dictionary": 36,
+      "whisper_turbo": 30,
+      "whisper_turbo+dictionary": 27,
+      "mini": 29,
+      "mini+dictionary": 26,
+      "mini+word_boost": 23,
+      "mini+word_boost+dictionary": 23,
+      "mini+word_boost+guard_simulated": 23
+    },
+    "real-bg": {
+      "words": 113,
+      "whisper_small_en": 23,
+      "whisper_small_en+dictionary": 21,
+      "whisper_turbo": 14,
+      "whisper_turbo+dictionary": 14,
+      "mini": 17,
+      "mini+dictionary": 13,
+      "mini+word_boost": 9,
+      "mini+word_boost+dictionary": 9,
+      "mini+word_boost+guard_simulated": 9
+    },
+    "real-soft": {
+      "words": 41,
+      "whisper_small_en": 8,
+      "whisper_small_en+dictionary": 8,
+      "whisper_turbo": 7,
+      "whisper_turbo+dictionary": 7,
+      "mini": 8,
+      "mini+dictionary": 8,
+      "mini+word_boost": 9,
+      "mini+word_boost+dictionary": 9,
+      "mini+word_boost+guard_simulated": 8
+    }
+  }
+}

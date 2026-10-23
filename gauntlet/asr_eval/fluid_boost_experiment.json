@@ -1,0 +1,99 @@
+{
+  "evaluated_at": "2026-10-22",
+  "hardware": "Apple M5 Max Mac Studio, 128 GB, macOS 27.0.1",
+  "fluidaudio": "FluidInference/FluidAudio@c79c410 (upstream main)",
+  "boost": "CTC vocabulary rescoring with parakeet-ctc-110m-coreml (99 MB), vocabulary = manifest bias_vocabulary (36 terms), VocabularyBoostingSession.itnDefaultConfig, margin 0.5 s",
+  "notes": [
+    "Whole-utterance decode on key release, Neural Engine warmed; boosted latency includes the CTC pass.",
+    "Fluid Speech Mini loaded through upstream FluidAudio as .ultra (joint aliased to JointDecisionv3); plain results match the altic-dev run (154 vs 156 errors).",
+    "Boost over-fire: clean 36 items improved, 1 worsened (pn-011: release -> camelCase); realistic 13 improved, 0 worsened.",
+    "Mini/Phonon-2 agreement is a weak confidence signal (clean: Mini WER 4.84% where they agree vs 5.21% where they differ); per-item oracle of the two is 4.22% clean.",
+    "Whisper baselines (fluid_speech_mini_comparison.json) carry no dictionary pass; turbo plus the app fuzzy dictionary is not yet measured."
+  ],
+  "results": {
+    "clean/mini/plain": {
+      "aggregate_wer": 0.0516,
+      "total_errors": 154,
+      "hard_vocab_recall_strict": 0.2405,
+      "hard_vocab_recall_lenient": 0.4684,
+      "latency_ms_p50": 38.0,
+      "latency_ms_p90": 121,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0
+    },
+    "clean/mini/boost": {
+      "aggregate_wer": 0.0285,
+      "total_errors": 85,
+      "hard_vocab_recall_strict": 0.8354,
+      "hard_vocab_recall_lenient": 0.8354,
+      "latency_ms_p50": 140.5,
+      "latency_ms_p90": 492,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0
+    },
+    "clean/phonon2/plain": {
+      "aggregate_wer": 0.0677,
+      "total_errors": 202,
+      "hard_vocab_recall_strict": 0.1899,
+      "hard_vocab_recall_lenient": 0.4684,
+      "latency_ms_p50": 37.0,
+      "latency_ms_p90": 121,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0
+    },
+    "clean/phonon2/boost": {
+      "aggregate_wer": 0.0412,
+      "total_errors": 123,
+      "hard_vocab_recall_strict": 0.8354,
+      "hard_vocab_recall_lenient": 0.8354,
+      "latency_ms_p50": 135.0,
+      "latency_ms_p90": 472,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0
+    },
+    "real/mini/plain": {
+      "aggregate_wer": 0.0531,
+      "total_errors": 109,
+      "hard_vocab_recall_strict": 0.225,
+      "hard_vocab_recall_lenient": 0.525,
+      "latency_ms_p50": 40.0,
+      "latency_ms_p90": 242,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0,
+      "soft_last_recall": 0.5
+    },
+    "real/mini/boost": {
+      "aggregate_wer": 0.0346,
+      "total_errors": 71,
+      "hard_vocab_recall_strict": 0.875,
+      "hard_vocab_recall_lenient": 0.875,
+      "latency_ms_p50": 148.5,
+      "latency_ms_p90": 1057,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0,
+      "soft_last_recall": 0.5
+    },
+    "real/phonon2/plain": {
+      "aggregate_wer": 0.0833,
+      "total_errors": 171,
+      "hard_vocab_recall_strict": 0.2,
+      "hard_vocab_recall_lenient": 0.525,
+      "latency_ms_p50": 45.0,
+      "latency_ms_p90": 292,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0,
+      "soft_last_recall": 1.0
+    },
+    "real/phonon2/boost": {
+      "aggregate_wer": 0.0613,
+      "total_errors": 126,
+      "hard_vocab_recall_strict": 0.875,
+      "hard_vocab_recall_lenient": 0.875,
+      "latency_ms_p50": 153.0,
+      "latency_ms_p90": 1061,
+      "hallucination_item_ids": [],
+      "junk_only_outputs": 0,
+      "soft_last_recall": 1.0
+    }
+  }
+}

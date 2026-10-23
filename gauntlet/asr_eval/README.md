@@ -156,3 +156,51 @@ See [the speech accuracy investigation](../../docs/speech-accuracy-investigation
 for the Accuracy preset correction, pause-aligned clipping, protection against
 empty speech commits, quiet-ending regression checks, and measured WER/latency
 comparisons. The live path still decodes without vocabulary prompt tokens.
+
+## Dictionary pass and Fluid Speech Mini (2026-10-23)
+
+`OrttaaiTests/Eval/DictionaryPassEvalTests.swift` runs saved decodes through the
+production `RuleBasedTextProcessor` with the manifest's `bias_vocabulary` as
+dictionary entries (only the dictionary stage: exact replacements, then the
+fuzzy matcher), writing `<input>_dict.json` for `score.py`:
+
+```bash
+env TEST_RUNNER_ORTTAAI_DICT_EVAL_MANIFEST=$PWD/gauntlet/asr_eval/corpus/manifest.json \
+  TEST_RUNNER_ORTTAAI_DICT_EVAL_IN=/tmp/raw_a.json,/tmp/raw_b.json \
+  xcodebuild -project Orttaai.xcodeproj -scheme Orttaai -destination 'platform=macOS' \
+  -only-testing:OrttaaiTests/DictionaryPassEvalTests test
+```
+
+`fluidbench/` decodes the corpora with Fluid Speech Mini (FluidAudio), plain and
+with CTC Word Boost. Results: `fluid_speech_mini_comparison.json` (models),
+`fluid_boost_experiment.json` (Word Boost, Phonon-2) and
+`fluid_dictionary_baseline.json` (every engine with the dictionary pass). With the
+dictionary, large-v3-turbo measured 2.68% clean / 2.24% realistic WER; Mini with
+Word Boost 2.85% / 3.46%, and 2.55% / 3.21% with a simulated real-word guard,
+with 84% / 88% hard-vocab recall against turbo's 62% / 68%.
+
+## Real-voice corpus (P0.4)
+
+`record_real_corpus.py` records 50 sentences in the user's own voice (names,
+identifiers, numbers, long passages, 10 with another voice in the room, 5 with a
+quiet ending) into `corpus_real/` with `manifest_real.json`, in the same schema
+and 16 kHz mono Float32 format as the synthetic corpora. `corpus_real/` is
+git-ignored: it is the user's voice. Takes are captured by `record_take.swift`
+(AVAudioEngine, compiled once into `corpus_real/.bin/`) from the Mac's current
+input device; ffmpeg is only used for level checks. Needs microphone access for
+the terminal.
+
+```bash
+python3 gauntlet/asr_eval/record_real_corpus.py list     # the script
+python3 gauntlet/asr_eval/record_real_corpus.py record   # guided, resumable
+python3 gauntlet/asr_eval/record_real_corpus.py status
+```
+
+Score it like the realistic corpus, passing
+`ORTTAAI_ASR_EVAL_MANIFEST=$PWD/gauntlet/asr_eval/corpus_real/manifest_real.json`
+to `run_eval.sh` and `--manifest` to `score.py`.
+
+Real-voice results (2026-10-23, `fluid_real_voice.json`, 50 recordings): Mini with
+Word Boost 10.46% WER and 82% hard-vocab recall at 143 ms p50, against
+large-v3-turbo with the dictionary pass at 12.06%, 51% and 572 ms. With another
+voice in the room: 8.0% against 12.4%.

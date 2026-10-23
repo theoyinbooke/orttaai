@@ -1,0 +1,176 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "P0.3 fair Whisper baseline",
+  "hardware": "Apple M5 Max Mac Studio, macOS 27.0.1",
+  "dictionary": "manifest bias_vocabulary (36 terms) saved as dictionary entries (source = target = term), run through the production RuleBasedTextProcessor with only the dictionary stage on (exact replacements, then FuzzyDictionaryMatcher; targets under 6 letters are skipped by design). OrttaaiTests/Eval/DictionaryPassEvalTests.swift.",
+  "guard_simulated": "Post-hoc on the saved decodes: undo a Word Boost edit when every word the decoder heard is in english-words.txt and the heard words do not spell the term with spaces and case removed (keeps camel case -> camelCase, undoes code -> Xcode). 14 of 95 edits undone.",
+  "notes": [
+    "Whisper rows: production live path. Mini rows: whole-utterance decode, FluidAudio c79c410.",
+    "The dictionary pass adds nothing on top of Word Boost (8 clean / 6 realistic texts changed, WER identical).",
+    "Remaining Express gap on the realistic set: number and date style (ten -> 10, the 3rd of March, 6.45 a.m.), dropped soft final words, genuine mishearings (countertop, autoscaler)."
+  ],
+  "results": {
+    "clean/whisper_small_en": {
+      "aggregate_wer": 0.0456,
+      "total_errors": 136,
+      "hard_vocab_recall_strict": 0.3291,
+      "latency_ms_p50": 178.0,
+      "latency_ms_p90": 283,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/whisper_small_en+dictionary": {
+      "aggregate_wer": 0.0302,
+      "total_errors": 90,
+      "hard_vocab_recall_strict": 0.5949,
+      "latency_ms_p50": 178.0,
+      "latency_ms_p90": 283,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/whisper_turbo": {
+      "aggregate_wer": 0.0382,
+      "total_errors": 114,
+      "hard_vocab_recall_strict": 0.4304,
+      "latency_ms_p50": 674.5,
+      "latency_ms_p90": 940,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/whisper_turbo+dictionary": {
+      "aggregate_wer": 0.0268,
+      "total_errors": 80,
+      "hard_vocab_recall_strict": 0.6203,
+      "latency_ms_p50": 674.5,
+      "latency_ms_p90": 940,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/mini": {
+      "aggregate_wer": 0.0516,
+      "total_errors": 154,
+      "hard_vocab_recall_strict": 0.2405,
+      "latency_ms_p50": 39.0,
+      "latency_ms_p90": 122,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/mini+dictionary": {
+      "aggregate_wer": 0.0402,
+      "total_errors": 120,
+      "hard_vocab_recall_strict": 0.443,
+      "latency_ms_p50": 39.0,
+      "latency_ms_p90": 122,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/mini+word_boost": {
+      "aggregate_wer": 0.0285,
+      "total_errors": 85,
+      "hard_vocab_recall_strict": 0.8354,
+      "latency_ms_p50": 139.0,
+      "latency_ms_p90": 481,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/mini+word_boost+dictionary": {
+      "aggregate_wer": 0.0285,
+      "total_errors": 85,
+      "hard_vocab_recall_strict": 0.8354,
+      "latency_ms_p50": 139.0,
+      "latency_ms_p90": 481,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "clean/mini+word_boost+guard_simulated": {
+      "aggregate_wer": 0.0255,
+      "total_errors": 76,
+      "hard_vocab_recall_strict": 0.8354,
+      "latency_ms_p50": 139.0,
+      "latency_ms_p90": 481,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "real/whisper_small_en": {
+      "aggregate_wer": 0.0721,
+      "total_errors": 148,
+      "hard_vocab_recall_strict": 0.475,
+      "latency_ms_p50": 152.0,
+      "latency_ms_p90": 345,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "real/whisper_small_en+dictionary": {
+      "aggregate_wer": 0.0618,
+      "total_errors": 127,
+      "hard_vocab_recall_strict": 0.7,
+      "latency_ms_p50": 152.0,
+      "latency_ms_p90": 345,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "real/whisper_turbo": {
+      "aggregate_wer": 0.0351,
+      "total_errors": 72,
+      "hard_vocab_recall_strict": 0.4,
+      "latency_ms_p50": 628.0,
+      "latency_ms_p90": 1264,
+      "junk_only_outputs": 2,
+      "hallucination_item_ids": []
+    },
+    "real/whisper_turbo+dictionary": {
+      "aggregate_wer": 0.0224,
+      "total_errors": 46,
+      "hard_vocab_recall_strict": 0.675,
+      "latency_ms_p50": 628.0,
+      "latency_ms_p90": 1264,
+      "junk_only_outputs": 2,
+      "hallucination_item_ids": []
+    },
+    "real/mini": {
+      "aggregate_wer": 0.0531,
+      "total_errors": 109,
+      "hard_vocab_recall_strict": 0.225,
+      "latency_ms_p50": 41.0,
+      "latency_ms_p90": 243,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "real/mini+dictionary": {
+      "aggregate_wer": 0.0409,
+      "total_errors": 84,
+      "hard_vocab_recall_strict": 0.5,
+      "latency_ms_p50": 41.0,
+      "latency_ms_p90": 243,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "real/mini+word_boost": {
+      "aggregate_wer": 0.0346,
+      "total_errors": 71,
+      "hard_vocab_recall_strict": 0.875,
+      "latency_ms_p50": 152.0,
+      "latency_ms_p90": 1082,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "real/mini+word_boost+dictionary": {
+      "aggregate_wer": 0.0346,
+      "total_errors": 71,
+      "hard_vocab_recall_strict": 0.875,
+      "latency_ms_p50": 152.0,
+      "latency_ms_p90": 1082,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    },
+    "real/mini+word_boost+guard_simulated": {
+      "aggregate_wer": 0.0321,
+      "total_errors": 66,
+      "hard_vocab_recall_strict": 0.875,
+      "latency_ms_p50": 152.0,
+      "latency_ms_p90": 1082,
+      "junk_only_outputs": 0,
+      "hallucination_item_ids": []
+    }
+  }
+}

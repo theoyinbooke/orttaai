@@ -1,0 +1,189 @@
+{
+  "evaluated_at": "2026-10-22",
+  "hardware": "Apple M5 Max Mac Studio, 128 GB, macOS 27.0.1",
+  "configuration": "Release (CODE_SIGNING_ALLOWED=NO), cpuAndNeuralEngine, preset balanced, language en, speedup 4",
+  "notes": [
+    "Whisper rows use the production live path (ASREvalRunnerTests). Parakeet rows are a whole-utterance FluidAudio decode on key release (FluidAudio altic-dev/FluidAudio@7d44355), timed after Neural Engine warm-up; that is what a Parakeet engine would do on release.",
+    "Corpus is synthetic macOS say speech; Fluid Speech Mini claims its edge on real recordings with other voices in the room, which this corpus does not exercise.",
+    "formatting_neutral_wer re-scores every model after mapping 3.30->3:30, p.m.->pm and removing intra-word hyphens."
+  ],
+  "models": {
+    "whisper_small_en": {
+      "clean": {
+        "aggregate_wer": 0.0456,
+        "total_errors": 136,
+        "hard_vocab_recall_strict": 0.3291,
+        "hard_vocab_recall_lenient": 0.5823,
+        "latency_ms_p50": 182.5,
+        "latency_ms_p90": 282,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0,
+        "formatting_neutral_wer": 0.0489
+      },
+      "real": {
+        "aggregate_wer": 0.0721,
+        "total_errors": 148,
+        "hard_vocab_recall_strict": 0.475,
+        "hard_vocab_recall_lenient": 0.675,
+        "latency_ms_p50": 158.0,
+        "latency_ms_p90": 430,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0,
+        "soft_last": {
+          "items": 6,
+          "last_word_recall_strict": 0.8333,
+          "last_word_recall_lenient": 0.8333,
+          "missed_item_ids": [
+            "soft-last-04"
+          ]
+        },
+        "formatting_neutral_wer": 0.0711
+      },
+      "disk_mb": 464
+    },
+    "whisper_large_v3_turbo": {
+      "clean": {
+        "aggregate_wer": 0.0382,
+        "total_errors": 114,
+        "hard_vocab_recall_strict": 0.4304,
+        "hard_vocab_recall_lenient": 0.6203,
+        "latency_ms_p50": 684.5,
+        "latency_ms_p90": 898,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0,
+        "formatting_neutral_wer": 0.0362
+      },
+      "real": {
+        "aggregate_wer": 0.0351,
+        "total_errors": 72,
+        "hard_vocab_recall_strict": 0.4,
+        "hard_vocab_recall_lenient": 0.65,
+        "latency_ms_p50": 636.0,
+        "latency_ms_p90": 1034,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 2,
+        "trailing_stock_phrase": 0,
+        "soft_last": {
+          "items": 6,
+          "last_word_recall_strict": 0.8333,
+          "last_word_recall_lenient": 0.8333,
+          "missed_item_ids": [
+            "soft-last-04"
+          ]
+        },
+        "formatting_neutral_wer": 0.038
+      },
+      "disk_mb": 1536
+    },
+    "whisper_large_v3": {
+      "clean": {
+        "aggregate_wer": 0.0405,
+        "total_errors": 121,
+        "hard_vocab_recall_strict": 0.4051,
+        "hard_vocab_recall_lenient": 0.5949,
+        "latency_ms_p50": 1279.0,
+        "latency_ms_p90": 2326,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0,
+        "formatting_neutral_wer": 0.0412
+      },
+      "real": {
+        "aggregate_wer": 0.0399,
+        "total_errors": 82,
+        "hard_vocab_recall_strict": 0.375,
+        "hard_vocab_recall_lenient": 0.625,
+        "latency_ms_p50": 1501.0,
+        "latency_ms_p90": 2262,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 2,
+        "trailing_stock_phrase": 0,
+        "soft_last": {
+          "items": 6,
+          "last_word_recall_strict": 0.8333,
+          "last_word_recall_lenient": 0.8333,
+          "missed_item_ids": [
+            "soft-last-04"
+          ]
+        },
+        "formatting_neutral_wer": 0.0428
+      },
+      "disk_mb": 2970
+    },
+    "fluid_speech_mini": {
+      "clean": {
+        "aggregate_wer": 0.0523,
+        "total_errors": 156,
+        "hard_vocab_recall_strict": 0.2405,
+        "hard_vocab_recall_lenient": 0.4684,
+        "latency_ms_p50": 37.0,
+        "latency_ms_p90": 148,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0,
+        "formatting_neutral_wer": 0.0506
+      },
+      "real": {
+        "aggregate_wer": 0.0516,
+        "total_errors": 106,
+        "hard_vocab_recall_strict": 0.225,
+        "hard_vocab_recall_lenient": 0.525,
+        "latency_ms_p50": 40.0,
+        "latency_ms_p90": 275,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0,
+        "soft_last": {
+          "items": 6,
+          "last_word_recall_strict": 0.5,
+          "last_word_recall_lenient": 0.5,
+          "missed_item_ids": [
+            "soft-last-04",
+            "soft-last-05",
+            "soft-last-06"
+          ]
+        },
+        "formatting_neutral_wer": 0.0526
+      },
+      "disk_mb": 244
+    },
+    "parakeet_tdt_v3": {
+      "clean": {
+        "aggregate_wer": 0.0523,
+        "total_errors": 156,
+        "hard_vocab_recall_strict": 0.2405,
+        "hard_vocab_recall_lenient": 0.4937,
+        "latency_ms_p50": 36.0,
+        "latency_ms_p90": 150,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 0,
+        "trailing_stock_phrase": 0,
+        "formatting_neutral_wer": 0.0533
+      },
+      "real": {
+        "aggregate_wer": 0.0526,
+        "total_errors": 108,
+        "hard_vocab_recall_strict": 0.25,
+        "hard_vocab_recall_lenient": 0.525,
+        "latency_ms_p50": 40.0,
+        "latency_ms_p90": 278,
+        "hallucination_item_ids": [],
+        "junk_only_outputs": 1,
+        "trailing_stock_phrase": 0,
+        "soft_last": {
+          "items": 6,
+          "last_word_recall_strict": 0.8333,
+          "last_word_recall_lenient": 0.8333,
+          "missed_item_ids": [
+            "soft-last-04"
+          ]
+        },
+        "formatting_neutral_wer": 0.0536
+      },
+      "disk_mb": 461
+    }
+  }
+}

@@ -19,3 +19,6 @@ DerivedData/
 
 # Generated realistic ASR eval corpus (rebuilt by build_realistic_corpus.py)
 /gauntlet/asr_eval/corpus_realistic/
+
+# Real-voice ASR eval recordings (the user's own voice — never commit)
+/gauntlet/asr_eval/corpus_real/
