@@ -10,7 +10,9 @@ import XCTest
 
 @MainActor
 final class ModelLaunchSafetyTests: XCTestCase {
-    private let savedKeys = ["selectedModelId", "activeModelId", "dictationLanguage"]
+    // The test host shares defaults with the Debug app, where Express may be
+    // on; these tests load Whisper models.
+    private let savedKeys = ["selectedModelId", "activeModelId", "dictationLanguage", "expressEngineEnabled"]
     private var savedDefaults: [String: Any] = [:]
 
     override func setUp() {
@@ -20,6 +22,7 @@ final class ModelLaunchSafetyTests: XCTestCase {
                 snapshot[key] = value
             }
         }
+        UserDefaults.standard.removeObject(forKey: "expressEngineEnabled")
     }
 
     override func tearDown() {

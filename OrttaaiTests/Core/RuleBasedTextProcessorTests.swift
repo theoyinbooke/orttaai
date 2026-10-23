@@ -36,6 +36,8 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         settings.fuzzyDictionaryEnabled = true
         settings.disfluencyCleanupEnabled = true
         settings.dictationLanguage = "en"
+        // The test host shares the Debug app's defaults, where this may be on.
+        settings.lowLatencyModeEnabled = false
         processor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
     }
 

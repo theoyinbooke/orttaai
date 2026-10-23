@@ -301,7 +301,12 @@ final class DictationCoordinatorTests: XCTestCase {
         "handsFreeSilenceStopSeconds",
         "handsFreeMaxRecordingDuration",
         "editCommandsEnabled",
-        "vocabularyBiasEnabled"
+        "vocabularyBiasEnabled",
+        // The test host shares defaults with the Debug app, where Express
+        // may be on; these tests drive the Whisper path.
+        "expressEngineEnabled",
+        "expressWordBoostEnabled",
+        "learnFromEditsEnabled"
     ]
     /// Deterministic gesture clock. Recording durations still use real time;
     /// only tap/hold disambiguation reads this.
