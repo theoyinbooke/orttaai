@@ -696,3 +696,36 @@ final class PassthroughProcessor: TextProcessor {
         true
     }
 }
+
+extension RuleBasedTextProcessor: WordBoostVocabularyProviding {
+    /// Active dictionary targets for Express's Word Boost, each with the
+    /// spellings the user mapped to it as aliases. Snippet triggers are left
+    /// out: they are phrases to expand, not words the recognizer should write.
+    func wordBoostTerms() -> [WordBoostTerm] {
+        guard let rules = try? loadActiveRulesIfNeeded() else { return [] }
+        return Self.wordBoostTerms(from: rules.dictionaryEntries)
+    }
+
+    nonisolated static func wordBoostTerms(from entries: [DictionaryEntry]) -> [WordBoostTerm] {
+        var order: [String] = []
+        var targets: [String: String] = [:]
+        var aliases: [String: [String]] = [:]
+        for entry in entries where entry.isActive {
+            let target = entry.target.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !target.isEmpty else { continue }
+            let key = target.lowercased()
+            if targets[key] == nil {
+                targets[key] = target
+                order.append(key)
+            }
+            let source = entry.source.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !source.isEmpty, source.lowercased() != key,
+               !(aliases[key] ?? []).contains(where: { $0.lowercased() == source.lowercased() }) {
+                aliases[key, default: []].append(source)
+            }
+        }
+        return order.compactMap { key in
+            targets[key].map { WordBoostTerm(text: $0, aliases: aliases[key] ?? []) }
+        }
+    }
+}

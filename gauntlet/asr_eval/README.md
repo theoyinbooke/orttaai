@@ -222,3 +222,13 @@ is missing:
 points on the synthetic corpora; the real-voice set is 0.40 points better
 because of the `<unk>` apostrophe cleanup. Word Boost is not in the app yet
 (tracker Phase 2).
+
+## Word Boost (Phase 2)
+
+With `ORTTAAI_ASR_EVAL_BIAS=1`, a `fluid-speech-mini` run passes the manifest's
+`bias_vocabulary` to Express's Word Boost. `word_boost_guard.json` holds the
+134 replacements FluidAudio's rescorer proposed across the three corpora, with
+the acoustic margins `WordBoostGuard` was fitted on (keeps 103 of 104 correct
+ones, none of the 30 wrong ones). `express_word_boost_eval.json` (2026-10-23):
+2.41% clean, 3.02% realistic and 9.25% real-voice WER with 84% / 90% / 81%
+hard-vocab recall, and no dictionary term inserted where the reference lacks it.

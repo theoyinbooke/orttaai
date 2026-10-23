@@ -27,6 +27,11 @@ final class ExpressController {
     private(set) var status: ExpressStatus
     /// Set when a dictation could not load Express and used Whisper instead.
     private(set) var fallbackMessage: String?
+    /// Dictionary words Word Boost is using, as of the last refresh.
+    private(set) var boostedWordCount = 0
+    /// The Personal Memory dictionary as Word Boost terms. Set by the app
+    /// once the text processor exists; empty until then.
+    var wordBoostVocabulary: () -> [WordBoostTerm] = { [] }
 
     private let transcriptionService: TranscriptionService
     private let settings: AppSettings
@@ -71,6 +76,18 @@ final class ExpressController {
         let installed = await isInstalled()
         let loaded = await transcriptionService.loadedModelID() == ExpressEngine.modelID
         status = loaded ? .active : (installed ? .installed : .notInstalled)
+        if loaded {
+            await applyWordBoostVocabulary()
+        }
+    }
+
+    /// Sends the current dictionary to Word Boost (or nothing when it is off)
+    /// and records how many words it took. Dictation refreshes the same
+    /// vocabulary at the start of every session.
+    func applyWordBoostVocabulary() async {
+        let terms = settings.expressWordBoostEnabled ? wordBoostVocabulary() : []
+        await transcriptionService.setWordBoostVocabulary(terms)
+        boostedWordCount = await transcriptionService.wordBoostTermCount
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -90,7 +107,12 @@ final class ExpressController {
         fallbackMessage = nil
     }
 
-    /// Deletes the model package (253 MB). Turns Express off first.
+    func setWordBoostEnabled(_ enabled: Bool) {
+        settings.expressWordBoostEnabled = enabled
+        Task { await applyWordBoostVocabulary() }
+    }
+
+    /// Deletes the model packages. Turns Express off first.
     func removeModel() {
         changeTask?.cancel()
         changeTask = Task { [weak self] in
@@ -115,7 +137,7 @@ final class ExpressController {
                 status = .downloading(progress: 0)
                 let access = try await locator.beginAccess(createIfNeeded: true, requiresWrite: true)
                 let throttle = ProgressThrottle()
-                try await ExpressModelStore.install(into: access.url) { fraction in
+                try await ExpressModelStore.installMissing(into: access.url) { fraction in
                     guard throttle.shouldReport(fraction) else { return }
                     Task { @MainActor [weak self] in
                         guard let self, case .downloading = self.status else { return }
@@ -132,6 +154,7 @@ final class ExpressController {
             status = .loading
             await settings.syncTranscriptionSettings(to: transcriptionService)
             try await transcriptionService.loadModel(named: ExpressEngine.modelID)
+            await applyWordBoostVocabulary()
             await transcriptionService.warmUp()
             status = .active
             Logger.model.info("Express is the dictation engine")
@@ -172,7 +195,9 @@ final class ExpressController {
             return false
         }
         let storageBase = access.url
-        return await locator.probe { ExpressModelStore.isInstalled(in: storageBase) } ?? false
+        return await locator.probe {
+            ExpressModelStore.packages.allSatisfy { ExpressModelStore.isInstalled($0, in: storageBase) }
+        } ?? false
     }
 }
 

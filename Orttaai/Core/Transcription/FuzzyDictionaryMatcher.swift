@@ -10,7 +10,7 @@ import os
 /// documented in scripts/build_english_wordlist.py (public-domain Webster's
 /// Second, trimmed, plus a few modern words). Inflected forms are not listed:
 /// lookups strip common suffixes instead.
-enum EnglishLexicon {
+nonisolated enum EnglishLexicon {
     private final class BundleToken {}
 
     private static let words: Set<String> = {

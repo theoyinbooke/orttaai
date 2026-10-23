@@ -291,6 +291,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 coord.recordingEndSink = { traceLog.record($0) }
             }
             let mm = ModelManager(transcriptionService: transcription, settings: settings)
+            mm.express.wordBoostVocabulary = { [weak baseTextProcessor] in
+                baseTextProcessor?.wordBoostTerms() ?? []
+            }
             modelManager = mm
             ModelManager.shared = mm
 

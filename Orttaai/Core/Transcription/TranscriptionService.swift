@@ -17,12 +17,19 @@ protocol Transcribing: Actor {
     func cancelLiveTranscriptionSession()
     func setLiveTranscriptEventHandler(_ handler: (@Sendable (LiveTranscriptEvent) -> Void)?)
     func setVocabularyBias(terms: [String])
+    /// Express's Word Boost vocabulary; an empty list turns boosting off.
+    func setWordBoostVocabulary(_ terms: [WordBoostTerm]) async
     func updateSettings(
         language: String,
         computeMode: String,
         lowLatencyMode: Bool,
         decodingPreferences: DecodingPreferences
     )
+}
+
+extension Transcribing {
+    /// Engines without Word Boost ignore the vocabulary.
+    func setWordBoostVocabulary(_ terms: [WordBoostTerm]) async {}
 }
 
 enum SetupModelLoadStage: Sendable {
@@ -34,9 +41,10 @@ actor TranscriptionService: Transcribing {
     /// Creates the WhisperKit pipeline for a configuration. A seam so tests can
     /// observe loads without Core ML models.
     typealias WhisperKitFactory = @Sendable (WhisperKitConfig) async throws -> WhisperKit
-    /// Loads the Express model package from its installed folder. A seam for
-    /// the same reason.
-    typealias ExpressBackendFactory = @Sendable (URL) async throws -> any ExpressBackend
+    /// Loads the Express model package from its installed folder, with the
+    /// Word Boost folder when that package is installed. A seam for the same
+    /// reason.
+    typealias ExpressBackendFactory = @Sendable (URL, URL?) async throws -> any ExpressBackend
 
     private struct InFlightLoad {
         let id: UUID
@@ -118,6 +126,10 @@ actor TranscriptionService: Transcribing {
     /// Set instead of `whisperKit` while `ExpressEngine.modelID` is loaded.
     /// Only one engine is resident at a time.
     private var expressBackend: (any ExpressBackend)?
+    /// The latest Word Boost vocabulary, re-applied whenever Express loads.
+    private var wordBoostTerms: [WordBoostTerm] = []
+    /// Terms the loaded Express backend is boosting (0 without Word Boost).
+    private(set) var wordBoostTermCount = 0
     private var loadedModelIDValue: String?
     /// The model load in progress. Concurrent requests for the same model
     /// (warm-up and the first finalization) share it instead of loading twice.
@@ -288,21 +300,35 @@ actor TranscriptionService: Transcribing {
         guard installed else {
             throw ModelLoadError.modelFilesNotFound(modelID: ExpressEngine.modelID)
         }
+        let wordBoostInstalled = await modelLocator.probe({
+            ExpressModelStore.isInstalled(ExpressModelStore.wordBoost, in: storageBase)
+        }) ?? false
 
-        let backend = try await expressBackendFactory(ExpressModelStore.folder(in: storageBase))
+        let backend = try await expressBackendFactory(
+            ExpressModelStore.folder(for: ExpressModelStore.speech, in: storageBase),
+            wordBoostInstalled ? ExpressModelStore.folder(for: ExpressModelStore.wordBoost, in: storageBase) : nil
+        )
         expressBackend = backend
         whisperKit = nil
         loadedModelIDValue = ExpressEngine.modelID
         modelStorageAccess = access
+        wordBoostTermCount = await backend.setWordBoost(wordBoostTerms)
         Logger.transcription.info("Model loaded: \(ExpressEngine.modelID)")
     }
 
     @Sendable
-    static func loadExpressTranscriber(from folder: URL) async throws -> any ExpressBackend {
+    static func loadExpressTranscriber(from folder: URL, wordBoostFolder: URL?) async throws -> any ExpressBackend {
         guard #available(macOS 15, *) else {
             throw ModelLoadError.modelFilesNotFound(modelID: ExpressEngine.modelID)
         }
-        return try await ExpressTranscriber.load(from: folder)
+        return try await ExpressTranscriber.load(from: folder, wordBoostFolder: wordBoostFolder)
+    }
+
+    func setWordBoostVocabulary(_ terms: [WordBoostTerm]) async {
+        wordBoostTerms = terms
+        if let expressBackend {
+            wordBoostTermCount = await expressBackend.setWordBoost(terms)
+        }
     }
 
     /// The root WhisperKit should resolve the tokenizer from; see
@@ -726,6 +752,7 @@ actor TranscriptionService: Transcribing {
     func unloadModel() {
         whisperKit = nil
         expressBackend = nil
+        wordBoostTermCount = 0
         loadedModelIDValue = nil
         modelStorageAccess = nil
         Logger.transcription.info("Model unloaded")

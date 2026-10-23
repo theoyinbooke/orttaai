@@ -9,6 +9,7 @@ struct ExpressEngineCard: View {
     let controller: ExpressController
 
     @AppStorage("expressEngineEnabled") private var expressEngineEnabled = false
+    @AppStorage("expressWordBoostEnabled") private var expressWordBoostEnabled = true
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
 
     private static let downloadSizeText = ByteCountFormatter.string(
@@ -30,8 +31,20 @@ struct ExpressEngineCard: View {
                 }
 
                 SettingsFootnote(
-                    "English only. Downloads \(Self.downloadSizeText) once and uses about 280 MB of memory while it's the active engine."
+                    "English only. Downloads \(Self.downloadSizeText) once: the speech model and the Word Boost model."
                 )
+
+                SettingsRow(
+                    title: "Word Boost",
+                    info: "Checks the words in your Memory dictionary against the audio, so names and terms come out spelled your way. Ordinary words are only replaced when the audio clearly supports it."
+                ) {
+                    OrttaaiSwitch(title: "Word Boost", isOn: wordBoostBinding)
+                        .disabled(!expressEngineEnabled || controller.isBusy)
+                }
+
+                if let wordBoostStatus {
+                    SettingsFootnote(wordBoostStatus)
+                }
 
                 progressView
 
@@ -62,7 +75,7 @@ struct ExpressEngineCard: View {
                     .padding(.top, Spacing.xs)
                 }
 
-                SettingsFootnote("\(ExpressEngine.attribution) (CC BY 4.0), built on NVIDIA Parakeet TDT 0.6B v3.")
+                SettingsFootnote("\(ExpressEngine.attribution) (CC BY 4.0), built on NVIDIA Parakeet TDT 0.6B v3. Word Boost uses NVIDIA Parakeet CTC 110M (CC BY 4.0).")
                     .padding(.top, Spacing.xs)
             }
         }
@@ -76,6 +89,22 @@ struct ExpressEngineCard: View {
             get: { expressEngineEnabled },
             set: { controller.setEnabled($0) }
         )
+    }
+
+    private var wordBoostBinding: Binding<Bool> {
+        Binding(
+            get: { expressWordBoostEnabled },
+            set: { controller.setWordBoostEnabled($0) }
+        )
+    }
+
+    private var wordBoostStatus: String? {
+        guard expressEngineEnabled, expressWordBoostEnabled, case .active = controller.status else { return nil }
+        switch controller.boostedWordCount {
+        case 0: return "Add words in Memory > Dictionary and Word Boost will listen for them."
+        case 1: return "Boosting 1 dictionary word."
+        default: return "Boosting \(controller.boostedWordCount) dictionary words."
+        }
     }
 
     private var canRemoveModel: Bool {

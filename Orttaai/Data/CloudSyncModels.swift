@@ -240,7 +240,8 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     // selectedModelId, activeModelId, selectedAudioDeviceID, computeMode,
     // decodingWorkerCount, lowLatencyModeEnabled, fastFirstRecommendedModelId,
     // fastFirstPrefetchStarted/Ready/ErrorMessage, localLLMPolishModel,
-    // localLLMInsightsModel, semanticEmbeddingModel, expressEngineEnabled.
+    // localLLMInsightsModel, semanticEmbeddingModel, expressEngineEnabled,
+    // expressWordBoostEnabled.
     // "polishModeEnabled" was removed in 1.7: it was an orphaned key that
     // synced but controlled nothing. Polish is governed solely by
     // "localLLMPolishEnabled"; AppSettings deletes the stale key at launch.

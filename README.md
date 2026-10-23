@@ -166,6 +166,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — On-device speech recognition
 - [Fluid Speech Mini by FluidVoice](https://huggingface.co/FluidVoice-Labs/fluid-speech-mini-coreml) — The Express speech model (CC BY 4.0), built on [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
+- [Parakeet CTC 110M](https://huggingface.co/FluidInference/parakeet-ctc-110m-coreml) — The Express Word Boost model by NVIDIA (CC BY 4.0), converted to Core ML by FluidInference
 - [FluidAudio](https://github.com/FluidInference/FluidAudio) — Runs Fluid Speech Mini on the Neural Engine (Apache 2.0)
 - [Apple Foundation Models](https://developer.apple.com/documentation/foundationmodels) — On-device language analysis for memory suggestions and writing insights
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — SQLite database toolkit

@@ -32,6 +32,7 @@
 //   ORTTAAI_ASR_EVAL_PATHS        both|whole|live (default both)
 //   ORTTAAI_ASR_EVAL_IDS          comma-separated item subset
 //   ORTTAAI_ASR_EVAL_BIAS         1 to snapshot the manifest's bias_vocabulary
+//                                 (for fluid-speech-mini: the Word Boost vocabulary)
 //   ORTTAAI_ASR_EVAL_MODEL_ROOT   a storage base laid out like WhisperKit's (models/argmaxinc/whisperkit-coreml/<variant>,
 //                                 models/openai/whisper-*); loads from there instead of scanning ~/Documents, the custom
 //                                 storage folder and the caches, so the eval never triggers a macOS folder-access prompt
@@ -151,10 +152,15 @@ final class ASREvalRunnerTests: XCTestCase {
             // Express goes through the same installer Settings uses, into the
             // eval's storage base, so the run also checks the pinned download.
             let base = URL(fileURLWithPath: rootPath, isDirectory: true)
-            if !ExpressModelStore.isInstalled(in: base) {
+            if !ExpressModelStore.packages.allSatisfy({ ExpressModelStore.isInstalled($0, in: base) }) {
                 print("ASR-EVAL: installing \(ExpressEngine.displayName) into \(rootPath)")
-                try await ExpressModelStore.install(into: base) { _ in }
+                try await ExpressModelStore.installMissing(into: base) { _ in }
             }
+        }
+        if biasEnabled {
+            // Express's Word Boost takes the same manifest vocabulary as the
+            // simulated user dictionary; WhisperKit ignores it.
+            await service.setWordBoostVocabulary(manifest.bias_vocabulary.map { WordBoostTerm(text: $0, aliases: []) })
         }
 
         print("ASR-EVAL: loading model \(modelName)")

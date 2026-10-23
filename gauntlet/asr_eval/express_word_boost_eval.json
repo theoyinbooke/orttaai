@@ -1,0 +1,90 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "P2.5 Word Boost gate through the production Express path",
+  "setup": "ASREvalRunnerTests, ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini, ORTTAAI_ASR_EVAL_BIAS=1 (36-term vocabulary as Word Boost terms), both packages installed by ExpressModelStore from an empty folder, Release, Apple M5 Max",
+  "comparison": {
+    "whisper_turbo_with_dictionary": {
+      "clean": 0.0268,
+      "realistic": 0.0224,
+      "real_voice": 0.1206
+    },
+    "unguarded_boost_harness": {
+      "clean": 0.0285,
+      "realistic": 0.0346,
+      "real_voice": 0.1046
+    }
+  },
+  "wrong_term_insertions": 0,
+  "notes": [
+    "No dictionary term was inserted where the reference lacks it, on any corpus.",
+    "Realistic p90 finalize is 1.02 s whole / 1.05 s live, from the 45-95 s noisy recordings."
+  ],
+  "results": {
+    "clean": {
+      "whole": {
+        "aggregate_wer": 0.0241,
+        "total_errors": 72,
+        "total_ref_words": 2985,
+        "hard_vocab_recall_strict": 0.8354,
+        "latency_ms_p50": 133.0,
+        "latency_ms_p90": 469,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      },
+      "live": {
+        "aggregate_wer": 0.0241,
+        "total_errors": 72,
+        "total_ref_words": 2985,
+        "hard_vocab_recall_strict": 0.8354,
+        "latency_ms_p50": 191.5,
+        "latency_ms_p90": 503,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      }
+    },
+    "realistic": {
+      "whole": {
+        "aggregate_wer": 0.0302,
+        "total_errors": 62,
+        "total_ref_words": 2054,
+        "hard_vocab_recall_strict": 0.9,
+        "latency_ms_p50": 142.5,
+        "latency_ms_p90": 1023,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      },
+      "live": {
+        "aggregate_wer": 0.0302,
+        "total_errors": 62,
+        "total_ref_words": 2054,
+        "hard_vocab_recall_strict": 0.9,
+        "latency_ms_p50": 161.5,
+        "latency_ms_p90": 1049,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      }
+    },
+    "real_voice": {
+      "whole": {
+        "aggregate_wer": 0.0925,
+        "total_errors": 69,
+        "total_ref_words": 746,
+        "hard_vocab_recall_strict": 0.807,
+        "latency_ms_p50": 138.5,
+        "latency_ms_p90": 158,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      },
+      "live": {
+        "aggregate_wer": 0.0925,
+        "total_errors": 69,
+        "total_ref_words": 746,
+        "hard_vocab_recall_strict": 0.807,
+        "latency_ms_p50": 160.0,
+        "latency_ms_p90": 176,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      }
+    }
+  }
+}

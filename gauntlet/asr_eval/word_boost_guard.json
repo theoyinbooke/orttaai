@@ -1,0 +1,1231 @@
+{
+ "collected": "2026-10-23",
+ "source": "FluidAudio c79c410 ctcTokenEvaluateCandidates over Fluid Speech Mini decodes of the clean, realistic and real-voice corpora, vocabulary = the 36 bias terms",
+ "labeling": "right when the term occurs in the reference and the heard phrase does not; wrong when the term is absent from the reference; ambiguous otherwise",
+ "rules": {
+  "spelled_out": "letters equal, or within 2 edits when the term has 12+ letters: keep",
+  "drops_words": "term words a strict subset of heard words: reject",
+  "margin_floor": -4.0,
+  "ordinary_words_margin": -0.75
+ },
+ "result": {
+  "applied_by_fluidaudio": 134,
+  "right": 104,
+  "wrong": 27,
+  "ambiguous": 3,
+  "kept_right": 103,
+  "kept_wrong": 0,
+  "kept_ambiguous": 0,
+  "lost_right": [
+   "upcast -> appcast (real voice, margin -2.04)"
+  ]
+ },
+ "candidates": [
+  {
+   "corpus": "clean",
+   "id": "pn-001",
+   "heard": "Alan Ruaju",
+   "term": "Olanrewaju",
+   "margin": -0.799,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-002",
+   "heard": "Oenbook",
+   "term": "Oyinbooke",
+   "margin": 0.665,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-003",
+   "heard": "Debao",
+   "term": "Adebayo",
+   "margin": -1.107,
+   "similarity": 0.714,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-004",
+   "heard": "Tematope",
+   "term": "Temitope",
+   "margin": 0.272,
+   "similarity": 0.875,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-005",
+   "heard": "Folosiday",
+   "term": "Folasade",
+   "margin": -1.432,
+   "similarity": 0.556,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-007",
+   "heard": "Chimmamanda",
+   "term": "Chimamanda",
+   "margin": 0.035,
+   "similarity": 0.909,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-008",
+   "heard": "Gozi",
+   "term": "Ngozi",
+   "margin": 0.366,
+   "similarity": 0.8,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-009",
+   "heard": "Aluwa soon",
+   "term": "Oluwaseun",
+   "margin": -2.08,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-011",
+   "heard": "release.",
+   "term": "camelCase",
+   "margin": -4.226,
+   "similarity": 0.556,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-012",
+   "heard": "Tematope",
+   "term": "Temitope",
+   "margin": 0.165,
+   "similarity": 0.875,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-013",
+   "heard": "Gozi",
+   "term": "Ngozi",
+   "margin": -1.483,
+   "similarity": 0.8,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-014",
+   "heard": "Alu Wassoon",
+   "term": "Oluwaseun",
+   "margin": -0.076,
+   "similarity": 0.6,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-015",
+   "heard": "Jim Amanda",
+   "term": "Chimamanda",
+   "margin": 0.891,
+   "similarity": 0.8,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "pn-016",
+   "heard": "Alan Yuaju",
+   "term": "Olanrewaju",
+   "margin": -0.434,
+   "similarity": 0.6,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-001",
+   "heard": "use effect callback",
+   "term": "useEffectCallback",
+   "margin": -1.434,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-002",
+   "heard": "Whisper kit",
+   "term": "WhisperKit",
+   "margin": 0.389,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-002",
+   "heard": "decoding option",
+   "term": "DecodingOptions",
+   "margin": -1.884,
+   "similarity": 0.933,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-003",
+   "heard": "decoder.",
+   "term": "Xcode",
+   "margin": -1.277,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-003",
+   "heard": "no-speech threshold",
+   "term": "noSpeechThreshold",
+   "margin": 1.475,
+   "similarity": 0.944,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-004",
+   "heard": "prompt tokens",
+   "term": "promptTokens",
+   "margin": -0.255,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-006",
+   "heard": "QBECL",
+   "term": "kubectl",
+   "margin": 0.551,
+   "similarity": 0.571,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-007",
+   "heard": "post-GoresQL",
+   "term": "PostgreSQL",
+   "margin": 2.552,
+   "similarity": 0.833,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-010",
+   "heard": "committed sample count.",
+   "term": "committedSampleCount",
+   "margin": -0.115,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-011",
+   "heard": "decodes",
+   "term": "Xcode",
+   "margin": -3.734,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-011",
+   "heard": "finalized live transcription",
+   "term": "finalizeLiveTranscription",
+   "margin": -1.042,
+   "similarity": 0.962,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-012",
+   "heard": "Switch",
+   "term": "SwiftUI",
+   "margin": -5.229,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-012",
+   "heard": "chunking strategy",
+   "term": "chunkingStrategy",
+   "margin": -1.031,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-013",
+   "heard": "Swift2i",
+   "term": "SwiftUI",
+   "margin": 3.516,
+   "similarity": 0.857,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-015",
+   "heard": "Olima",
+   "term": "Ollama",
+   "margin": 2.383,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "tech-016",
+   "heard": "Energy VAD",
+   "term": "EnergyVAD",
+   "margin": -0.277,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-001",
+   "heard": "Alan Ruaju",
+   "term": "Olanrewaju",
+   "margin": -0.763,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-002",
+   "heard": "WISPA Git",
+   "term": "WhisperKit",
+   "margin": 2.608,
+   "similarity": 0.6,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-002",
+   "heard": "decoder.",
+   "term": "Xcode",
+   "margin": -4.878,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-002",
+   "heard": "decode",
+   "term": "Xcode",
+   "margin": -2.01,
+   "similarity": 0.667,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-002",
+   "heard": "prompt tokens",
+   "term": "promptTokens",
+   "margin": -0.376,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-002",
+   "heard": "decoding options,",
+   "term": "DecodingOptions",
+   "margin": -3.357,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-002",
+   "heard": "transcript",
+   "term": "TypeScript",
+   "margin": -4.867,
+   "similarity": 0.7,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-004",
+   "heard": "postcare SQL",
+   "term": "PostgreSQL",
+   "margin": -0.107,
+   "similarity": 0.818,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-004",
+   "heard": "Kubanites",
+   "term": "Kubernetes",
+   "margin": 0.054,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-007",
+   "heard": "Swift UI",
+   "term": "SwiftUI",
+   "margin": 0.165,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-007",
+   "heard": "X code,",
+   "term": "Xcode",
+   "margin": 0.36,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-009",
+   "heard": "Tamitoke",
+   "term": "Temitope",
+   "margin": -1.974,
+   "similarity": 0.75,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-009",
+   "heard": "Gozi",
+   "term": "Ngozi",
+   "margin": -0.604,
+   "similarity": 0.8,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-011",
+   "heard": "Oerinbook",
+   "term": "Oyinbooke",
+   "margin": 0.551,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-011",
+   "heard": "Release",
+   "term": "camelCase",
+   "margin": -4.42,
+   "similarity": 0.556,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-014",
+   "heard": "Shimamanda",
+   "term": "Chimamanda",
+   "margin": -0.154,
+   "similarity": 0.9,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-016",
+   "heard": "runbook,",
+   "term": "Oyinbooke",
+   "margin": -5.606,
+   "similarity": 0.556,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-016",
+   "heard": "Olima",
+   "term": "Ollama",
+   "margin": -0.277,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-016",
+   "heard": "Quen",
+   "term": "Qwen",
+   "margin": -2.242,
+   "similarity": 0.75,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-016",
+   "heard": "keep LM Studio",
+   "term": "LM Studio",
+   "margin": 0.288,
+   "similarity": 0.643,
+   "label": "ambiguous"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-019",
+   "heard": "code,",
+   "term": "Xcode",
+   "margin": -2.222,
+   "similarity": 0.8,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-019",
+   "heard": "code",
+   "term": "Xcode",
+   "margin": -4.971,
+   "similarity": 0.8,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-019",
+   "heard": "committed sample count",
+   "term": "committedSampleCount",
+   "margin": -1.494,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-021",
+   "heard": "Code",
+   "term": "Xcode",
+   "margin": -1.665,
+   "similarity": 0.8,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-021",
+   "heard": "use effect callback",
+   "term": "useEffectCallback",
+   "margin": -1.564,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-021",
+   "heard": "camel case",
+   "term": "camelCase",
+   "margin": -0.321,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-022",
+   "heard": "decoder",
+   "term": "Xcode",
+   "margin": -0.927,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-022",
+   "heard": "no-speech threshold",
+   "term": "noSpeechThreshold",
+   "margin": 1.585,
+   "similarity": 0.944,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "long-022",
+   "heard": "energy VAD",
+   "term": "EnergyVAD",
+   "margin": -0.612,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "adv-003",
+   "heard": "Alan Ruaju",
+   "term": "Olanrewaju",
+   "margin": -0.163,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "clean",
+   "id": "adv-006",
+   "heard": "Whisper Kit",
+   "term": "WhisperKit",
+   "margin": 0.048,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-01",
+   "heard": "Alan Ruaju",
+   "term": "Olanrewaju",
+   "margin": -0.68,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-02",
+   "heard": "decoder.",
+   "term": "Xcode",
+   "margin": -3.779,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-02",
+   "heard": "decode",
+   "term": "Xcode",
+   "margin": -3.802,
+   "similarity": 0.667,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-02",
+   "heard": "prompt tokens",
+   "term": "promptTokens",
+   "margin": -0.712,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-02",
+   "heard": "decoding options,",
+   "term": "DecodingOptions",
+   "margin": -2.602,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-02",
+   "heard": "transcript",
+   "term": "TypeScript",
+   "margin": -5.255,
+   "similarity": 0.7,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-03",
+   "heard": "postcars QL",
+   "term": "PostgreSQL",
+   "margin": 0.554,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-03",
+   "heard": "Kubanites",
+   "term": "Kubernetes",
+   "margin": -0.984,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-04",
+   "heard": "Shimamanda",
+   "term": "Chimamanda",
+   "margin": 0.13,
+   "similarity": 0.9,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-05",
+   "heard": "Swift UI",
+   "term": "SwiftUI",
+   "margin": -0.541,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-05",
+   "heard": "X code,",
+   "term": "Xcode",
+   "margin": 0.048,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-06",
+   "heard": "Boy Inbook",
+   "term": "Oyinbooke",
+   "margin": 0.348,
+   "similarity": 0.778,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-06",
+   "heard": "Release",
+   "term": "camelCase",
+   "margin": -4.66,
+   "similarity": 0.556,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-07",
+   "heard": "runbook,",
+   "term": "Oyinbooke",
+   "margin": -5.216,
+   "similarity": 0.556,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-07",
+   "heard": "Olima",
+   "term": "Ollama",
+   "margin": 0.108,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-07",
+   "heard": "Quen",
+   "term": "Qwen",
+   "margin": -1.356,
+   "similarity": 0.75,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-07",
+   "heard": "keep LM Studio",
+   "term": "LM Studio",
+   "margin": -0.357,
+   "similarity": 0.643,
+   "label": "ambiguous"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-08",
+   "heard": "Code",
+   "term": "Xcode",
+   "margin": -1.24,
+   "similarity": 0.8,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-08",
+   "heard": "use effect callback",
+   "term": "useEffectCallback",
+   "margin": -2.129,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "noisy-long-08",
+   "heard": "camel case",
+   "term": "camelCase",
+   "margin": -0.44,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-09",
+   "heard": "Whisper kit",
+   "term": "WhisperKit",
+   "margin": 0.506,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-09",
+   "heard": "decoder.",
+   "term": "Xcode",
+   "margin": -3.702,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-09",
+   "heard": "use effect callback",
+   "term": "useEffectCallback",
+   "margin": -1.242,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-09",
+   "heard": "no speech threshold",
+   "term": "noSpeechThreshold",
+   "margin": -1.295,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-09",
+   "heard": "decoding option",
+   "term": "DecodingOptions",
+   "margin": -1.704,
+   "similarity": 0.933,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-10",
+   "heard": "Alan Ruaju",
+   "term": "Olanrewaju",
+   "margin": -0.469,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-10",
+   "heard": "Tematope",
+   "term": "Temitope",
+   "margin": -0.142,
+   "similarity": 0.875,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-10",
+   "heard": "Shimamander",
+   "term": "Chimamanda",
+   "margin": -0.17,
+   "similarity": 0.727,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-12",
+   "heard": "YemSy",
+   "term": "Yemisi",
+   "margin": 0.019,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-12",
+   "heard": "Switch",
+   "term": "SwiftUI",
+   "margin": -4.348,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-12",
+   "heard": "committed sample count.",
+   "term": "committedSampleCount",
+   "margin": -1.013,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "hold-12",
+   "heard": "chunking strategy",
+   "term": "chunkingStrategy",
+   "margin": -1.505,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "soft-last-03",
+   "heard": "QBEct",
+   "term": "kubectl",
+   "margin": 0.955,
+   "similarity": 0.571,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "soft-last-05",
+   "heard": "Gozi",
+   "term": "Ngozi",
+   "margin": 0.666,
+   "similarity": 0.8,
+   "label": "right"
+  },
+  {
+   "corpus": "real",
+   "id": "quiet-01",
+   "heard": "Alan Ruaju",
+   "term": "Olanrewaju",
+   "margin": -0.955,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-01",
+   "heard": "Olawaju",
+   "term": "Olanrewaju",
+   "margin": -0.034,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-02",
+   "heard": "Oliboke",
+   "term": "Oyinbooke",
+   "margin": -0.704,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-03",
+   "heard": "Adibayo",
+   "term": "Adebayo",
+   "margin": 0.805,
+   "similarity": 0.857,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-03",
+   "heard": "Timitope",
+   "term": "Temitope",
+   "margin": 2.305,
+   "similarity": 0.875,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-04",
+   "heard": "Fulashadi",
+   "term": "Folasade",
+   "margin": -0.435,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-05",
+   "heard": "Babatoni",
+   "term": "Babatunde",
+   "margin": -1.337,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-08",
+   "heard": "Oluwashing",
+   "term": "Oluwaseun",
+   "margin": -0.808,
+   "similarity": 0.7,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-pn-10",
+   "heard": "Olanawaju",
+   "term": "Olanrewaju",
+   "margin": -0.115,
+   "similarity": 0.8,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-01",
+   "heard": "decoder",
+   "term": "Xcode",
+   "margin": -2.662,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-01",
+   "heard": "prompt tokens",
+   "term": "promptTokens",
+   "margin": -0.503,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-01",
+   "heard": "decoding options",
+   "term": "DecodingOptions",
+   "margin": -1.451,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-03",
+   "heard": "Olama",
+   "term": "Ollama",
+   "margin": -0.321,
+   "similarity": 0.833,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-03",
+   "heard": "or LM Studio",
+   "term": "LM Studio",
+   "margin": -0.259,
+   "similarity": 0.75,
+   "label": "ambiguous"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-04",
+   "heard": "Swift UI",
+   "term": "SwiftUI",
+   "margin": 0.226,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-04",
+   "heard": "S-code.",
+   "term": "Xcode",
+   "margin": 5.115,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-05",
+   "heard": "upcast",
+   "term": "appcast",
+   "margin": -2.043,
+   "similarity": 0.714,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-05",
+   "heard": "release",
+   "term": "camelCase",
+   "margin": -3.191,
+   "similarity": 0.556,
+   "label": "wrong"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-07",
+   "heard": "use effect callback",
+   "term": "useEffectCallback",
+   "margin": -0.962,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-07",
+   "heard": "web socket",
+   "term": "WebSocket",
+   "margin": -0.343,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-09",
+   "heard": "no-speech threshold",
+   "term": "noSpeechThreshold",
+   "margin": 1.287,
+   "similarity": 0.944,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-09",
+   "heard": "chunking strategy",
+   "term": "chunkingStrategy",
+   "margin": -0.605,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-09",
+   "heard": "energy VAD.",
+   "term": "EnergyVAD",
+   "margin": 0.209,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-10",
+   "heard": "committed sample cant",
+   "term": "committedSampleCount",
+   "margin": -1.42,
+   "similarity": 0.9,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-tech-10",
+   "heard": "Finalized live transcription",
+   "term": "finalizeLiveTranscription",
+   "margin": -1.726,
+   "similarity": 0.962,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-01",
+   "heard": "Olanewaju",
+   "term": "Olanrewaju",
+   "margin": 0.312,
+   "similarity": 0.9,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-02",
+   "heard": "Whisper",
+   "term": "WhisperKit",
+   "margin": -1.675,
+   "similarity": 0.7,
+   "label": "wrong"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-02",
+   "heard": "decodes",
+   "term": "Xcode",
+   "margin": -3.347,
+   "similarity": 0.571,
+   "label": "wrong"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-02",
+   "heard": "code",
+   "term": "Xcode",
+   "margin": -2.383,
+   "similarity": 0.8,
+   "label": "wrong"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-03",
+   "heard": "Temitokwe",
+   "term": "Temitope",
+   "margin": -0.822,
+   "similarity": 0.778,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-03",
+   "heard": "Progres SQL",
+   "term": "PostgreSQL",
+   "margin": -1.076,
+   "similarity": 0.6,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-05",
+   "heard": "no speech threshold",
+   "term": "noSpeechThreshold",
+   "margin": -1.415,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-long-05",
+   "heard": "common case",
+   "term": "camelCase",
+   "margin": -0.584,
+   "similarity": 0.6,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-bg-01",
+   "heard": "Olua Shung",
+   "term": "Oluwaseun",
+   "margin": -0.294,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-bg-02",
+   "heard": "Olama's",
+   "term": "Ollama",
+   "margin": 0.836,
+   "similarity": 0.571,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-bg-04",
+   "heard": "Ungazi",
+   "term": "Ngozi",
+   "margin": 0.524,
+   "similarity": 0.667,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-bg-05",
+   "heard": "Swift UI",
+   "term": "SwiftUI",
+   "margin": 0.39,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-bg-09",
+   "heard": "Baba Tunde",
+   "term": "Babatunde",
+   "margin": 1.08,
+   "similarity": 1,
+   "label": "right"
+  },
+  {
+   "corpus": "voice",
+   "id": "real-soft-04",
+   "heard": "grab",
+   "term": "GRDB",
+   "margin": -1.949,
+   "similarity": 0.75,
+   "label": "wrong"
+  }
+ ]
+}

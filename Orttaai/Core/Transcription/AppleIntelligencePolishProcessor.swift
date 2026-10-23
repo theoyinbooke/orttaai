@@ -162,3 +162,9 @@ private struct PolishedTranscript {
     var text: String
 }
 #endif
+
+extension AppleIntelligencePolishProcessor: WordBoostVocabularyProviding {
+    func wordBoostTerms() -> [WordBoostTerm] {
+        (baseProcessor as? WordBoostVocabularyProviding)?.wordBoostTerms() ?? []
+    }
+}

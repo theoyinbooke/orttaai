@@ -367,3 +367,9 @@ final class LocalLLMTextProcessor: TextProcessor {
         return tokens
     }
 }
+
+extension LocalLLMTextProcessor: WordBoostVocabularyProviding {
+    func wordBoostTerms() -> [WordBoostTerm] {
+        (baseProcessor as? WordBoostVocabularyProviding)?.wordBoostTerms() ?? []
+    }
+}

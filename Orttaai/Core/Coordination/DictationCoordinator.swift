@@ -565,6 +565,7 @@ final class DictationCoordinator {
 
             try await ensureTranscriptionModelLoaded()
             await transcriptionService.setVocabularyBias(terms: sessionVocabularyBiasTerms())
+            await transcriptionService.setWordBoostVocabulary(sessionWordBoostTerms())
 
             // Finalize the silent background session. The transcription
             // service reuses committed 15-second/pause-bounded clips and a
@@ -1073,6 +1074,7 @@ final class DictationCoordinator {
 
             await self.syncTranscriptionSettings()
             await self.transcriptionService.setVocabularyBias(terms: self.sessionVocabularyBiasTerms())
+            await self.transcriptionService.setWordBoostVocabulary(self.sessionWordBoostTerms())
             guard !Task.isCancelled else { return }
 
             // A stale handler from an earlier session must never receive
@@ -1216,6 +1218,15 @@ final class DictationCoordinator {
         guard settings.vocabularyBiasEnabled else { return [] }
         guard let provider = textProcessor as? VocabularyBiasProviding else { return [] }
         return provider.vocabularyBiasTerms()
+    }
+
+    /// Express's Word Boost snapshot for the session that is starting: the
+    /// Personal Memory dictionary, or nothing when Express or Word Boost is
+    /// off. Taken here, like the bias terms, never on the audio hot path.
+    private func sessionWordBoostTerms() -> [WordBoostTerm] {
+        guard settings.isExpressEngineActive, settings.expressWordBoostEnabled else { return [] }
+        guard let provider = textProcessor as? WordBoostVocabularyProviding else { return [] }
+        return provider.wordBoostTerms()
     }
 
     func estimateProcessingTime(_ recordingDuration: TimeInterval) -> TimeInterval {

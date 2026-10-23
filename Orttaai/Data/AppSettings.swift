@@ -120,6 +120,8 @@ final class AppSettings: ObservableObject {
     /// Whisper model, which stays selected as the fallback. Per Mac: the
     /// model package is downloaded on each Mac separately.
     @AppStorage("expressEngineEnabled") var expressEngineEnabled: Bool = false
+    /// Express checks Personal Memory dictionary words against the audio.
+    @AppStorage("expressWordBoostEnabled") var expressWordBoostEnabled: Bool = true
     @AppStorage("selectedAudioDeviceID") var selectedAudioDeviceID: String = ""
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("hasCompletedSetup") var hasCompletedSetup: Bool = false

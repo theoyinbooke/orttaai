@@ -41,27 +41,37 @@ final class ExpressRoutingTests: XCTestCase {
 
     /// A storage base whose Express package has every file at its recorded
     /// size. Sparse files: a quarter-gigabyte package costs no disk space.
-    private func makeInstalledBase() throws -> URL {
+    private func makeInstalledBase(withWordBoost: Bool = false) throws -> URL {
         let base = try ModelProbeTestSupport.makeTemporaryDirectory()
         directories.append(base)
-        let folder = ExpressModelStore.folder(in: base)
-        for file in ExpressModelStore.files {
-            let url = folder.appendingPathComponent(file.localPath)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-            let handle = try FileHandle(forWritingTo: url)
-            try handle.truncate(atOffset: UInt64(file.size))
-            try handle.close()
+        let packages = withWordBoost ? ExpressModelStore.packages : [ExpressModelStore.speech]
+        for package in packages {
+            let folder = ExpressModelStore.folder(for: package, in: base)
+            for file in package.files {
+                let url = folder.appendingPathComponent(file.localPath)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                FileManager.default.createFile(atPath: url.path, contents: nil)
+                let handle = try FileHandle(forWritingTo: url)
+                try handle.truncate(atOffset: UInt64(file.size))
+                try handle.close()
+            }
         }
         return base
     }
 
-    private func makeService(base: URL, backend: FakeExpressBackend) -> TranscriptionService {
+    private func makeService(
+        base: URL,
+        backend: FakeExpressBackend,
+        loadedFolders: FolderRecorder = FolderRecorder()
+    ) -> TranscriptionService {
         let probes = ModelProbeTestSupport.probes(roots: [], beginAccessBase: base)
         return TranscriptionService(
             modelLocator: ModelProbeTestSupport.locator(probes: probes),
             whisperKitFactory: { _ in throw NSError(domain: "test", code: 1) },
-            expressBackendFactory: { _ in backend },
+            expressBackendFactory: { speech, wordBoost in
+                loadedFolders.record(speech: speech, wordBoost: wordBoost)
+                return backend
+            },
             legacyTokenizerBase: nil
         )
     }
@@ -137,6 +147,40 @@ final class ExpressRoutingTests: XCTestCase {
         XCTAssertNil(loadedID)
     }
 
+    func testWordBoostFolderIsPassedOnlyWhenInstalled() async throws {
+        let withoutBoost = FolderRecorder()
+        let plain = makeService(base: try makeInstalledBase(), backend: FakeExpressBackend(text: "hi"), loadedFolders: withoutBoost)
+        try await plain.loadModel(named: ExpressEngine.modelID)
+        XCTAssertNotNil(withoutBoost.speech)
+        XCTAssertNil(withoutBoost.wordBoost)
+
+        let withBoost = FolderRecorder()
+        let base = try makeInstalledBase(withWordBoost: true)
+        let boosted = makeService(base: base, backend: FakeExpressBackend(text: "hi"), loadedFolders: withBoost)
+        try await boosted.loadModel(named: ExpressEngine.modelID)
+        XCTAssertEqual(withBoost.wordBoost, ExpressModelStore.folder(for: ExpressModelStore.wordBoost, in: base))
+    }
+
+    func testWordBoostVocabularySetBeforeLoadIsAppliedOnLoad() async throws {
+        let backend = FakeExpressBackend(text: "hi")
+        let service = makeService(base: try makeInstalledBase(withWordBoost: true), backend: backend)
+        let terms = [WordBoostTerm(text: "Olanrewaju", aliases: ["alan ruaju"]), WordBoostTerm(text: "GRDB", aliases: [])]
+
+        await service.setWordBoostVocabulary(terms)
+        let countBeforeLoad = await service.wordBoostTermCount
+        try await service.loadModel(named: ExpressEngine.modelID)
+
+        let applied = await backend.wordBoostTerms
+        let count = await service.wordBoostTermCount
+        XCTAssertEqual(countBeforeLoad, 0)
+        XCTAssertEqual(applied, terms)
+        XCTAssertEqual(count, 2)
+
+        await service.setWordBoostVocabulary([])
+        let countAfterClearing = await service.wordBoostTermCount
+        XCTAssertEqual(countAfterClearing, 0)
+    }
+
     // MARK: - Settings
 
     func testDictationUsesExpressOnlyWhenOnAndEnglish() {
@@ -206,6 +250,7 @@ final class ExpressRoutingTests: XCTestCase {
 private actor FakeExpressBackend: ExpressBackend {
     private let text: String
     private(set) var sampleCounts: [Int] = []
+    private(set) var wordBoostTerms: [WordBoostTerm] = []
 
     init(text: String) {
         self.text = text
@@ -214,6 +259,34 @@ private actor FakeExpressBackend: ExpressBackend {
     func transcribe(_ audioSamples: [Float]) async throws -> String {
         sampleCounts.append(audioSamples.count)
         return text
+    }
+
+    func setWordBoost(_ terms: [WordBoostTerm]) async -> Int {
+        wordBoostTerms = terms
+        return terms.count
+    }
+}
+
+private final class FolderRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var folders: (speech: URL?, wordBoost: URL?) = (nil, nil)
+
+    func record(speech: URL, wordBoost: URL?) {
+        lock.lock()
+        folders = (speech, wordBoost)
+        lock.unlock()
+    }
+
+    var speech: URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return folders.speech
+    }
+
+    var wordBoost: URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return folders.wordBoost
     }
 }
 
