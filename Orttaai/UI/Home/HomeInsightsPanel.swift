@@ -13,6 +13,10 @@ struct HomeInsightsPanel: View {
     let comparison: WritingInsightsComparison?
     let freshness: WritingInsightFreshness?
     let isGenerating: Bool
+    /// When the running analysis started; drives the progress lines.
+    var generationStartedAt: Date?
+    /// The snapshot is the instant quick look, not yet the AI analysis.
+    var isPreliminary = false
     let errorMessage: String?
     let statusMessage: String?
     let onGenerate: () -> Void
@@ -46,19 +50,10 @@ struct HomeInsightsPanel: View {
                 .background(Color.Orttaai.border)
 
             ScrollView(showsIndicators: false) {
+                // The insight comes first; options and history follow it.
                 VStack(alignment: .leading, spacing: Spacing.md) {
-                    controlRow
-                    filterControls
-                    if let freshness {
-                        freshnessSection(freshness)
-                    }
-
-                    if !historyItems.isEmpty {
-                        historySection
-                    }
-
-                    if let comparison {
-                        comparisonSection(comparison)
+                    if isGenerating {
+                        progressRow
                     }
 
                     if let errorMessage {
@@ -71,16 +66,30 @@ struct HomeInsightsPanel: View {
                             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
                     }
 
+                    if let snapshot {
+                        snapshotBody(snapshot)
+                    } else if !isGenerating {
+                        emptyState
+                    }
+
                     if let statusMessage {
                         Text(statusMessage)
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
 
-                    if let snapshot {
-                        snapshotBody(snapshot)
-                    } else if !isGenerating {
-                        emptyState
+                    optionsSection
+
+                    if let freshness {
+                        freshnessSection(freshness)
+                    }
+
+                    if !historyItems.isEmpty {
+                        historySection
+                    }
+
+                    if let comparison {
+                        comparisonSection(comparison)
                     }
                 }
                 .padding(Spacing.md)
@@ -105,6 +114,14 @@ struct HomeInsightsPanel: View {
 
             Spacer()
 
+            Button(action: onGenerate) {
+                Label(snapshot == nil ? "Generate" : "Regenerate", systemImage: "arrow.clockwise")
+                    .font(.Orttaai.caption)
+            }
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+            .disabled(isGenerating)
+            .help("Analyze your dictation history again")
+
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .semibold))
@@ -118,47 +135,65 @@ struct HomeInsightsPanel: View {
         }
     }
 
-    private var controlRow: some View {
+    /// The beating mark and what the analysis is doing, moving on as the
+    /// wait grows.
+    private var progressRow: some View {
         HStack(spacing: Spacing.sm) {
-            if isGenerating {
-                HStack(spacing: Spacing.xs) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Generating...")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(Color.Orttaai.bgPrimary.opacity(0.45))
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.button, style: .continuous)
-                        .stroke(Color.Orttaai.border.opacity(0.5), lineWidth: BorderWidth.standard)
-                )
-            } else {
-                Button(action: onGenerate) {
-                    Label(snapshot == nil ? "Generate" : "Regenerate", systemImage: "arrow.clockwise")
-                        .font(.Orttaai.secondary)
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary))
+            ChatAIWaitingMark(size: 15)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let elapsed = context.date.timeIntervalSince(generationStartedAt ?? context.date)
+                Text(Self.progressLine(elapsed: elapsed, sampleCount: snapshot?.sampleCount))
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
+                    .id(Self.progressLine(elapsed: elapsed, sampleCount: snapshot?.sampleCount))
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    ))
+                    .animation(.easeInOut(duration: 0.28), value: Self.progressLine(elapsed: elapsed, sampleCount: snapshot?.sampleCount))
             }
+            Spacer(minLength: 0)
+        }
+        .clipped()
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.Orttaai.bgPrimary.opacity(0.45), in: RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
 
-            if let snapshot {
-                Text(Self.timestampFormatter.string(from: snapshot.generatedAt))
+    static func progressLine(elapsed: TimeInterval, sampleCount: Int?) -> String {
+        switch elapsed {
+        case ..<3:
+            return sampleCount.map { "Reading your last \($0.formatted()) dictations" } ?? "Reading your recent dictations"
+        case ..<10: return "Finding patterns in how you write"
+        case ..<25: return "Writing your summary"
+        case ..<60: return "Still working. Larger models take a little longer"
+        default: return "Almost there"
+        }
+    }
+
+    /// Range, depth and app filters, folded away until wanted.
+    private var optionsSection: some View {
+        DisclosureGroup {
+            filterControls
+                .padding(.top, Spacing.sm)
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Text("Options")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("\(request.timeRange.title) · \(request.generationMode.title) · \(request.appFilterMode.title)")
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.textTertiary)
                     .lineLimit(1)
             }
         }
+        .tint(Color.Orttaai.textSecondary)
     }
 
     private var filterControls: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Filters")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
             HStack(alignment: .top, spacing: Spacing.sm) {
                 controlPickerCard(title: "Range") {
                     OrttaaiDropdown(
@@ -445,6 +480,12 @@ struct HomeInsightsPanel: View {
                 if snapshot.usedFallback {
                     infoPill("Fallback")
                 }
+                Spacer(minLength: 0)
+                Text(isPreliminary ? "AI analysis running" : snapshot.generatedAt.formatted(.relative(presentation: .named)))
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+                    .help(Self.timestampFormatter.string(from: snapshot.generatedAt))
             }
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -576,7 +617,7 @@ struct HomeInsightsPanel: View {
             Text("No insights yet")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.textPrimary)
-            Text("Select Generate to begin.")
+            Text("Generate an analysis of how you write, from your dictation history.")
                 .font(.Orttaai.secondary)
                 .foregroundStyle(Color.Orttaai.textSecondary)
         }

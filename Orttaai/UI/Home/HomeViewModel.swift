@@ -22,6 +22,10 @@ final class HomeViewModel {
     private(set) var isApplyingFastFirstUpgrade = false
     private(set) var isInsightsPanelVisible = false
     private(set) var isGeneratingInsights = false
+    /// When the running analysis started, for the panel's progress lines.
+    private(set) var insightsGenerationStartedAt: Date?
+    /// The shown snapshot is the instant quick look, not yet the AI analysis.
+    private(set) var isInsightsPreliminary = false
     private(set) var insightsRequest: WritingInsightsRequest = .default
     private(set) var insightsAvailableApps: [String] = []
     private(set) var insightsHistoryItems: [WritingInsightHistoryItem] = []
@@ -187,6 +191,7 @@ final class HomeViewModel {
 
     func loadInsightsSnapshotFromHistory(_ item: WritingInsightHistoryItem) {
         insightsSnapshot = item.snapshot
+        isInsightsPreliminary = false
         insightsRequest = item.snapshot.request
         insightsSelectedHistoryID = item.id
         appliedInsightRecommendations = []
@@ -449,16 +454,28 @@ final class HomeViewModel {
         }
 
         isGeneratingInsights = true
+        insightsGenerationStartedAt = Date()
         insightsErrorMessage = nil
         insightsStatusMessage = nil
 
         Task {
             let request = self.insightsRequest
+            // Something useful at once: the quick look fills an empty panel
+            // while the AI analysis runs.
+            if self.insightsSnapshot == nil, let quick = await insightsService.quickInsights(request: request) {
+                self.insightsSnapshot = quick
+                self.isInsightsPreliminary = true
+            }
             let result = await insightsService.generateInsights(request: request)
             self.isGeneratingInsights = false
+            self.insightsGenerationStartedAt = nil
 
             if let errorMessage = result.errorMessage {
-                self.insightsErrorMessage = errorMessage
+                if self.isInsightsPreliminary {
+                    self.insightsStatusMessage = "The AI analysis didn't finish, so this is the quick look. Try Regenerate."
+                } else {
+                    self.insightsErrorMessage = errorMessage
+                }
                 return
             }
 
@@ -468,6 +485,7 @@ final class HomeViewModel {
             }
 
             self.insightsSnapshot = snapshot
+            self.isInsightsPreliminary = false
             self.appliedInsightRecommendations = []
             self.insightsSelectedHistoryID = result.persistedSnapshotID
             self.lastAutoRefreshHistoryID = nil

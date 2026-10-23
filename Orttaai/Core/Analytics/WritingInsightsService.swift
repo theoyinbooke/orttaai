@@ -230,15 +230,17 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
     func analyze(transcriptions: [Transcription]) async -> WritingInsightPayload? {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
+            // The on-device model's context is small: a tighter sample keeps
+            // the prompt well inside it and roughly halves the wait.
             let historyLines = transcriptions
-                .prefix(120)
+                .prefix(80)
                 .map { record -> String in
                     let text = record.text
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                         .replacingOccurrences(of: "\n", with: " ")
                         .replacingOccurrences(of: "\r", with: " ")
                     guard !text.isEmpty else { return "" }
-                    let clamped = text.count > 220 ? String(text.prefix(220)) + "..." : text
+                    let clamped = text.count > 180 ? String(text.prefix(180)) + "..." : text
                     let app = normalizedAppName(record.targetAppName)
                     return "\(app): \(clamped)"
                 }
@@ -263,6 +265,7 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
             }
 
             Rules:
+            - Speak to the user directly as "you"; never call them "the user".
             - Keep summary under 55 words.
             - Max 4 signals, 6 patterns, 4 strengths, 4 opportunities.
             - Use clear, practical language.
@@ -401,6 +404,7 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         }
 
         Rules:
+        - Speak to the user directly as "you"; never call them "the user".
         - Keep summary under 55 words.
         - Max 4 signals, 6 patterns, 4 strengths, 4 opportunities.
         - Focus on speaking clarity, pacing cues, and repeated phrasing habits.
@@ -508,22 +512,28 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         return String(text[firstBrace...lastBrace])
     }
 
+    /// A model that hasn't answered in two minutes is not coming back with
+    /// anything better; the next candidate (or the fallback) takes over.
+    private static let requestTimeoutMs = 120_000
+
     private func analyze(prompt: String, model: String, sampleCount: Int, contextTokens: Int) async -> WritingInsightPayload? {
         let startedAt = Date()
         let thinkingEnabled = settings.localLLMInsightsThinkingEnabled
         Logger.ai.debug("Ollama insights request started [model=\(model), samples=\(sampleCount), timeout=long-running, think=\(thinkingEnabled), num_ctx=\(contextTokens)]")
 
         do {
+            // JSON mode keeps the reply parseable; the payload itself is a few
+            // hundred tokens, so a long budget only lets a model ramble.
             let response = try await llmClient.generate(
                 baseURLString: settings.activeLocalLLMEndpoint,
                 model: model,
                 prompt: prompt,
-                timeoutMs: nil,
+                timeoutMs: Self.requestTimeoutMs,
                 think: thinkingEnabled,
-                format: nil,
+                format: "json",
                 formatJSONSchema: nil,
                 temperature: 0.15,
-                numPredict: 6_000,
+                numPredict: thinkingEnabled ? 4_000 : 1_500,
                 numContext: contextTokens,
                 keepAlive: "5m"
             )
@@ -631,6 +641,26 @@ final class WritingInsightsService {
             selectedApps: []
         )
         return await generateInsights(request: request)
+    }
+
+    /// An instant, non-AI reading of the same history (about 70 ms on 600
+    /// dictations), shown while the AI analysis runs. Not saved.
+    func quickInsights(request: WritingInsightsRequest) async -> WritingInsightSnapshot? {
+        guard let history = try? filteredHistory(request: request), !history.isEmpty,
+              let payload = await heuristicAnalyzer.analyze(transcriptions: history) else { return nil }
+        return WritingInsightSnapshot(
+            generatedAt: Date(),
+            sampleCount: history.count,
+            analyzerName: "Quick look",
+            usedFallback: false,
+            request: request,
+            summary: payload.summary,
+            signals: payload.signals,
+            patterns: payload.patterns,
+            strengths: payload.strengths,
+            opportunities: payload.opportunities,
+            recommendations: []
+        )
     }
 
     func generateInsights(request: WritingInsightsRequest) async -> WritingInsightsRunResult {

@@ -74,10 +74,9 @@ struct HomeView: View {
         .background(Color.Orttaai.bgPrimary)
         .workspaceHeader("Welcome back", leading: { EmptyView() }) {
             HomeHeaderView(
-                stats: viewModel.payload.header,
                 isRefreshing: viewModel.isLoading && viewModel.hasLoaded,
-                isCompact: isCompact,
                 isInsightsVisible: viewModel.isInsightsPanelVisible,
+                onOpenHistory: onOpenHistory,
                 onToggleInsights: viewModel.toggleInsightsPanel
             )
         }
@@ -112,19 +111,29 @@ struct HomeView: View {
                             .accessibilityLabel("Dashboard error: \(errorMessage)")
                     }
 
-                    HomeBannerView(
-                        title: bannerTitle,
-                        buttonTitle: bannerButtonTitle,
-                        isButtonDisabled: isBannerButtonDisabled,
-                        onButtonTap: bannerAction
-                    )
+                    if let banner {
+                        HomeBannerView(
+                            title: banner.title,
+                            buttonTitle: banner.buttonTitle,
+                            isButtonDisabled: isBannerButtonDisabled,
+                            onButtonTap: bannerAction
+                        )
+                    }
 
                     rowLayout(
-                        left: TodaySnapshotCard(snapshot: viewModel.payload.today),
+                        left: TodaySnapshotCard(
+                            snapshot: viewModel.payload.today,
+                            week: Array(viewModel.payload.trend30d.suffix(7)),
+                            usualWords: usualDailyWords
+                        ),
                         right: PerformanceHealthCard(health: viewModel.payload.performance)
                     )
 
-                    TrendCardView(points: viewModel.payload.trend30d, showsLegend: !isCompact)
+                    TrendCardView(
+                        points: viewModel.payload.trend30d,
+                        allTime: viewModel.payload.header,
+                        showsLegend: !isCompact
+                    )
 
                     rowLayout(
                         left: TopAppsCard(apps: viewModel.payload.topApps30d),
@@ -161,6 +170,8 @@ struct HomeView: View {
                     comparison: viewModel.insightsComparison,
                     freshness: viewModel.insightsFreshness,
                     isGenerating: viewModel.isGeneratingInsights,
+                    generationStartedAt: viewModel.insightsGenerationStartedAt,
+                    isPreliminary: viewModel.isInsightsPreliminary,
                     errorMessage: viewModel.insightsErrorMessage,
                     statusMessage: viewModel.insightsStatusMessage,
                     onGenerate: viewModel.refreshInsights,
@@ -196,30 +207,37 @@ struct HomeView: View {
         layoutMode == .compact
     }
 
-    private var bannerTitle: String {
-        if viewModel.shouldShowFastFirstUpgradePrompt {
-            return "Recommended model is ready"
-        }
-        if viewModel.payload.today.sessions == 0 {
-            return "Start your first dictation"
-        }
-        if viewModel.payload.performance.level == .slow {
-            return "Speed things up"
-        }
-        return "You're in a good flow"
+    /// Average words on the other active days of the last 30, for the
+    /// Today card's comparison; nil without earlier history.
+    private var usualDailyWords: Int? {
+        let calendar = Calendar.current
+        let earlier = viewModel.payload.trend30d.filter { $0.sessions > 0 && !calendar.isDateInToday($0.dayStart) }
+        guard !earlier.isEmpty else { return nil }
+        return earlier.reduce(0) { $0 + $1.words } / earlier.count
     }
 
-    private var bannerButtonTitle: String {
+    /// Shown only when there is something to do; on an ordinary day the
+    /// page opens straight onto the cards.
+    private var banner: (title: String, buttonTitle: String)? {
         if viewModel.shouldShowFastFirstUpgradePrompt {
-            return viewModel.isApplyingFastFirstUpgrade ? "Applying..." : "Use Recommended Model"
+            return (
+                "Recommended model is ready",
+                viewModel.isApplyingFastFirstUpgrade ? "Applying..." : "Use Recommended Model"
+            )
         }
-        if viewModel.payload.today.sessions == 0 {
-            return "Run Setup"
+        if !hasAnyDictation {
+            return ("Start your first dictation", "Run Setup")
         }
         if viewModel.payload.performance.level == .slow {
-            return "Open Model Settings"
+            return ("Speed things up", "Open Model Settings")
         }
-        return "Open History"
+        return nil
+    }
+
+    /// Before any dictation at all, not just none today: the Today card
+    /// already says when today is empty.
+    private var hasAnyDictation: Bool {
+        viewModel.payload.header.activeDays > 0
     }
 
     private var isBannerButtonDisabled: Bool {
@@ -231,15 +249,13 @@ struct HomeView: View {
             viewModel.applyFastFirstUpgrade()
             return
         }
-        if viewModel.payload.today.sessions == 0 {
+        if !hasAnyDictation {
             onRunSetup()
             return
         }
         if viewModel.payload.performance.level == .slow {
             onOpenModelSettings()
-            return
         }
-        onOpenHistory()
     }
 
     @ViewBuilder

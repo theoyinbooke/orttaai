@@ -43,6 +43,42 @@ final class WritingInsightsServiceTests: XCTestCase {
         XCTAssertNil(result.errorMessage)
     }
 
+    func testQuickInsightsUsesTheHeuristicAndIsNotSaved() async throws {
+        try seedTranscription(text: "Here is a useful writing sample.")
+        let service = WritingInsightsService(
+            databaseManager: db,
+            settings: settings,
+            appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: true, payload: samplePayload(summary: "Apple summary")),
+            heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: samplePayload(summary: "Quick summary"))
+        )
+
+        let quick = await service.quickInsights(request: .default)
+
+        XCTAssertEqual(quick?.summary, "Quick summary")
+        XCTAssertEqual(quick?.analyzerName, "Quick look")
+        XCTAssertEqual(quick?.sampleCount, 1)
+        XCTAssertTrue(try db.fetchWritingInsightSnapshots(limit: 5).isEmpty, "the quick look is never saved")
+    }
+
+    func testQuickInsightsIsNilWithoutHistory() async {
+        let service = WritingInsightsService(
+            databaseManager: db,
+            settings: settings,
+            appleAnalyzer: MockWritingAnalyzer(name: "Apple", available: true, payload: nil),
+            heuristicAnalyzer: MockWritingAnalyzer(name: "Heuristic", available: true, payload: samplePayload(summary: "Quick"))
+        )
+        let quick = await service.quickInsights(request: .default)
+        XCTAssertNil(quick)
+    }
+
+    func testInsightsProgressMovesOnAsTheWaitGrows() {
+        XCTAssertEqual(HomeInsightsPanel.progressLine(elapsed: 0, sampleCount: 600), "Reading your last 600 dictations")
+        XCTAssertEqual(HomeInsightsPanel.progressLine(elapsed: 0, sampleCount: nil), "Reading your recent dictations")
+        XCTAssertEqual(HomeInsightsPanel.progressLine(elapsed: 5, sampleCount: 600), "Finding patterns in how you write")
+        XCTAssertEqual(HomeInsightsPanel.progressLine(elapsed: 12, sampleCount: 600), "Writing your summary")
+        XCTAssertEqual(HomeInsightsPanel.progressLine(elapsed: 90, sampleCount: 600), "Almost there")
+    }
+
     func testGenerateInsightsUsesAppleAnalyzerWhenAvailable() async throws {
         try seedTranscription(text: "Here is a useful writing sample.")
         let applePayload = samplePayload(summary: "Apple summary")
