@@ -73,6 +73,19 @@ Test each app with:
 | Chrome login form | | | | |
 | System Settings password | | | | |
 
+### Local AI Providers
+
+Orttaai's AI (chat, insights, Memory Graph, polish, tone of voice, semantic memory) runs only on Ollama or LM Studio, on your own hardware. `LocalOnlyAIGuardTests` fails the suite if a cloud provider, cloud AI host or spawned CLI returns; `LocalModelPolicyTests` covers the endpoint and model rules.
+
+| Setup | Provider shown | Chat | Chat with memory | Insights | Activity reading | Graph insights | Polish | Tone of Voice |
+|-------|----------------|------|------------------|----------|------------------|----------------|--------|---------------|
+| Ollama only | Ollama | | | | | | | |
+| LM Studio only (`lms server start`) | LM Studio | | | | | | | |
+| Bionic open, Secure Cloud model pinned | LM Studio (Bionic), no cloud models listed | | | | | | | |
+| Nothing running | "Start Ollama or LM Studio" | | | | | | | |
+| Migration from a ChatGPT (Codex) install | Ollama, one-time notice | | | | | | | |
+| Cloud endpoint typed in (`https://api.openai.com`) | Refused: "own hardware" | | | | | | | |
+
 ## Known Issues
 
 Use GitHub Issues for known issues and regressions:
