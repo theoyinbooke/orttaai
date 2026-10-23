@@ -162,6 +162,7 @@ struct HomeView: View {
             if viewModel.isInsightsPanelVisible {
                 HomeInsightsPanel(
                     snapshot: viewModel.insightsSnapshot,
+                    stats: insightStats,
                     request: viewModel.insightsRequest,
                     availableApps: viewModel.insightsAvailableApps,
                     historyItems: viewModel.insightsHistoryItems,
@@ -190,6 +191,10 @@ struct HomeView: View {
                     }
                 )
                 .frame(width: isCompact ? 320 : 380)
+                // Lines up with the first card instead of the page's edge.
+                .padding(.top, WorkspaceLayout.contentTopPadding)
+                .padding(.bottom, Spacing.md)
+                .padding(.trailing, Spacing.md)
                 .transition(
                     reduceMotion
                         ? .identity
@@ -201,6 +206,32 @@ struct HomeView: View {
             reduceMotion ? nil : .easeOut(duration: 0.2),
             value: viewModel.isInsightsPanelVisible
         )
+    }
+
+    /// What the Insights ticker cycles through, counted over the last 30 days.
+    private var insightStats: [InsightStat] {
+        let trend = viewModel.payload.trend30d
+        let words = trend.reduce(0) { $0 + $1.words }
+        let sessions = trend.reduce(0) { $0 + $1.sessions }
+        let activeDays = trend.filter { $0.sessions > 0 }.count
+        let wpm = viewModel.payload.header.averageWPM
+        var stats: [InsightStat] = []
+        if sessions > 0 {
+            stats.append(InsightStat(id: "sessions", icon: "waveform", number: Double(sessions), label: sessions == 1 ? "dictation in 30 days" : "dictations in 30 days"))
+        }
+        if words > 0 {
+            stats.append(InsightStat(id: "words", icon: "text.word.spacing", number: Double(words), label: "words in 30 days"))
+        }
+        if wpm > 0 {
+            stats.append(InsightStat(id: "wpm", icon: "speedometer", number: Double(wpm), label: "words per minute"))
+        }
+        if activeDays > 0 {
+            stats.append(InsightStat(id: "days", icon: "calendar", number: Double(activeDays), label: activeDays == 1 ? "active day" : "active days"))
+        }
+        if let app = viewModel.payload.topApps30d.first {
+            stats.append(InsightStat(id: "app", icon: "macwindow", text: app.name, label: "where you dictate most · \(Int((app.sessionShare * 100).rounded()))%"))
+        }
+        return stats
     }
 
     private var isCompact: Bool {

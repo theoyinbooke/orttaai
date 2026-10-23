@@ -3,8 +3,13 @@
 
 import SwiftUI
 
+/// The Overview's Insights panel: a ticker of the numbers behind the
+/// insight, the summary, a few patterns and takeaways, and options folded
+/// away, sized to read on one screen.
 struct HomeInsightsPanel: View {
     let snapshot: WritingInsightSnapshot?
+    /// Counted from your dictation for the ticker (dictations, words, WPM…).
+    var stats: [InsightStat] = []
     let request: WritingInsightsRequest
     let availableApps: [String]
     let historyItems: [WritingInsightHistoryItem]
@@ -50,8 +55,11 @@ struct HomeInsightsPanel: View {
                 .background(Color.Orttaai.border)
 
             ScrollView(showsIndicators: false) {
-                // The insight comes first; options and history follow it.
-                VStack(alignment: .leading, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    if !tickerStats.isEmpty {
+                        InsightStatTicker(stats: tickerStats, isScanning: isGenerating)
+                    }
+
                     if isGenerating {
                         progressRow
                     }
@@ -79,17 +87,10 @@ struct HomeInsightsPanel: View {
                     }
 
                     optionsSection
-
-                    if let freshness {
-                        freshnessSection(freshness)
-                    }
+                        .padding(.top, Spacing.xs)
 
                     if !historyItems.isEmpty {
-                        historySection
-                    }
-
-                    if let comparison {
-                        comparisonSection(comparison)
+                        historyDisclosure
                     }
                 }
                 .padding(Spacing.md)
@@ -106,11 +107,31 @@ struct HomeInsightsPanel: View {
         .accessibilityLabel("Writing insights panel")
     }
 
+    /// The counted statistics, plus any number the model counted itself.
+    private var tickerStats: [InsightStat] {
+        let fromModel = (snapshot?.signals ?? []).compactMap { signal -> InsightStat? in
+            let label = signal.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !label.isEmpty,
+                  !stats.contains(where: { $0.label.localizedCaseInsensitiveContains(label) }) else { return nil }
+            let cleaned = signal.value.replacingOccurrences(of: ",", with: "")
+            if let number = Double(cleaned) {
+                return InsightStat(id: "signal-\(label)", icon: "sparkles", number: number, label: label.lowercased())
+            }
+            return InsightStat(id: "signal-\(label)", icon: "sparkles", text: signal.value, label: label.lowercased())
+        }
+        return Array((stats + fromModel).prefix(6))
+    }
+
     private var panelHeader: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
-            Text("Insights")
-                .font(.Orttaai.subheading)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Insights")
+                    .font(.Orttaai.subheading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                if let snapshot {
+                    metaLine(snapshot)
+                }
+            }
 
             Spacer()
 
@@ -286,38 +307,22 @@ struct HomeInsightsPanel: View {
         }
     }
 
-    private func freshnessSection(_ freshness: WritingInsightFreshness) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .center, spacing: Spacing.sm) {
-                Text("Freshness")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-
-                Spacer()
-
-                Text(freshness.status.title)
-                    .font(.Orttaai.caption)
+    /// Who wrote it, when, and whether newer dictation has arrived since.
+    private func metaLine(_ snapshot: WritingInsightSnapshot) -> some View {
+        HStack(spacing: 4) {
+            Text(snapshot.analyzerName.replacingOccurrences(of: "Apple Foundation Models", with: "Apple Intelligence"))
+            Text("·")
+            Text(isPreliminary ? "AI analysis running" : snapshot.generatedAt.formatted(.relative(presentation: .named)))
+                .help(Self.timestampFormatter.string(from: snapshot.generatedAt))
+            if let freshness, !isPreliminary {
+                Text("·")
+                Text(freshness.newSessionCount > 0 ? "\(freshness.newSessionCount) new since" : freshness.status.title)
                     .foregroundStyle(freshnessStatusTint(freshness.status))
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, 4)
-                    .background(freshnessStatusBackground(freshness.status))
-                    .clipShape(Capsule())
-            }
-
-            if let latestSessionAt = freshness.latestSessionAt {
-                Text("Latest dictation: \(Self.timestampFormatter.string(from: latestSessionAt))")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-            }
-
-            if freshness.newSessionCount > 0 {
-                Button("Refresh with new sessions", action: onGenerate)
-                    .buttonStyle(OrttaaiButtonStyle(.secondary))
-                    .disabled(isGenerating)
             }
         }
-        .padding(Spacing.md)
-        .dashboardCard()
+        .font(.Orttaai.caption)
+        .foregroundStyle(Color.Orttaai.textTertiary)
+        .lineLimit(1)
     }
 
     private func freshnessStatusTint(_ status: WritingInsightFreshnessStatus) -> Color {
@@ -331,29 +336,29 @@ struct HomeInsightsPanel: View {
         }
     }
 
-    private func freshnessStatusBackground(_ status: WritingInsightFreshnessStatus) -> Color {
-        switch status {
-        case .fresh:
-            return Color.Orttaai.successSubtle
-        case .aging:
-            return Color.Orttaai.warningSubtle
-        case .stale:
-            return Color.Orttaai.errorSubtle
-        }
-    }
-
-    private var historySection: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Recent runs")
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            ForEach(Array(historyItems.prefix(8))) { item in
-                historyRow(item)
+    /// Earlier runs and comparison, folded away.
+    private var historyDisclosure: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                ForEach(Array(historyItems.prefix(8))) { item in
+                    historyRow(item)
+                }
+                if let comparison {
+                    comparisonSection(comparison)
+                }
+            }
+            .padding(.top, Spacing.sm)
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Text("Recent runs")
+                    .font(.Orttaai.bodyMedium)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("\(historyItems.count)")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
             }
         }
-        .padding(Spacing.md)
-        .dashboardCard()
+        .tint(Color.Orttaai.textSecondary)
     }
 
     private func historyRow(_ item: WritingInsightHistoryItem) -> some View {
@@ -473,148 +478,90 @@ struct HomeInsightsPanel: View {
     }
 
     private func snapshotBody(_ snapshot: WritingInsightSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.xs) {
-                infoPill(snapshot.analyzerName)
-                infoPill("\(snapshot.sampleCount) sessions")
-                if snapshot.usedFallback {
-                    infoPill("Fallback")
-                }
-                Spacer(minLength: 0)
-                Text(isPreliminary ? "AI analysis running" : snapshot.generatedAt.formatted(.relative(presentation: .named)))
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Summary", systemImage: "text.quote")
                     .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                    .lineLimit(1)
-                    .help(Self.timestampFormatter.string(from: snapshot.generatedAt))
-            }
-
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("Summary")
-                    .font(.Orttaai.bodyMedium)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .foregroundStyle(Color.Orttaai.accent)
                 Text(snapshot.summary)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .font(.Orttaai.body)
+                    .foregroundStyle(Color.Orttaai.textPrimary.opacity(0.92))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
             .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .dashboardCard()
 
-            if !snapshot.signals.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Signals")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    ForEach(snapshot.signals) { signal in
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(signal.label)
-                                    .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textTertiary)
-                                Text(signal.value)
-                                    .font(.Orttaai.bodyMedium)
-                                    .foregroundStyle(Color.Orttaai.textPrimary)
-                            }
-                            Spacer()
-                            Text(signal.detail)
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textTertiary)
-                                .multilineTextAlignment(.trailing)
-                        }
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm)
-                        .background(Color.Orttaai.bgPrimary.opacity(0.4))
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
-                    }
-                }
-                .padding(Spacing.md)
-                .dashboardCard()
-            }
-
             if !snapshot.patterns.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Patterns")
-                        .font(.Orttaai.bodyMedium)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-
-                    ForEach(snapshot.patterns) { pattern in
-                        VStack(alignment: .leading, spacing: Spacing.xs) {
-                            Text(pattern.title)
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(pattern.detail)
-                                .font(.Orttaai.secondary)
-                                .foregroundStyle(Color.Orttaai.textSecondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if let evidence = pattern.evidence {
-                                Text(evidence)
+                card(title: "Patterns", icon: "point.3.connected.trianglepath.dotted") {
+                    ForEach(Array(snapshot.patterns.prefix(3))) { pattern in
+                        HStack(alignment: .top, spacing: Spacing.sm) {
+                            Circle()
+                                .fill(Color.Orttaai.accent)
+                                .frame(width: 5, height: 5)
+                                .padding(.top, 6)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(pattern.title.prefix(1).uppercased() + pattern.title.dropFirst())
+                                    .font(.Orttaai.secondary.weight(.semibold))
+                                    .foregroundStyle(Color.Orttaai.textPrimary)
+                                    .lineLimit(1)
+                                Text(pattern.detail)
                                     .font(.Orttaai.caption)
-                                    .foregroundStyle(Color.Orttaai.textTertiary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .foregroundStyle(Color.Orttaai.textSecondary)
+                                    .lineLimit(2)
                             }
                         }
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.Orttaai.bgPrimary.opacity(0.4))
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.input))
+                        .help(pattern.evidence.map { "\(pattern.detail)\n\n\($0)" } ?? pattern.detail)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Spacing.md)
-                .dashboardCard()
             }
 
-            if !snapshot.strengths.isEmpty {
-                bulletSection(title: "Strengths", items: snapshot.strengths)
-            }
-
-            if !snapshot.opportunities.isEmpty {
-                bulletSection(title: "Opportunities", items: snapshot.opportunities)
+            if !snapshot.strengths.isEmpty || !snapshot.opportunities.isEmpty {
+                card(title: "Takeaways", icon: "lightbulb") {
+                    ForEach(Array(snapshot.strengths.prefix(3)), id: \.self) { item in
+                        takeaway(item, icon: "checkmark.circle.fill", tint: Color.Orttaai.success, kind: "Keep doing")
+                    }
+                    ForEach(Array(snapshot.opportunities.prefix(3)), id: \.self) { item in
+                        takeaway(item, icon: "arrow.up.right.circle.fill", tint: Color.Orttaai.accent, kind: "Try next")
+                    }
+                }
             }
         }
     }
 
-    private func bulletSection(title: String, items: [String]) -> some View {
+    private func card<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(title)
-                .font(.Orttaai.bodyMedium)
-                .foregroundStyle(Color.Orttaai.textPrimary)
-
-            ForEach(items, id: \.self) { item in
-                HStack(alignment: .top, spacing: Spacing.xs) {
-                    Text("•")
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                    Text(item)
-                        .font(.Orttaai.secondary)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+            Label(title, systemImage: icon)
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+            content()
         }
         .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardCard()
     }
 
-    private func infoPill(_ value: String) -> some View {
-        Text(value)
-            .font(.Orttaai.caption)
-            .foregroundStyle(Color.Orttaai.textTertiary)
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 4)
-            .background(Color.Orttaai.bgTertiary.opacity(0.5))
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(Color.Orttaai.border.opacity(0.6), lineWidth: BorderWidth.standard)
-            )
+    private func takeaway(_ text: String, icon: String, tint: Color, kind: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .padding(.top, 1)
+            Text(text)
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .lineLimit(2)
+                .help("\(kind): \(text)")
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(kind): \(text)")
     }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("No insights yet")
+            Label("No insights yet", systemImage: "brain")
                 .font(.Orttaai.bodyMedium)
                 .foregroundStyle(Color.Orttaai.textPrimary)
             Text("Generate an analysis of how you write, from your dictation history.")

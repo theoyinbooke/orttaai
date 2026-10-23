@@ -416,6 +416,14 @@ final class WritingInsightsServiceTests: XCTestCase {
             recommendations: []
         )
     }
+    func testPromptPlaceholdersAreNeverShown() {
+        for echoed in ["short bullet", "Short note.", "pattern title", "what this means", "<a strength>", "  proof "] {
+            XCTAssertTrue(InsightReplyCleaner.isPlaceholder(echoed), echoed)
+        }
+        for real in ["You keep sessions short.", "Rapid prototyping", "12 questions"] {
+            XCTAssertFalse(InsightReplyCleaner.isPlaceholder(real), real)
+        }
+    }
 }
 
 private final class MockWritingAnalyzer: WritingInsightAnalyzing {
@@ -436,4 +444,5 @@ private final class MockWritingAnalyzer: WritingInsightAnalyzing {
     func analyze(transcriptions: [Transcription]) async -> WritingInsightPayload? {
         payload
     }
+
 }

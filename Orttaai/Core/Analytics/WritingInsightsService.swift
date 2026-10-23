@@ -8,6 +8,23 @@ import os
 import FoundationModels
 #endif
 
+/// Small on-device models sometimes echo the prompt's shape back instead
+/// of filling it in ("short bullet", "pattern title"). Such text is never
+/// shown.
+enum InsightReplyCleaner {
+    private static let placeholders: Set<String> = [
+        "short bullet", "short note", "pattern title", "what this means", "proof",
+        "one short paragraph", "string", "bullet", "note", "title", "detail", "evidence",
+    ]
+
+    static func isPlaceholder(_ text: String) -> Bool {
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            .lowercased()
+        return placeholders.contains(normalized) || (normalized.hasPrefix("<") && normalized.hasSuffix(">"))
+    }
+}
+
 struct WritingInsightPayload: Sendable {
     let summary: String
     let signals: [WritingInsightSignal]
@@ -251,18 +268,13 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
             let prompt = """
             Analyze this user's dictation history and produce concise writing insights.
 
-            Return ONLY valid JSON matching exactly:
-            {
-              "summary": "one short paragraph",
-              "signals": [
-                {"label": "Sessions", "value": "12", "detail": "short note"}
-              ],
-              "patterns": [
-                {"title": "pattern title", "detail": "what this means", "evidence": "proof"}
-              ],
-              "strengths": ["short bullet", "short bullet"],
-              "opportunities": ["short bullet", "short bullet"]
-            }
+            Return ONLY valid JSON with these keys:
+            - "summary": string, two or three sentences that begin with "You"
+            - "signals": array of {"label": string, "value": string, "detail": string}, each a number or fact you counted in the history
+            - "patterns": array of {"title": string, "detail": string, "evidence": string}, evidence quoting or pointing at the history
+            - "strengths": array of strings
+            - "opportunities": array of strings
+            Write every value yourself from the history. Never output placeholder text; leave an array empty rather than guess.
 
             Rules:
             - Speak to the user directly as "you"; never call them "the user".
@@ -300,33 +312,36 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
             let label = signal.label.trimmingCharacters(in: .whitespacesAndNewlines)
             let value = signal.value.trimmingCharacters(in: .whitespacesAndNewlines)
             let detail = signal.detail.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !label.isEmpty, !value.isEmpty else { return nil }
+            guard !label.isEmpty, !value.isEmpty, !InsightReplyCleaner.isPlaceholder(detail) else { return nil }
             return WritingInsightSignal(label: label, value: value, detail: detail)
         }
         let patterns = parsed.patterns.prefix(6).compactMap { pattern -> WritingInsightPattern? in
             let title = pattern.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let detail = pattern.detail.trimmingCharacters(in: .whitespacesAndNewlines)
             let evidence = pattern.evidence?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty, !detail.isEmpty else { return nil }
+            guard !title.isEmpty, !detail.isEmpty,
+                  !InsightReplyCleaner.isPlaceholder(title), !InsightReplyCleaner.isPlaceholder(detail) else { return nil }
             return WritingInsightPattern(
                 title: title,
                 detail: detail,
-                evidence: evidence?.isEmpty == true ? nil : evidence
+                evidence: evidence.flatMap { $0.isEmpty || InsightReplyCleaner.isPlaceholder($0) ? nil : $0 }
             )
         }
         let strengths = parsed.strengths
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && !InsightReplyCleaner.isPlaceholder($0) }
             .prefix(4)
             .map { $0 }
         let opportunities = parsed.opportunities
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && !InsightReplyCleaner.isPlaceholder($0) }
             .prefix(4)
             .map { $0 }
 
         return WritingInsightPayload(
-            summary: summary.isEmpty ? "Insights generated from your recent dictation sessions." : summary,
+            summary: summary.isEmpty || InsightReplyCleaner.isPlaceholder(summary)
+                ? "Insights generated from your recent dictation sessions."
+                : summary,
             signals: signals,
             patterns: patterns,
             strengths: strengths,
@@ -385,18 +400,13 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         let prompt = """
         Analyze this user's dictation history and produce concise speaking and writing insights.
 
-        Return ONLY valid JSON matching exactly:
-        {
-          "summary": "one short paragraph",
-          "signals": [
-            {"label": "Sessions", "value": "12", "detail": "short note"}
-          ],
-          "patterns": [
-            {"title": "pattern title", "detail": "what this means", "evidence": "proof"}
-          ],
-          "strengths": ["short bullet", "short bullet"],
-          "opportunities": ["short bullet", "short bullet"]
-        }
+        Return ONLY valid JSON with these keys:
+        - "summary": string, two or three sentences that begin with "You"
+        - "signals": array of {"label": string, "value": string, "detail": string}, each a number or fact you counted in the history
+        - "patterns": array of {"title": string, "detail": string, "evidence": string}, evidence quoting or pointing at the history
+        - "strengths": array of strings
+        - "opportunities": array of strings
+        Write every value yourself from the history. Never output placeholder text; leave an array empty rather than guess.
 
         Rules:
         - Speak to the user directly as "you"; never call them "the user".
@@ -459,33 +469,36 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
             let label = signal.label.trimmingCharacters(in: .whitespacesAndNewlines)
             let value = signal.value.trimmingCharacters(in: .whitespacesAndNewlines)
             let detail = signal.detail.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !label.isEmpty, !value.isEmpty else { return nil }
+            guard !label.isEmpty, !value.isEmpty, !InsightReplyCleaner.isPlaceholder(detail) else { return nil }
             return WritingInsightSignal(label: label, value: value, detail: detail)
         }
         let patterns = parsed.patterns.prefix(6).compactMap { pattern -> WritingInsightPattern? in
             let title = pattern.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let detail = pattern.detail.trimmingCharacters(in: .whitespacesAndNewlines)
             let evidence = pattern.evidence?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty, !detail.isEmpty else { return nil }
+            guard !title.isEmpty, !detail.isEmpty,
+                  !InsightReplyCleaner.isPlaceholder(title), !InsightReplyCleaner.isPlaceholder(detail) else { return nil }
             return WritingInsightPattern(
                 title: title,
                 detail: detail,
-                evidence: evidence?.isEmpty == true ? nil : evidence
+                evidence: evidence.flatMap { $0.isEmpty || InsightReplyCleaner.isPlaceholder($0) ? nil : $0 }
             )
         }
         let strengths = parsed.strengths
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && !InsightReplyCleaner.isPlaceholder($0) }
             .prefix(4)
             .map { $0 }
         let opportunities = parsed.opportunities
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && !InsightReplyCleaner.isPlaceholder($0) }
             .prefix(4)
             .map { $0 }
 
         return WritingInsightPayload(
-            summary: summary.isEmpty ? "Insights generated from your recent dictation sessions." : summary,
+            summary: summary.isEmpty || InsightReplyCleaner.isPlaceholder(summary)
+                ? "Insights generated from your recent dictation sessions."
+                : summary,
             signals: Array(signals),
             patterns: Array(patterns),
             strengths: Array(strengths),
