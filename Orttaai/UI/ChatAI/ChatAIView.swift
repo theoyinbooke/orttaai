@@ -230,15 +230,21 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
     }
 }
 
+/// An assistant reply: Markdown rendered block by block (headings, lists,
+/// tables, code), or HTML when a model answers in HTML.
 private struct ChatAIRichMessageText: View {
     let content: String
 
     var body: some View {
-        Text(Self.attributedContent(from: content))
-            .font(.Orttaai.body)
-            .foregroundStyle(Color.Orttaai.textPrimary)
-            .textSelection(.enabled)
-            .lineSpacing(3)
+        if Self.containsHTML(content) {
+            Text(Self.attributedContent(from: content))
+                .font(.Orttaai.body)
+                .foregroundStyle(Color.Orttaai.textPrimary)
+                .textSelection(.enabled)
+                .lineSpacing(3)
+        } else {
+            ChatAIMarkdownView(markdown: content)
+        }
     }
 
     private static func attributedContent(from content: String) -> AttributedString {
@@ -443,6 +449,8 @@ private final class ChatAIViewModel: ObservableObject {
     /// Resolved per use so provider switches take effect without a restart.
     private var client: any LocalLLMServing { settings.activeLocalLLMClient }
     private let semanticMemory = SemanticMemoryService()
+
+    var providerName: String { settings.localLLMProvider.displayName }
     /// The Memory Graph's Activity reading of the last 30 days, kept ready so
     /// "what did I decide?" doesn't wait on it; refreshed after each reply.
     private var workSummary = ""
@@ -1213,6 +1221,8 @@ private final class ChatAIViewModel: ObservableObject {
 struct ChatAIView: View {
     /// A question handed over from another page, sent in a new chat.
     @Binding var pendingPrompt: String?
+    /// Opens Model › AI Features.
+    var onOpenAISettings: () -> Void = {}
     @StateObject private var viewModel = ChatAIViewModel()
     @State private var isImportingDocument = false
     @State private var isSendHovered = false
@@ -1473,6 +1483,8 @@ struct ChatAIView: View {
 
                 if message.role == .assistant {
                     ChatAIRichMessageText(content: message.content)
+                    ChatAICopyButton(text: message.content)
+                        .padding(.top, 2)
                 } else {
                     Text(message.content)
                         .font(.Orttaai.body)
@@ -1593,8 +1605,81 @@ struct ChatAIView: View {
         }
     }
 
+    /// Laid out like Codex's: a context strip tucked behind the top (what the
+    /// reply draws on, and settings), then the input card with attach and
+    /// mode on the left, and model, voice and send on the right.
     private var composer: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
+        VStack(spacing: 0) {
+            contextStrip
+                .padding(.horizontal, 14)
+                .padding(.top, 7)
+                .padding(.bottom, 17)
+                .background(
+                    UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14, style: .continuous)
+                        .fill(Color.Orttaai.bgSecondary.opacity(0.55))
+                )
+                .overlay(
+                    UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14, style: .continuous)
+                        .stroke(Color.Orttaai.border.opacity(0.45), lineWidth: BorderWidth.standard)
+                )
+                .padding(.horizontal, 18)
+                .padding(.bottom, -10)
+
+            inputCard
+                .zIndex(1)
+        }
+    }
+
+    /// What the reply draws on: your dictation, the model server on this
+    /// Mac, attached files; settings at the end.
+    private var contextStrip: some View {
+        HStack(spacing: Spacing.lg) {
+            contextLabel("text.book.closed", "Your dictation")
+                .help("Replies draw on your dictation history and recent work")
+            contextLabel("laptopcomputer", "\(viewModel.providerName) · This Mac")
+                .help("Runs on your own hardware")
+            if !viewModel.uploadedDocuments.isEmpty {
+                contextLabel("paperclip", viewModel.uploadedDocuments.count == 1 ? "1 file" : "\(viewModel.uploadedDocuments.count) files")
+            }
+            Spacer(minLength: Spacing.sm)
+            Menu {
+                Button {
+                    Task { await viewModel.refreshModels() }
+                } label: {
+                    Label("Refresh Models", systemImage: "arrow.clockwise")
+                }
+                .disabled(viewModel.isLoadingModels)
+                Divider()
+                Button {
+                    onOpenAISettings()
+                } label: {
+                    Label("AI Settings…", systemImage: "slider.horizontal.3")
+                }
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .chatAIComposerMenu()
+            .help("Chat settings")
+        }
+    }
+
+    private func contextLabel(_ icon: String, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+            Text(title)
+                .font(.Orttaai.caption)
+                .lineLimit(1)
+        }
+        .foregroundStyle(Color.Orttaai.textSecondary)
+    }
+
+    private var inputCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
             HiddenScrollbarTextView(
                 text: $viewModel.draft,
                 onSubmit: {
@@ -1609,11 +1694,11 @@ struct ChatAIView: View {
                 },
                 onCancel: { viewModel.cancelVoiceInput() }
             )
-                .frame(height: viewModel.hasMessages ? 54 : 82)
+                .frame(height: viewModel.hasMessages ? 44 : 64)
                 .opacity(isVoiceActive ? 0 : 1)
                 .allowsHitTesting(!isVoiceActive)
-                .padding(.horizontal, Spacing.xl)
-                .padding(.top, viewModel.hasMessages ? Spacing.md : Spacing.lg)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, 14)
                 .overlay(alignment: .topLeading) {
                     if isVoiceActive {
                         ChatAIVoiceStrip(
@@ -1622,14 +1707,14 @@ struct ChatAIView: View {
                             level: { viewModel.voiceInputLevel },
                             onCancel: { viewModel.cancelVoiceInput() }
                         )
-                        .padding(.horizontal, Spacing.xl)
-                        .padding(.top, viewModel.hasMessages ? Spacing.md : Spacing.lg)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.top, 14)
                     } else if viewModel.draft.isEmpty {
-                        Text("Ask about your writing pattern or generate content")
+                        Text("Ask about your dictation, or ask for a draft")
                             .font(.Orttaai.body)
                             .foregroundStyle(Color.Orttaai.textTertiary)
-                            .padding(.horizontal, Spacing.xl)
-                            .padding(.top, viewModel.hasMessages ? Spacing.md : Spacing.lg)
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.top, 14)
                             .allowsHitTesting(false)
                     }
                 }
@@ -1641,7 +1726,7 @@ struct ChatAIView: View {
                             documentChip(document)
                         }
                     }
-                    .padding(.horizontal, Spacing.lg)
+                    .padding(.horizontal, Spacing.md)
                 }
             }
 
@@ -1650,8 +1735,8 @@ struct ChatAIView: View {
                     isImportingDocument = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(width: 28, height: 28)
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(width: 30, height: 30)
                 }
                 .buttonStyle(ChatAIComposerChipStyle())
                 .help("Attach documents")
@@ -1660,24 +1745,7 @@ struct ChatAIView: View {
 
                 Spacer(minLength: Spacing.sm)
 
-                modelMenu
-
-                if viewModel.selectedModelSupportsThinking {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            viewModel.thinkingEnabled.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "brain")
-                            .font(.system(size: 13, weight: .medium))
-                            .frame(width: 28, height: 28)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
-                    .buttonStyle(ChatAIComposerChipStyle(isActive: viewModel.thinkingEnabled))
-                    .help(viewModel.thinkingEnabled ? "Thinking on" : "Thinking off")
-                }
-
-                depthMenu
+                engineMenu
 
                 Button {
                     viewModel.toggleVoiceInput()
@@ -1692,7 +1760,6 @@ struct ChatAIView: View {
                 .disabled(!viewModel.canRecordVoice && !viewModel.isVoiceRecording)
                 .pointingHandCursor(when: viewModel.canRecordVoice || viewModel.isVoiceRecording)
                 .help(viewModel.isVoiceRecording ? "Finish voice input (Return)" : "Speak your message")
-                .padding(.leading, Spacing.xs)
 
                 Button {
                     Task {
@@ -1701,11 +1768,11 @@ struct ChatAIView: View {
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 14, weight: .bold))
-                        .frame(width: 32, height: 32)
+                        .frame(width: 34, height: 34)
                         .background(viewModel.canSend ? Color.Orttaai.textPrimary : Color.Orttaai.bgTertiary)
                         .foregroundStyle(viewModel.canSend ? Color.Orttaai.bgPrimary : Color.Orttaai.textTertiary)
                         .clipShape(Circle())
-                        .scaleEffect(isSendHovered && viewModel.canSend ? 1.08 : 1)
+                        .scaleEffect(isSendHovered && viewModel.canSend ? 1.06 : 1)
                         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSendHovered)
                 }
                 .buttonStyle(.plain)
@@ -1715,26 +1782,26 @@ struct ChatAIView: View {
                 .keyboardShortcut(.return, modifiers: [.command])
                 .help("Send (Return). Shift-Return adds a new line.")
             }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.bottom, Spacing.md)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.bottom, Spacing.sm)
 
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.warning)
-                    .padding(.horizontal, Spacing.md)
+                    .padding(.horizontal, Spacing.lg)
                     .padding(.bottom, Spacing.sm)
             }
         }
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.Orttaai.bgSecondary.opacity(0.92))
+                .fill(Color.Orttaai.bgSecondary)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.Orttaai.textTertiary.opacity(0.28), lineWidth: BorderWidth.standard)
+                .stroke(Color.Orttaai.textTertiary.opacity(0.26), lineWidth: BorderWidth.standard)
         )
-        .shadow(color: .black.opacity(0.28), radius: 28, x: 0, y: 16)
+        .shadow(color: .black.opacity(0.22), radius: 16, x: 0, y: 8)
     }
 
     private func messageBubbleBackground(for message: ChatAIMessage) -> some View {
@@ -1751,39 +1818,71 @@ struct ChatAIView: View {
         viewModel.isVoiceRecording || viewModel.isVoiceProcessing
     }
 
-    private var modelMenu: some View {
+    /// Model, reply depth and thinking in one menu, shown as
+    /// "⚡ gemma4:e2b  Medium" like Codex's model and effort.
+    private var engineMenu: some View {
         Menu {
-            if viewModel.availableModels.isEmpty {
-                Text("No chat models found")
-            } else {
-                ForEach(viewModel.availableModels, id: \.self) { model in
-                    Button {
-                        viewModel.selectedModel = model
-                    } label: {
-                        if model == viewModel.selectedModel {
-                            Label(model, systemImage: "checkmark")
-                        } else {
-                            Text(model)
+            Section("Model") {
+                if viewModel.availableModels.isEmpty {
+                    Text("No chat models found")
+                } else {
+                    ForEach(viewModel.availableModels, id: \.self) { model in
+                        Button {
+                            viewModel.selectedModel = model
+                        } label: {
+                            if model == viewModel.selectedModel {
+                                Label(model, systemImage: "checkmark")
+                            } else {
+                                Text(model)
+                            }
                         }
                     }
                 }
             }
 
-            Divider()
-
-            Button {
-                Task {
-                    await viewModel.refreshModels()
+            Section("Reply depth") {
+                ForEach(ChatAIThinkingDepth.allCases) { depth in
+                    Button {
+                        viewModel.thinkingDepth = depth
+                    } label: {
+                        if depth == viewModel.thinkingDepth {
+                            Label(depth.title, systemImage: "checkmark")
+                        } else {
+                            Text(depth.title)
+                        }
+                    }
                 }
-            } label: {
-                Label("Refresh Models", systemImage: "arrow.clockwise")
             }
-            .disabled(viewModel.isLoadingModels)
+
+            if viewModel.selectedModelSupportsThinking {
+                Divider()
+                Toggle("Thinking", isOn: $viewModel.thinkingEnabled)
+            }
         } label: {
-            ChatAIComposerMenuLabel(title: viewModel.selectedModelDisplayName, maxTitleWidth: 150)
+            ChatAIComposerChip {
+                HStack(spacing: 5) {
+                    Image(systemName: viewModel.thinkingEnabled && viewModel.selectedModelSupportsThinking ? "brain" : "bolt.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                    Text(viewModel.selectedModelDisplayName)
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 150, alignment: .leading)
+                    Text(viewModel.thinkingDepth.title)
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .opacity(0.6)
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 30)
+            }
         }
         .chatAIComposerMenu()
-        .help("Chat model")
+        .help("Model, reply depth and thinking")
     }
 
     private var modeMenu: some View {
@@ -1805,26 +1904,6 @@ struct ChatAIView: View {
         }
         .chatAIComposerMenu()
         .help(viewModel.hasToneProfile ? "Chat mode" : "Chat mode. My Tone needs a Tone of Voice profile from Analytics.")
-    }
-
-    private var depthMenu: some View {
-        Menu {
-            ForEach(ChatAIThinkingDepth.allCases) { depth in
-                Button {
-                    viewModel.thinkingDepth = depth
-                } label: {
-                    if depth == viewModel.thinkingDepth {
-                        Label(depth.title, systemImage: "checkmark")
-                    } else {
-                        Text(depth.title)
-                    }
-                }
-            }
-        } label: {
-            ChatAIComposerMenuLabel(title: viewModel.thinkingDepth.title)
-        }
-        .chatAIComposerMenu()
-        .help("Reply length and context")
     }
 
     private func documentChip(_ document: ChatAIUploadedDocument) -> some View {
@@ -1852,6 +1931,32 @@ struct ChatAIView: View {
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
     }
 
+}
+
+/// Copies a whole reply as written (Markdown included).
+private struct ChatAICopyButton: View {
+    let text: String
+    @State private var didCopy = false
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            didCopy = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                didCopy = false
+            }
+        } label: {
+            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 24, height: 22)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(ChatAIComposerChipStyle())
+        .help(didCopy ? "Copied" : "Copy reply")
+        .accessibilityLabel("Copy reply")
+    }
 }
 
 /// A starter on the empty chat: a quiet card that lifts on hover.
