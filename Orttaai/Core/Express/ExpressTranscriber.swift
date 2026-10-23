@@ -132,7 +132,7 @@ actor ExpressTranscriber: ExpressBackend {
         if let wordBoost, let model = wordBoostModel, let timings = result.tokenTimings, !timings.isEmpty {
             text = await boosted(text, timings: timings, samples: samples, session: wordBoost, model: model)
         }
-        return Self.cleanedText(text)
+        return ExpressNumberFormatter.format(Self.cleanedText(text))
     }
 
     /// Applies the replacements FluidAudio's own rescorer would apply, minus

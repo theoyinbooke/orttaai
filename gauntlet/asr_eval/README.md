@@ -232,3 +232,14 @@ the acoustic margins `WordBoostGuard` was fitted on (keeps 103 of 104 correct
 ones, none of the 30 wrong ones). `express_word_boost_eval.json` (2026-10-23):
 2.41% clean, 3.02% realistic and 9.25% real-voice WER with 84% / 90% / 81%
 hard-vocab recall, and no dictionary term inserted where the reference lacks it.
+
+## Number formatting (P3.2)
+
+`ExpressNumberFormatter` writes the numbers Fluid Speech Mini spells out or
+dots the way Whisper writes them (`555-0143`, `$2,450`, `March 15th`,
+`3:30 p.m.`). It runs on Express output only. `express_number_formatting.json`
+(2026-10-23): real-voice WER 9.25% -> 7.91%, and the real-voice number group
+12 -> 2 errors in 68 words, level with turbo. Clean 2.41% -> 2.14%, realistic
+3.02% -> 2.53%. All 11 changed outputs were number fixes. Date order is left
+as written ("the 3rd of March"), which accounts for most of what remains in
+the clean number group.

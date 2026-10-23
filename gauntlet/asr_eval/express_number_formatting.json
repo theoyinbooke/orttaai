@@ -1,0 +1,36 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "P3.2 Express number formatting (ExpressNumberFormatter)",
+  "setup": "ASREvalRunnerTests, ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini, ORTTAAI_ASR_EVAL_BIAS=1 (36 Word Boost terms), whole-utterance path, Release, Apple M5 Max. Before and after runs differ only by the formatter.",
+  "results": {
+    "clean": {
+      "before": {"aggregate_wer": 0.0241, "total_errors": 72, "number_group_errors": 15, "number_group_words": 170},
+      "after": {"aggregate_wer": 0.0214, "total_errors": 64, "number_group_errors": 9, "number_group_words": 170, "hard_vocab_recall_strict": 0.8354, "latency_ms_p50": 129, "latency_ms_p90": 450},
+      "total_ref_words": 2985
+    },
+    "realistic": {
+      "before": {"aggregate_wer": 0.0302, "total_errors": 62},
+      "after": {"aggregate_wer": 0.0253, "total_errors": 52, "hard_vocab_recall_strict": 0.9, "latency_ms_p50": 131, "latency_ms_p90": 963},
+      "total_ref_words": 2054
+    },
+    "real_voice": {
+      "before": {"aggregate_wer": 0.0925, "total_errors": 69, "number_group_errors": 12, "number_group_words": 68},
+      "after": {"aggregate_wer": 0.0791, "total_errors": 59, "number_group_errors": 2, "number_group_words": 68, "hard_vocab_recall_strict": 0.807, "latency_ms_p50": 130, "latency_ms_p90": 156},
+      "total_ref_words": 746
+    }
+  },
+  "turbo_reference": "Whisper large-v3-turbo number group on real voice: 2 errors in 68 words (fluid_real_voice.json).",
+  "changed_outputs": [
+    "five five five zero one four three -> 555-0143",
+    "two thousand four hundred and fifty dollars -> $2,450",
+    "March fifteenth / April third / April seventeenth -> 15th / 3rd / 17th",
+    "three pm / seven pm / ten thirty a.m. -> 3 pm / 7 pm / 10:30 a.m.",
+    "3.30 p.m. / 6.45 a.m. / 2.15 pm / at 8.05 local time -> colon times"
+  ],
+  "notes": [
+    "11 outputs changed across the three corpora; every change fixed a number and none touched other words.",
+    "Date order is left as Mini wrote it: it writes 'the 3rd of March' for some speech the script reads as 'March 3rd', but also 'the 28th of September' where the script says exactly that, so reordering could rewrite what a speaker said.",
+    "FluidAudio's NeMo text normalizer was not needed (it would add 9.9 MB, P1.8).",
+    "Whisper output is untouched by construction: the formatter runs inside ExpressTranscriber."
+  ]
+}
