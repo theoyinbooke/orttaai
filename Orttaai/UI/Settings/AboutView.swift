@@ -31,6 +31,8 @@ struct AboutView: View {
 
     private let acknowledgments: [(name: String, detail: String)] = [
         ("WhisperKit", "On-device speech recognition"),
+        (ExpressEngine.attribution, "Express speech model, CC BY 4.0, built on NVIDIA Parakeet TDT 0.6B v3"),
+        ("FluidAudio", "Runs Fluid Speech Mini on the Neural Engine, Apache 2.0"),
         ("GRDB.swift", "SQLite database toolkit"),
         ("Sparkle", "Auto-update framework"),
         ("KeyboardShortcuts", "Shortcut recording"),

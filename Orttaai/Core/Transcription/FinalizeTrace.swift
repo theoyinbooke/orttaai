@@ -23,6 +23,8 @@ nonisolated enum FinalizePath: Sendable, Equatable {
     /// No live session existed (or it was cancelled while finalizing), so the
     /// whole recording was decoded.
     case noLiveSession
+    /// Express (Fluid Speech Mini) decoded the whole recording in one pass.
+    case expressWholeDecode
 }
 
 nonisolated enum FinalizeFallbackReason: Sendable, Equatable {
@@ -92,6 +94,8 @@ nonisolated extension FinalizeTrace: Encodable {
             try container.encode("tail_empty_accepted", forKey: .path)
         case .noLiveSession:
             try container.encode("no_live_session", forKey: .path)
+        case .expressWholeDecode:
+            try container.encode("express_whole_decode", forKey: .path)
         case .wholeFallback(let reason):
             try container.encode("whole_fallback", forKey: .path)
             switch reason {

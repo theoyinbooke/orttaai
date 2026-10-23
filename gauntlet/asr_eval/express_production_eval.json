@@ -1,0 +1,84 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "P1.6 ASR eval through the production Express path",
+  "model": "fluid-speech-mini (Hugging Face FluidVoice-Labs/fluid-speech-mini-coreml @ d81c3160), installed by ExpressModelStore from an empty folder",
+  "runner": "OrttaaiTests/Eval/ASREvalRunnerTests with ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini, Release, Apple M5 Max",
+  "harness_wer": {
+    "clean": 0.0516,
+    "realistic": 0.0531,
+    "real_voice": 0.1662
+  },
+  "notes": [
+    "Every live finalize took the express_whole_decode path.",
+    "The real-voice gain over the harness is one item: real-soft-02 decoded I<unk>ll, which ExpressTranscriber.cleanedText turns into I'll (3 of 746 words).",
+    "Live latency includes the 4x-realtime replay overhead of the runner; whole is the decode alone."
+  ],
+  "results": {
+    "clean": {
+      "whole": {
+        "aggregate_wer": 0.0519,
+        "total_errors": 155,
+        "total_ref_words": 2985,
+        "hard_vocab_recall_strict": 0.2405,
+        "latency_ms_p50": 47.0,
+        "latency_ms_p90": 122,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      },
+      "live": {
+        "aggregate_wer": 0.0519,
+        "total_errors": 155,
+        "total_ref_words": 2985,
+        "hard_vocab_recall_strict": 0.2405,
+        "latency_ms_p50": 61.0,
+        "latency_ms_p90": 164,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      }
+    },
+    "realistic": {
+      "whole": {
+        "aggregate_wer": 0.0536,
+        "total_errors": 110,
+        "total_ref_words": 2054,
+        "hard_vocab_recall_strict": 0.225,
+        "latency_ms_p50": 51.0,
+        "latency_ms_p90": 242,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      },
+      "live": {
+        "aggregate_wer": 0.0536,
+        "total_errors": 110,
+        "total_ref_words": 2054,
+        "hard_vocab_recall_strict": 0.225,
+        "latency_ms_p50": 69.0,
+        "latency_ms_p90": 288,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      }
+    },
+    "real_voice": {
+      "whole": {
+        "aggregate_wer": 0.1622,
+        "total_errors": 121,
+        "total_ref_words": 746,
+        "hard_vocab_recall_strict": 0.2807,
+        "latency_ms_p50": 46.0,
+        "latency_ms_p90": 55,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      },
+      "live": {
+        "aggregate_wer": 0.1622,
+        "total_errors": 121,
+        "total_ref_words": 746,
+        "hard_vocab_recall_strict": 0.2807,
+        "latency_ms_p50": 65.0,
+        "latency_ms_p90": 69,
+        "junk_only_outputs": 0,
+        "hallucination_item_ids": []
+      }
+    }
+  }
+}

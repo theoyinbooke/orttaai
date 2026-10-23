@@ -21,7 +21,9 @@
 //   ORTTAAI_ASR_EVAL_MANIFEST     path to corpus/manifest.json or
 //                                 corpus_realistic/manifest_realistic.json (required)
 //   ORTTAAI_ASR_EVAL_OUT          path for the raw decode JSON (required)
-//   ORTTAAI_ASR_EVAL_MODEL        model name (default openai_whisper-large-v3)
+//   ORTTAAI_ASR_EVAL_MODEL        model name (default openai_whisper-large-v3);
+//                                 fluid-speech-mini runs Express, installing it
+//                                 into ORTTAAI_ASR_EVAL_MODEL_ROOT when missing
 //   ORTTAAI_ASR_EVAL_PRESET       fast|balanced|accuracy (default balanced —
 //                                 the user's active preset)
 //   ORTTAAI_ASR_EVAL_SPEEDUP      live feed pacing multiple of realtime
@@ -143,6 +145,16 @@ final class ASREvalRunnerTests: XCTestCase {
             // Same production API DictationCoordinator uses to snapshot the
             // user dictionary at session start.
             await service.setVocabularyBias(terms: manifest.bias_vocabulary)
+        }
+
+        if modelName == ExpressEngine.modelID, let rootPath = env["ORTTAAI_ASR_EVAL_MODEL_ROOT"] {
+            // Express goes through the same installer Settings uses, into the
+            // eval's storage base, so the run also checks the pinned download.
+            let base = URL(fileURLWithPath: rootPath, isDirectory: true)
+            if !ExpressModelStore.isInstalled(in: base) {
+                print("ASR-EVAL: installing \(ExpressEngine.displayName) into \(rootPath)")
+                try await ExpressModelStore.install(into: base) { _ in }
+            }
         }
 
         print("ASR-EVAL: loading model \(modelName)")

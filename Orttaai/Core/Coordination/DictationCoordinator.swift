@@ -612,7 +612,7 @@ final class DictationCoordinator {
                 }
                 return settings.selectedModelId
             }()
-            settings.activeModelId = resolvedModelID
+            settings.recordLoadedModel(resolvedModelID)
 
             // Persist the final transcript before interacting with another
             // application. A destination crash or failed paste must never make
@@ -943,17 +943,34 @@ final class DictationCoordinator {
 
     @MainActor
     private func ensureTranscriptionModelLoaded() async throws {
-        let selectedModelID = settings.applyLanguageOptimizedSmallModelSelection()
+        let whisperModelID = settings.applyLanguageOptimizedSmallModelSelection()
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !selectedModelID.isEmpty else {
+        guard !whisperModelID.isEmpty else {
             throw OrttaaiError.modelNotLoaded
         }
 
+        if settings.isExpressEngineActive {
+            do {
+                try await ensureModelLoaded(ExpressEngine.modelID)
+                return
+            } catch {
+                // A dictation never fails because of Express: use Whisper and say so.
+                Logger.model.error(
+                    "Express could not load (\(error.localizedDescription, privacy: .public)); dictating with \(whisperModelID)"
+                )
+                NotificationCenter.default.post(name: .expressEngineDidFallBack, object: error.localizedDescription)
+            }
+        }
+        try await ensureModelLoaded(whisperModelID)
+    }
+
+    @MainActor
+    private func ensureModelLoaded(_ selectedModelID: String) async throws {
         let isLoaded = await transcriptionService.isLoaded
         let loadedModelID = await transcriptionService.loadedModelID()?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if isLoaded, loadedModelID == selectedModelID {
-            settings.activeModelId = selectedModelID
+            settings.recordLoadedModel(selectedModelID)
             return
         }
 
@@ -977,11 +994,13 @@ final class DictationCoordinator {
             )
             throw OrttaaiError.modelNotLoaded
         }
-        settings.activeModelId = selectedModelID
+        settings.recordLoadedModel(selectedModelID)
         Logger.model.info("Exact transcription model load complete: \(selectedModelID)")
     }
 
     private func maybeStartFastFirstPrefetch(afterSuccessfulDictationWith activeModelId: String) {
+        // The fast-first upgrade is a Whisper model; Express users already chose.
+        guard activeModelId != ExpressEngine.modelID else { return }
         guard settings.fastFirstOnboardingEnabled else { return }
         guard !settings.fastFirstPrefetchStarted else { return }
 

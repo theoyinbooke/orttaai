@@ -204,3 +204,21 @@ Real-voice results (2026-10-23, `fluid_real_voice.json`, 50 recordings): Mini wi
 Word Boost 10.46% WER and 82% hard-vocab recall at 143 ms p50, against
 large-v3-turbo with the dictionary pass at 12.06%, 51% and 572 ms. With another
 voice in the room: 8.0% against 12.4%.
+
+## Express through the production path (P1.6)
+
+`ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini` runs the eval through
+`TranscriptionService`'s Express backend, installing the pinned Fluid Speech
+Mini package into `ORTTAAI_ASR_EVAL_MODEL_ROOT` with `ExpressModelStore` when it
+is missing:
+
+```bash
+./gauntlet/asr_eval/run_eval.sh /tmp/raw_express.json ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini \
+  ORTTAAI_ASR_EVAL_MODEL_ROOT=/path/to/storage-base
+```
+
+`express_production_eval.json` (2026-10-23): 5.19% clean, 5.36% realistic and
+16.22% real-voice WER, matching the standalone `fluidbench` run within 0.05
+points on the synthetic corpora; the real-voice set is 0.40 points better
+because of the `<unk>` apostrophe cleanup. Word Boost is not in the app yet
+(tracker Phase 2).

@@ -131,6 +131,9 @@ struct ModelSettingsView: View {
             switch section {
             case .speech:
                 VStack(alignment: .leading, spacing: Spacing.md) {
+                    if ExpressEngine.isSupported, let express = ModelManager.shared?.express {
+                        ExpressEngineCard(controller: express)
+                    }
                     modelSelectorCard
                     modelStorageCard
                     performanceCard

@@ -116,6 +116,10 @@ final class AppSettings: ObservableObject {
 
     @AppStorage("selectedModelId") var selectedModelId: String = "openai_whisper-small"
     @AppStorage("activeModelId") var activeModelId: String = ""
+    /// Dictate with Express (Fluid Speech Mini) instead of the selected
+    /// Whisper model, which stays selected as the fallback. Per Mac: the
+    /// model package is downloaded on each Mac separately.
+    @AppStorage("expressEngineEnabled") var expressEngineEnabled: Bool = false
     @AppStorage("selectedAudioDeviceID") var selectedAudioDeviceID: String = ""
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("hasCompletedSetup") var hasCompletedSetup: Bool = false
@@ -289,6 +293,29 @@ final class AppSettings: ObservableObject {
             activeModelId = ""
         }
         return resolved
+    }
+
+    /// Express runs only when it is on, this Mac supports it, and dictation is
+    /// in English; anything else dictates with the selected Whisper model.
+    var isExpressEngineActive: Bool {
+        expressEngineEnabled
+            && ExpressEngine.isSupported
+            && ExpressEngine.supportsLanguage(effectiveDictationLanguage)
+    }
+
+    /// The model dictation should load: Express when it is active, otherwise
+    /// the Whisper selection (with its English Small adjustment applied).
+    @discardableResult
+    func dictationModelID() -> String {
+        let whisperModelID = applyLanguageOptimizedSmallModelSelection()
+        return isExpressEngineActive ? ExpressEngine.modelID : whisperModelID
+    }
+
+    /// Records the model that just transcribed. `activeModelId` names the
+    /// Whisper model, so an Express load never overwrites it.
+    func recordLoadedModel(_ modelID: String) {
+        guard modelID != ExpressEngine.modelID else { return }
+        activeModelId = modelID
     }
 
     var normalizedLocalLLMEndpoint: String {

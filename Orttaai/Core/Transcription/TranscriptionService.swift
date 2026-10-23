@@ -34,6 +34,9 @@ actor TranscriptionService: Transcribing {
     /// Creates the WhisperKit pipeline for a configuration. A seam so tests can
     /// observe loads without Core ML models.
     typealias WhisperKitFactory = @Sendable (WhisperKitConfig) async throws -> WhisperKit
+    /// Loads the Express model package from its installed folder. A seam for
+    /// the same reason.
+    typealias ExpressBackendFactory = @Sendable (URL) async throws -> any ExpressBackend
 
     private struct InFlightLoad {
         let id: UUID
@@ -107,10 +110,14 @@ actor TranscriptionService: Transcribing {
 
     private let modelLocator: ModelDirectoryLocator
     private let whisperKitFactory: WhisperKitFactory
+    private let expressBackendFactory: ExpressBackendFactory
     /// Where versions before this one cached tokenizers, whatever root the
     /// model itself lived in. Only consulted as a fallback.
     private let legacyTokenizerBase: URL?
     private var whisperKit: WhisperKit?
+    /// Set instead of `whisperKit` while `ExpressEngine.modelID` is loaded.
+    /// Only one engine is resident at a time.
+    private var expressBackend: (any ExpressBackend)?
     private var loadedModelIDValue: String?
     /// The model load in progress. Concurrent requests for the same model
     /// (warm-up and the first finalization) share it instead of loading twice.
@@ -154,15 +161,17 @@ actor TranscriptionService: Transcribing {
     init(
         modelLocator: ModelDirectoryLocator = .shared,
         whisperKitFactory: @escaping WhisperKitFactory = { try await WhisperKit($0) },
+        expressBackendFactory: @escaping ExpressBackendFactory = TranscriptionService.loadExpressTranscriber,
         legacyTokenizerBase: URL? = ModelStorageLocation.defaultDownloadBaseURL()
     ) {
         self.modelLocator = modelLocator
         self.whisperKitFactory = whisperKitFactory
+        self.expressBackendFactory = expressBackendFactory
         self.legacyTokenizerBase = legacyTokenizerBase
     }
 
     var isLoaded: Bool {
-        whisperKit != nil
+        whisperKit != nil || expressBackend != nil
     }
 
     func loadedModelID() -> String? {
@@ -209,6 +218,11 @@ actor TranscriptionService: Transcribing {
     private func performLoad(named modelName: String, allowDownload: Bool) async throws {
         Logger.transcription.info("Loading model: \(modelName)")
 
+        if modelName == ExpressEngine.modelID {
+            try await performExpressLoad()
+            return
+        }
+
         let config: WhisperKitConfig
         let retainedAccess: ModelStorageAccess?
         var didDownload = false
@@ -250,6 +264,7 @@ actor TranscriptionService: Transcribing {
 
         let wk = try await whisperKitFactory(config)
         whisperKit = wk
+        expressBackend = nil
         loadedModelIDValue = modelName
         modelStorageAccess = retainedAccess
         if didDownload {
@@ -257,6 +272,37 @@ actor TranscriptionService: Transcribing {
         }
 
         Logger.transcription.info("Model loaded: \(modelName)")
+    }
+
+    /// Loads Fluid Speech Mini from the selected storage folder. Never
+    /// downloads: ExpressModelStore installs it when the user turns Express on.
+    private func performExpressLoad() async throws {
+        guard ExpressEngine.isSupported else {
+            throw ModelLoadError.modelFilesNotFound(modelID: ExpressEngine.modelID)
+        }
+        let access = try await modelLocator.beginAccess(createIfNeeded: false, requiresWrite: false)
+        let storageBase = access.url
+        guard let installed = await modelLocator.probe({ ExpressModelStore.isInstalled(in: storageBase) }) else {
+            throw ModelLoadError.storageUnavailable
+        }
+        guard installed else {
+            throw ModelLoadError.modelFilesNotFound(modelID: ExpressEngine.modelID)
+        }
+
+        let backend = try await expressBackendFactory(ExpressModelStore.folder(in: storageBase))
+        expressBackend = backend
+        whisperKit = nil
+        loadedModelIDValue = ExpressEngine.modelID
+        modelStorageAccess = access
+        Logger.transcription.info("Model loaded: \(ExpressEngine.modelID)")
+    }
+
+    @Sendable
+    static func loadExpressTranscriber(from folder: URL) async throws -> any ExpressBackend {
+        guard #available(macOS 15, *) else {
+            throw ModelLoadError.modelFilesNotFound(modelID: ExpressEngine.modelID)
+        }
+        return try await ExpressTranscriber.load(from: folder)
     }
 
     /// The root WhisperKit should resolve the tokenizer from; see
@@ -318,6 +364,9 @@ actor TranscriptionService: Transcribing {
 
     func transcribe(audioSamples: [Float]) async throws -> String {
         Logger.transcription.info("Transcribing \(audioSamples.count) samples")
+        if let expressBackend {
+            return try await expressTranscript(audioSamples: audioSamples, backend: expressBackend)
+        }
         let text = try await performTranscription(
             audioSamples: audioSamples,
             allowCancellation: false,
@@ -412,9 +461,41 @@ actor TranscriptionService: Transcribing {
     func finalizeLiveTranscriptionDetailed(
         audioSamples: [Float]
     ) async throws -> (text: String, trace: FinalizeTrace) {
+        if let expressBackend {
+            return try await finalizeExpress(audioSamples: audioSamples, backend: expressBackend)
+        }
         let result = try await assembleLiveTranscript(audioSamples: audioSamples)
         try Self.rejectNonSpeechArtifact(result.text, audioSamples: audioSamples)
         return result
+    }
+
+    /// Express has no live clips: the whole recording is decoded once, which
+    /// costs less than WhisperKit's tail decode alone.
+    private func finalizeExpress(
+        audioSamples: [Float],
+        backend: any ExpressBackend
+    ) async throws -> (text: String, trace: FinalizeTrace) {
+        defer { liveSession = nil }
+        let clock = ContinuousClock()
+        let started = clock.now
+        var trace = FinalizeTrace(
+            totalAudioSeconds: Double(audioSamples.count) / Double(Self.transcriptionSampleRate)
+        )
+        trace.path = .expressWholeDecode
+        let text = try await expressTranscript(audioSamples: audioSamples, backend: backend)
+        trace.msTotal = Self.milliseconds(since: started, on: clock)
+        return (text, trace)
+    }
+
+    /// Same contract as a WhisperKit decode: nothing decoded throws the
+    /// standard no-result error, and non-speech artifacts are rejected.
+    private func expressTranscript(audioSamples: [Float], backend: any ExpressBackend) async throws -> String {
+        let text = Self.normalizedTranscriptionText(try await backend.transcribe(audioSamples))
+        guard !text.isEmpty else {
+            throw Self.noTranscriptionResultError()
+        }
+        try Self.rejectNonSpeechArtifact(text, audioSamples: audioSamples)
+        return text
     }
 
     private func assembleLiveTranscript(
@@ -644,13 +725,14 @@ actor TranscriptionService: Transcribing {
 
     func unloadModel() {
         whisperKit = nil
+        expressBackend = nil
         loadedModelIDValue = nil
         modelStorageAccess = nil
         Logger.transcription.info("Model unloaded")
     }
 
     func warmUp() async {
-        guard whisperKit != nil else { return }
+        guard whisperKit != nil || expressBackend != nil else { return }
 
         // Two seconds, not one: WhisperKit skips any clip at or under its 1s
         // window padding, so a 1s buffer never reached the encoder or decoder

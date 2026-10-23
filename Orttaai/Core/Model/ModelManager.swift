@@ -109,6 +109,8 @@ final class ModelManager {
     /// The app-wide warm transcription service. Features like ChatAI voice
     /// input reuse it instead of owning a second copy of the Whisper model.
     var runtimeTranscriptionService: TranscriptionService { transcriptionService }
+    /// Express (Fluid Speech Mini) install, on/off and status for Settings.
+    let express: ExpressController
     nonisolated private static let requiredModelComponents = [
         "MelSpectrogram",
         "AudioEncoder",
@@ -127,6 +129,11 @@ final class ModelManager {
         self.transcriptionService = transcriptionService
         self.settings = settings
         self.locator = locator
+        self.express = ExpressController(
+            transcriptionService: transcriptionService,
+            settings: settings,
+            locator: locator
+        )
 
         setupHardcodedModels()
     }
@@ -828,6 +835,9 @@ final class ModelManager {
     }
 
     nonisolated static func formatDisplayName(_ id: String) -> String {
+        if id == ExpressEngine.modelID {
+            return ExpressEngine.displayName
+        }
         // Variants display their family name: size/date suffixes describe the
         // build, not the model ("...-v20240930_626MB" → "Whisper Large V3 Turbo").
         var name = canonicalModelListID(id)

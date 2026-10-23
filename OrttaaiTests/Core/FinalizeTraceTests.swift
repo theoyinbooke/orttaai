@@ -124,6 +124,7 @@ final class FinalizeTraceTests: XCTestCase {
             (.reusedSpeculative, "reused_speculative"),
             (.tailEmptyNoAudio, "tail_empty_no_audio"),
             (.noLiveSession, "no_live_session"),
+            (.expressWholeDecode, "express_whole_decode"),
         ]
         for (path, name) in expected {
             trace.path = path

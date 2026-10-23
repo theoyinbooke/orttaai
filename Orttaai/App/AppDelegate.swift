@@ -463,6 +463,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 statusBarController?.updateIcon(state: .idle)
                 statusBarMenu?.updateStatusLine("Ready")
                 Logger.model.info("Model warm-up complete")
+            case .readyWithoutExpress(_, let statusLine):
+                statusBarController?.updateIcon(state: .idle)
+                statusBarMenu?.updateStatusLine(statusLine)
             case .failed(let statusLine):
                 statusBarController?.updateIcon(state: .error)
                 statusBarMenu?.updateStatusLine(statusLine)
