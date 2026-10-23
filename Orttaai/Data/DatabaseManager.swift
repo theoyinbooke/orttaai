@@ -44,9 +44,44 @@ final class DatabaseManager {
     }
 
     convenience init() throws {
-        let databaseURL = try Self.defaultDatabaseURL()
-        let dbQueue = try DatabaseQueue(path: databaseURL.path)
-        try self.init(dbQueue: dbQueue, databaseURL: databaseURL)
+        try self.init(sharedFileAt: try Self.defaultDatabaseURL())
+    }
+
+    /// A manager on the database file at `databaseURL`, sharing its queue
+    /// with every other manager on that file.
+    convenience init(sharedFileAt databaseURL: URL) throws {
+        let queue = try Self.sharedQueue(at: databaseURL)
+        do {
+            try self.init(dbQueue: queue, databaseURL: databaseURL)
+        } catch {
+            // A database that fails to open may be moved aside and recreated
+            // (DatabaseBootstrap); the next manager must not reuse this queue.
+            Self.forgetSharedQueue(queue, at: databaseURL)
+            throw error
+        }
+    }
+
+    /// Every manager opened on the same database file shares one queue. GRDB's
+    /// live observations only see writes made through the queue they watch, so
+    /// with a queue per manager the History and Home views missed each new
+    /// dictation (saved through the app's own manager) until they reloaded.
+    private nonisolated static let sharedQueues = OSAllocatedUnfairLock<[String: DatabaseQueue]>(initialState: [:])
+
+    private nonisolated static func forgetSharedQueue(_ queue: DatabaseQueue, at databaseURL: URL) {
+        sharedQueues.withLock { queues in
+            if queues[databaseURL.path] === queue {
+                queues[databaseURL.path] = nil
+            }
+        }
+    }
+
+    private nonisolated static func sharedQueue(at databaseURL: URL) throws -> DatabaseQueue {
+        try sharedQueues.withLock { queues in
+            if let queue = queues[databaseURL.path] { return queue }
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            queues[databaseURL.path] = queue
+            return queue
+        }
     }
 
     static func applicationSupportRootURL() throws -> URL {

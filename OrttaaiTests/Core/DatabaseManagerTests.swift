@@ -329,6 +329,52 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertTrue(try db.fetchSnippetEntries().isEmpty)
     }
 
+    func testDictationSavedThroughOneManagerReachesAnotherManagersObservation() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("orttaai.db")
+
+        // The coordinator saves through the app's manager; History watches
+        // through its own.
+        let appManager = try DatabaseManager(sharedFileAt: file)
+        let historyManager = try DatabaseManager(sharedFileAt: file)
+        let updated = expectation(description: "History sees the new dictation")
+        var seen: [String] = []
+        let observation = historyManager.observeTranscriptions(limit: nil) { records in
+            seen = records.map(\.text)
+            if seen.contains("Ship it on Friday.") { updated.fulfill() }
+        }
+        defer { observation.cancel() }
+
+        try appManager.saveTranscription(
+            text: "Ship it on Friday.",
+            appName: "Notes",
+            recordingMs: 1_200,
+            processingMs: 140,
+            modelId: "fluid-speech-mini"
+        )
+
+        wait(for: [updated], timeout: 2)
+        XCTAssertEqual(seen, ["Ship it on Friday."])
+    }
+
+    func testDatabaseRecreatedAfterAFailedOpenGetsAFreshQueue() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("orttaai.db")
+        try Data("this is not a database".utf8).write(to: file)
+
+        XCTAssertThrowsError(try DatabaseManager(sharedFileAt: file))
+
+        // DatabaseBootstrap moves the damaged store aside and opens again.
+        try FileManager.default.moveItem(at: file, to: folder.appendingPathComponent("orttaai.corrupt.db"))
+        let manager = try DatabaseManager(sharedFileAt: file)
+        try manager.saveTranscription(text: "Fresh start.", appName: nil, recordingMs: 900, processingMs: 80, modelId: "fluid-speech-mini")
+        XCTAssertEqual(try manager.fetchAllTranscriptions().map(\.text), ["Fresh start."])
+    }
+
     func testRejectedOrKnownPairsAreNotSuggestedAgain() throws {
         let draft = LearningSuggestionDraft(
             type: .dictionary,
