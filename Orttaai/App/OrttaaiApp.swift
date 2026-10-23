@@ -10,6 +10,7 @@ struct OrttaaiApp: App {
     var body: some Scene {
         Settings {
             SettingsView(initialTab: .settings)
+                .writingToolsDisabled()
         }
     }
 }

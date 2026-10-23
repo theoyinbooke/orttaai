@@ -158,6 +158,7 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
+        textView.disableWritingAssistance()
         textView.font = NSFont.systemFont(ofSize: 14)
         textView.textColor = NSColor.Orttaai.textPrimary
         textView.insertionPointColor = NSColor.Orttaai.textPrimary

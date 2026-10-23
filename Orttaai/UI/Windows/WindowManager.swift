@@ -122,7 +122,7 @@ final class WindowManager {
         // Keep interactive content draggable/selectable (sliders, text selection, etc.)
         // and restrict window move behavior to the title bar.
         window.isMovableByWindowBackground = false
-        window.contentView = NSHostingView(rootView: content)
+        window.contentView = NSHostingView(rootView: content.writingToolsDisabled())
         window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.moveToActiveSpace)
 
