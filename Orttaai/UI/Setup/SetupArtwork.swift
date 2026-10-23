@@ -14,18 +14,45 @@ struct SetupStepArt: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // The stage stays put between steps; only the scene cross-fades,
+        // so a step change never rebuilds the grid and glow.
         SetupStage {
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
-                let t = reduceMotion ? 1.3 : context.date.timeIntervalSinceReferenceDate
-                switch step {
-                case 0: VoiceToTextScene(t: t)
-                case 1: ShieldScene(t: t, isComplete: isComplete)
-                case 2: EngineScene(t: t, isComplete: isComplete)
-                default: KeyPressScene(t: t)
-                }
+            ZStack {
+                scene
+                    .id(step)
+                    .transition(.opacity)
             }
         }
         .accessibilityHidden(true)
+    }
+
+    /// One frame of the step's scene, rendered as a single Metal layer so
+    /// it stays cheap to animate, fade and slide.
+    private var scene: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            let t = reduceMotion ? 1.3 : context.date.timeIntervalSinceReferenceDate
+            switch step {
+            case 0: VoiceToTextScene(t: t)
+            case 1: ShieldScene(t: t, isComplete: isComplete)
+            case 2: EngineScene(t: t, isComplete: isComplete)
+            default: KeyPressScene(t: t)
+            }
+        }
+        .drawingGroup()
+    }
+}
+
+/// A soft round glow: a radial gradient, far cheaper than a blurred
+/// shadow that has to be recomputed every frame.
+private struct Glow: View {
+    let color: Color
+    let opacity: Double
+    let size: CGFloat
+
+    var body: some View {
+        Circle()
+            .fill(RadialGradient(colors: [color.opacity(opacity), color.opacity(0)], center: .center, startRadius: 0, endRadius: size / 2))
+            .frame(width: size, height: size)
     }
 }
 
@@ -239,6 +266,9 @@ private struct ShieldScene: View {
                         .position(center)
                 }
 
+                Glow(color: tint, opacity: isComplete ? 0.4 : 0.28, size: 150)
+                    .position(center)
+
                 // The shield draws itself in, then fills when everything is granted.
                 ShieldShape()
                     .fill(tint.opacity(isComplete ? 0.22 : 0.1))
@@ -248,7 +278,6 @@ private struct ShieldScene: View {
                     .trim(from: 0, to: drawn)
                     .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 70, height: 84)
-                    .shadow(color: tint.opacity(0.6), radius: 8)
                     .position(center)
 
                 if isComplete {
@@ -342,6 +371,9 @@ private struct EngineScene: View {
                     }
                 }
 
+                Glow(color: tint, opacity: 0.3 + 0.15 * sin(t * 2), size: 170)
+                    .position(center)
+
                 // The chip, with pins, breathing.
                 ZStack {
                     ForEach(0..<4, id: \.self) { side in
@@ -360,11 +392,9 @@ private struct EngineScene: View {
                                 .stroke(tint, lineWidth: 1.5)
                         )
                         .frame(width: 66, height: 66)
-                        .shadow(color: tint.opacity(0.35 + 0.25 * sin(t * 2)), radius: 14)
                     Image(systemName: isComplete ? "checkmark" : "waveform")
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(tint)
-                        .symbolEffect(.bounce, value: isComplete)
                 }
                 .position(center)
             }
@@ -417,6 +447,9 @@ private struct KeyPressScene: View {
                     context.stroke(wave, with: .color(accent.opacity(0.8)), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 }
 
+                Glow(color: accent, opacity: 0.18 + 0.32 * press, size: 190)
+                    .position(center)
+
                 // The key.
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -437,7 +470,6 @@ private struct KeyPressScene: View {
                         )
                         .frame(width: 104, height: 64)
                         .offset(y: CGFloat(press) * 5)
-                        .shadow(color: accent.opacity(0.5 * press), radius: 16)
                     HStack(spacing: 6) {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 13, weight: .semibold))

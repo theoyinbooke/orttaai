@@ -34,9 +34,8 @@ struct SetupView: View {
                 .padding(.horizontal, 40)
                 .padding(.top, Spacing.lg)
 
+            // The stage stays; only the scene inside cross-fades.
             SetupStepArt(step: currentStep, isComplete: isStepComplete)
-                .id(currentStep)
-                .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 .frame(height: 148)
                 .padding(.horizontal, 28)
                 .padding(.top, Spacing.md)
@@ -79,6 +78,10 @@ struct SetupView: View {
         .onChange(of: currentStep) { _, newValue in
             guard newValue == 3 else { return }
             activateReadyTestIfNeeded()
+        }
+        .task {
+            // Ready before the Engine step, off the main thread.
+            await Task.detached(priority: .utility) { _ = DownloadStepView.hardwareInfo }.value
         }
     }
 
@@ -241,13 +244,7 @@ struct SetupStepTrack: View {
         return VStack(spacing: 6) {
             ZStack {
                 if isCurrent {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
-                        Circle()
-                            .stroke(Color.Orttaai.accent.opacity(reduceMotion ? 0.3 : 0.5 * (1 - phase)), lineWidth: 2)
-                            .frame(width: 24, height: 24)
-                            .scaleEffect(reduceMotion ? 1.25 : 1 + phase * 0.6)
-                    }
+                    PulseRing(reduceMotion: reduceMotion)
                 }
                 Circle()
                     .fill(isDone ? Color.Orttaai.accent : (isCurrent ? Color.Orttaai.accentSubtle : Color.Orttaai.bgTertiary))
@@ -288,6 +285,26 @@ struct SetupStepTrack: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, -10)
         .animation(.easeInOut(duration: 0.45), value: filled)
+    }
+}
+
+/// The current step's ring, pulsing outward. Driven by Core Animation, so
+/// it costs nothing on the main thread.
+private struct PulseRing: View {
+    let reduceMotion: Bool
+    @State private var isExpanded = false
+
+    var body: some View {
+        Circle()
+            .stroke(Color.Orttaai.accent.opacity(reduceMotion ? 0.3 : (isExpanded ? 0 : 0.5)), lineWidth: 2)
+            .frame(width: 24, height: 24)
+            .scaleEffect(reduceMotion ? 1.25 : (isExpanded ? 1.6 : 1))
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
+                    isExpanded = true
+                }
+            }
     }
 }
 

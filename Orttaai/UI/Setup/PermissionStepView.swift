@@ -162,7 +162,16 @@ struct PermissionStepView: View {
         // Input Monitoring is optional.
         checkInputMonitoring()
 
-        allGranted = micGranted && accessibilityGranted
+        updateAllGranted()
+    }
+
+    /// Writes only on change: the check runs every second, and each write
+    /// would re-render the whole Setup window.
+    private func updateAllGranted() {
+        let granted = micGranted && accessibilityGranted
+        if allGranted != granted {
+            allGranted = granted
+        }
     }
 
     private func checkInputMonitoring() {
@@ -210,7 +219,7 @@ struct PermissionStepView: View {
         AVCaptureDevice.requestAccess(for: .audio) { granted in
             DispatchQueue.main.async {
                 micGranted = granted
-                allGranted = micGranted && accessibilityGranted
+                updateAllGranted()
             }
         }
     }
@@ -220,7 +229,7 @@ struct PermissionStepView: View {
         let isTrusted = AXIsProcessTrustedWithOptions(options)
 
         accessibilityGranted = isTrusted
-        allGranted = micGranted && accessibilityGranted
+        updateAllGranted()
 
         guard !isTrusted else { return }
 

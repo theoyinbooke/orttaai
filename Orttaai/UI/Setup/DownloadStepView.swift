@@ -82,7 +82,10 @@ struct DownloadStepView: View {
     @State private var modelStorage = ModelStorageLocation.placeholderSnapshot()
     @State private var modelStorageError: String?
 
-    private let hardwareInfo = HardwareDetector.detect()
+    /// Detected once per launch (it takes ~17 ms); SetupView starts it in
+    /// the background so the Engine step never waits for it.
+    static let hardwareInfo = HardwareDetector.detect()
+    private var hardwareInfo: HardwareInfo { Self.hardwareInfo }
     /// Express installs and loads through the same controller as Settings.
     private let express = ExpressEngine.isSupported ? ModelManager.shared?.express : nil
 

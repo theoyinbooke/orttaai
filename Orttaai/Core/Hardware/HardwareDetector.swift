@@ -5,14 +5,14 @@ import Foundation
 import IOKit
 import os
 
-enum HardwareTier: String, Codable {
+enum HardwareTier: String, Codable, Sendable {
     case m1_8gb
     case m1_16gb
     case m3_16gb
     case intel_unsupported
 }
 
-struct HardwareInfo {
+struct HardwareInfo: Sendable {
     let chipName: String
     let isAppleSilicon: Bool
     let ramGB: Int
