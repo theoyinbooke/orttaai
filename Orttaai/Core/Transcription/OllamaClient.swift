@@ -44,6 +44,8 @@ enum OllamaClientError: LocalizedError {
     case invalidResponse
     case requestFailed(message: String)
     case httpError(status: Int, message: String)
+    /// A cloud model or an endpoint outside the user's own hardware.
+    case notLocal(message: String)
 
     var errorDescription: String? {
         switch self {
@@ -55,6 +57,8 @@ enum OllamaClientError: LocalizedError {
             return message
         case .httpError(let status, let message):
             return "Ollama error \(status): \(message)"
+        case .notLocal(let message):
+            return message
         }
     }
 }
@@ -103,7 +107,7 @@ actor OllamaClient: LocalLLMServing {
             return OllamaHealthStatus(
                 isReachable: true,
                 installedModels: installed,
-                message: "Ollama is reachable. \(installed.count) model\(installed.count == 1 ? "" : "s") available."
+                message: "Ollama is reachable. \(installed.count) local model\(installed.count == 1 ? "" : "s") available."
             )
         } catch {
             return OllamaHealthStatus(
@@ -125,15 +129,19 @@ actor OllamaClient: LocalLLMServing {
 
         let json = try parseJSONObject(data)
         guard let models = json["models"] as? [[String: Any]] else { return [] }
-        return models.compactMap { item in
-            (item["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        .filter { !$0.isEmpty }
+        // Ollama's cloud models run on ollama.com; they never reach the app.
+        return models
+            .filter(LocalModelPolicy.isLocalOllamaEntry)
+            .compactMap { item in
+                (item["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
     }
 
     /// Reads `capabilities` from `/api/show`; nil for an Ollama too old to
     /// report them, or when the request fails.
     func modelCapabilities(baseURLString: String, model: String, timeoutMs: Int) async -> Set<String>? {
+        guard !LocalModelPolicy.isOllamaCloudModelName(model) else { return nil }
         guard let url = try? endpointURL(baseURLString: baseURLString, path: "/api/show"),
               let body = try? JSONSerialization.data(withJSONObject: ["model": model]) else { return nil }
         var request = URLRequest(url: url)
@@ -161,6 +169,7 @@ actor OllamaClient: LocalLLMServing {
         numContext: Int? = nil,
         keepAlive: String = "5m"
     ) async throws -> String {
+        try requireLocalModel(model)
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedModel.isEmpty else {
@@ -244,6 +253,7 @@ actor OllamaClient: LocalLLMServing {
         numContext: Int? = nil,
         keepAlive: String = "5m"
     ) async throws -> String {
+        try requireLocalModel(model)
         let request = try chatRequest(
             baseURLString: baseURLString,
             model: model,
@@ -301,6 +311,7 @@ actor OllamaClient: LocalLLMServing {
         onDelta: @escaping @Sendable (String) -> Void,
         onThinking: @escaping @Sendable (String) -> Void
     ) async throws -> String {
+        try requireLocalModel(model)
         let request = try chatRequest(
             baseURLString: baseURLString,
             model: model,
@@ -425,6 +436,7 @@ actor OllamaClient: LocalLLMServing {
         keepAlive: String = "5m",
         truncate: Bool = true
     ) async throws -> [[Float]] {
+        try requireLocalModel(model)
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedInputs = inputs
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -498,6 +510,7 @@ actor OllamaClient: LocalLLMServing {
         timeoutMs: Int = 3_600_000,
         onProgress: ((OllamaPullProgress) -> Void)? = nil
     ) async throws {
+        try requireLocalModel(model)
         let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedModel.isEmpty else {
             throw OllamaClientError.requestFailed(message: "Missing model name to install.")
@@ -594,6 +607,7 @@ actor OllamaClient: LocalLLMServing {
         timeoutMs: Int = 35_000,
         keepAlive: String = "5m"
     ) async throws -> Int {
+        try requireLocalModel(model)
         let startedAt = Date()
         _ = try await generate(
             baseURLString: baseURLString,
@@ -608,12 +622,24 @@ actor OllamaClient: LocalLLMServing {
         return Int(Date().timeIntervalSince(startedAt) * 1_000)
     }
 
+    /// Refuses Ollama's cloud models before any request is built.
+    private func requireLocalModel(_ model: String) throws {
+        if LocalModelPolicy.isOllamaCloudModelName(model) {
+            throw OllamaClientError.notLocal(message: "\(LocalModelPolicy.refusalMessage) \u{201C}\(model)\u{201D} runs in Ollama's cloud.")
+        }
+    }
+
     private func endpointURL(baseURLString: String, path: String) throws -> URL {
         let trimmed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = "http://127.0.0.1:11434"
         let raw = trimmed.isEmpty ? fallback : trimmed
         guard let baseURL = URL(string: raw) else {
             throw OllamaClientError.invalidBaseURL
+        }
+        guard LocalModelPolicy.isAllowedEndpoint(baseURL) else {
+            throw OllamaClientError.notLocal(
+                message: "\(LocalModelPolicy.refusalMessage) The Ollama address must be on this Mac or your local network."
+            )
         }
 
         let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path

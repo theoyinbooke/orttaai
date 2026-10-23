@@ -289,7 +289,7 @@ enum ConceptBriefWriter {
             endpoint: settings.polishLLMEndpoint,
             // The polish model first: it is proven on this kind of text and
             // usually already loaded, so reading adds no extra memory.
-            candidates: [settings.normalizedLocalLLMPolishModel, settings.localSemanticInsightModel]
+            candidates: [settings.normalizedLocalLLMPolishModel, settings.normalizedSemanticInsightSummaryModel]
         )
     }
 

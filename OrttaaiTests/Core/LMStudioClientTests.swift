@@ -152,7 +152,9 @@ final class LMStudioClientTests: XCTestCase {
             )
             XCTFail("Expected unknown-model request to throw")
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("not available in LM Studio"), error.localizedDescription)
+            guard case OllamaClientError.notLocal = error else {
+                return XCTFail("Expected notLocal, got \(error)")
+            }
         }
 
         // Generation with a real chat model, if one is downloaded.

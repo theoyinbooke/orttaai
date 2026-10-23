@@ -1,11 +1,17 @@
 // LMStudioClient.swift
 // Orttaai
 
+import AppKit
 import Foundation
 
-/// Client for LM Studio's OpenAI-compatible server (default
-/// http://127.0.0.1:1234): GET /v1/models, POST /v1/chat/completions (with
-/// json_schema structured output), POST /v1/embeddings.
+/// Client for LM Studio's server (default http://127.0.0.1:1234), which
+/// Bionic, LM Studio's agent app, also runs: GET /api/v1/models (native, with
+/// type and size), POST /v1/chat/completions (with json_schema structured
+/// output), POST /v1/embeddings. Other OpenAI-compatible servers (llama.cpp,
+/// mlx_lm.server) work through the GET /v1/models fallback.
+///
+/// Only models stored on disk are listed or used: LM Studio's Secure Cloud
+/// models are hosted, so they are never offered (see `LocalModelPolicy`).
 ///
 /// Two LM Studio behaviors this client papers over:
 /// - The server silently falls back to whatever model is loaded when the
@@ -20,6 +26,8 @@ actor LMStudioClient: LocalLLMServing {
     private var cachedModelNames: [String] = []
     private var cachedModelNamesAt: Date?
     private var cachedModelNamesEndpoint: String = ""
+    /// "llm" or "embedding" per model, from the native list when it answers.
+    private var cachedModelTypes: [String: String] = [:]
     private static let modelCacheLifetime: TimeInterval = 30
 
     init(session: URLSession = .shared) {
@@ -32,28 +40,71 @@ actor LMStudioClient: LocalLLMServing {
         do {
             let models = try await fetchModelNames(baseURLString: baseURLString, timeoutMs: timeoutMs)
             let installed = models.sorted()
+            let server = Self.isBionicRunning ? "LM Studio (Bionic)" : "LM Studio"
             if installed.isEmpty {
                 return OllamaHealthStatus(
                     isReachable: true,
                     installedModels: [],
-                    message: "LM Studio is reachable, but no models are downloaded yet. Add models in the LM Studio app."
+                    message: "\(server) is reachable, but no local models are downloaded yet. Add models in LM Studio or Bionic."
                 )
             }
             return OllamaHealthStatus(
                 isReachable: true,
                 installedModels: installed,
-                message: "LM Studio is reachable. \(installed.count) model\(installed.count == 1 ? "" : "s") available."
+                message: "\(server) is reachable. \(installed.count) local model\(installed.count == 1 ? "" : "s") available."
             )
         } catch {
             return OllamaHealthStatus(
                 isReachable: false,
                 installedModels: [],
-                message: "LM Studio unreachable: \(error.localizedDescription) Start the server from LM Studio's Developer tab (or run `lms server start`)."
+                message: "LM Studio unreachable: \(error.localizedDescription) Start the server from LM Studio's Developer tab, open Bionic, or run `lms server start`."
             )
         }
     }
 
     func fetchModelNames(baseURLString: String, timeoutMs: Int) async throws -> [String] {
+        let names: [String]
+        if let native = try await fetchNativeModels(baseURLString: baseURLString, timeoutMs: timeoutMs) {
+            names = native.map(\.key)
+            cachedModelTypes = Dictionary(native.map { ($0.key, $0.type) }, uniquingKeysWith: { first, _ in first })
+        } else {
+            names = try await fetchOpenAICompatibleModelNames(baseURLString: baseURLString, timeoutMs: timeoutMs)
+            cachedModelTypes = [:]
+        }
+
+        cachedModelNames = names
+        cachedModelNamesAt = Date()
+        cachedModelNamesEndpoint = baseURLString
+        return names
+    }
+
+    /// LM Studio's native list, keeping only models with files on disk; nil
+    /// when the server doesn't have it (an older LM Studio, or another
+    /// OpenAI-compatible server).
+    private func fetchNativeModels(baseURLString: String, timeoutMs: Int) async throws -> [(key: String, type: String)]? {
+        let url = try endpointURL(baseURLString: baseURLString, path: "/api/v1/models")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = max(0.08, Double(timeoutMs) / 1_000.0)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let json = try? parseJSONObject(data),
+              let entries = json["models"] as? [[String: Any]] else { return nil }
+        return Self.localModels(fromNativeEntries: entries)
+    }
+
+    nonisolated static func localModels(fromNativeEntries entries: [[String: Any]]) -> [(key: String, type: String)] {
+        entries
+            .filter(LocalModelPolicy.isLocalLMStudioEntry)
+            .compactMap { entry in
+                guard let key = (entry["key"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !key.isEmpty else { return nil }
+                return (key, (entry["type"] as? String) ?? "llm")
+            }
+    }
+
+    private func fetchOpenAICompatibleModelNames(baseURLString: String, timeoutMs: Int) async throws -> [String] {
         let url = try endpointURL(baseURLString: baseURLString, path: "/v1/models")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -64,15 +115,29 @@ actor LMStudioClient: LocalLLMServing {
 
         let json = try parseJSONObject(data)
         guard let entries = json["data"] as? [[String: Any]] else { return [] }
-        let names = entries.compactMap { entry in
+        return entries.compactMap { entry in
             (entry["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         .filter { !$0.isEmpty }
+    }
 
-        cachedModelNames = names
-        cachedModelNamesAt = Date()
-        cachedModelNamesEndpoint = baseURLString
-        return names
+    /// From the native list's model type: chat models complete, embedding
+    /// models embed. Nil when the type isn't known.
+    func modelCapabilities(baseURLString: String, model: String, timeoutMs: Int) async -> Set<String>? {
+        if cachedModelNamesEndpoint != baseURLString || cachedModelTypes.isEmpty {
+            _ = try? await fetchModelNames(baseURLString: baseURLString, timeoutMs: timeoutMs)
+        }
+        switch cachedModelTypes[model] {
+        case "llm": return ["completion"]
+        case "embedding": return ["embedding"]
+        default: return nil
+        }
+    }
+
+    /// Bionic runs LM Studio's server on the same port; say so when it's the
+    /// one answering.
+    nonisolated static var isBionicRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: "ai.elementlabs.bionic").isEmpty
     }
 
     // MARK: - Generation
@@ -299,8 +364,8 @@ actor LMStudioClient: LocalLLMServing {
 
         let target = model.lowercased()
         guard names.contains(where: { $0.lowercased() == target }) else {
-            throw OllamaClientError.requestFailed(
-                message: "Model \"\(model)\" is not available in LM Studio. Download or load it in the LM Studio app, then pick it from the model list."
+            throw OllamaClientError.notLocal(
+                message: "Model \"\(model)\" isn't a local model in LM Studio. \(LocalModelPolicy.refusalMessage) Download it in LM Studio or Bionic, then pick it from the model list."
             )
         }
     }
@@ -398,6 +463,11 @@ actor LMStudioClient: LocalLLMServing {
         let raw = trimmed.isEmpty ? LocalLLMProviderKind.lmStudio.defaultEndpoint : trimmed
         guard let baseURL = URL(string: raw) else {
             throw OllamaClientError.invalidBaseURL
+        }
+        guard LocalModelPolicy.isAllowedEndpoint(baseURL) else {
+            throw OllamaClientError.notLocal(
+                message: "\(LocalModelPolicy.refusalMessage) The LM Studio address must be on this Mac or your local network."
+            )
         }
         let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
         return baseURL.appendingPathComponent(cleanPath)

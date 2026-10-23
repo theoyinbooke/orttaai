@@ -71,6 +71,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize app state
         let state = AppState()
         appState = state
+        // Before anything reads the AI provider: an install left on a removed
+        // cloud provider moves to a local one.
+        LocalAIMigration.migrateProviderIfNeeded(settings: state.settings)
 
         // Set up UI
         statusBarController = StatusBarController(statusItem: statusItem)
@@ -184,11 +187,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         CloudProfileChangeTracker.shared.stop()
         CloudSyncScheduler.stop()
-        // Stop the spawned Codex app-server (if one is running) so no orphan
-        // process outlives the app. Termination proceeds without waiting.
-        Task.detached {
-            await CodexAppServerConnection.shared.shutdown()
-        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -491,9 +489,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func prewarmLocalLLMModelsIfNeeded() {
         guard let settings = appState?.settings else { return }
 
-        // Warm each feature's model on the provider that actually serves it:
-        // polish always runs locally, insights follow the active provider
-        // (cloud models have nothing to warm — Codex warmModel is a no-op).
+        // Warm each enabled feature's model on the local provider.
         var warmTargets: [(model: String, provider: LocalLLMProviderKind, endpoint: String)] = []
         if settings.localLLMPolishEnabled {
             warmTargets.append((
@@ -502,7 +498,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 settings.polishLLMEndpoint
             ))
         }
-        if settings.localLLMInsightsEnabled, settings.localLLMProvider.isLocal {
+        if settings.localLLMInsightsEnabled {
             warmTargets.append((
                 settings.normalizedLocalLLMInsightsModel,
                 settings.localLLMProvider,
@@ -556,7 +552,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         runtimeServicesStarted = true
         floatingPanel?.show()
         warmUpModel()
-        prewarmLocalLLMModelsIfNeeded()
+        Task { @MainActor [weak self] in
+            if let settings = self?.appState?.settings {
+                await LocalAIMigration.finishMigrationIfNeeded(settings: settings)
+            }
+            self?.prewarmLocalLLMModelsIfNeeded()
+        }
     }
 
     private func observeShortcutChanges() {

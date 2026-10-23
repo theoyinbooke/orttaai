@@ -60,16 +60,14 @@ struct ModelSettingsView: View {
     @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
     @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
-    @AppStorage("lastLocalLLMProvider") private var lastLocalLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
-    @AppStorage("codexModel") private var codexModel = "gpt-5.4-mini"
-    @AppStorage("grokModel") private var grokModel = GrokClient.defaultModel
+    @AppStorage("aiProviderMigrationNotice") private var aiProviderMigrationNotice = ""
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
     @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
     @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma4:e2b"
     @AppStorage("localLLMPolishTimeoutMs") private var localLLMPolishTimeoutMs = 3_000
     @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 400
     @AppStorage("localLLMInsightsEnabled") private var localLLMInsightsEnabled = false
-    @AppStorage("localLLMInsightsModel") private var localLLMInsightsModel = "qwen3.5:0.8b"
+    @AppStorage("localLLMInsightsModel") private var localLLMInsightsModel = "gemma4:e2b"
     @AppStorage("localLLMInsightsContextTokens") private var localLLMInsightsContextTokens = 16_384
     @AppStorage("localLLMInsightsThinkingEnabled") private var localLLMInsightsThinkingEnabled = false
     @AppStorage("semanticMemoryEnabled") private var semanticMemoryEnabled = true
@@ -95,6 +93,8 @@ struct ModelSettingsView: View {
     @State private var ollamaStatusMessage: String = "Check connection to validate local model availability."
     @State private var ollamaStatusReachable: Bool?
     @State private var installedOllamaModels: [String] = []
+    /// Installed models that make embeddings rather than chat.
+    @State private var embeddingModelNames: Set<String> = []
     @State private var isCheckingOllama: Bool = false
     @State private var isInstallingOllamaModel: Bool = false
     @State private var installingOllamaModelName: String?
@@ -683,28 +683,21 @@ struct ModelSettingsView: View {
             get: { providerKind },
             set: { newKind in
                 localLLMProviderRaw = newKind.rawValue
-                if newKind.isLocal {
-                    // Remembered so on-device features (polish, embeddings)
-                    // keep a local provider while a cloud one is active.
-                    lastLocalLLMProviderRaw = newKind.rawValue
-                }
                 ollamaStatusReachable = nil
-                ollamaStatusMessage = newKind.isLocal
-                    ? "Check connection to validate local model availability."
-                    : "Check connection to validate CLI sign-in and cloud models."
+                ollamaStatusMessage = "Check connection to validate local model availability."
                 installedOllamaModels = []
                 Task { await checkOllamaAvailability() }
             }
         )
     }
 
-    /// One line: provider, its model (or the local server address), and a
-    /// connection check that turns green when ready. Rows below appear only
-    /// when the provider needs something: consent, sign-in, or a fix.
+    /// One line: provider, its server address, and a connection check that
+    /// turns green when ready. Rows below appear only when there's a fix to
+    /// make or something to say.
     private var providerCard: some View {
         SettingsCard(
             "AI Provider",
-            info: "Where AI features run. Ollama and LM Studio run models on this Mac; LM Studio manages its own downloads. ChatGPT and Grok use your signed-in account in the cloud."
+            info: "Where AI features run. Everything stays on your own hardware: Ollama, or LM Studio (which Bionic also runs). Cloud models are never used, even ones Ollama or LM Studio offer."
         ) {
             HStack(spacing: Spacing.sm) {
                 OrttaaiDropdown(
@@ -725,74 +718,24 @@ struct ModelSettingsView: View {
                 .disabled(isInstallingOllamaModel || isLoadingOllamaCatalog)
             }
         } content: {
-            switch providerKind {
-            case .codex:
-                CodexProviderRows {
-                    Task { await checkOllamaAvailability() }
+            if !aiProviderMigrationNotice.isEmpty {
+                SettingsNotice(kind: .info, message: aiProviderMigrationNotice) {
+                    aiProviderMigrationNotice = ""
                 }
-            case .grok:
-                GrokProviderRows(
-                    isReady: ollamaStatusReachable,
-                    statusMessage: ollamaStatusMessage
-                ) {
-                    Task { await checkOllamaAvailability() }
-                }
-            default:
-                localProviderRows
             }
-        }
-        .onChange(of: installedOllamaModels) { _, _ in
-            normalizeCloudModelSelection()
+            localProviderRows
         }
     }
 
-    /// The model for a cloud provider, or the server address for a local one
-    /// (local models are chosen per feature in the cards below).
-    @ViewBuilder
+    /// The server address; models are chosen per feature in the cards below.
     private var providerDetailControl: some View {
-        switch providerKind {
-        case .codex:
-            OrttaaiDropdown(
-                selection: $codexModel,
-                options: cloudModelOptions(current: codexModel),
-                width: 190
-            )
-        case .grok:
-            OrttaaiDropdown(
-                selection: $grokModel,
-                options: cloudModelOptions(current: grokModel),
-                width: 190
-            )
-        default:
-            OrttaaiTextField(
-                placeholder: providerKind.defaultEndpoint,
-                text: activeLLMEndpointBinding
-            )
-            .frame(width: 190)
-            .id(providerKind)
-            .help("\(providerKind.displayName) server address")
-        }
-    }
-
-    private func cloudModelOptions(current: String) -> [OrttaaiDropdown<String>.Option] {
-        var names = installedOllamaModels
-        if !current.isEmpty, !names.contains(current) {
-            names.insert(current, at: 0)
-        }
-        return names.map { .init($0, $0) }
-    }
-
-    /// Keeps a cloud model selection on a model the account actually offers.
-    private func normalizeCloudModelSelection() {
-        guard let first = installedOllamaModels.first else { return }
-        switch providerKind {
-        case .grok where !installedOllamaModels.contains(grokModel):
-            grokModel = first
-        case .codex where codexModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
-            codexModel = first
-        default:
-            break
-        }
+        OrttaaiTextField(
+            placeholder: providerKind.defaultEndpoint,
+            text: activeLLMEndpointBinding
+        )
+        .frame(width: 190)
+        .id(providerKind)
+        .help("\(providerKind.displayName) server address. It must be on this Mac or your local network.")
     }
 
     @ViewBuilder
@@ -870,26 +813,15 @@ struct ModelSettingsView: View {
 
             SettingsDivider()
 
-            if providerKind.isLocal {
-                SettingsRow(title: "Polish Model") {
-                    OrttaaiDropdown(
-                        selection: Binding(
-                            get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
-                            set: { localLLMPolishModel = $0 }
-                        ),
-                        options: modelDropdownOptions(current: normalizedPolishOllamaModel),
-                        width: SettingsLayout.controlWidth
-                    )
-                }
-            } else {
-                SettingsRow(
-                    title: "Polish Model",
-                    info: "Polish always runs locally, on \(localFallbackProviderKind.displayName), even while a cloud provider is selected."
-                ) {
-                    Text(normalizedPolishOllamaModel)
-                        .font(.Orttaai.mono)
-                        .foregroundStyle(Color.Orttaai.textSecondary)
-                }
+            SettingsRow(title: "Polish Model") {
+                OrttaaiDropdown(
+                    selection: Binding(
+                        get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
+                        set: { localLLMPolishModel = $0 }
+                    ),
+                    options: modelDropdownOptions(current: normalizedPolishOllamaModel),
+                    width: SettingsLayout.controlWidth
+                )
             }
 
             SettingsDivider()
@@ -923,52 +855,42 @@ struct ModelSettingsView: View {
     private var insightsCard: some View {
         SettingsCard(
             "Writing Insights",
-            info: providerKind.isLocal
-                ? "Uses local LLM analysis to surface speaking and writing patterns."
-                : "Uses your signed-in \(providerKind.displayName) account to surface speaking and writing patterns."
+            info: "Uses a local model to surface speaking and writing patterns."
         ) {
             OrttaaiSwitch(title: "Writing Insights", isOn: $localLLMInsightsEnabled)
         } content: {
             if localLLMInsightsEnabled {
-                if providerKind.isLocal {
-                    SettingsRow(title: "Insights Model") {
-                        OrttaaiDropdown(
-                            selection: Binding(
-                                get: { resolvedModelSelection(for: normalizedInsightsOllamaModel) },
-                                set: { localLLMInsightsModel = $0 }
-                            ),
-                            options: modelDropdownOptions(current: normalizedInsightsOllamaModel),
-                            width: SettingsLayout.controlWidth
-                        )
-                    }
-
-                    SettingsDivider()
-
-                    SettingsStepperRow(
-                        title: "Context Window",
-                        info: "How much of your history the model reads at once. Larger windows need more memory.",
-                        value: $localLLMInsightsContextTokens,
-                        range: 8_192...262_144,
-                        step: 8_192,
-                        format: { "\($0 / 1_024)K tokens" }
-                    )
-
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        title: "Thinking",
-                        info: "Lets the model reason step by step for deeper analysis. Slower, and uses more tokens.",
-                        isOn: $localLLMInsightsThinkingEnabled
-                    )
-
-                    SettingsFootnote(insightsRecommendationMessage)
-                } else {
-                    SettingsFootnote(
-                        providerKind == .codex
-                            ? "Writing insights and graph interpretation use \u{201C}\(codexModel)\u{201D} through your ChatGPT subscription. Change the model and reasoning effort under AI Provider."
-                            : "Writing insights and graph interpretation use \u{201C}\(grokModel)\u{201D} through your Grok CLI account. Change the model under AI Provider."
+                SettingsRow(title: "Insights Model") {
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { resolvedModelSelection(for: normalizedInsightsOllamaModel) },
+                            set: { localLLMInsightsModel = $0 }
+                        ),
+                        options: modelDropdownOptions(current: normalizedInsightsOllamaModel),
+                        width: SettingsLayout.controlWidth
                     )
                 }
+
+                SettingsDivider()
+
+                SettingsStepperRow(
+                    title: "Context Window",
+                    info: "How much of your history the model reads at once. Larger windows need more memory.",
+                    value: $localLLMInsightsContextTokens,
+                    range: 8_192...262_144,
+                    step: 8_192,
+                    format: { "\($0 / 1_024)K tokens" }
+                )
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: "Thinking",
+                    info: "Lets the model reason step by step for deeper analysis. Slower, and uses more tokens.",
+                    isOn: $localLLMInsightsThinkingEnabled
+                )
+
+                SettingsFootnote(insightsRecommendationMessage)
             }
         }
     }
@@ -981,32 +903,21 @@ struct ModelSettingsView: View {
             OrttaaiSwitch(title: "Semantic Memory", isOn: $semanticMemoryEnabled)
         } content: {
             if semanticMemoryEnabled {
-                if providerKind.supportsEmbeddings {
-                    SettingsRow(
-                        title: "Embedding Model",
-                        info: "Changing the model rebuilds the index."
-                    ) {
-                        OrttaaiDropdown(
-                            selection: Binding(
-                                get: { resolvedModelSelection(for: normalizedSemanticEmbeddingModel) },
-                                set: { newValue in
-                                    semanticEmbeddingModel = newValue
-                                    semanticActiveIndexModelID = ""
-                                }
-                            ),
-                            options: modelDropdownOptions(current: normalizedSemanticEmbeddingModel),
-                            width: SettingsLayout.controlWidth
-                        )
-                    }
-                } else {
-                    SettingsRow(
-                        title: "Embedding Model",
-                        info: "Embeddings always run locally, on \(localFallbackProviderKind.displayName), even while a cloud provider is selected."
-                    ) {
-                        Text(normalizedSemanticEmbeddingModel)
-                            .font(.Orttaai.mono)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                    }
+                SettingsRow(
+                    title: "Embedding Model",
+                    info: "Changing the model rebuilds the index."
+                ) {
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { resolvedModelSelection(for: normalizedSemanticEmbeddingModel) },
+                            set: { newValue in
+                                semanticEmbeddingModel = newValue
+                                semanticActiveIndexModelID = ""
+                            }
+                        ),
+                        options: modelDropdownOptions(current: normalizedSemanticEmbeddingModel, embedding: true),
+                        width: SettingsLayout.controlWidth
+                    )
                 }
 
                 SettingsDivider()
@@ -1572,7 +1483,7 @@ struct ModelSettingsView: View {
         }
 
         localLLMPolishModel = sanitizeLocalLLMModel(localLLMPolishModel, fallback: "gemma4:e2b")
-        localLLMInsightsModel = sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "qwen3.5:0.8b")
+        localLLMInsightsModel = sanitizeLocalLLMModel(localLLMInsightsModel, fallback: "gemma4:e2b")
         semanticEmbeddingModel = semanticEmbeddingModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if semanticEmbeddingModel.isEmpty {
             semanticEmbeddingModel = "all-minilm"
@@ -1609,20 +1520,11 @@ struct ModelSettingsView: View {
         switch providerKind {
         case .ollama: return localLLMEndpoint
         case .lmStudio: return lmStudioEndpoint
-        case .codex, .grok: return "" // Spawned subprocess; no HTTP endpoint.
         }
     }
 
     private var activeLLMEndpointBinding: Binding<String> {
         providerKind == .ollama ? $localLLMEndpoint : $lmStudioEndpoint
-    }
-
-    /// Local provider that keeps serving on-device features (polish,
-    /// embeddings) while a cloud provider is selected.
-    private var localFallbackProviderKind: LocalLLMProviderKind {
-        if providerKind.isLocal { return providerKind }
-        let stored = LocalLLMProviderKind(rawValue: lastLocalLLMProviderRaw) ?? .ollama
-        return stored.isLocal ? stored : .ollama
     }
 
     private func checkOllamaAvailability() async {
@@ -1634,10 +1536,16 @@ struct ModelSettingsView: View {
             baseURLString: activeLLMEndpoint,
             timeoutMs: 1_500
         )
+        let embeddingModels = await Self.embeddingModels(
+            among: health.installedModels,
+            client: activeLLMClient,
+            endpoint: activeLLMEndpoint
+        )
         await MainActor.run {
             ollamaStatusReachable = health.isReachable
             ollamaStatusMessage = health.message
             installedOllamaModels = health.installedModels
+            embeddingModelNames = embeddingModels
         }
 
         // Curated one-click downloads only exist for Ollama; LM Studio manages
@@ -1719,8 +1627,34 @@ struct ModelSettingsView: View {
     /// Installed models, with the stored value injected at the top (flagged as
     /// not installed) when the current provider doesn't have it — so the
     /// dropdown always displays the active model without a separate text field.
-    private func modelDropdownOptions(current: String) -> [OrttaaiDropdown<String>.Option] {
-        var options = installedOllamaModels.map { OrttaaiDropdown<String>.Option($0, $0) }
+    /// Asks the server what each model does (Ollama's capabilities, LM
+    /// Studio's model type), falling back to the name.
+    private static func embeddingModels(
+        among models: [String],
+        client: any LocalLLMServing,
+        endpoint: String
+    ) async -> Set<String> {
+        await withTaskGroup(of: (String, Bool).self) { group in
+            for model in models {
+                group.addTask {
+                    let capabilities = await client.modelCapabilities(baseURLString: endpoint, model: model, timeoutMs: 2_000)
+                    let embeds = capabilities.map { $0.contains("embedding") && !$0.contains("completion") }
+                        ?? LocalAIMigration.looksLikeEmbeddingModel(model)
+                    return (model, embeds)
+                }
+            }
+            return await group.reduce(into: Set<String>()) { result, pair in
+                if pair.1 { result.insert(pair.0) }
+            }
+        }
+    }
+
+    /// Chat pickers list chat models; the embedding picker lists embedding
+    /// models (or everything, when none could be told apart).
+    private func modelDropdownOptions(current: String, embedding: Bool = false) -> [OrttaaiDropdown<String>.Option] {
+        let matching = installedOllamaModels.filter { embeddingModelNames.contains($0) == embedding }
+        let names = embedding && matching.isEmpty ? installedOllamaModels : matching
+        var options = names.map { OrttaaiDropdown<String>.Option($0, $0) }
         let canonicalCurrent = canonicalOllamaModelName(current)
         let isInstalled = installedOllamaModels.contains { canonicalOllamaModelName($0) == canonicalCurrent }
         if !isInstalled, !current.isEmpty {

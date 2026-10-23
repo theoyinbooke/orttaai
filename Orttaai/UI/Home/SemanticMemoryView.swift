@@ -173,7 +173,7 @@ struct SemanticMemoryView: View {
     @AppStorage("semanticEmbeddingModel") private var semanticEmbeddingModel = "all-minilm"
     @AppStorage("semanticActiveIndexModelID") private var semanticActiveIndexModelID = ""
     @AppStorage("semanticInsightSummaryEnabled") private var semanticInsightSummaryEnabled = true
-    @AppStorage("semanticInsightSummaryModel") private var semanticInsightSummaryModel = "qwen3.5:0.8b"
+    @AppStorage("semanticInsightSummaryModel") private var semanticInsightSummaryModel = "gemma4:e2b"
 
     var body: some View {
         Group {
@@ -282,7 +282,7 @@ struct SemanticMemoryView: View {
 
     private var insightDropdownOptions: [OrttaaiDropdown<String>.Option] {
         guard !insightModelOptions.isEmpty else {
-            let fallback = normalizedSemanticInsightSummaryModel.isEmpty ? "qwen3.5:0.8b" : normalizedSemanticInsightSummaryModel
+            let fallback = normalizedSemanticInsightSummaryModel.isEmpty ? "gemma4:e2b" : normalizedSemanticInsightSummaryModel
             return [.init(fallback, fallback)]
         }
         return insightModelOptions.map { .init($0.name, insightModelOptionLabel(for: $0)) }
@@ -625,12 +625,6 @@ struct SemanticMemoryView: View {
                 .disabled(isInsightActionDisabled)
             }
             .disabled(!semanticInsightSummaryEnabled)
-
-            if !activeProviderKind.isLocal {
-                Text("Local fallback for \(activeProviderKind.displayName) insights.")
-                    .font(.Orttaai.caption)
-                    .foregroundStyle(Color.Orttaai.textSecondary)
-            }
 
             if let insightInstallStatusMessage {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1345,26 +1339,14 @@ struct SemanticMemoryView: View {
     }
 
     private func normalizeInsightSummarySelection() {
-        semanticInsightSummaryModel = normalizedSemanticInsightSummaryModel.isEmpty ? "qwen3.5:0.8b" : normalizedSemanticInsightSummaryModel
+        semanticInsightSummaryModel = normalizedSemanticInsightSummaryModel.isEmpty ? "gemma4:e2b" : normalizedSemanticInsightSummaryModel
         if selectedInsightCatalogModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             selectedInsightCatalogModel = semanticInsightSummaryModel
         }
     }
 
-    /// The provider the user actually selected, cloud or local. Distinct from
-    /// `providerKind`, which resolves to the local provider this view manages.
-    private var activeProviderKind: LocalLLMProviderKind {
-        LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama
-    }
-
     private var providerKind: LocalLLMProviderKind {
-        let active = activeProviderKind
-        if active.supportsEmbeddings { return active }
-        // This view manages on-device embedding/graph models; while a cloud
-        // provider is active those stay on the last local provider.
-        let storedRaw = UserDefaults.standard.string(forKey: "lastLocalLLMProvider") ?? ""
-        let stored = LocalLLMProviderKind(rawValue: storedRaw) ?? .ollama
-        return stored.isLocal ? stored : .ollama
+        LocalLLMProviderKind(rawValue: localLLMProviderRaw) ?? .ollama
     }
 
     private var activeLLMEndpoint: String {
@@ -1472,14 +1454,14 @@ struct SemanticMemoryView: View {
     private func syncSelectedInsightModel() {
         let options = insightModelOptions.map(\.name)
         if options.isEmpty {
-            selectedInsightCatalogModel = normalizedSemanticInsightSummaryModel.isEmpty ? "qwen3.5:0.8b" : normalizedSemanticInsightSummaryModel
+            selectedInsightCatalogModel = normalizedSemanticInsightSummaryModel.isEmpty ? "gemma4:e2b" : normalizedSemanticInsightSummaryModel
             return
         }
 
         if !options.contains(where: { canonicalOllamaModelName($0) == canonicalOllamaModelName(selectedInsightCatalogModel) }) {
             selectedInsightCatalogModel = options.first(where: {
                 canonicalOllamaModelName($0) == canonicalOllamaModelName(normalizedSemanticInsightSummaryModel)
-            }) ?? options.first ?? "qwen3.5:0.8b"
+            }) ?? options.first ?? "gemma4:e2b"
         }
 
         selectInsightModelIfInstalled(selectedInsightCatalogModel)
