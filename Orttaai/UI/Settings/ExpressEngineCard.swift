@@ -33,76 +33,70 @@ struct ExpressEngineCard: View {
         ) {
             statusChip
         } content: {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                SettingsRow(title: "Use Express for dictation") {
+            VStack(alignment: .leading, spacing: 0) {
+                detailRow(
+                    "Use Express for dictation",
+                    detail: "English only. Downloads \(Self.downloadSizeText) once: the speech model and the Word Boost model."
+                ) {
                     OrttaaiSwitch(title: "Use Express for dictation", isOn: enabledBinding)
                         .disabled(controller.isBusy)
                 }
 
-                SettingsFootnote(
-                    "English only. Downloads \(Self.downloadSizeText) once: the speech model and the Word Boost model."
-                )
+                SettingsDivider()
 
-                SettingsRow(
-                    title: "Word Boost",
-                    info: "Checks the words in your Memory dictionary against the audio, so names and terms come out spelled your way. Ordinary words are only replaced when the audio clearly supports it."
+                detailRow(
+                    "Word Boost",
+                    info: "Checks the words in your Memory dictionary against the audio, so names and terms come out spelled your way. Ordinary words are only replaced when the audio clearly supports it.",
+                    detail: wordBoostStatus
                 ) {
                     OrttaaiSwitch(title: "Word Boost", isOn: wordBoostBinding)
                         .disabled(!expressEngineEnabled || controller.isBusy)
                 }
 
-                if let wordBoostStatus {
-                    SettingsFootnote(wordBoostStatus)
-                }
+                SettingsDivider()
 
-                SettingsRow(
-                    title: "Polish",
-                    info: "Cleans up punctuation, grammar and filler words with a local language model before the text is inserted. This is the same switch as Text Polish in AI Features, so it applies to Whisper dictations too."
+                detailRow(
+                    "Polish",
+                    info: "Cleans up punctuation, grammar and filler words with a local language model before the text is inserted. This is the same switch as Text Polish in AI Features, so it applies to Whisper dictations too.",
+                    detail: polishStatus,
+                    detailAction: onShowPolishSettings.map { ("Choose Model…", $0) }
                 ) {
                     OrttaaiSwitch(title: "Polish", isOn: $localLLMPolishEnabled)
                 }
 
-                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
-                    SettingsFootnote(polishStatus)
-                    if let onShowPolishSettings {
-                        Button("Choose Model…", action: onShowPolishSettings)
-                            .buttonStyle(.plain)
-                            .font(.Orttaai.caption)
-                            .foregroundStyle(Color.Orttaai.accent)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    progressView
+
+                    if expressEngineEnabled, !ExpressEngine.supportsLanguage(dictationLanguage) {
+                        SettingsNotice(
+                            kind: .info,
+                            message: "Express is English only, so dictation uses your Whisper model while the language isn't English."
+                        )
                     }
-                }
 
-                progressView
-
-                if expressEngineEnabled, !ExpressEngine.supportsLanguage(dictationLanguage) {
-                    SettingsNotice(
-                        kind: .info,
-                        message: "Express is English only, so dictation uses your Whisper model while the language isn't English."
-                    )
-                }
-
-                if case .failed(let message) = controller.status {
-                    SettingsNotice(kind: .error, message: "Express couldn't start: \(message)")
-                }
-
-                if let fallbackMessage = controller.fallbackMessage {
-                    SettingsNotice(kind: .warning, message: fallbackMessage) {
-                        controller.dismissFallbackMessage()
+                    if case .failed(let message) = controller.status {
+                        SettingsNotice(kind: .error, message: "Express couldn't start: \(message)")
                     }
-                }
 
-                if canRemoveModel {
-                    Button {
-                        controller.removeModel()
-                    } label: {
-                        Label("Remove Express Model", systemImage: "trash")
+                    if let fallbackMessage = controller.fallbackMessage {
+                        SettingsNotice(kind: .warning, message: fallbackMessage) {
+                            controller.dismissFallbackMessage()
+                        }
                     }
-                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
-                    .padding(.top, Spacing.xs)
+
+                    if canRemoveModel {
+                        Button {
+                            controller.removeModel()
+                        } label: {
+                            Label("Remove Express Model", systemImage: "trash")
+                        }
+                        .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                        .padding(.top, Spacing.xs)
+                    }
                 }
 
                 SettingsFootnote("\(ExpressEngine.attribution) (CC BY 4.0), built on NVIDIA Parakeet TDT 0.6B v3. Word Boost uses NVIDIA Parakeet CTC 110M (CC BY 4.0).")
-                    .padding(.top, Spacing.xs)
+                    .padding(.top, Spacing.sm)
             }
         }
         .task {
@@ -122,6 +116,39 @@ struct ExpressEngineCard: View {
             get: { expressWordBoostEnabled },
             set: { controller.setWordBoostEnabled($0) }
         )
+    }
+
+    /// A setting with its explanation directly under the title, so each line
+    /// of help sits with the switch it describes.
+    private func detailRow<Control: View>(
+        _ title: String,
+        info: String? = nil,
+        detail: String?,
+        detailAction: (String, () -> Void)? = nil,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                SettingsLabel(title: title, info: info)
+                if let detail {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                        Text(detail)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let (label, action) = detailAction {
+                            Button(label, action: action)
+                                .buttonStyle(.plain)
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.accent)
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: Spacing.md)
+            control()
+        }
+        .padding(.vertical, Spacing.sm)
     }
 
     private var wordBoostStatus: String? {

@@ -70,6 +70,7 @@ struct DownloadStepView: View {
     @Binding var isModelReady: Bool
     @AppStorage("dictationLanguage") private var dictationLanguage: String = "en"
     @AppStorage("selectedModelId") private var selectedModelId: String = "openai_whisper-small"
+    @AppStorage("expressEngineEnabled") private var expressEngineEnabled = false
     @State private var isDownloading = false
     @State private var installedModelId: String?
     @State private var downloadedModelIDs = Set<String>()
@@ -82,6 +83,8 @@ struct DownloadStepView: View {
     @State private var modelStorageError: String?
 
     private let hardwareInfo = HardwareDetector.detect()
+    /// Express installs and loads through the same controller as Settings.
+    private let express = ExpressEngine.isSupported ? ModelManager.shared?.express : nil
 
     private var quickStartModelId: String {
         QuickStartModelSelector.modelId(for: dictationLanguage)
@@ -93,16 +96,20 @@ struct DownloadStepView: View {
             : "Fast multilingual model."
     }
 
-    private var recommendedModelId: String {
-        hardwareInfo.recommendedModel
+    private var expressSupportsLanguage: Bool {
+        ExpressEngine.supportsLanguage(dictationLanguage)
     }
 
-    private var recommendedModelSummary: String {
-        "Best accuracy for this Mac."
+    private var isExpressSelected: Bool {
+        express?.status == .active && expressEngineEnabled
     }
 
-    private var showsSeparateRecommendedCard: Bool {
-        ModelManager.normalizedModelID(recommendedModelId) != ModelManager.normalizedModelID(quickStartModelId)
+    private var isExpressBusy: Bool {
+        express?.isBusy ?? false
+    }
+
+    private var isAnyDownloadRunning: Bool {
+        isDownloading || isExpressBusy
     }
 
     var body: some View {
@@ -133,23 +140,19 @@ struct DownloadStepView: View {
 
             modelCard(
                 title: "Quick Start Model",
-                badge: "Faster setup",
+                badge: "Recommended",
                 modelId: quickStartModelId,
                 detail: quickStartModelSummary,
                 accentColor: .Orttaai.accent
             )
 
-            if showsSeparateRecommendedCard {
-                modelCard(
-                    title: "Recommended for Your Mac",
-                    badge: "Higher accuracy",
-                    modelId: recommendedModelId,
-                    detail: recommendedModelSummary,
-                    accentColor: .Orttaai.textPrimary
-                )
+            if let express {
+                expressCard(express)
             }
 
-            if isDownloading {
+            if let express, isExpressBusy {
+                expressProgress(express)
+            } else if isDownloading {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     ProgressView(value: max(0, min(downloadProgress, 1)), total: 1)
                         .controlSize(.small)
@@ -175,6 +178,18 @@ struct DownloadStepView: View {
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
                 }
+            } else if isExpressSelected {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.Orttaai.success)
+                    Text("Express downloaded and ready")
+                        .font(.Orttaai.body)
+                        .foregroundStyle(Color.Orttaai.success)
+                }
+            } else if case .failed(let message) = express?.status {
+                Text("Express couldn't start: \(message)")
+                    .font(.Orttaai.body)
+                    .foregroundStyle(Color.Orttaai.error)
             } else if let installedModelId {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "checkmark.circle.fill")
@@ -193,6 +208,17 @@ struct DownloadStepView: View {
         }
         .onAppear {
             refreshInstalledModelState()
+        }
+        .task {
+            await express?.refresh()
+        }
+        .onChange(of: express?.status) { _, status in
+            if status == .active, expressEngineEnabled {
+                configureFastFirstOnboarding(settings: AppSettings())
+                isModelReady = true
+            } else if installedModelId == nil {
+                isModelReady = false
+            }
         }
         .onChange(of: dictationLanguage) { _, _ in
             refreshInstalledModelState()
@@ -292,7 +318,7 @@ struct DownloadStepView: View {
                 }
                 .buttonStyle(OrttaaiButtonStyle(isSelectedForSetup(modelId) ? .secondary : .primary))
                 .disabled(
-                    isDownloading
+                    isAnyDownloadRunning
                         || isSelectedForSetup(modelId)
                         || (!isDownloaded(modelId) && (!modelStorage.isAvailable || !modelStorage.isWritable))
                 )
@@ -322,6 +348,118 @@ struct DownloadStepView: View {
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
     }
 
+    /// Express: the compact English engine, offered as experimental. Choosing
+    /// it downloads Fluid Speech Mini and the Word Boost model, loads them and
+    /// turns Express on; the Whisper model stays the fallback.
+    private func expressCard(_ express: ExpressController) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    HStack(spacing: Spacing.sm) {
+                        Text("Express")
+                            .font(.Orttaai.subheading)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                        Text("Experimental")
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.accent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Color.Orttaai.accentSubtle, in: Capsule())
+                    }
+
+                    Text("Fastest dictation")
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                }
+
+                Spacer()
+
+                Button(expressActionTitle(express)) {
+                    express.setEnabled(true)
+                }
+                .buttonStyle(OrttaaiButtonStyle(isExpressSelected ? .secondary : .primary))
+                .disabled(
+                    isAnyDownloadRunning
+                        || isExpressSelected
+                        || !expressSupportsLanguage
+                        || (!modelStorage.isAvailable || !modelStorage.isWritable)
+                )
+            }
+
+            Text("\(ExpressEngine.displayName) + Word Boost")
+                .font(.Orttaai.mono)
+                .foregroundStyle(Color.Orttaai.accent)
+
+            Text(expressSupportsLanguage
+                 ? "English only. Downloads \(Self.expressDownloadSize) once."
+                 : "English only. Set dictation to English to use it.")
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+
+            if isExpressSelected {
+                Label("Selected for setup", systemImage: "checkmark.circle.fill")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.success)
+            } else if express.status == .installed {
+                Label("Downloaded locally", systemImage: "externaldrive.fill.badge.checkmark")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.Orttaai.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+    }
+
+    private static let expressDownloadSize = ByteCountFormatter.string(
+        fromByteCount: ExpressModelStore.totalBytes,
+        countStyle: .file
+    )
+
+    private func expressActionTitle(_ express: ExpressController) -> String {
+        switch express.status {
+        case .active where isExpressSelected: return "Ready"
+        case .downloading: return "Downloading..."
+        case .loading, .checking: return "Loading..."
+        case .installed: return "Use Downloaded"
+        default: return installedModelId != nil ? "Download Instead" : "Download"
+        }
+    }
+
+    @ViewBuilder
+    private func expressProgress(_ express: ExpressController) -> some View {
+        let progress: Double = {
+            if case .downloading(let fraction) = express.status { return fraction }
+            return 1
+        }()
+        let isDownloadingExpress: Bool = {
+            if case .downloading = express.status { return true }
+            return false
+        }()
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            ProgressView(value: max(0, min(progress, 1)), total: 1)
+                .controlSize(.small)
+                .tint(Color.Orttaai.accent)
+
+            HStack {
+                Text(isDownloadingExpress ? "Downloading Express models..." : "Preparing Express...")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                Spacer()
+                Text("\(Int((max(0, min(progress, 1)) * 100).rounded()))%")
+                    .font(.Orttaai.mono)
+                    .foregroundStyle(Color.Orttaai.accent)
+            }
+
+            Text(isDownloadingExpress
+                 ? "The speech model and the Word Boost model."
+                 : "Preparing for the Neural Engine. The first time takes about 10 seconds.")
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+        }
+    }
+
     private func actionTitle(for modelId: String) -> String {
         if isSelectedForSetup(modelId) {
             return "Ready"
@@ -338,8 +476,10 @@ struct DownloadStepView: View {
         return "Download"
     }
 
+    /// While Express is chosen, the Whisper model is only its fallback.
     private func isSelectedForSetup(_ modelId: String) -> Bool {
-        ModelManager.normalizedModelID(installedModelId ?? "") == ModelManager.normalizedModelID(modelId)
+        !isExpressSelected
+            && ModelManager.normalizedModelID(installedModelId ?? "") == ModelManager.normalizedModelID(modelId)
     }
 
     private func isDownloaded(_ modelId: String) -> Bool {
@@ -357,6 +497,9 @@ struct DownloadStepView: View {
         downloadingModelId = modelId
         errorMessage = nil
         isModelReady = false
+        if expressEngineEnabled {
+            express?.setEnabled(false)
+        }
         downloadProgress = 0
         downloadStage = .downloading
 
@@ -410,7 +553,7 @@ struct DownloadStepView: View {
                 await MainActor.run {
                     settings.selectedModelId = modelId
                     settings.activeModelId = modelId
-                    configureFastFirstOnboarding(settings: settings, quickModelId: modelId)
+                    configureFastFirstOnboarding(settings: settings)
                     refreshInstalledModelState(selectedModelID: modelId)
                     isDownloading = false
                     downloadingModelId = nil
@@ -458,15 +601,11 @@ struct DownloadStepView: View {
         }
     }
 
-    private func configureFastFirstOnboarding(settings: AppSettings, quickModelId: String) {
-        // Store the exact variant id — normalization strips quantized size
-        // suffixes and would make the later prefetch fetch the full model.
-        let recommendedModelId = hardwareInfo.recommendedModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shouldEnableFastFirst = !recommendedModelId.isEmpty
-            && ModelManager.normalizedModelID(recommendedModelId) != ModelManager.normalizedModelID(quickModelId)
-
-        settings.fastFirstOnboardingEnabled = shouldEnableFastFirst
-        settings.fastFirstRecommendedModelId = shouldEnableFastFirst ? recommendedModelId : ""
+    /// Setup no longer offers the large model, so it doesn't start the
+    /// background download of it either; it stays a choice on the Model page.
+    private func configureFastFirstOnboarding(settings: AppSettings) {
+        settings.fastFirstOnboardingEnabled = false
+        settings.fastFirstRecommendedModelId = ""
         settings.fastFirstPrefetchStarted = false
         settings.fastFirstPrefetchReady = false
         settings.fastFirstUpgradeDismissed = false
@@ -483,11 +622,11 @@ struct DownloadStepView: View {
             let resolvedModelID = SetupDownloadedModelResolver.resolveInstalledModelID(
                 downloadedModelIDs: modelIDs,
                 selectedModelID: selectedModelID ?? selectedModelId,
-                preferredModelIDs: [quickStartModelId, recommendedModelId]
+                preferredModelIDs: [quickStartModelId]
             )
 
             installedModelId = resolvedModelID
-            isModelReady = resolvedModelID != nil
+            isModelReady = resolvedModelID != nil || isExpressSelected
 
             if resolvedModelID != nil {
                 errorMessage = nil
