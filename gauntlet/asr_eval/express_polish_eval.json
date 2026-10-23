@@ -1,0 +1,31 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "P3.1 polish chain after Express",
+  "setup": "The 139 golden-set cases without line breaks, voiced with macOS say (build_polish_corpus.py). Express: whole-utterance decode, no Word Boost (the golden set has no dictionary). Turbo: the app's live path. Both transcripts go through the app's rule stage (DisfluencyCleaner, then SpokenFormattingFormatter; ORTTAAI_ASR_EVAL_RULES=1), then polish_eval.py --transcripts with the production prompt, sanitizer and gemma4:e2b (Ollama, MLX runner). Release build, Apple M5 Max.",
+  "results": {
+    "clean_text_ceiling": {"pass_rate": 0.899, "passed": 125, "total": 139, "note": "Golden raw text through polish, no speech engine"},
+    "express": {
+      "transcript_wer": 0.0737,
+      "rules_only": {"pass_rate": 0.4532, "passed": 63},
+      "with_polish": {"pass_rate": 0.4964, "passed": 69},
+      "polish_gain_points": 4.3,
+      "polish_ms": {"p50": 57.6, "p90": 122.0},
+      "end_to_end_ms": {"p50": 95.7, "p90": 170.6}
+    },
+    "whisper_turbo": {
+      "transcript_wer": 0.0581,
+      "rules_only": {"pass_rate": 0.5252, "passed": 73},
+      "with_polish": {"pass_rate": 0.554, "passed": 77},
+      "polish_gain_points": 2.9,
+      "polish_ms": {"p50": 56.6, "p90": 116.0},
+      "end_to_end_ms": {"p50": 725.4, "p90": 963.0}
+    }
+  },
+  "verdict": "Polish needs no change for Express: it lifts Express output by 4.3 points against 2.9 for turbo. End to end Express trails turbo by 5.8 points, missing the 2-point target, and the whole gap comes from the transcripts (7.2 points before polish).",
+  "notes": [
+    "14 cases pass only with turbo and 6 only with Express. The turbo-only ones are mishearings without a dictionary (Adayemi, localhost, writes, Adebayo), contractions Mini writes out in full (we're -> we are, 3 cases), and spellings the strict checks count as lost words (3 pm vs 3pm, 4,471 for an account number, the 20th of July).",
+    "Names would normally go through Word Boost with the user's dictionary; this run has none, so it understates Express on proper nouns.",
+    "The golden checks are token-strict, which is why both engines sit far below the 89.9% clean-text ceiling: 3.2% vs 3.2 percent or 15,000 vs fifteen thousand fail a case even when the meaning is identical.",
+    "The clean-text ceiling was 92.8% in eval_results.json (2026-07-27) on an older Ollama runtime; the same model scores 90.1% on all 152 cases here, with a p50 of 65 ms instead of 1.16 s."
+  ]
+}

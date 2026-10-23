@@ -49,10 +49,19 @@ normalized tokens, so comma-vs-period and capitalization free variation
 (allowed by the README) never fails a case, while added, lost, or unremoved
 words do.
 
+Speech engines (P3.1): --transcripts takes a raw decode JSON from
+asr_eval/run_eval.sh over the voiced golden set (asr_eval/build_polish_corpus.py,
+run with ORTTAAI_ASR_EVAL_RULES=1). Each case's raw text is replaced by what
+the engine heard after the app's rule stage, so the same checks score the
+whole chain: speech engine, rules, polish. End-to-end latency adds the
+engine's finalize time to the polish call. --no-polish scores the rule-stage
+text as the output, which shows what polish adds.
+
 Usage:
   python3 gauntlet/polish_eval.py                 # full run, writes eval_results.json
   python3 gauntlet/polish_eval.py --model qwen3.5:0.8b --no-write
   python3 gauntlet/polish_eval.py --ids disfl-001 question-015
+  python3 gauntlet/polish_eval.py --transcripts /tmp/raw_express.json --out /tmp/polish_express.json
 """
 
 from __future__ import annotations
@@ -461,7 +470,23 @@ def judge(case: dict, output: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def run_case(case: dict, template: str, model: str, timeout_ms: int, max_chars: int) -> dict:
+def load_transcripts(path: Path) -> dict[str, dict]:
+    """Rule-stage text and finalize time per case from a raw decode JSON,
+    preferring the whole-utterance path (Express) over the live one."""
+    transcripts = {}
+    for item in json.loads(path.read_text())["items"]:
+        decoded = next((p for p in (item.get("whole"), item.get("live")) if p and not p.get("error")), None)
+        if decoded is None:
+            continue
+        transcripts[item["id"]] = {
+            "text": decoded.get("rules_text") or decoded["text"],
+            "asr_text": decoded["text"],
+            "asr_ms": decoded["ms"],
+        }
+    return transcripts
+
+
+def run_case(case: dict, template: str, model: str, timeout_ms: int, max_chars: int, polish: bool = True) -> dict:
     raw = case["raw"]
     normalized = raw.strip()
 
@@ -472,8 +497,10 @@ def run_case(case: dict, template: str, model: str, timeout_ms: int, max_chars: 
         "expected": case["expected"],
     }
 
+    if not polish:
+        result.update(model_response=None, output=raw, polish_applied=False, skip_reason="no-polish", latency_ms=None)
     # Mirror the processor's skip gates: output stays the rule-based text.
-    if len(normalized) < 8 or len(normalized) > max_chars:
+    elif len(normalized) < 8 or len(normalized) > max_chars:
         result.update(
             model_response=None,
             output=raw,
@@ -507,6 +534,9 @@ def main() -> None:
     parser.add_argument("--ids", nargs="*", help="run only these case ids")
     parser.add_argument("--no-write", action="store_true", help="do not write eval_results.json")
     parser.add_argument("--fails-only", action="store_true", help="print only failing cases")
+    parser.add_argument("--transcripts", type=Path, help="raw decode JSON whose rule-stage text replaces each case's raw")
+    parser.add_argument("--no-polish", action="store_true", help="score the input text itself, without the model")
+    parser.add_argument("--out", type=Path, help="write results here instead of eval_results.json")
     args = parser.parse_args()
 
     assert_sanitizer_parity()
@@ -520,13 +550,20 @@ def main() -> None:
     cases = json.loads(GOLDEN_SET.read_text())["cases"]
     if args.ids:
         cases = [c for c in cases if c["id"] in set(args.ids)]
+    transcripts = load_transcripts(args.transcripts) if args.transcripts else None
+    if transcripts is not None:
+        cases = [{**c, "raw": transcripts[c["id"]]["text"]} for c in cases if c["id"] in transcripts]
 
     # Warm the model the same way the app's prewarm pass does at launch.
-    ollama_generate(model, render_prompt(template, "hello world this is a warm up"), 32, 60_000)
+    if not args.no_polish:
+        ollama_generate(model, render_prompt(template, "hello world this is a warm up"), 32, 60_000)
 
     results = []
     for i, case in enumerate(cases):
-        res = run_case(case, template, model, timeout_ms, max_chars)
+        res = run_case(case, template, model, timeout_ms, max_chars, polish=not args.no_polish)
+        if transcripts is not None:
+            heard = transcripts[case["id"]]
+            res.update(asr_text=heard["asr_text"], asr_ms=heard["asr_ms"], end_to_end_ms=heard["asr_ms"] + (res.get("latency_ms") or 0))
         results.append(res)
         status = "PASS" if res["pass"] else "FAIL"
         if not args.fails_only or not res["pass"]:
@@ -548,10 +585,13 @@ def main() -> None:
 
     latencies = sorted(r["latency_ms"] for r in results if r.get("latency_ms") is not None)
 
-    def pct(p: float) -> float | None:
-        if not latencies:
+    def pct(p: float, values: list[float] | None = None) -> float | None:
+        values = latencies if values is None else values
+        if not values:
             return None
-        return round(latencies[min(len(latencies) - 1, int(round(p * (len(latencies) - 1))))], 1)
+        return round(values[min(len(values) - 1, int(round(p * (len(values) - 1))))], 1)
+
+    end_to_end = sorted(r["end_to_end_ms"] for r in results if "end_to_end_ms" in r)
 
     summary = {
         "model": model,
@@ -572,6 +612,11 @@ def main() -> None:
             "mean": round(statistics.fmean(latencies), 1) if latencies else None,
             "max": latencies[-1] if latencies else None,
         },
+        **({
+            "transcripts": str(args.transcripts),
+            "end_to_end_ms": {"p50": pct(0.50, end_to_end), "p90": pct(0.90, end_to_end), "max": end_to_end[-1]},
+        } if transcripts is not None else {}),
+        **({"polish": False} if args.no_polish else {}),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "notes": (
             "Prompt extracted verbatim from LocalLLMTextProcessor.makePolishPrompt "
@@ -589,9 +634,12 @@ def main() -> None:
         c = by_cat[cat]
         print(f'  {cat:18} {c["passed"]:3}/{c["total"]:<3} {c["pass_rate"]:.0%}  fails: {", ".join(c["failed_ids"])}')
 
-    if not args.no_write and not args.ids:
-        RESULTS.write_text(json.dumps({"summary": summary, "cases": results}, indent=2) + "\n")
-        print(f"\nwrote {RESULTS}")
+    if transcripts is not None:
+        print(f'end to end: p50={summary["end_to_end_ms"]["p50"]}ms p90={summary["end_to_end_ms"]["p90"]}ms')
+    out = args.out or (None if args.transcripts or args.no_polish else RESULTS)
+    if out and not args.no_write and not args.ids:
+        out.write_text(json.dumps({"summary": summary, "cases": results}, indent=2) + "\n")
+        print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":

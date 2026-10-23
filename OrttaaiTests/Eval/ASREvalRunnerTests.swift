@@ -31,6 +31,10 @@
 //                                 audio and the poll sleep is 250 ms / N)
 //   ORTTAAI_ASR_EVAL_PATHS        both|whole|live (default both)
 //   ORTTAAI_ASR_EVAL_IDS          comma-separated item subset
+//   ORTTAAI_ASR_EVAL_RULES        1 to also record each transcript after the app's
+//                                 rule stage (filler cleanup, then spoken formatting,
+//                                 as RuleBasedTextProcessor runs them with an empty
+//                                 dictionary) as rules_text, the polish stage's input
 //   ORTTAAI_ASR_EVAL_BIAS         1 to snapshot the manifest's bias_vocabulary
 //                                 (for fluid-speech-mini: the Word Boost vocabulary)
 //   ORTTAAI_ASR_EVAL_MODEL_ROOT   a storage base laid out like WhisperKit's (models/argmaxinc/whisperkit-coreml/<variant>,
@@ -62,6 +66,7 @@ final class ASREvalRunnerTests: XCTestCase {
         let text: String
         let ms: Int
         let error: String?
+        var rules_text: String?
     }
 
     private struct ItemResult: Encodable {
@@ -104,6 +109,7 @@ final class ASREvalRunnerTests: XCTestCase {
         let speedup = Double(env["ORTTAAI_ASR_EVAL_SPEEDUP"] ?? "4") ?? 4
         let paths = env["ORTTAAI_ASR_EVAL_PATHS"] ?? "both"
         let biasEnabled = env["ORTTAAI_ASR_EVAL_BIAS"] == "1"
+        let rulesEnabled = env["ORTTAAI_ASR_EVAL_RULES"] == "1"
         let idFilter: Set<String>? = env["ORTTAAI_ASR_EVAL_IDS"].map {
             Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
         }
@@ -202,6 +208,11 @@ final class ASREvalRunnerTests: XCTestCase {
                 }
             }
 
+            if rulesEnabled {
+                if let text = whole?.text { whole?.rules_text = Self.ruleStageText(text) }
+                if let text = live?.text { live?.rules_text = Self.ruleStageText(text) }
+            }
+
             results.append(ItemResult(id: item.id, whole: whole, live: live, finalize_trace: finalizeTrace))
             print("ASR-EVAL [\(index + 1)/\(items.count)] \(item.id) whole=\(whole?.ms ?? -1)ms live_finalize=\(live?.ms ?? -1)ms")
         }
@@ -218,6 +229,12 @@ final class ASREvalRunnerTests: XCTestCase {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(output).write(to: URL(fileURLWithPath: outPath))
         print("ASR-EVAL: wrote \(results.count) item results to \(outPath)")
+    }
+
+    private static func ruleStageText(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return text }
+        return SpokenFormattingFormatter.format(DisfluencyCleaner.clean(trimmed).text).text
     }
 
     private static func timedDecode(_ body: () async throws -> String) async -> PathResult {

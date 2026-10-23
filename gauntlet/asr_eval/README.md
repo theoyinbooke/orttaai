@@ -243,3 +243,26 @@ dots the way Whisper writes them (`555-0143`, `$2,450`, `March 15th`,
 3.02% -> 2.53%. All 11 changed outputs were number fixes. Date order is left
 as written ("the 3rd of March"), which accounts for most of what remains in
 the clean number group.
+
+## Polish after Express (P3.1)
+
+`build_polish_corpus.py` voices the polish golden set (`gauntlet/golden_set.json`,
+the 139 cases without line breaks) into `corpus_polish/`. Transcribe it with
+`ORTTAAI_ASR_EVAL_RULES=1`, which also records each transcript after the app's
+rule stage, then score the whole chain with
+`gauntlet/polish_eval.py --transcripts RAW.json --out RESULTS.json`
+(`--no-polish` scores the rule-stage text alone):
+
+```bash
+python3 gauntlet/asr_eval/build_polish_corpus.py
+./gauntlet/asr_eval/run_eval.sh /tmp/raw_polish_express.json ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini \
+  ORTTAAI_ASR_EVAL_MODEL_ROOT=/path/to/storage-base ORTTAAI_ASR_EVAL_PATHS=whole ORTTAAI_ASR_EVAL_RULES=1 \
+  ORTTAAI_ASR_EVAL_MANIFEST=$PWD/gauntlet/asr_eval/corpus_polish/manifest_polish.json
+python3 gauntlet/polish_eval.py --transcripts /tmp/raw_polish_express.json --out /tmp/polish_express.json
+```
+
+`express_polish_eval.json` (2026-10-23, gemma4:e2b): polish lifts Express from
+45.3% to 49.6% and turbo from 52.5% to 55.4%, so polish needs no change for
+Express. The 5.8-point end-to-end gap is already there in the transcripts (no
+Word Boost here, since the golden set has no dictionary). End to end, Express
+finishes in 96 ms p50 / 171 ms p90 against turbo's 725 ms / 963 ms.
