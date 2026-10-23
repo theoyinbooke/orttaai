@@ -62,6 +62,9 @@ actor MockTranscriptionService: Transcribing {
     var transcribeCallCount = 0
     var beginLiveSessionCallCount = 0
     var processedLiveSampleCounts: [Int] = []
+    /// What `liveAudioSnapshotStart` answers; 0 is the whole recording.
+    var liveSnapshotStart: Int? = 0
+    var processedLiveAudioStarts: [Int] = []
     var finalizeLiveTranscriptionCallCount = 0
     var cancelLiveSessionCallCount = 0
     var liveTranscriptEventHandler: (@Sendable (LiveTranscriptEvent) -> Void)?
@@ -101,6 +104,21 @@ actor MockTranscriptionService: Transcribing {
 
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {
         processedLiveSampleCounts.append(audioSamples.count)
+    }
+
+    func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? {
+        liveSnapshotStart
+    }
+
+    func processLiveAudio(_ audio: [Float], startingAt start: Int) {
+        processedLiveAudioStarts.append(start)
+        if start == 0 {
+            processLiveAudioSnapshot(audio)
+        }
+    }
+
+    func setLiveSnapshotStart(_ start: Int?) {
+        liveSnapshotStart = start
     }
 
     func finalizeLiveTranscription(audioSamples: [Float]) async throws -> String {
@@ -462,6 +480,38 @@ final class DictationCoordinatorTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             XCTAssertEqual(coordinator.state, .idle, "Error should auto-dismiss to idle")
         }
+    }
+
+    @MainActor
+    func testLivePollingCopiesOnlyFromTheSampleTheSessionAsksFor() async {
+        audioService.mockSamples = speech(seconds: 2.0)
+        await transcriptionService.setLiveSnapshotStart(16_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        coordinator.stopRecording()
+
+        let starts = await transcriptionService.processedLiveAudioStarts
+        let wholeSnapshots = await transcriptionService.processedLiveSampleCounts
+        XCTAssertFalse(starts.isEmpty)
+        XCTAssertEqual(Set(starts), [16_000])
+        XCTAssertEqual(wholeSnapshots, [], "the whole recording is never copied while polling")
+        XCTAssertTrue(audioService.requestedSnapshotStarts.contains(16_000))
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testLivePollingCopiesNothingWhenTheSessionNeedsNoAudio() async {
+        audioService.mockSamples = speech(seconds: 2.0)
+        await transcriptionService.setLiveSnapshotStart(nil)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        coordinator.stopRecording()
+
+        let starts = await transcriptionService.processedLiveAudioStarts
+        XCTAssertEqual(starts, [])
+        _ = await waitUntil { self.coordinator.state == .idle }
     }
 
     @MainActor

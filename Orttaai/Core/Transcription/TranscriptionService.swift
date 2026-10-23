@@ -435,16 +435,21 @@ actor TranscriptionService: Transcribing {
         finalizeTraceSink = sink
     }
 
-    /// Whisper's live clips take the whole recording on every poll. Express
-    /// only needs it when the recording has completed a new Word Boost chunk,
-    /// about every 13 s.
+    /// Whisper's live clips only read audio after the committed clips, so a
+    /// poll copies at most one uncommitted clip, and nothing while a commit
+    /// is in flight. Express only needs the whole recording when it has
+    /// completed a new Word Boost chunk, about every 13 s.
     func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? {
-        guard expressBackend != nil else { return 0 }
-        guard wordBoostTermCount > 0, let session = liveSession, session.commitTask == nil,
-              let completeEnd = WordBoostChunks.completeChunks(inPrefixOf: capturedSampleCount).last?.upperBound,
-              completeEnd > session.committedSampleCount
-        else { return nil }
-        return 0
+        guard let session = liveSession, session.commitTask == nil else { return nil }
+        if expressBackend != nil {
+            guard wordBoostTermCount > 0,
+                  let completeEnd = WordBoostChunks.completeChunks(inPrefixOf: capturedSampleCount).last?.upperBound,
+                  completeEnd > session.committedSampleCount
+            else { return nil }
+            return 0
+        }
+        guard whisperKit != nil, capturedSampleCount > session.committedSampleCount else { return nil }
+        return session.committedSampleCount
     }
 
     func processLiveAudioSnapshot(_ audioSamples: [Float]) {
@@ -452,32 +457,35 @@ actor TranscriptionService: Transcribing {
     }
 
     func processLiveAudio(_ audio: [Float], startingAt start: Int) {
-        guard start == 0 else { return }
         if let expressBackend {
+            guard start == 0 else { return }
             prepareExpressWordBoost(audio, backend: expressBackend)
             return
         }
-        let audioSamples = audio
         guard whisperKit != nil else { return }
         guard var session = liveSession else { return }
         // One commit in flight at a time; the ANE serializes work anyway.
         guard session.commitTask == nil else { return }
-        guard audioSamples.count >= session.committedSampleCount else { return }
+        // A commit can land between choosing `start` and this call; the
+        // audio before the committed point is never read.
+        let recordedSampleCount = start + audio.count
+        guard start <= session.committedSampleCount,
+              recordedSampleCount >= session.committedSampleCount else { return }
+        let pendingAudio = audio[(session.committedSampleCount - start)...]
 
         // Commit a finished clip as soon as it exists, choosing a nearby
         // pause when available so a word isn't cut at the 15s boundary. A
         // due commit preempts tail speculation: the commit invalidates the
         // speculative base anyway, and waiting a poll cycle only grows the
         // tail left for finalize.
-        let pendingSamples = audioSamples.count - session.committedSampleCount
+        let pendingSamples = pendingAudio.count
         if pendingSamples >= Self.liveCommitClipSampleCount {
             session.speculativeTask?.cancel()
-            let start = session.committedSampleCount
-            let end = start + Self.decodeClipSampleCount(pendingAudio: audioSamples[start...])
-            let clipAudio = Array(audioSamples[start..<end])
+            let clipStart = session.committedSampleCount
+            let clipAudio = Array(pendingAudio.prefix(Self.decodeClipSampleCount(pendingAudio: pendingAudio)))
             let sessionID = session.id
             session.commitTask = Task { [weak self] in
-                await self?.runLiveCommit(clipAudio: clipAudio, startSample: start, sessionID: sessionID)
+                await self?.runLiveCommit(clipAudio: clipAudio, startSample: clipStart, sessionID: sessionID)
             }
             liveSession = session
             return
@@ -485,15 +493,13 @@ actor TranscriptionService: Transcribing {
 
         // Commit early at speech pauses so short dictations also finalize with
         // a near-empty tail instead of re-decoding everything at stop.
-        if let pauseClipSampleCount = Self.pauseCommitSampleCount(
-            pendingAudio: audioSamples[session.committedSampleCount...]
-        ) {
+        if let pauseClipSampleCount = Self.pauseCommitSampleCount(pendingAudio: pendingAudio) {
             session.speculativeTask?.cancel()
-            let start = session.committedSampleCount
-            let clipAudio = Array(audioSamples[start..<(start + pauseClipSampleCount)])
+            let clipStart = session.committedSampleCount
+            let clipAudio = Array(pendingAudio.prefix(pauseClipSampleCount))
             let sessionID = session.id
             session.commitTask = Task { [weak self] in
-                await self?.runLiveCommit(clipAudio: clipAudio, startSample: start, sessionID: sessionID)
+                await self?.runLiveCommit(clipAudio: clipAudio, startSample: clipStart, sessionID: sessionID)
             }
             liveSession = session
             return
@@ -503,12 +509,12 @@ actor TranscriptionService: Transcribing {
         // flight at a time.
         guard session.speculativeTask == nil else { return }
         guard pendingSamples >= Self.liveTranscriptionMinSampleCount else { return }
-        guard audioSamples.count - session.lastQueuedSampleCount >= Self.liveTranscriptionIncrementSampleCount else { return }
+        guard recordedSampleCount - session.lastQueuedSampleCount >= Self.liveTranscriptionIncrementSampleCount else { return }
 
         let sessionID = session.id
         let base = session.committedSampleCount
-        let tailAudio = Array(audioSamples[base...])
-        session.lastQueuedSampleCount = audioSamples.count
+        let tailAudio = Array(pendingAudio)
+        session.lastQueuedSampleCount = recordedSampleCount
         session.speculativeTask = Task { [weak self] in
             await self?.runLiveTranscription(tailAudio: tailAudio, base: base, sessionID: sessionID)
         }

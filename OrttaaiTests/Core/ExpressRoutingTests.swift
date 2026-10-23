@@ -152,9 +152,9 @@ final class ExpressRoutingTests: XCTestCase {
         let chunk = WordBoostChunks.chunkSampleCount
         let stride = WordBoostChunks.strideSampleCount
 
-        // Nothing loaded: the Whisper path takes the whole recording.
+        // No live session: nothing to copy.
         var start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk)
-        XCTAssertEqual(start, 0)
+        XCTAssertNil(start, "no live session yet")
 
         try await service.loadModel(named: ExpressEngine.modelID)
         await service.beginLiveTranscriptionSession()

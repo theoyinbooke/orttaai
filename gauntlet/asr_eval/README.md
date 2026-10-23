@@ -289,3 +289,6 @@ Taking a recording copy only when a chunk completes cut the 10-minute peak
 footprint from 2.9 GB to 723 MB. Lifting a quiet last word keeps 6 of 6
 synthetic soft endings (3 before) and takes realistic WER from 2.53% to 2.34%,
 with no change on real voice.
+Whisper's live path now copies only the audio after its committed clips:
+turbo's transcripts are identical on all 129 items checked, and its 10-minute
+peak footprint drops from 4.4 GB to 2.2 GB (2.1 GB on short clips).

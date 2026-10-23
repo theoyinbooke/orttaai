@@ -60,8 +60,24 @@
   },
   "notes": [
     "Word Boost's CTC pass was 5.1 s of the 7.3 s on 10 minutes. It now scores each 15 s chunk (FluidAudio's own chunking, 2 s overlap) while the user is still speaking; stitched, the chunks give exactly FluidAudio's whole-recording scores, and every output matched the earlier runs.",
-    "The memory blow-up came from the dictation loop copying the whole recording every 250 ms: each copy is slightly larger than the last, so macOS cannot reuse the freed ones (a standalone repro grows 235 MB per minute; fixed-size copies stay flat). Express now takes a copy only when a Word Boost chunk completes, about every 13 s. Whisper's live path still copies on every poll.",
+    "The memory blow-up came from the dictation loop copying the whole recording every 250 ms: each copy is slightly larger than the last, so macOS cannot reuse the freed ones (a standalone repro grows 235 MB per minute; fixed-size copies stay flat). The loop now asks the transcription service where to copy from: Express takes the recording only when a Word Boost chunk completes, about every 13 s, and Whisper only the audio after its committed clips.",
     "The 450 MB target is not met: Fluid Speech Mini and Parakeet CTC 110M account for about 480 MB once loaded, before any recording.",
     "Live preview in the pill (P4.2) was dropped: the pill shows no text by the user's decision of July 2026, reaffirmed 2026-10-23."
-  ]
+  ],
+  "whisper_live_path": {
+    "change": "Whisper's live session reads only audio after its committed clips, so each poll copies at most one uncommitted clip, and nothing while a clip commit is in flight.",
+    "transcripts_identical_to_previous_code": "129 of 129 (92 clean, 36 realistic, the 10-minute recording), whisper large-v3-turbo, live path",
+    "wer": {
+      "clean": 0.0382,
+      "realistic": 0.036,
+      "long_10min": 0.0257
+    },
+    "peak_footprint_mb": {
+      "short_clips": 2144,
+      "long_10min": {
+        "before": 4381,
+        "after": 2178
+      }
+    }
+  }
 }
