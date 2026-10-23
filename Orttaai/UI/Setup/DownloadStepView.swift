@@ -297,7 +297,7 @@ struct DownloadStepView: View {
             badge: expressSupportsLanguage ? "Recommended" : nil,
             subtitle: "\(ExpressEngine.displayName) + Word Boost",
             detail: expressSupportsLanguage
-                ? "The fastest dictation, and best with names. English only; downloads \(Self.expressDownloadSize) once."
+                ? "Fastest dictation, best with names. English only, \(Self.expressDownloadSize)."
                 : "English only. Set dictation to English to use it.",
             isSelected: isExpressSelected,
             actionTitle: expressActionTitle(express),
@@ -354,7 +354,8 @@ struct DownloadStepView: View {
                 Text(detail)
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .help(detail)
             }
 
             Spacer(minLength: Spacing.sm)
