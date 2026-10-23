@@ -108,6 +108,40 @@ private struct ChatAIConversation: Codable, Identifiable, Equatable {
     }
 }
 
+private struct ChatAIHistoryGroup: Identifiable {
+    let title: String
+    var conversations: [ChatAIConversation]
+    var id: String { title }
+}
+
+extension ChatAIConversation {
+    /// One line of what the chat is about: the latest reply (or message),
+    /// with Markdown marks stripped.
+    var preview: String {
+        guard let message = messages.last(where: { $0.role == .assistant }) ?? messages.last else { return "" }
+        let line = message.content
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && !$0.hasPrefix("```") } ?? ""
+        return line
+            .replacingOccurrences(of: #"^(#{1,6}\s+|>\s*|[*+\-]\s+|\d+[.)]\s+)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+    }
+
+    /// "3:32 PM" today, "Tue" this week, "Oct 4" before.
+    var shortTimestamp: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(updatedAt) {
+            return updatedAt.formatted(date: .omitted, time: .shortened)
+        }
+        if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: updatedAt), to: calendar.startOfDay(for: Date())).day, days < 7 {
+            return updatedAt.formatted(.dateTime.weekday(.abbreviated))
+        }
+        return updatedAt.formatted(.dateTime.month(.abbreviated).day())
+    }
+}
+
 private struct ChatAIUploadedDocument: Identifiable, Equatable {
     let id = UUID()
     let name: String
@@ -425,7 +459,10 @@ private final class ChatAIViewModel: ObservableObject {
     @Published var thinkingEnabled: Bool = false
     @Published var thinkingDepth: ChatAIThinkingDepth = .medium
     @Published var uploadedDocuments: [ChatAIUploadedDocument] = []
-    @Published var isHistoryVisible: Bool = false
+    /// Remembered, so the history panel stays as you left it.
+    @Published var isHistoryVisible: Bool = UserDefaults.standard.bool(forKey: "chatAIHistoryVisible") {
+        didSet { UserDefaults.standard.set(isHistoryVisible, forKey: "chatAIHistoryVisible") }
+    }
     @Published var isSending: Bool = false
     /// Partial assistant reply while a streaming provider is generating;
     /// nil when idle or when the provider doesn't stream.
@@ -672,6 +709,45 @@ private final class ChatAIViewModel: ObservableObject {
         selectedConversationID = conversation.id
         draft = ""
         errorMessage = nil
+        persistConversations()
+    }
+
+    /// Chats with something in them, newest first, grouped by when they
+    /// were last used: Today, Yesterday, Previous 7 Days, Previous 30 Days,
+    /// then by month.
+    var historyGroups: [ChatAIHistoryGroup] {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        var groups: [ChatAIHistoryGroup] = []
+        for conversation in filteredConversations where !conversation.messages.isEmpty {
+            let day = calendar.startOfDay(for: conversation.updatedAt)
+            let daysAgo = calendar.dateComponents([.day], from: day, to: startOfToday).day ?? 0
+            let title: String
+            switch daysAgo {
+            case ..<1: title = "Today"
+            case 1: title = "Yesterday"
+            case 2..<7: title = "Previous 7 Days"
+            case 7..<30: title = "Previous 30 Days"
+            default: title = conversation.updatedAt.formatted(.dateTime.month(.wide).year())
+            }
+            if let index = groups.firstIndex(where: { $0.title == title }) {
+                groups[index].conversations.append(conversation)
+            } else {
+                groups.append(ChatAIHistoryGroup(title: title, conversations: [conversation]))
+            }
+        }
+        return groups
+    }
+
+    var historyCount: Int {
+        conversations.filter { !$0.messages.isEmpty }.count
+    }
+
+    func renameConversation(_ conversation: ChatAIConversation, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = conversations.firstIndex(where: { $0.id == conversation.id }) else { return }
+        conversations[index].title = trimmed
         persistConversations()
     }
 
@@ -1226,6 +1302,9 @@ struct ChatAIView: View {
     var onOpenAISettings: () -> Void = {}
     @StateObject private var viewModel = ChatAIViewModel()
     @State private var isImportingDocument = false
+    @State private var renamingConversation: ChatAIConversation?
+    @State private var renameText = ""
+    @State private var deletingConversation: ChatAIConversation?
     @State private var isSendHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let activeComposerMaxWidth: CGFloat = 760
@@ -1296,41 +1375,141 @@ struct ChatAIView: View {
         }
     }
 
+    /// Chats grouped by date, with search, a preview of each, and rename and
+    /// delete on hover or right-click.
     private var historyPanel: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                TextField("Search", text: $viewModel.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.Orttaai.body)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                Text("Chats")
+                    .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-            .background(Color.Orttaai.bgTertiary.opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-
-            ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(viewModel.filteredConversations) { conversation in
-                        historyRow(conversation)
-                    }
+                if viewModel.historyCount > 0 {
+                    Text(viewModel.historyCount.formatted())
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                }
+                Spacer()
+                headerIconButton("New chat", systemImage: "square.and.pencil") {
+                    viewModel.newConversation()
                 }
             }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, Spacing.md)
+            .padding(.bottom, Spacing.sm)
 
-            if let statusMessage = viewModel.statusMessage {
-                Label(statusMessage, systemImage: "circle.grid.2x2")
-                    .font(.Orttaai.caption)
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.Orttaai.textTertiary)
-                    .lineLimit(2)
+                TextField("Search chats", text: $viewModel.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                if !viewModel.searchText.isEmpty {
+                    Button {
+                        viewModel.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(Color.Orttaai.bgPrimary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.Orttaai.border.opacity(0.6), lineWidth: BorderWidth.standard)
+            )
+            .padding(.horizontal, Spacing.md)
+            .padding(.bottom, Spacing.sm)
+
+            ScrollView(showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 1, pinnedViews: [.sectionHeaders]) {
+                    ForEach(viewModel.historyGroups) { group in
+                        Section {
+                            ForEach(group.conversations) { conversation in
+                                ChatAIHistoryRow(
+                                    conversation: conversation,
+                                    isSelected: viewModel.selectedConversationID == conversation.id,
+                                    onSelect: { viewModel.selectConversation(conversation) },
+                                    onRename: {
+                                        renameText = conversation.title
+                                        renamingConversation = conversation
+                                    },
+                                    onDelete: { deletingConversation = conversation }
+                                )
+                            }
+                        } header: {
+                            Text(group.title)
+                                .font(.Orttaai.caption.weight(.semibold))
+                                .foregroundStyle(Color.Orttaai.textTertiary)
+                                .padding(.horizontal, 10)
+                                .padding(.top, Spacing.sm)
+                                .padding(.bottom, 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.Orttaai.bgSecondary)
+                        }
+                    }
+
+                    if viewModel.historyGroups.isEmpty {
+                        historyEmptyState
+                    }
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.bottom, Spacing.md)
             }
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.top, Spacing.md)
-        .padding(.bottom, Spacing.lg)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.Orttaai.bgSecondary.opacity(0.72))
+        .background(Color.Orttaai.bgSecondary)
+        .alert("Rename chat", isPresented: Binding(
+            get: { renamingConversation != nil },
+            set: { if !$0 { renamingConversation = nil } }
+        )) {
+            TextField("Title", text: $renameText)
+            Button("Rename") {
+                if let renamingConversation {
+                    viewModel.renameConversation(renamingConversation, to: renameText)
+                }
+                renamingConversation = nil
+            }
+            Button("Cancel", role: .cancel) { renamingConversation = nil }
+        }
+        .confirmationDialog(
+            "Delete this chat?",
+            isPresented: Binding(
+                get: { deletingConversation != nil },
+                set: { if !$0 { deletingConversation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let deletingConversation {
+                    viewModel.deleteConversation(deletingConversation)
+                }
+                deletingConversation = nil
+            }
+            Button("Cancel", role: .cancel) { deletingConversation = nil }
+        } message: {
+            Text("\u{201C}\(deletingConversation?.title ?? "")\u{201D} and its messages will be removed. This can't be undone.")
+        }
+    }
+
+    private var historyEmptyState: some View {
+        VStack(spacing: Spacing.xs) {
+            Image(systemName: viewModel.searchText.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(Color.Orttaai.textTertiary)
+            Text(viewModel.searchText.isEmpty ? "No chats yet" : "No chats match \u{201C}\(viewModel.searchText)\u{201D}")
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, Spacing.xxl)
     }
 
     /// Plain icon button for the ChatAI header, matching the sidebar toggle.
@@ -1350,45 +1529,6 @@ struct ChatAIView: View {
         .buttonStyle(.plain)
         .help(label)
         .accessibilityLabel(label)
-    }
-
-    private func historyRow(_ conversation: ChatAIConversation) -> some View {
-        Button {
-            viewModel.selectConversation(conversation)
-        } label: {
-            Text(conversation.title)
-                .font(.Orttaai.bodyMedium)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(Color.Orttaai.textPrimary)
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .fill(
-                        viewModel.selectedConversationID == conversation.id
-                            ? Color.Orttaai.accentSubtle
-                            : Color.clear
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                    .stroke(
-                        viewModel.selectedConversationID == conversation.id
-                            ? Color.Orttaai.accent.opacity(0.42)
-                            : Color.clear,
-                        lineWidth: BorderWidth.standard
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button("Delete", role: .destructive) {
-                viewModel.deleteConversation(conversation)
-            }
-        }
     }
 
     private var chatSurface: some View {
@@ -1423,7 +1563,8 @@ struct ChatAIView: View {
                     starterPromptGrid
                         .frame(maxWidth: emptyComposerMaxWidth)
 
-                    if !viewModel.recentConversations.isEmpty {
+                    // The history panel already lists them when it's open.
+                    if !viewModel.recentConversations.isEmpty, !viewModel.isHistoryVisible {
                         recentChats
                             .frame(maxWidth: emptyComposerMaxWidth)
                     }
@@ -1932,6 +2073,78 @@ struct ChatAIView: View {
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
     }
 
+}
+
+/// One chat in the history: title and time, a line of preview; the
+/// selected chat has an amber edge, and hovering swaps the time for delete.
+private struct ChatAIHistoryRow: View {
+    let conversation: ChatAIConversation
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onRename: () -> Void
+    let onDelete: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Spacing.sm) {
+                    Text(conversation.title)
+                        .font(.Orttaai.secondary.weight(isSelected ? .semibold : .medium))
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: Spacing.xs)
+                    if isHovered {
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.Orttaai.textTertiary)
+                                .frame(width: 18, height: 16)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete chat")
+                    } else {
+                        Text(conversation.shortTimestamp)
+                            .font(.Orttaai.caption)
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                            .monospacedDigit()
+                    }
+                }
+                if !conversation.preview.isEmpty {
+                    Text(conversation.preview)
+                        .font(.Orttaai.caption)
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.Orttaai.accentSubtle : (isHovered ? Color.Orttaai.bgTertiary.opacity(0.55) : Color.clear))
+            )
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Capsule()
+                        .fill(Color.Orttaai.accent)
+                        .frame(width: 3, height: 18)
+                        .padding(.leading, 3)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Rename…", action: onRename)
+            Divider()
+            Button("Delete…", role: .destructive, action: onDelete)
+        }
+        .accessibilityLabel("\(conversation.title), \(conversation.shortTimestamp)")
+    }
 }
 
 /// Copies a whole reply as written (Markdown included).
