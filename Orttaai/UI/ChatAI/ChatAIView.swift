@@ -115,20 +115,6 @@ private struct ChatAIHistoryGroup: Identifiable {
 }
 
 extension ChatAIConversation {
-    /// One line of what the chat is about: the latest reply (or message),
-    /// with Markdown marks stripped.
-    var preview: String {
-        guard let message = messages.last(where: { $0.role == .assistant }) ?? messages.last else { return "" }
-        let line = message.content
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty && !$0.hasPrefix("```") } ?? ""
-        return line
-            .replacingOccurrences(of: #"^(#{1,6}\s+|>\s*|[*+\-]\s+|\d+[.)]\s+)"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: "**", with: "")
-            .replacingOccurrences(of: "`", with: "")
-    }
-
     /// "3:32 PM" today, "Tue" this week, "Oct 4" before.
     var shortTimestamp: String {
         let calendar = Calendar.current
@@ -585,7 +571,7 @@ private final class ChatAIViewModel: ObservableObject {
     var starterPrompts: [ChatAIStarterPrompt] {
         [
             ChatAIStarterPrompt(
-                title: "Draft a polished reply",
+                title: "Polish a reply",
                 detail: "Turn a rough idea into a clear message",
                 prompt: "Draft a polished, concise reply for this situation:",
                 systemImage: "pencil.line",
@@ -599,7 +585,7 @@ private final class ChatAIViewModel: ObservableObject {
                 prefersMyTone: true
             ),
             ChatAIStarterPrompt(
-                title: "Search my dictations",
+                title: "Search my dictation",
                 detail: "Ask what you said about anything",
                 prompt: "What have I said about ",
                 systemImage: "magnifyingglass",
@@ -1305,6 +1291,8 @@ struct ChatAIView: View {
     @State private var renamingConversation: ChatAIConversation?
     @State private var renameText = ""
     @State private var deletingConversation: ChatAIConversation?
+    @State private var isHistorySearchOpen = false
+    @FocusState private var isHistorySearchFocused: Bool
     @State private var isSendHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let activeComposerMaxWidth: CGFloat = 760
@@ -1315,11 +1303,10 @@ struct ChatAIView: View {
             HStack(spacing: 0) {
                 if viewModel.isHistoryVisible {
                     historyPanel
-                        .frame(width: 286)
+                        .frame(width: 280)
+                        .padding(.leading, Spacing.md)
+                        .padding(.vertical, Spacing.md)
                         .transition(reduceMotion ? .identity : .move(edge: .leading).combined(with: .opacity))
-
-                    Divider()
-                        .background(Color.Orttaai.border.opacity(0.7))
                 }
 
                 chatSurface
@@ -1379,7 +1366,7 @@ struct ChatAIView: View {
     /// delete on hover or right-click.
     private var historyPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+            HStack(alignment: .center, spacing: 2) {
                 Text("Chats")
                     .font(.Orttaai.subheading)
                     .foregroundStyle(Color.Orttaai.textPrimary)
@@ -1387,45 +1374,64 @@ struct ChatAIView: View {
                     Text(viewModel.historyCount.formatted())
                         .font(.Orttaai.caption)
                         .foregroundStyle(Color.Orttaai.textTertiary)
+                        .padding(.leading, 4)
                 }
                 Spacer()
+                headerIconButton(
+                    isHistorySearchOpen ? "Close search" : "Search chats",
+                    systemImage: "magnifyingglass",
+                    isActive: isHistorySearchOpen
+                ) {
+                    toggleHistorySearch()
+                }
                 headerIconButton("New chat", systemImage: "square.and.pencil") {
                     viewModel.newConversation()
                 }
-            }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.top, Spacing.md)
-            .padding(.bottom, Spacing.sm)
-
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.Orttaai.textTertiary)
-                TextField("Search chats", text: $viewModel.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.Orttaai.secondary)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                if !viewModel.searchText.isEmpty {
-                    Button {
-                        viewModel.searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.Orttaai.textTertiary)
+                headerIconButton("Close chats", systemImage: "xmark") {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                        viewModel.isHistoryVisible = false
                     }
-                    .buttonStyle(.plain)
-                    .help("Clear search")
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(Color.Orttaai.bgPrimary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.Orttaai.border.opacity(0.6), lineWidth: BorderWidth.standard)
-            )
-            .padding(.horizontal, Spacing.md)
-            .padding(.bottom, Spacing.sm)
+            .padding(.leading, Spacing.lg)
+            .padding(.trailing, Spacing.sm)
+            .padding(.top, Spacing.sm)
+            .padding(.bottom, Spacing.xs)
+
+            if isHistorySearchOpen {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.Orttaai.textTertiary)
+                    TextField("Search chats", text: $viewModel.searchText)
+                        .textFieldStyle(.plain)
+                        .font(.Orttaai.secondary)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .focused($isHistorySearchFocused)
+                        .onExitCommand { toggleHistorySearch() }
+                    if !viewModel.searchText.isEmpty {
+                        Button {
+                            viewModel.searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.Orttaai.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear search")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(Color.Orttaai.bgSecondary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.Orttaai.border.opacity(0.6), lineWidth: BorderWidth.standard)
+                )
+                .padding(.horizontal, Spacing.sm)
+                .padding(.bottom, Spacing.xs)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 1, pinnedViews: [.sectionHeaders]) {
@@ -1451,7 +1457,7 @@ struct ChatAIView: View {
                                 .padding(.top, Spacing.sm)
                                 .padding(.bottom, 4)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.Orttaai.bgSecondary)
+                                .background(Color.Orttaai.bgPrimary)
                         }
                     }
 
@@ -1459,12 +1465,20 @@ struct ChatAIView: View {
                         historyEmptyState
                     }
                 }
-                .padding(.horizontal, Spacing.sm)
+                .padding(.horizontal, Spacing.xs)
                 .padding(.bottom, Spacing.md)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.Orttaai.bgSecondary)
+        // Floating: the chat's own colour, set apart by a fine border and
+        // a small shadow rather than a different fill.
+        .background(Color.Orttaai.bgPrimary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.Orttaai.border.opacity(0.9), lineWidth: BorderWidth.standard)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
         .alert("Rename chat", isPresented: Binding(
             get: { renamingConversation != nil },
             set: { if !$0 { renamingConversation = nil } }
@@ -1495,6 +1509,17 @@ struct ChatAIView: View {
             Button("Cancel", role: .cancel) { deletingConversation = nil }
         } message: {
             Text("\u{201C}\(deletingConversation?.title ?? "")\u{201D} and its messages will be removed. This can't be undone.")
+        }
+    }
+
+    private func toggleHistorySearch() {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            isHistorySearchOpen.toggle()
+        }
+        if isHistorySearchOpen {
+            DispatchQueue.main.async { isHistorySearchFocused = true }
+        } else {
+            viewModel.searchText = ""
         }
     }
 
@@ -1667,53 +1692,51 @@ struct ChatAIView: View {
         }
     }
 
+    /// The four starters as slim pills on one row: an icon and a short
+    /// title with a faint outline. Clicking fills in the full prompt (and
+    /// asks right away for the ones that need nothing more).
     private var starterPromptGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: Spacing.sm), GridItem(.flexible(), spacing: Spacing.sm)],
-            spacing: Spacing.sm
-        ) {
-            ForEach(viewModel.starterPrompts) { starter in
-                Button {
-                    if starter.prefersMyTone, viewModel.hasToneProfile {
-                        viewModel.mode = .myTone
-                    }
-                    viewModel.draft = starter.prompt
-                    if starter.sendsImmediately {
-                        Task {
-                            await viewModel.sendMessage()
-                        }
-                    }
-                } label: {
-                    HStack(spacing: Spacing.md) {
-                        Image(systemName: starter.systemImage)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.Orttaai.accent)
-                            .frame(width: 30, height: 30)
-                            .background(Color.Orttaai.accentSubtle, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(starter.title)
-                                .font(.Orttaai.bodyMedium)
-                                .foregroundStyle(Color.Orttaai.textPrimary)
-                            Text(starter.detail)
-                                .font(.Orttaai.caption)
-                                .foregroundStyle(Color.Orttaai.textTertiary)
-                        }
-                        .lineLimit(1)
-                        Spacer(minLength: 0)
-                        if starter.sendsImmediately {
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Color.Orttaai.textTertiary)
-                        }
-                    }
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(ChatAIStarterCardStyle())
-                .help(starter.sendsImmediately ? "Ask now" : starter.prompt)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Spacing.sm) {
+                ForEach(viewModel.starterPrompts) { starterPill($0) }
+            }
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: Spacing.sm), GridItem(.flexible(), spacing: Spacing.sm)],
+                spacing: Spacing.sm
+            ) {
+                ForEach(viewModel.starterPrompts) { starterPill($0) }
             }
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func starterPill(_ starter: ChatAIStarterPrompt) -> some View {
+        Button {
+            if starter.prefersMyTone, viewModel.hasToneProfile {
+                viewModel.mode = .myTone
+            }
+            viewModel.draft = starter.prompt
+            if starter.sendsImmediately {
+                Task {
+                    await viewModel.sendMessage()
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: starter.systemImage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.Orttaai.accent)
+                Text(starter.title)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+        }
+        .buttonStyle(ChatAIStarterPillStyle())
+        .fixedSize()
+        .help(starter.detail)
     }
 
     private var recentChats: some View {
@@ -2075,8 +2098,8 @@ struct ChatAIView: View {
 
 }
 
-/// One chat in the history: title and time, a line of preview; the
-/// selected chat has an amber edge, and hovering swaps the time for delete.
+/// One chat in the history, on one row: title and time. The selected chat
+/// has an amber edge, and hovering swaps the time for delete.
 private struct ChatAIHistoryRow: View {
     let conversation: ChatAIConversation
     let isSelected: Bool
@@ -2111,16 +2134,10 @@ private struct ChatAIHistoryRow: View {
                             .monospacedDigit()
                     }
                 }
-                if !conversation.preview.isEmpty {
-                    Text(conversation.preview)
-                        .font(.Orttaai.caption)
-                        .foregroundStyle(Color.Orttaai.textTertiary)
-                        .lineLimit(1)
-                }
             }
             .padding(.leading, 12)
             .padding(.trailing, 10)
-            .padding(.vertical, 7)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -2173,40 +2190,41 @@ private struct ChatAICopyButton: View {
     }
 }
 
-/// A starter on the empty chat: a quiet card that lifts on hover.
-private struct ChatAIStarterCardStyle: ButtonStyle {
+/// A starter pill: a faint outline that brightens on hover.
+private struct ChatAIStarterPillStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        ChatAIStarterCard(isPressed: configuration.isPressed) {
+        ChatAIStarterPill(isPressed: configuration.isPressed) {
             configuration.label
         }
     }
 }
 
-private struct ChatAIStarterCard<Content: View>: View {
-    var isPressed = false
+private struct ChatAIStarterPill<Content: View>: View {
+    let isPressed: Bool
     @ViewBuilder let content: () -> Content
     @State private var isHovered = false
 
     var body: some View {
         content()
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isHovered ? Color.Orttaai.bgSecondary : Color.Orttaai.bgSecondary.opacity(0.45))
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isHovered ? Color.Orttaai.bgSecondary.opacity(0.8) : Color.Orttaai.bgPrimary)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(isHovered ? Color.Orttaai.accentRing : Color.Orttaai.border.opacity(0.5), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(
+                        isHovered ? Color.Orttaai.accent.opacity(0.45) : Color.Orttaai.border.opacity(0.7),
+                        lineWidth: BorderWidth.standard
+                    )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .scaleEffect(isPressed ? 0.985 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .scaleEffect(isPressed ? 0.97 : 1)
             .onHover { isHovered = $0 }
             .pointingHandCursor(when: true)
-            .animation(.easeOut(duration: 0.14), value: isHovered)
+            .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 }
 
-/// The look every composer control shares: quiet until hovered, accent
-/// when on, and the hand pointer whenever it can be clicked.
 private struct ChatAIComposerChipStyle: ButtonStyle {
     var isActive = false
 
