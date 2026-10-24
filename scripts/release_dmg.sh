@@ -401,6 +401,10 @@ trap - EXIT
 hdiutil convert "$DMG_RW_PATH" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH"
 rm -f "$DMG_RW_PATH" "$DMG_BACKGROUND_SOURCE"
 
+echo "==> Signing DMG"
+codesign --sign "$DEVELOPER_ID_SHA" --timestamp "$DMG_PATH"
+codesign --verify --verbose=2 "$DMG_PATH"
+
 # Clean up intermediate exported .app bundles that macOS Launch Services and
 # TCC will index, creating duplicate Spotlight entries and stale permission records.
 # Preserve the release archive for distribution diagnostics and recovery.
@@ -417,7 +421,7 @@ if [[ "$SKIP_NOTARIZE" -eq 0 ]]; then
 
   echo "==> Verifying DMG Gatekeeper assessment"
   SPCTL_OUTPUT=""
-  if ! SPCTL_OUTPUT="$(spctl --assess --type open --verbose=4 "$DMG_PATH" 2>&1)"; then
+  if ! SPCTL_OUTPUT="$(spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG_PATH" 2>&1)"; then
     if printf '%s' "$SPCTL_OUTPUT" | grep -q "source=Insufficient Context"; then
       echo "Warning: Gatekeeper returned 'Insufficient Context' for this local artifact."
       echo "Notarization + stapling succeeded; continuing."
