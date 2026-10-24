@@ -12,17 +12,9 @@ struct ReceiptShareCard: View {
     let size: ShareCardSize
 
     private var lines: [(String, String)] {
-        let words = content.words
-        var rows: [(String, String)] = [
-            ("WORDS SPOKEN", words.formatted()),
-            ("PAGES OF A BOOK", MilestoneComparisons.pages(words: words).formatted()),
-            ("HEIGHT, STOOD UP", MilestoneComparisons.heightText(words: words).uppercased()),
-            ("KEYS NOT PRESSED", MilestoneComparisons.keyPressesText(words: words)),
-            ("TIME SPEAKING", "\(content.stats.speakingMinutes) MIN"),
-            ("TIME TYPING IT", "\(MilestoneComparisons.typingMinutes(words: words).formatted()) MIN"),
-        ]
-        if size.isSquare { rows.removeSubrange(1...2) }
-        return rows
+        let rows = content.receiptLines
+        guard size.isSquare else { return rows }
+        return rows.filter { $0.0 != "PAGES OF A BOOK" && $0.0 != "HEIGHT, STOOD UP" }
     }
 
     var body: some View {
@@ -51,7 +43,7 @@ struct ReceiptShareCard: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("TIME BACK").font(mono(34, .heavy))
                     Spacer()
-                    Text("\(content.stats.minutesSaved.formatted()) MIN").font(mono(64, .heavy))
+                    Text("\(content.minutesSavedOnCard.formatted()) MIN").font(mono(64, .heavy))
                 }
                 Text("vs typing the same words at 40 WPM")
                     .font(mono(22))
@@ -192,15 +184,16 @@ struct SignalShareCard: View {
             Text(hero.label)
                 .font(.system(size: 64, weight: .bold))
                 .padding(.top, 14)
-            Text("Spoken, not typed. Every word at the cursor.")
+            Text(content.supportLine)
                 .font(.system(size: 32))
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(ShareCardStyle.grey)
                 .padding(.top, 14)
 
             HStack(alignment: .top) {
-                signalStat(content.words.formatted(), "words so far", accent: false)
-                signalStat(content.pace > 0 ? "\(content.pace)" : "–", "words a minute", accent: false)
-                signalStat(MilestoneComparisons.durationText(minutes: content.stats.minutesSaved), "of typing saved", accent: true)
+                ForEach(Array(content.supportingStats.enumerated()), id: \.offset) { index, stat in
+                    signalStat(stat.value, stat.label, accent: index == 2)
+                }
             }
             .padding(.top, 36)
             .overlay(alignment: .top) { Rectangle().fill(ShareCardStyle.line).frame(height: 2) }
@@ -244,7 +237,8 @@ struct EditorialShareCard: View {
     let size: ShareCardSize
 
     var body: some View {
-        let words = content.words
+        let headline = content.headline
+        let stats = content.supportingStats
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(content.eyebrow)
@@ -255,14 +249,14 @@ struct EditorialShareCard: View {
             .tracking(3)
             Rectangle().fill(ShareCardStyle.charcoal).frame(height: 3).padding(.top, 22)
 
-            (Text("I spoke \(words.formatted()) words to my Mac and typed ") + Text("none").italic().foregroundColor(Color(hex: "9A6315")) + Text(" of them."))
+            (Text(headline.lead) + Text(headline.emphasis).italic().foregroundColor(Color(hex: "9A6315")) + Text(headline.tail))
                 .font(.system(size: size.isSquare ? 92 : 112, design: .serif))
                 .lineSpacing(-6)
                 .padding(.top, size.isSquare ? 48 : 88)
 
             HStack(spacing: 16) {
                 Capsule().fill(ShareCardStyle.amber).frame(width: 72, height: 6)
-                Text("\(MilestoneComparisons.pages(words: words).formatted()) pages of a book. \(MilestoneComparisons.heightText(words: words)) of words, stood on end.")
+                Text(content.supportLine)
                     .font(.system(size: 30))
                     .foregroundStyle(Color(hex: "48484A"))
             }
@@ -271,11 +265,12 @@ struct EditorialShareCard: View {
             Spacer()
 
             HStack(spacing: 0) {
-                editorialStat(content.stats.dictations.formatted(), "dictations")
-                Rectangle().fill(Color(hex: "C7C3BC")).frame(width: 1)
-                editorialStat(MilestoneComparisons.durationText(minutes: content.stats.speakingMinutes), "spent speaking").padding(.leading, 24)
-                Rectangle().fill(Color(hex: "C7C3BC")).frame(width: 1)
-                editorialStat(MilestoneComparisons.durationText(minutes: content.stats.minutesSaved), "of typing saved").padding(.leading, 24)
+                ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
+                    if index > 0 {
+                        Rectangle().fill(Color(hex: "C7C3BC")).frame(width: 1)
+                    }
+                    editorialStat(stat.value, stat.label).padding(.leading, index > 0 ? 24 : 0)
+                }
             }
             .frame(height: 130)
             .overlay(alignment: .top) { Rectangle().fill(ShareCardStyle.charcoal).frame(height: 2) }

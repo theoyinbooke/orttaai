@@ -25,7 +25,16 @@ struct MilestoneShareSheet: View {
     init(subject: MilestoneShareSubject) {
         self.subject = subject
         _selection = State(initialValue: subject)
+        _template = State(initialValue: Self.templates(for: subject).first ?? .mountain)
     }
+
+    /// The designs for a milestone's kind: its own picture first.
+    private static func templates(for subject: MilestoneShareSubject) -> [ShareCardTemplate] {
+        if case .badge(let badge) = subject { return ShareCardKind(badge: badge).templates }
+        return ShareCardKind.progress.templates
+    }
+
+    private var templates: [ShareCardTemplate] { Self.templates(for: selection) }
 
     private var badge: MilestoneBadge? {
         if case .badge(let badge) = selection { return badge }
@@ -106,10 +115,15 @@ struct MilestoneShareSheet: View {
                 fieldLabel("Milestone")
                 OrttaaiDropdown(selection: $selection, options: milestoneOptions)
                     .accessibilityLabel("Milestone")
+                    .onChange(of: selection) { _, newValue in
+                        // Each milestone opens on its own picture.
+                        template = Self.templates(for: newValue).first ?? .signal
+                        stripStart = 0
+                    }
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                fieldLabel("Template · \(ShareCardTemplate.allCases.count) designs")
+                fieldLabel("Design · \(templates.count) for this milestone")
                 templateStrip
             }
 
@@ -170,7 +184,7 @@ struct MilestoneShareSheet: View {
     /// Five thumbnails at a time, moved two at a time by the arrows; the
     /// edge where more are waiting fades out under its arrow.
     private var templateStrip: some View {
-        let all = ShareCardTemplate.allCases
+        let all = templates
         let maxStart = max(0, all.count - Self.visibleThumbnails)
         let start = min(stripStart, maxStart)
         return ZStack {

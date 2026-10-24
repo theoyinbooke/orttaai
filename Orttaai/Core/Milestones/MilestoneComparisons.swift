@@ -108,12 +108,15 @@ nonisolated enum MilestoneComparisons {
         books.last { words >= $0.words }
     }
 
-    /// "39 min", "2 h 5 min", "21 hours".
+    /// "39 min", "1 hour", "2 h 5 min", "21 hours".
     static func durationText(minutes: Int) -> String {
         if minutes < 60 { return "\(minutes) min" }
         let hours = minutes / 60
         let rest = minutes % 60
-        if hours >= 10 || rest == 0 { return "\(Int((Double(minutes) / 60).rounded())) hours" }
+        if hours >= 10 || rest == 0 {
+            let whole = Int((Double(minutes) / 60).rounded())
+            return whole == 1 ? "1 hour" : "\(whole) hours"
+        }
         return "\(hours) h \(rest) min"
     }
 

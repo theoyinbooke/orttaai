@@ -155,6 +155,7 @@ final class MilestoneComparisonsTests: XCTestCase {
         XCTAssertEqual(MilestoneComparisons.multiple(of: 179, over: MilestoneComparisons.handwritingWPM), "14")
         XCTAssertEqual(MilestoneComparisons.multiple(of: 80, over: MilestoneComparisons.typingWPM), "2")
         XCTAssertEqual(MilestoneComparisons.durationText(minutes: 39), "39 min")
+        XCTAssertEqual(MilestoneComparisons.durationText(minutes: 60), "1 hour")
         XCTAssertEqual(MilestoneComparisons.durationText(minutes: 125), "2 h 5 min")
         XCTAssertEqual(MilestoneComparisons.durationText(minutes: 1_250), "21 hours")
         XCTAssertEqual(MilestoneComparisons.timeBackEquivalent(minutes: 39), "a TV episode")
@@ -211,5 +212,61 @@ final class MilestoneStoreTests: XCTestCase {
 
         center.markCelebrated(center.badgesAwaitingCelebration)
         XCTAssertTrue(center.badgesAwaitingCelebration.isEmpty)
+    }
+}
+
+final class ShareCardKindTests: XCTestCase {
+    private var stats: MilestoneStats {
+        var stats = MilestoneStats()
+        stats.totalWords = 2_684
+        stats.dictations = 31
+        stats.speakingMs = 1_070_000
+        stats.bestWPM = 176
+        stats.distinctApps = 3
+        stats.longestDictationMs = 72_000
+        stats.dictionaryWords = 12
+        return stats
+    }
+
+    private let sharedDesigns: Set<ShareCardTemplate> = [.signal, .editorial, .medal, .receipt]
+
+    func testEveryBadgeLeadsWithADesignAboutItsKind() {
+        for badge in MilestoneCatalog.badges {
+            let kind = ShareCardKind(badge: badge)
+            let templates = kind.templates
+            XCTAssertTrue(templates.contains(.medal), badge.id)
+            XCTAssertEqual(Set(templates).count, templates.count, badge.id)
+            if kind != .firstWords {
+                XCTAssertFalse(sharedDesigns.contains(templates[0]), "\(badge.id) should open on its own picture")
+            }
+        }
+        XCTAssertEqual(ShareCardKind(badge: nil).templates.count, 8)
+    }
+
+    func testKindsOfferDifferentDesigns() {
+        let apps = ShareCardKind(badge: MilestoneCatalog.badge(withID: "three-apps")).templates
+        let words = ShareCardKind(badge: MilestoneCatalog.badge(withID: "words-1k")).templates
+        XCTAssertTrue(apps.contains(.apps))
+        XCTAssertFalse(apps.contains(.mountain), "Height in words says nothing about apps")
+        XCTAssertTrue(words.contains(.mountain))
+    }
+
+    func testCardsTellTheMilestonesOwnNumber() throws {
+        let thousand = try XCTUnwrap(MilestoneCatalog.badge(withID: "words-1k"))
+        let words = ShareCardContent(stats: stats, badge: thousand, earnedOn: nil)
+        XCTAssertEqual(words.words, 1_000, "1,000 Words is about 1,000 words, not the running total")
+        XCTAssertEqual(words.headline.emphasis, "1,000 words")
+
+        let apps = ShareCardContent(stats: stats, badge: MilestoneCatalog.badge(withID: "three-apps"), earnedOn: nil)
+        XCTAssertEqual(apps.headline.emphasis, "3 apps")
+        XCTAssertEqual(apps.supportingStats.first?.value, "3")
+
+        let marathon = ShareCardContent(stats: stats, badge: MilestoneCatalog.badge(withID: "marathon"), earnedOn: nil)
+        XCTAssertEqual(marathon.headline.emphasis, "1 min 12 s")
+
+        let headlines = Set(MilestoneCatalog.badges.map {
+            ShareCardContent(stats: stats, badge: $0, earnedOn: nil).headline.emphasis + "|" + ShareCardContent(stats: stats, badge: $0, earnedOn: nil).headline.tail
+        })
+        XCTAssertGreaterThan(headlines.count, 15, "Badges say different things")
     }
 }

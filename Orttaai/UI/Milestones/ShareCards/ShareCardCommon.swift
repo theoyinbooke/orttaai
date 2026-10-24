@@ -5,6 +5,7 @@ import SwiftUI
 
 enum ShareCardTemplate: String, CaseIterable, Identifiable {
     case mountain, books, speed, hands, receipt, signal, editorial, medal
+    case streak, race, stack, apps, stopwatch, dictionary, night
 
     var id: String { rawValue }
 
@@ -18,6 +19,13 @@ enum ShareCardTemplate: String, CaseIterable, Identifiable {
         case .signal: return "Signal"
         case .editorial: return "Editorial"
         case .medal: return "Medal"
+        case .streak: return "Streak"
+        case .race: return "Race"
+        case .stack: return "Stack"
+        case .apps: return "Apps"
+        case .stopwatch: return "Stopwatch"
+        case .dictionary: return "Dictionary"
+        case .night: return "Night"
         }
     }
 }
@@ -54,7 +62,12 @@ struct ShareCardContent {
     let badge: MilestoneBadge?
     let earnedOn: Date?
 
-    var words: Int { stats.totalWords }
+    /// The words a card is about: a words badge's own count (1,000 for
+    /// 1,000 Words), else everything dictated so far.
+    var words: Int {
+        if let badge, badge.metric == .words { return badge.threshold }
+        return stats.totalWords
+    }
 
     /// Pace for speed cards: the record for speed badges, else the average.
     var pace: Int {
@@ -163,6 +176,13 @@ struct ShareCardView: View {
             case .signal: SignalShareCard(content: content, size: size)
             case .editorial: EditorialShareCard(content: content, size: size)
             case .medal: MedalShareCard(content: content, size: size, badge: content.medalBadge(unlocked: unlocked))
+            case .streak: StreakShareCard(content: content, size: size)
+            case .race: RaceShareCard(content: content, size: size)
+            case .stack: StackShareCard(content: content, size: size)
+            case .apps: AppsShareCard(content: content, size: size)
+            case .stopwatch: StopwatchShareCard(content: content, size: size)
+            case .dictionary: DictionaryShareCard(content: content, size: size)
+            case .night: NightShareCard(content: content, size: size)
             }
         }
         .frame(width: size.pixels.width, height: size.pixels.height)
