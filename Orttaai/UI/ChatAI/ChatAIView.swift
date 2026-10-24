@@ -151,14 +151,21 @@ private struct ChatAIStarterPrompt: Identifiable {
 }
 
 private struct HiddenScrollbarTextView: NSViewRepresentable {
+    /// The same size as the placeholder and the rest of the composer.
+    static let fontSize: CGFloat = 13
+    /// One laid-out line, as the text view measures it.
+    static let lineHeight: CGFloat = ceil(NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: fontSize)))
+
     @Binding var text: String
+    /// The height the text needs, so the field can grow with it.
+    var contentHeight: Binding<CGFloat> = .constant(0)
     /// Return sends; Shift-Return inserts a new line.
     var onSubmit: () -> Void = {}
     /// Escape.
     var onCancel: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onSubmit: onSubmit, onCancel: onCancel)
+        Coordinator(text: $text, contentHeight: contentHeight, onSubmit: onSubmit, onCancel: onCancel)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -179,7 +186,7 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.disableWritingAssistance()
-        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.font = NSFont.systemFont(ofSize: Self.fontSize)
         textView.textColor = NSColor.Orttaai.textPrimary
         textView.insertionPointColor = NSColor.Orttaai.textPrimary
         textView.textContainerInset = NSSize(width: 0, height: 0)
@@ -209,8 +216,9 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
         guard let textView = context.coordinator.textView else { return }
         if textView.string != text {
             textView.string = text
+            context.coordinator.reportHeight()
         }
-        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.font = NSFont.systemFont(ofSize: Self.fontSize)
         textView.textColor = NSColor.Orttaai.textPrimary
         textView.insertionPointColor = NSColor.Orttaai.textPrimary
         scrollView.hasVerticalScroller = false
@@ -219,14 +227,35 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
+        var contentHeight: Binding<CGFloat>
         var onSubmit: () -> Void
         var onCancel: () -> Void
         weak var textView: NSTextView?
 
-        init(text: Binding<String>, onSubmit: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        init(text: Binding<String>, contentHeight: Binding<CGFloat>, onSubmit: @escaping () -> Void, onCancel: @escaping () -> Void) {
             _text = text
+            self.contentHeight = contentHeight
             self.onSubmit = onSubmit
             self.onCancel = onCancel
+        }
+
+        /// The laid-out height of the text, reported after this update so
+        /// the field can size itself to it. Once the field has its new size,
+        /// the caret's line is scrolled into view: text set from a dictation
+        /// doesn't scroll there by itself.
+        func reportHeight() {
+            guard let textView, let container = textView.textContainer, let layout = textView.layoutManager else { return }
+            layout.ensureLayout(for: container)
+            let height = ceil(layout.usedRect(for: container).height)
+            DispatchQueue.main.async { [contentHeight, weak textView] in
+                if abs(contentHeight.wrappedValue - height) > 0.5 {
+                    contentHeight.wrappedValue = height
+                }
+                DispatchQueue.main.async {
+                    guard let textView else { return }
+                    textView.scrollRangeToVisible(textView.selectedRange())
+                }
+            }
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -247,6 +276,7 @@ private struct HiddenScrollbarTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text = textView.string
+            reportHeight()
         }
     }
 }
@@ -1292,6 +1322,8 @@ struct ChatAIView: View {
     @State private var renameText = ""
     @State private var deletingConversation: ChatAIConversation?
     @State private var isHistorySearchOpen = false
+    /// The draft's laid-out height; the field grows with it.
+    @State private var draftHeight: CGFloat = 0
     @FocusState private var isHistorySearchFocused: Bool
     @State private var isSendHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1858,10 +1890,20 @@ struct ChatAIView: View {
         .foregroundStyle(Color.Orttaai.textSecondary)
     }
 
+    /// Two lines in a conversation (four on the start page), growing with
+    /// the draft to about eight before it scrolls, so dictated text is never
+    /// cut off at the bottom.
+    private var draftFieldHeight: CGFloat {
+        let line = HiddenScrollbarTextView.lineHeight
+        let minimum = viewModel.hasMessages ? line * 2 : line * 4
+        return min(max(draftHeight, minimum), line * 8)
+    }
+
     private var inputCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HiddenScrollbarTextView(
                 text: $viewModel.draft,
+                contentHeight: $draftHeight,
                 onSubmit: {
                     if viewModel.isVoiceRecording {
                         viewModel.toggleVoiceInput()
@@ -1874,7 +1916,7 @@ struct ChatAIView: View {
                 },
                 onCancel: { viewModel.cancelVoiceInput() }
             )
-                .frame(height: viewModel.hasMessages ? 44 : 64)
+                .frame(height: draftFieldHeight)
                 .opacity(isVoiceActive ? 0 : 1)
                 .allowsHitTesting(!isVoiceActive)
                 .padding(.horizontal, Spacing.lg)
