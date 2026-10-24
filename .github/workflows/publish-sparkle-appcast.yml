@@ -47,8 +47,16 @@ jobs:
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
 
-      - name: Resolve Swift packages
-        run: xcodebuild -resolvePackageDependencies -project Orttaai.xcodeproj -scheme Orttaai -clonedSourcePackagesDirPath .spm-local
+      - name: Download Sparkle signing tools
+        shell: bash
+        run: |
+          # The archive and checksum are pinned by Sparkle 2.9.0's Package.swift.
+          # Publishing updates does not need the app's Swift package graph.
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/Sparkle.zip" \
+            https://github.com/sparkle-project/Sparkle/releases/download/2.9.0/Sparkle-for-Swift-Package-Manager.zip
+          echo "44a0d5a00d5bfb6c2ad1755a92b694d948876d61ad44f35a0119eb0e7ace4b65  $RUNNER_TEMP/Sparkle.zip" | shasum -a 256 -c -
+          ditto -x -k "$RUNNER_TEMP/Sparkle.zip" "$RUNNER_TEMP/sparkle-tools"
 
       - name: Download DMG from GitHub release
         env:
@@ -74,7 +82,7 @@ jobs:
             --version "${{ steps.version.outputs.version }}" \
             --dmg "release-assets/Orttaai-${{ steps.version.outputs.version }}.dmg" \
             --ed-key-file "$RUNNER_TEMP/sparkle_private_key.pem" \
-            --spm-packages-dir .spm-local
+            --sparkle-bin-dir "$RUNNER_TEMP/sparkle-tools/bin"
 
       - name: Commit and push appcast
         shell: bash
