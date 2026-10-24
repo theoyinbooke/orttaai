@@ -13,6 +13,8 @@ final class MemoryViewModel {
     private(set) var dictionaryEntries: [DictionaryEntry] = []
     private(set) var snippetEntries: [SnippetEntry] = []
     private(set) var pendingSuggestions: [LearningSuggestion] = []
+    /// What Learn from My Edits found after recent dictations; no text.
+    private(set) var editChecks: [EditCheckRecord] = []
 
     private(set) var isLoading = false
     private(set) var isAnalyzing = false
@@ -68,6 +70,7 @@ final class MemoryViewModel {
             dictionaryEntries = try databaseManager.fetchDictionaryEntries()
             snippetEntries = try databaseManager.fetchSnippetEntries()
             pendingSuggestions = try databaseManager.fetchLearningSuggestions(status: .pending, limit: 150)
+            editChecks = try databaseManager.fetchEditChecks(limit: 8)
             errorMessage = nil
         } catch {
             errorMessage = "Couldn't load memory data."

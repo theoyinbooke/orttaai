@@ -56,6 +56,9 @@ final class HomeNavigationState: ObservableObject {
     /// The Model page tab to open on next; cleared once it has opened.
     @Published var pendingModelSection: ModelPageSection?
 
+    /// Set to open Memory on its Suggestions tab; Memory clears it.
+    @Published var openMemorySuggestions = false
+
     /// The share sheet's subject while it is open, from the Milestones page,
     /// a celebration or the corner toast.
     @Published var milestoneShareSubject: MilestoneShareSubject?

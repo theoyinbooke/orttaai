@@ -78,6 +78,12 @@ final class WindowManager {
         NSApp.isActive && homeWindow?.isKeyWindow == true
     }
 
+    /// Opens Memory on its Suggestions tab.
+    func showMemorySuggestions() {
+        homeNavigation.openMemorySuggestions = true
+        showHomeWindow(section: .memory)
+    }
+
     /// Opens Milestones with the share sheet for `badge`.
     func showMilestoneShare(_ badge: MilestoneBadge) {
         showHomeWindow(section: .milestones)

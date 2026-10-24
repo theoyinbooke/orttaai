@@ -1,6 +1,7 @@
 // HomeShellView.swift
 // Orttaai
 
+import Combine
 import SwiftUI
 
 struct HomeShellView: View {
@@ -77,7 +78,7 @@ struct HomeShellView: View {
         case .graph:
             SemanticMemoryView(onAskChat: navigation.askChatAI, onOpenAISettings: navigation.openAISettings)
         case .memory:
-            MemoryView()
+            MemoryView(openSuggestions: $navigation.openMemorySuggestions)
         case .analytics:
             AnalyticsView()
         case .milestones:
@@ -107,6 +108,7 @@ struct HomeShellView: View {
 private struct HomeSidebarView: View {
     @Binding var selection: HomeSection?
     @ObservedObject var appUpdates: AppUpdateService
+    @StateObject private var pendingSuggestions = PendingSuggestionCount()
     let onRunSetup: () -> Void
 
     private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics, .milestones]
@@ -122,7 +124,8 @@ private struct HomeSidebarView: View {
                     ForEach(workspaceSections) { section in
                         HomeSidebarRow(
                             section: section,
-                            isSelected: selection == section
+                            isSelected: selection == section,
+                            count: section == .memory ? pendingSuggestions.count : 0
                         ) {
                             selection = section
                         }
@@ -206,6 +209,8 @@ private struct HomeSidebarView: View {
 private struct HomeSidebarRow: View {
     let section: HomeSection
     let isSelected: Bool
+    /// A small count after the title (suggestions waiting in Memory).
+    var count: Int = 0
     let action: () -> Void
 
     @State private var isHovering = false
@@ -224,6 +229,17 @@ private struct HomeSidebarRow: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
+
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.Orttaai.bgPrimary)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(Capsule().fill(Color.Orttaai.accent))
+                        .accessibilityLabel("\(count) suggestions waiting")
+                }
             }
             .padding(.vertical, 6)
             .padding(.horizontal, Spacing.sm)
@@ -248,6 +264,25 @@ private struct HomeSidebarRow: View {
             return Color.Orttaai.bgTertiary.opacity(0.5)
         }
         return .clear
+    }
+}
+
+/// Suggestions waiting in Memory, kept current as they are added or decided.
+@MainActor
+private final class PendingSuggestionCount: ObservableObject {
+    @Published private(set) var count = 0
+    private var observer: NSObjectProtocol?
+    private let database = try? DatabaseManager()
+
+    init() {
+        refresh()
+        observer = NotificationCenter.default.addObserver(forName: .personalMemoryDidChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+    }
+
+    private func refresh() {
+        count = (try? database?.pendingLearningSuggestionCount()) ?? 0
     }
 }
 

@@ -39,12 +39,14 @@ private enum MemorySubsection: String, CaseIterable, Identifiable {
         switch self {
         case .dictionary: return "Add common terms, names, and preferred spellings."
         case .snippets: return "Save short triggers for long text you repeat often."
-        case .suggestions: return "Run Analyze Now to generate suggestions from history."
+        case .suggestions: return "Fix a misheard name right after dictating it and it appears here, or run Analyze History."
         }
     }
 }
 
 struct MemoryView: View {
+    /// Set by a "Learned a word" toast to open on Suggestions.
+    var openSuggestions: Binding<Bool> = .constant(false)
     @State private var viewModel = MemoryViewModel()
     @State private var subsection: MemorySubsection = .dictionary
     @State private var searchText = ""
@@ -96,7 +98,11 @@ struct MemoryView: View {
         }
         .onAppear {
             viewModel.load()
+            showSuggestionsIfAsked()
         }
+        .onChange(of: openSuggestions.wrappedValue) { _, _ in showSuggestionsIfAsked() }
+        .onReceive(NotificationCenter.default.publisher(for: .editChecksDidChange)) { _ in viewModel.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .personalMemoryDidChange)) { _ in viewModel.load() }
         .onChange(of: subsection) { _, _ in
             searchText = ""
         }
@@ -482,6 +488,12 @@ struct MemoryView: View {
         .opacity(entry.isActive ? 1 : 0.6)
     }
 
+    private func showSuggestionsIfAsked() {
+        guard openSuggestions.wrappedValue else { return }
+        subsection = .suggestions
+        openSuggestions.wrappedValue = false
+    }
+
     // MARK: - Suggestions
 
     private var suggestionsContent: some View {
@@ -500,6 +512,10 @@ struct MemoryView: View {
                     info: "Uses Apple's on-device model to propose dictionary words and snippets from your history.",
                     isOn: $aiSuggestionsEnabled
                 )
+            }
+
+            if learnFromEditsEnabled {
+                editChecksCard
             }
 
             SettingsCard(
@@ -532,12 +548,97 @@ struct MemoryView: View {
         }
     }
 
+    /// The last few dictations Learn from My Edits looked at, and what it
+    /// found: so the feature can be seen working. Never any text.
+    private var editChecksCard: some View {
+        SettingsCard(
+            "Learning from your edits",
+            info: "After each dictation, Orttaai watches the same text box for about a minute. If you fix a misheard name or term in what you dictated, the fix appears below as a suggestion. Rewording and ordinary typos don't count. Only the outcome is kept here, never the text."
+        ) {
+            if viewModel.editChecks.isEmpty {
+                Text("Nothing checked yet. Dictate into any app; if you then fix a misheard name in the same box, Orttaai will notice.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .padding(.vertical, Spacing.sm)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.editChecks.enumerated()), id: \.element.id) { index, check in
+                        if index > 0 { SettingsDivider() }
+                        editCheckRow(check)
+                    }
+                }
+            }
+        }
+    }
+
+    private func editCheckRow(_ check: EditCheckRecord) -> some View {
+        let outcome = check.checkOutcome
+        return HStack(spacing: Spacing.sm) {
+            Image(systemName: Self.symbol(for: outcome))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(outcome == .learned ? Color.Orttaai.accent : Color.Orttaai.textTertiary)
+                .frame(width: 20)
+            Text(Self.description(for: outcome, learned: check.learnedCount))
+                .font(.Orttaai.secondary.weight(outcome == .learned ? .semibold : .regular))
+                .foregroundStyle(outcome == .learned ? Color.Orttaai.textPrimary : Color.Orttaai.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: Spacing.sm)
+            if let app = check.appName {
+                Text(app)
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+            }
+            Text(check.checkedAt, format: .relative(presentation: .named))
+                .font(.Orttaai.caption)
+                .foregroundStyle(Color.Orttaai.textTertiary)
+                .frame(width: 96, alignment: .trailing)
+        }
+        .frame(minHeight: 32)
+    }
+
+    /// "Your edit" for suggestions learned from a fix, "History" otherwise.
+    static func origin(of suggestion: LearningSuggestion) -> String {
+        (suggestion.evidence ?? "").hasPrefix("Corrected after dictating") ? "Your edit" : "History"
+    }
+
+    static func description(for outcome: EditCheckOutcome?, learned: Int) -> String {
+        switch outcome {
+        case .learned: return learned == 1 ? "Learned a word from your fix" : "Learned \(learned) words from your fixes"
+        case .editedNoName: return "Edited, but no misheard name to learn"
+        case .noChange: return "Left as dictated"
+        case .textNotFound: return "Couldn't find the dictation in the box"
+        case .unreadable: return "This app didn't let Orttaai read the box"
+        case .secureField: return "Password box: not read"
+        case .notEnglish: return "Learning works on English dictation only"
+        case nil: return "Checked"
+        }
+    }
+
+    static func symbol(for outcome: EditCheckOutcome?) -> String {
+        switch outcome {
+        case .learned: return "character.book.closed.fill"
+        case .editedNoName: return "pencil"
+        case .noChange: return "checkmark"
+        case .textNotFound, .unreadable: return "eye.slash"
+        case .secureField: return "lock"
+        case .notEnglish: return "globe"
+        case nil: return "circle"
+        }
+    }
+
     private func suggestionRow(_ suggestion: LearningSuggestion) -> some View {
         HStack(spacing: Spacing.sm) {
-            Text(suggestion.suggestionType == .dictionary ? "Dictionary" : "Snippet")
-                .font(.Orttaai.caption)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .frame(width: 84, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(suggestion.suggestionType == .dictionary ? "Dictionary" : "Snippet")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                Text(Self.origin(of: suggestion))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+            }
+            .frame(width: 84, alignment: .leading)
 
             Text(suggestion.candidateSource)
                 .font(.Orttaai.secondary)

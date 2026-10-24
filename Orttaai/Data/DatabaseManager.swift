@@ -615,6 +615,18 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v17_edit_checks") { db in
+            // What Learn from My Edits found after each dictation: outcome,
+            // app and time, never any text. Local; never synced.
+            try db.create(table: "edit_check") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("checkedAt", .datetime).notNull()
+                t.column("appName", .text)
+                t.column("outcome", .text).notNull()
+                t.column("learnedCount", .integer).notNull().defaults(to: 0)
+            }
+        }
+
         return migrator
     }
 
@@ -2250,6 +2262,9 @@ final class DatabaseManager {
         if changeCount > 0 {
             requestCloudSyncIfEnabled()
         }
+        if changeCount > 0 {
+            NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+        }
         return changeCount
     }
 
@@ -2289,6 +2304,7 @@ final class DatabaseManager {
             )
         }
         requestCloudSyncIfEnabled()
+        NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
     }
 
     func clearLearningSuggestions(status: LearningSuggestionStatus? = nil) throws {
@@ -2313,6 +2329,34 @@ final class DatabaseManager {
 
     func logSkippedRecording(duration: TimeInterval) {
         Logger.database.info("Skipped recording: \(duration, format: .fixed(precision: 2))s (< 0.5s)")
+    }
+
+    // MARK: - Edit checks
+
+    static let maxEditChecks = 30
+
+    func insertEditCheck(outcome: EditCheckOutcome, appName: String?, learnedCount: Int, at date: Date = Date()) throws {
+        try dbQueue.write { db in
+            var record = EditCheckRecord(checkedAt: date, appName: appName, outcome: outcome.rawValue, learnedCount: learnedCount)
+            try record.insert(db)
+            try db.execute(
+                sql: "DELETE FROM edit_check WHERE id NOT IN (SELECT id FROM edit_check ORDER BY checkedAt DESC, id DESC LIMIT ?)",
+                arguments: [Self.maxEditChecks]
+            )
+        }
+        NotificationCenter.default.post(name: .editChecksDidChange, object: nil)
+    }
+
+    func fetchEditChecks(limit: Int = maxEditChecks) throws -> [EditCheckRecord] {
+        try dbQueue.read { db in
+            try EditCheckRecord.order(Column("checkedAt").desc, Column("id").desc).limit(limit).fetchAll(db)
+        }
+    }
+
+    func pendingLearningSuggestionCount() throws -> Int {
+        try dbQueue.read { db in
+            try LearningSuggestion.filter(Column("status") == LearningSuggestionStatus.pending.rawValue).fetchCount(db)
+        }
     }
 
     // MARK: - Milestones

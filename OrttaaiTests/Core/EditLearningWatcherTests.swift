@@ -115,6 +115,76 @@ final class EditLearningWatcherTests: XCTestCase {
         XCTAssertNil(reader.onChange, "the observation ends with the watch")
     }
 
+    // MARK: - Visible outcomes, retry and whitespace
+
+    private func reportingWatcher(_ reader: ScriptedFieldReader, saved: SavedDrafts, outcomes: OutcomeLog) -> EditLearningWatcher {
+        EditLearningWatcher(
+            reader: reader,
+            settings: settings,
+            save: { saved.drafts += $0 },
+            report: { outcome, app, learned in outcomes.entries.append((outcome, learned)) },
+            sleep: { _ in await Task.yield() }
+        )
+    }
+
+    func testEachCheckReportsHowItEnded() {
+        let cases: [([FocusedFieldRead], EditCheckOutcome, Int)] = [
+            ([field(inserted), field(fixed)], .learned, 1),
+            ([field(inserted), field(inserted)], .noChange, 0),
+            ([field(inserted), field(inserted + " See you then.")], .editedNoName, 0),
+            ([field(inserted, secure: true)], .secureField, 0),
+        ]
+        for (reads, expected, learned) in cases {
+            let outcomes = OutcomeLog()
+            let watcher = reportingWatcher(ScriptedFieldReader(reads), saved: SavedDrafts(), outcomes: outcomes)
+            watcher.watch(insertedText: inserted, targetApp: .current)
+            watcher.finishCurrentWatch()
+            XCTAssertEqual(outcomes.entries.map(\.0), [expected], "\(reads.map(\.text))")
+            XCTAssertEqual(outcomes.entries.first?.1, learned)
+        }
+    }
+
+    func testAPasteThatShowsUpLateIsStillWatched() async {
+        // Some apps show pasted text a moment after the paste.
+        let reader = ScriptedFieldReader([field("draft"), field("draft"), field(inserted), field(fixed)])
+        let saved = SavedDrafts()
+        let outcomes = OutcomeLog()
+        let watcher = reportingWatcher(reader, saved: saved, outcomes: outcomes)
+
+        watcher.watch(insertedText: inserted, targetApp: .current)
+        for _ in 0..<400 where outcomes.entries.isEmpty { await Task.yield() }
+
+        XCTAssertEqual(saved.drafts.map(\.candidateTarget), ["Folasade"])
+        XCTAssertEqual(outcomes.entries.map(\.0), [.learned])
+    }
+
+    func testADictationThatNeverAppearsIsReportedNotFound() async {
+        let reader = ScriptedFieldReader([field("Something else entirely")])
+        let outcomes = OutcomeLog()
+        let watcher = reportingWatcher(reader, saved: SavedDrafts(), outcomes: outcomes)
+
+        watcher.watch(insertedText: inserted, targetApp: .current)
+        for _ in 0..<400 where outcomes.entries.isEmpty { await Task.yield() }
+
+        XCTAssertEqual(outcomes.entries.map(\.0), [.textNotFound])
+        XCTAssertEqual(reader.readCount, 1 + EditLearningWatcher.baselineRetries)
+    }
+
+    func testEditorWhitespaceDoesNotHideTheDictation() {
+        // A chat box may keep a non-breaking space or turn a space into a line break.
+        let stored = "Please call for\u{00A0}Lash a day\ntomorrow."
+        let reader = ScriptedFieldReader([field(stored), field("Please call Folasade\ntomorrow.")])
+        let saved = SavedDrafts()
+        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0 }, sleep: { _ in
+            try? await Task.sleep(for: .seconds(3600))
+        })
+
+        watcher.watch(insertedText: inserted, targetApp: .current)
+        watcher.finishCurrentWatch()
+
+        XCTAssertEqual(saved.drafts.map(\.candidateTarget), ["Folasade"])
+    }
+
     func testFieldThatTurnsSecureIsDropped() async {
         let reader = ScriptedFieldReader([field(inserted), field(fixed, secure: true)])
         let saved = SavedDrafts()
@@ -184,6 +254,10 @@ private final class ScriptedFieldReader: FocusedFieldReading {
         let onChange: () -> Void
         init(onChange: @escaping () -> Void) { self.onChange = onChange }
     }
+}
+
+private final class OutcomeLog {
+    var entries: [(EditCheckOutcome, Int)] = []
 }
 
 private final class SavedDrafts {

@@ -148,19 +148,21 @@ final class AppleFoundationLearningAnalyzer: LearningAnalyzing {
             Return ONLY valid JSON with this exact shape:
             {
               "dictionary": [
-                {"source": "misheard term", "target": "preferred term", "confidence": 0.0, "evidence": "short reason"}
+                {"source": "otta ai", "target": "Orttaai", "confidence": 0.8, "evidence": "Written as otta ai in 3 dictations"}
               ],
               "snippets": [
-                {"trigger": "short trigger", "expansion": "expanded text", "confidence": 0.0, "evidence": "short reason"}
+                {"trigger": "my address", "expansion": "12 Harbour Road, Lagos", "confidence": 0.7, "evidence": "Dictated word for word 4 times"}
               ]
             }
 
             Rules:
+            - Write the values only. Never put labels such as "Misheard term:" inside a value.
+            - dictionary.source must be copied exactly from the history: a name or term the speech recognizer got wrong.
+            - dictionary.target is how it should be spelled, and must sound like the source. Never pair words that sound different, and never expand an acronym.
+            - snippets.expansion must be text that appears word for word in the history more than once; the trigger is 2 to 4 words.
             - confidence must be between 0 and 1.
-            - dictionary.source should be what user likely says/types; dictionary.target is preferred replacement.
-            - snippets should be high-value reusable expansions.
             - avoid duplicates with existing entries.
-            - keep output concise; maximum 8 dictionary items and 8 snippets.
+            - keep output concise; maximum 8 dictionary items and 8 snippets. Return empty lists when nothing qualifies.
 
             Existing dictionary terms:
             \(existingDictionaryTerms)
@@ -183,7 +185,12 @@ final class AppleFoundationLearningAnalyzer: LearningAnalyzing {
                 let decoder = JSONDecoder()
                 guard let data = jsonPayload.data(using: .utf8) else { return [] }
                 let parsed = try decoder.decode(AppleLearningResponse.self, from: data)
-                return sanitize(parsed: parsed, existingDictionary: existingDictionary, existingSnippets: existingSnippets)
+                return Self.sanitize(
+                    parsed: parsed,
+                    history: transcriptions.map(\.text),
+                    existingDictionary: existingDictionary,
+                    existingSnippets: existingSnippets
+                )
             } catch {
                 Logger.memory.error("Apple FM analysis failed: \(error.localizedDescription)")
                 return []
@@ -193,11 +200,40 @@ final class AppleFoundationLearningAnalyzer: LearningAnalyzing {
         return []
     }
 
-    private func sanitize(
+    /// Labels the model sometimes copies into a value ("Misheard term: X").
+    private static let labelPrefix = try! NSRegularExpression(
+        pattern: #"^\s*(misheard term|preferred term|short trigger|expanded text|source|target|trigger|expansion|heard as|suggested)\s*[:\-–]\s*"#,
+        options: [.caseInsensitive]
+    )
+
+    nonisolated static func strippingLabel(_ value: String) -> String {
+        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let range = NSRange(text.startIndex..., in: text)
+        if let match = labelPrefix.firstMatch(in: text, range: range), let swiftRange = Range(match.range, in: text) {
+            text.removeSubrange(swiftRange)
+        }
+        return text.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’ ").union(.whitespacesAndNewlines))
+    }
+
+    /// A dictionary pair is kept only when the heard form was actually said
+    /// and the replacement sounds like it: a misspelled name, not a different
+    /// word or an expanded acronym.
+    nonisolated static func isPlausibleDictionaryPair(source: String, target: String, history: String) -> Bool {
+        guard history.contains(EditCorrectionFinder.normalizedWhitespace(source.lowercased())) else { return false }
+        let heard = source.lowercased().filter { $0.isLetter || $0.isNumber }
+        let wanted = target.lowercased().filter { $0.isLetter || $0.isNumber }
+        guard !heard.isEmpty, !wanted.isEmpty, heard != wanted || source != target else { return false }
+        let distance = WordBoostGuard.editDistance(heard, wanted)
+        return distance <= max(2, max(heard.count, wanted.count) / 2)
+    }
+
+    static func sanitize(
         parsed: AppleLearningResponse,
+        history: [String],
         existingDictionary: [DictionaryEntry],
         existingSnippets: [SnippetEntry]
     ) -> [LearningSuggestionDraft] {
+        let historyText = EditCorrectionFinder.normalizedWhitespace(history.joined(separator: " \n ").lowercased())
         let existingDictionarySources = Set(
             existingDictionary.map { PersonalMemoryNormalizer.normalizedKey($0.source) }
         )
@@ -208,12 +244,13 @@ final class AppleFoundationLearningAnalyzer: LearningAnalyzing {
         var drafts: [LearningSuggestionDraft] = []
 
         for item in parsed.dictionary.prefix(8) {
-            let source = item.source.trimmingCharacters(in: .whitespacesAndNewlines)
-            let target = item.target.trimmingCharacters(in: .whitespacesAndNewlines)
+            let source = strippingLabel(item.source)
+            let target = strippingLabel(item.target)
             let normalizedSource = PersonalMemoryNormalizer.normalizedKey(source)
 
             guard !source.isEmpty, !target.isEmpty, source != target else { continue }
             guard !existingDictionarySources.contains(normalizedSource) else { continue }
+            guard isPlausibleDictionaryPair(source: source, target: target, history: historyText) else { continue }
 
             drafts.append(
                 LearningSuggestionDraft(
@@ -227,11 +264,15 @@ final class AppleFoundationLearningAnalyzer: LearningAnalyzing {
         }
 
         for item in parsed.snippets.prefix(8) {
-            let trigger = item.trigger.trimmingCharacters(in: .whitespacesAndNewlines)
-            let expansion = item.expansion.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trigger = strippingLabel(item.trigger)
+            let expansion = strippingLabel(item.expansion)
             let normalizedTrigger = PersonalMemoryNormalizer.normalizedKey(trigger)
 
             guard !trigger.isEmpty, !expansion.isEmpty, trigger != expansion else { continue }
+            // A snippet is for text the person really repeats, never one the
+            // model wrote itself.
+            guard trigger.split(separator: " ").count <= 5,
+                  historyText.contains(EditCorrectionFinder.normalizedWhitespace(expansion.lowercased())) else { continue }
             guard !existingSnippetTriggers.contains(normalizedTrigger) else { continue }
 
             drafts.append(
@@ -329,19 +370,19 @@ final class MemoryLearningService {
     }
 }
 
-private struct AppleLearningResponse: Decodable {
+struct AppleLearningResponse: Decodable {
     let dictionary: [AppleDictionarySuggestion]
     let snippets: [AppleSnippetSuggestion]
 }
 
-private struct AppleDictionarySuggestion: Decodable {
+struct AppleDictionarySuggestion: Decodable {
     let source: String
     let target: String
     let confidence: Double
     let evidence: String?
 }
 
-private struct AppleSnippetSuggestion: Decodable {
+struct AppleSnippetSuggestion: Decodable {
     let trigger: String
     let expansion: String
     let confidence: Double

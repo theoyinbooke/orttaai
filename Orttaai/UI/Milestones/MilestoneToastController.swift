@@ -5,24 +5,25 @@ import AppKit
 import SwiftUI
 
 /// A small card in the top-right corner when a dictation has just earned a
-/// badge. It never takes focus from the app being dictated into, never
-/// appears in the recording pill, and goes away on its own after six
-/// seconds (longer while the pointer is over it).
+/// badge, or an edit has just taught Orttaai a word. It never takes focus
+/// from the app being dictated into, never appears in the recording pill,
+/// and goes away on its own after six seconds (longer while the pointer is
+/// over it).
 @MainActor
 final class MilestoneToastController {
     static let visibleSeconds: Double = 6
-    private static let size = CGSize(width: 384, height: 108)
+    private static let size = CGSize(width: 420, height: 108)
 
     var onShare: ((MilestoneBadge) -> Void)?
+    /// Opens Memory › Suggestions.
+    var onReviewSuggestions: (() -> Void)?
 
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
     private var isHovered = false
 
     func show(_ badge: MilestoneBadge, alsoEarned: Int, line: String) {
-        let panel = panel ?? makePanel()
-        self.panel = panel
-        let view = MilestoneToastView(
+        present(MilestoneToastView(
             badge: badge,
             line: line,
             alsoEarned: alsoEarned,
@@ -31,11 +32,35 @@ final class MilestoneToastController {
                 self?.onShare?(badge)
             },
             onDismiss: { [weak self] in self?.hide() },
-            onHover: { [weak self] hovering in
-                self?.isHovered = hovering
-                if !hovering { self?.scheduleDismiss() }
-            }
-        )
+            onHover: { [weak self] hovering in self?.hoverChanged(hovering) }
+        ))
+    }
+
+    /// "Learned a word": a name or term fixed right after dictating is now a
+    /// suggestion waiting in Memory › Suggestions.
+    func showLearnedWord(heard: String, corrected: String, appName: String?, alsoLearned: Int) {
+        present(LearnedWordToastView(
+            heard: heard,
+            corrected: corrected,
+            appName: appName,
+            alsoLearned: alsoLearned,
+            onReview: { [weak self] in
+                self?.hide()
+                self?.onReviewSuggestions?()
+            },
+            onDismiss: { [weak self] in self?.hide() },
+            onHover: { [weak self] hovering in self?.hoverChanged(hovering) }
+        ))
+    }
+
+    private func hoverChanged(_ hovering: Bool) {
+        isHovered = hovering
+        if !hovering { scheduleDismiss() }
+    }
+
+    private func present<Content: View>(_ view: Content) {
+        let panel = panel ?? makePanel()
+        self.panel = panel
         panel.contentView = NSHostingView(rootView: view)
         position(panel)
         panel.alphaValue = 0
@@ -175,5 +200,102 @@ struct MilestoneToastView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Milestone unlocked: \(badge.name). \(line)")
+    }
+}
+
+struct LearnedWordToastView: View {
+    let heard: String
+    let corrected: String
+    let appName: String?
+    let alsoLearned: Int
+    let onReview: () -> Void
+    let onDismiss: () -> Void
+    let onHover: (Bool) -> Void
+
+    @State private var remaining: CGFloat = 1
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Color.Orttaai.accentSubtle)
+                    Image(systemName: "character.book.closed")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.Orttaai.accent)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(alsoLearned > 0 ? "LEARNED \(alsoLearned + 1) WORDS" : "LEARNED A WORD")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(Color(hex: "E8B45A"))
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(heard)
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                            .strikethrough(color: Color.Orttaai.textTertiary)
+                            .layoutPriority(1)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.Orttaai.textTertiary)
+                        Text(corrected)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                            .layoutPriority(2)
+                    }
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+                    Text(appName.map { "From your fix in \($0)" } ?? "From your fix")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Button("Review", action: onReview)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.Orttaai.bgPrimary)
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(Capsule().fill(Color.Orttaai.accent))
+                    .contentShape(Capsule())
+                    .pointingHandCursorWhileInactive()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 26, height: 26)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursorWhileInactive()
+                .foregroundStyle(Color(hex: "8E8E93"))
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 10)
+            .frame(maxHeight: .infinity)
+
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(Color.Orttaai.accent)
+                    .frame(width: geometry.size.width * remaining)
+            }
+            .frame(height: 2)
+            .background(Color.Orttaai.bgSecondary)
+            .accessibilityHidden(true)
+        }
+        .background(Color(hex: "242428").opacity(0.97))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.Orttaai.bgTertiary, lineWidth: 1)
+        )
+        .padding(4)
+        .onHover(perform: onHover)
+        .onAppear {
+            withAnimation(.linear(duration: MilestoneToastController.visibleSeconds)) { remaining = 0 }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Learned a word: \(heard) to \(corrected). Review in Memory, Suggestions.")
     }
 }

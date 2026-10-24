@@ -35,10 +35,17 @@ nonisolated enum EditCorrectionFinder {
     /// `after` is the same field later.
     static func corrections(
         inserted: String,
-        before: String,
-        insertionEndUTF16: Int?,
-        after: String
+        before rawBefore: String,
+        insertionEndUTF16 rawCaret: Int?,
+        after rawAfter: String
     ) -> [EditCorrection] {
+        let inserted = normalizedWhitespace(inserted)
+        let before = normalizedWhitespace(rawBefore)
+        let after = normalizedWhitespace(rawAfter)
+        let insertionEndUTF16 = rawCaret.map { caret -> Int in
+            let end = String.Index(utf16Offset: min(max(0, caret), rawBefore.utf16.count), in: rawBefore)
+            return normalizedWhitespace(String(rawBefore[..<end])).utf16.count
+        }
         guard before != after,
               let insertedRange = locate(inserted, in: before, endingNearUTF16: insertionEndUTF16) else { return [] }
 
@@ -116,6 +123,35 @@ nonisolated enum EditCorrectionFinder {
 
     private static func letters(of text: String) -> String {
         String(text.lowercased().filter { $0.isLetter || $0.isNumber })
+    }
+
+    // MARK: - Whitespace
+
+    /// Editors keep spaces and line breaks their own way: a chat box may
+    /// store a non-breaking space, or turn a line break into a paragraph.
+    /// Text is compared with every run of whitespace as one plain space.
+    static func normalizedWhitespace(_ text: String) -> String {
+        var result = ""
+        result.reserveCapacity(text.count)
+        var inWhitespace = false
+        for character in text {
+            if character.isWhitespace {
+                if !inWhitespace { result.append(" ") }
+                inWhitespace = true
+            } else {
+                result.append(character)
+                inWhitespace = false
+            }
+        }
+        return result
+    }
+
+    /// Whether a field's text holds the dictation, ignoring how the editor
+    /// stored its whitespace.
+    static func fieldText(_ text: String, contains inserted: String) -> Bool {
+        let needle = normalizedWhitespace(inserted).trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return false }
+        return normalizedWhitespace(text).contains(needle)
     }
 
     // MARK: - Locating and aligning

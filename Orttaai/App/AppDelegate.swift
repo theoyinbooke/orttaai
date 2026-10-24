@@ -228,6 +228,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// where the celebration shows it instead.
     private func startMilestones(database: DatabaseManager, settings: AppSettings) {
         let center = MilestoneCenter.shared
+        milestoneToast.onReviewSuggestions = { [weak self] in
+            NSApp.activate(ignoringOtherApps: true)
+            self?.windowManager?.showMemorySuggestions()
+        }
         milestoneToast.onShare = { [weak self] badge in
             center.markCelebrated([badge])
             NSApp.activate(ignoringOtherApps: true)
@@ -298,14 +302,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             let editLearner = EditLearningWatcher(
                 reader: SystemAccessibilityInspector(),
-                settings: settings
-            ) { [weak db] drafts in
-                do {
-                    _ = try db?.saveLearningSuggestions(drafts)
-                } catch {
-                    Logger.memory.error("Failed to save edit suggestions: \(error.localizedDescription)")
+                settings: settings,
+                save: { [weak self, weak db] drafts in
+                    do {
+                        guard let saved = try db?.saveLearningSuggestions(drafts), saved > 0,
+                              let first = drafts.first else { return }
+                        let prefix = "Corrected after dictating into "
+                        let appName = first.evidence.flatMap { $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : nil }
+                        self?.milestoneToast.showLearnedWord(
+                            heard: first.candidateSource,
+                            corrected: first.candidateTarget,
+                            appName: appName,
+                            alsoLearned: drafts.count - 1
+                        )
+                    } catch {
+                        Logger.memory.error("Failed to save edit suggestions: \(error.localizedDescription)")
+                    }
+                },
+                report: { [weak db] outcome, appName, learned in
+                    do {
+                        try db?.insertEditCheck(outcome: outcome, appName: appName, learnedCount: learned)
+                    } catch {
+                        Logger.memory.error("Failed to record an edit check: \(error.localizedDescription)")
+                    }
                 }
-            }
+            )
 
             let coord = DictationCoordinator(
                 audioService: audio,
