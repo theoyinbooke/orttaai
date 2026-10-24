@@ -395,6 +395,23 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(service.lastInjectionTelemetry?.pasteAttempts, 1)
     }
 
+    func testClipboardIsRestoredAsSoonAsThePasteShowsUpInTheField() async {
+        service.lowLatencyModeEnabled = false // a restore budget near 100 ms
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        keyPoster.onPasteChord = { [inspector] _ in
+            inspector?.simulatedFieldValue = "Hello world"
+        }
+
+        let result = await service.inject(text: "Hello world")
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(inspector.snapshotReadCount, 2, "baseline, then one read that finds the text")
+        XCTAssertEqual(clipboard.restoreCount, 1)
+        let waited = service.lastInjectionTelemetry?.clipboardRestoreDelayMs ?? .max
+        XCTAssertLessThan(waited, 80, "restored without waiting out the whole budget")
+    }
+
     func testVerifiedPasteDoesNotOverwriteNewerClipboardContents() async {
         inspector.detailsResult = normalDetails()
         inspector.simulatedFieldValue = ""

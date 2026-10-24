@@ -107,6 +107,10 @@ final class TextInjectionService: TextInjecting {
     /// covering apps that commit the pasted text a beat late.
     static let verificationRetryPolls = 3
     static let verificationPollIntervalNs: UInt64 = 40_000_000 // 40ms
+    /// While waiting for a paste to land, the field is first read this soon
+    /// after the paste chord, then every `pasteDeliveryPollMs`.
+    static let pasteDeliveryFirstCheckMs = 15
+    static let pasteDeliveryPollMs = 10
     static let codexBundleID = "com.openai.codex"
 
     init(
@@ -285,6 +289,7 @@ final class TextInjectionService: TextInjecting {
 
         // Step 6: Paste + bounded verification, with one activation+paste retry.
         var restoreDelayMs = 0
+        var pasteWaitMs = 0
         var verdict: PasteVerificationOutcome = .failed
         var pasteAttempts = 0
         var method: InjectionMethod = .paste
@@ -323,9 +328,17 @@ final class TextInjectionService: TextInjecting {
                 delay = max(delay, 400)
             }
             restoreDelayMs += delay
-            try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
-
-            verdict = await verifyInjection(expectedText: text, pre: preSnapshot, pid: targetPid)
+            if unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
+                try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+                pasteWaitMs += delay
+                verdict = await verifyInjection(expectedText: text, pre: preSnapshot, pid: targetPid)
+            } else {
+                let delivery = await awaitPasteDelivery(
+                    expectedText: text, pre: preSnapshot, pid: targetPid, budgetMs: delay
+                )
+                pasteWaitMs += delivery.waitedMs
+                verdict = delivery.outcome
+            }
             if verdict != .failed { break }
         }
 
@@ -366,7 +379,7 @@ final class TextInjectionService: TextInjecting {
             clipboard.setString(text)
             lastInjectionTelemetry = InjectionTelemetry(
                 appActivationMs: activationMs,
-                clipboardRestoreDelayMs: restoreDelayMs,
+                clipboardRestoreDelayMs: pasteWaitMs,
                 totalInjectionMs: injectionMs,
                 targetBundleID: appToActivate?.bundleIdentifier,
                 method: .failed,
@@ -390,7 +403,7 @@ final class TextInjectionService: TextInjecting {
             )
             lastInjectionTelemetry = InjectionTelemetry(
                 appActivationMs: activationMs,
-                clipboardRestoreDelayMs: restoreDelayMs,
+                clipboardRestoreDelayMs: pasteWaitMs,
                 totalInjectionMs: injectionMs,
                 targetBundleID: targetBundleID,
                 method: .unverifiedPaste,
@@ -412,7 +425,7 @@ final class TextInjectionService: TextInjecting {
 
         lastInjectionTelemetry = InjectionTelemetry(
             appActivationMs: activationMs,
-            clipboardRestoreDelayMs: restoreDelayMs,
+            clipboardRestoreDelayMs: pasteWaitMs,
             totalInjectionMs: injectionMs,
             targetBundleID: targetBundleID,
             method: method,
@@ -445,6 +458,45 @@ final class TextInjectionService: TextInjecting {
     }
 
     // MARK: - Verification
+
+    /// Waits up to `budgetMs` for the paste to land. Text that shows up in the
+    /// field means the app has read the pasteboard, so the clipboard can be
+    /// restored straight away rather than after the whole budget. A field
+    /// Accessibility can't read gives no such signal and waits the budget
+    /// out, as before; a field that still lacks the text when the budget ends
+    /// gets the usual verification polls.
+    private func awaitPasteDelivery(
+        expectedText: String,
+        pre: AXInspection<FocusedTextSnapshot>,
+        pid: pid_t?,
+        budgetMs: Int
+    ) async -> (outcome: PasteVerificationOutcome, waitedMs: Int) {
+        let start = CFAbsoluteTimeGetCurrent()
+        func elapsedMs() -> Int { Int((CFAbsoluteTimeGetCurrent() - start) * 1000) }
+        func sleep(_ ms: Int) async {
+            guard ms > 0 else { return }
+            try? await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000)
+        }
+
+        await sleep(min(budgetMs, Self.pasteDeliveryFirstCheckMs))
+        while true {
+            let post = inspector.focusedElementTextSnapshot(processIdentifier: pid)
+            let outcome = Self.evaluatePasteVerification(pre: pre, post: post, expectedText: expectedText)
+            let remaining = budgetMs - elapsedMs()
+            switch outcome {
+            case .confirmed:
+                return (.confirmed, elapsedMs())
+            case .inconclusive:
+                await sleep(remaining)
+                return (.inconclusive, elapsedMs())
+            case .failed:
+                guard remaining > 0 else {
+                    return (await verifyInjection(expectedText: expectedText, pre: pre, pid: pid), elapsedMs())
+                }
+                await sleep(min(remaining, Self.pasteDeliveryPollMs))
+            }
+        }
+    }
 
     /// One cheap AX read on the happy path; a few short polls only when the
     /// first read says the text has not landed yet.
