@@ -1,7 +1,9 @@
 # Milestones: badges, celebrations and share cards
 
-Status: **in progress** on `feat/milestones`, from the approved design canvas
-(Orttaai Milestones, 2026-10-24).
+Status: **built** on `feat/milestones`, 2026-10-24, from the approved design
+canvas (Orttaai Milestones). Every card was rendered at all three sizes
+through the export path and checked by eye, with a 2,005-word history and a
+520,000-word one; the Debug app unlocked seven badges from real history.
 
 ## Goal
 
@@ -68,3 +70,16 @@ never printed on a card.
 4. Celebration overlay and corner toast; Settings switch.
 5. Eight cards, renderer and share sheet.
 6. Headless renders of each card and size checked by eye, full suite, commit.
+
+## Where the build differs from the canvas
+
+- The Books card has three tiers: below one novel it shows the person's
+  pages beside The Great Gatsby filling up; past 47,000 words a pile of
+  novels; past 587,000 words, War and Peace.
+- Landmark word counts round to the nearest 1,000 past 100,000 words
+  (Kilimanjaro: 491,000) and key presses to the nearest hundred.
+- The toast reads "3 MILESTONES UNLOCKED" when one dictation earns several,
+  and is skipped while the Orttaai window is in front (the celebration shows
+  them there).
+- Fonts are the system's: SF for the sans cards, New York for the serif ones
+  and SF Mono for the receipt, so nothing is bundled.

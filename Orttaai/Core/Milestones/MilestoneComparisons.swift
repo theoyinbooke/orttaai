@@ -21,8 +21,11 @@ nonisolated enum MilestoneComparisons {
         let name: String
         let metres: Double
 
+        /// To the nearest 250 words, or 1,000 past 100,000.
         var wordsToReach: Int {
-            Int((metres / MilestoneComparisons.metresPerWord / 250).rounded()) * 250
+            let words = metres / MilestoneComparisons.metresPerWord
+            let step = words >= 100_000 ? 1_000.0 : 250.0
+            return Int((words / step).rounded() * step)
         }
     }
 
@@ -77,6 +80,13 @@ nonisolated enum MilestoneComparisons {
 
     static func keyPresses(words: Int) -> Int {
         Int((Double(max(0, words)) * keyPressesPerWord).rounded())
+    }
+
+    /// "~11,400": an estimate, so to the nearest hundred.
+    static func keyPressesText(words: Int) -> String {
+        let presses = keyPresses(words: words)
+        let rounded = presses >= 1_000 ? Int((Double(presses) / 100).rounded()) * 100 : presses
+        return "~\(rounded.formatted())"
     }
 
     static func typingMinutes(words: Int) -> Int {

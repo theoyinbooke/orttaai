@@ -10,6 +10,7 @@ enum HomeSection: String, CaseIterable, Identifiable, Hashable {
     case graph
     case memory
     case analytics
+    case milestones
     case model
     case settings
     case about
@@ -23,6 +24,7 @@ enum HomeSection: String, CaseIterable, Identifiable, Hashable {
         case .graph: return "Graph"
         case .memory: return "Memory"
         case .analytics: return "Analytics"
+        case .milestones: return "Milestones"
         case .settings: return "Settings"
         case .model: return "Model"
         case .about: return "About"
@@ -36,6 +38,7 @@ enum HomeSection: String, CaseIterable, Identifiable, Hashable {
         case .graph: return "point.3.connected.trianglepath.dotted"
         case .memory: return "text.book.closed"
         case .analytics: return "chart.bar.xaxis"
+        case .milestones: return "rosette"
         case .settings: return "gearshape"
         case .model: return "cpu"
         case .about: return "info.circle"
@@ -52,6 +55,14 @@ final class HomeNavigationState: ObservableObject {
 
     /// The Model page tab to open on next; cleared once it has opened.
     @Published var pendingModelSection: ModelPageSection?
+
+    /// The share sheet's subject while it is open, from the Milestones page,
+    /// a celebration or the corner toast.
+    @Published var milestoneShareSubject: MilestoneShareSubject?
+
+    func shareMilestone(_ subject: MilestoneShareSubject) {
+        milestoneShareSubject = subject
+    }
 
     func askChatAI(_ prompt: String) {
         pendingChatPrompt = prompt

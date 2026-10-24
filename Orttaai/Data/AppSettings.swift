@@ -129,6 +129,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("hasCompletedSetup") var hasCompletedSetup: Bool = false
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
+    /// Corner toast and in-window celebration when a badge is earned.
+    @AppStorage("celebrateMilestones") var celebrateMilestones: Bool = true
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true

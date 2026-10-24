@@ -74,6 +74,16 @@ final class WindowManager {
         centerAndShow(window, recenter: true)
     }
 
+    var isHomeWindowInFront: Bool {
+        NSApp.isActive && homeWindow?.isKeyWindow == true
+    }
+
+    /// Opens Milestones with the share sheet for `badge`.
+    func showMilestoneShare(_ badge: MilestoneBadge) {
+        showHomeWindow(section: .milestones)
+        homeNavigation.shareMilestone(.badge(badge))
+    }
+
     func closeSetupWindow() {
         setupWindow?.close()
         setupWindow = nil

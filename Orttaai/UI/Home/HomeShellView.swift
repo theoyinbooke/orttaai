@@ -35,6 +35,12 @@ struct HomeShellView: View {
             }
             .navigationSplitViewStyle(.balanced)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                MilestoneCelebrationHost(navigation: navigation)
+            }
+        }
+        .sheet(item: $navigation.milestoneShareSubject) { subject in
+            MilestoneShareSheet(subject: subject)
         }
         .background(Color.Orttaai.bgPrimary)
         .onAppear {
@@ -74,6 +80,8 @@ struct HomeShellView: View {
             MemoryView()
         case .analytics:
             AnalyticsView()
+        case .milestones:
+            MilestonesView(shareSubject: $navigation.milestoneShareSubject)
         case .settings:
             HomeSettingsWorkspaceView()
         case .model:
@@ -101,7 +109,7 @@ private struct HomeSidebarView: View {
     @ObservedObject var appUpdates: AppUpdateService
     let onRunSetup: () -> Void
 
-    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics]
+    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics, .milestones]
     private let systemSections: [HomeSection] = [.model, .settings, .about]
 
     var body: some View {

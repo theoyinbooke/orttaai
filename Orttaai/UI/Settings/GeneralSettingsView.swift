@@ -10,6 +10,7 @@ import os
 struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
+    @AppStorage("celebrateMilestones") private var celebrateMilestones = true
     @State private var showClearConfirmation = false
     @State private var showResetConfirmation = false
 
@@ -31,6 +32,14 @@ struct GeneralSettingsView: View {
                     title: "Show Processing Estimate",
                     info: "Shows roughly how long transcription will take in the pill while it finishes a recording.",
                     isOn: $showProcessingEstimate
+                )
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: "Celebrate Milestones",
+                    info: "Shows a small card in the corner when a dictation earns a badge, and a celebration the next time you open Orttaai. Badges are still earned when this is off; see them in Milestones.",
+                    isOn: $celebrateMilestones
                 )
             }
 

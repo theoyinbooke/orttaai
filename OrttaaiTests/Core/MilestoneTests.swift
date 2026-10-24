@@ -128,6 +128,28 @@ final class MilestoneComparisonsTests: XCTestCase {
         XCTAssertEqual(MilestoneComparisons.nextLandmark(after: 500_000)?.name, "Everest")
     }
 
+    func testLargeCountsAreRounded() {
+        XCTAssertEqual(MilestoneComparisons.landmarks.first { $0.name == "Kilimanjaro" }?.wordsToReach, 491_000)
+        XCTAssertEqual(MilestoneComparisons.keyPressesText(words: 2_005), "~11,400")
+        XCTAssertEqual(MilestoneComparisons.keyPressesText(words: 100), "~570")
+    }
+
+    func testCelebrationLinesUseThePersonsNumbers() {
+        var stats = MilestoneStats()
+        stats.totalWords = 2_005
+        stats.dictations = 20
+        stats.bestWPM = 179
+        stats.speakingMs = 11 * 60_000
+        let line = { (id: String) in MilestoneCopy.celebrationLine(for: MilestoneCatalog.badge(withID: id)!, stats: stats) }
+        XCTAssertEqual(line("words-1k"), "2,005 words: 8 pages of a book, and 24 m tall stood on end.")
+        XCTAssertEqual(line("quick-talker"), "179 words a minute, 4.5× faster than typing.")
+        XCTAssertEqual(line("first-words"), "Your first dictation is in. Welcome to talking instead of typing.")
+        XCTAssertTrue(line("hour-saved").contains("39 min of typing back"))
+        for badge in MilestoneCatalog.badges {
+            XCTAssertFalse(MilestoneCopy.celebrationLine(for: badge, stats: stats).isEmpty, badge.id)
+        }
+    }
+
     func testMultiplesAndDurations() {
         XCTAssertEqual(MilestoneComparisons.multiple(of: 179, over: MilestoneComparisons.typingWPM), "4.5")
         XCTAssertEqual(MilestoneComparisons.multiple(of: 179, over: MilestoneComparisons.handwritingWPM), "14")

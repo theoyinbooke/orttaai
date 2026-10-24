@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var databaseManager: DatabaseManager?
     private var modelManager: ModelManager?
     private var coordinator: DictationCoordinator?
+    private let milestoneToast = MilestoneToastController()
 
     private var waveformUpdateTask: Task<Void, Never>?
     private var lastWaveformLevelBucket: Int = -1
@@ -222,6 +223,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager?.showHomeWindow(section: section)
     }
 
+    /// Badges follow the history from launch. A badge a dictation has just
+    /// earned gets the corner toast, unless the Orttaai window is in front,
+    /// where the celebration shows it instead.
+    private func startMilestones(database: DatabaseManager, settings: AppSettings) {
+        let center = MilestoneCenter.shared
+        milestoneToast.onShare = { [weak self] badge in
+            center.markCelebrated([badge])
+            NSApp.activate(ignoringOtherApps: true)
+            self?.windowManager?.showMilestoneShare(badge)
+        }
+        center.onFreshUnlocks = { [weak self] badges in
+            guard let self, settings.celebrateMilestones, let badge = badges.first else { return }
+            guard self.windowManager?.isHomeWindowInFront != true else { return }
+            self.milestoneToast.show(
+                badge,
+                alsoEarned: badges.count - 1,
+                line: MilestoneCopy.celebrationLine(for: badge, stats: center.stats)
+            )
+        }
+        center.start(database: database)
+    }
+
     private func configureUpdater() {
         #if !DEBUG
         appUpdates.start()
@@ -271,6 +294,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 settings: settings
             )
             databaseManager = db
+            startMilestones(database: db, settings: settings)
 
             let editLearner = EditLearningWatcher(
                 reader: SystemAccessibilityInspector(),
