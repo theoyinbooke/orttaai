@@ -39,6 +39,9 @@ struct HomeShellView: View {
             .overlay {
                 MilestoneCelebrationHost(navigation: navigation)
             }
+            .overlay {
+                WhatsNewHost()
+            }
         }
         .sheet(item: $navigation.milestoneShareSubject) { subject in
             MilestoneShareSheet(subject: subject)
@@ -46,6 +49,7 @@ struct HomeShellView: View {
         .background(Color.Orttaai.bgPrimary)
         .onAppear {
             requestSyncIfShowingHome()
+            appUpdates.checkIfStale()
         }
         .onChange(of: navigation.selectedSection) { oldValue, newValue in
             guard oldValue != newValue else { return }
@@ -148,20 +152,10 @@ private struct HomeSidebarView: View {
 
             Divider()
 
-            if let version = appUpdates.readyVersion {
-                Button {
-                    appUpdates.installReadyUpdate()
-                } label: {
-                    Label("Update", systemImage: "arrow.down.circle.fill")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(OrttaaiButtonStyle(.primary, size: .small))
-                .padding(.horizontal, Spacing.lg)
+            AppUpdateSidebarButton(updates: appUpdates)
+                .padding(.horizontal, Spacing.sm)
                 .padding(.top, Spacing.md)
-                .help("Install Orttaai \(version) and relaunch")
-                .accessibilityLabel("Update to Orttaai \(version)")
-                .accessibilityIdentifier("InstallReadyUpdate")
-            }
+                .animation(.easeOut(duration: 0.2), value: appUpdates.phase == .idle)
 
             Button {
                 onRunSetup()

@@ -9,6 +9,8 @@ import SwiftUI
 struct MilestoneCelebrationHost: View {
     @ObservedObject var navigation: HomeNavigationState
     @ObservedObject private var center = MilestoneCenter.shared
+    /// Celebrations wait for What's New to close.
+    @ObservedObject private var whatsNew = WhatsNewCenter.shared
     @AppStorage("celebrateMilestones") private var celebrate = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// How many were waiting when this run of celebrations began, for "2 of 6".
@@ -17,7 +19,7 @@ struct MilestoneCelebrationHost: View {
     var body: some View {
         let queue = center.badgesAwaitingCelebration
         ZStack {
-            if celebrate, center.hasLoaded, navigation.milestoneShareSubject == nil, let badge = queue.first {
+            if celebrate, center.hasLoaded, whatsNew.release == nil, navigation.milestoneShareSubject == nil, let badge = queue.first {
                 Color.black.opacity(0.62)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())

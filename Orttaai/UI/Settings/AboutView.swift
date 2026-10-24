@@ -93,7 +93,7 @@ struct AboutView: View {
             } else {
                 SettingsRow(
                     title: "Updates",
-                    info: "Orttaai also checks for updates automatically in the background."
+                    info: "Orttaai checks every few hours, and when you open this window. A new version shows at the bottom left of the sidebar."
                 ) {
                     Button("Check for Updates…") {
                         NotificationCenter.default.post(name: .checkForUpdatesRequested, object: nil)
@@ -105,7 +105,7 @@ struct AboutView: View {
                 SettingsDivider()
                 SettingsRow(
                     title: "Automatically download updates",
-                    info: "Downloads updates in the background. When ready, use Update at the bottom left to install and relaunch. Updates also install when you quit."
+                    info: "Downloads a new version as soon as it's found, with its progress at the bottom left. Click Restart to update there, or it installs when you quit."
                 ) {
                     Toggle("Automatically download updates", isOn: Binding(
                         get: { appUpdates.automaticallyDownloadsUpdates },

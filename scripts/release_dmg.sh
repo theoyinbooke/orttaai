@@ -20,6 +20,7 @@ Options:
   --output-dir <path>       Artifact directory root (default: dist).
   --derived-data-path <path> Xcode build output directory.
   --dmg-theme <mode>        DMG background theme: auto|light|dark (default: auto).
+  --no-whats-new            Release without a What's New card (a hotfix with nothing to tell).
   -h, --help                Show this help.
 
 Prerequisites:
@@ -48,6 +49,7 @@ DERIVED_DATA_PATH=""
 VERSION_OVERRIDE=""
 TEAM_ID_OVERRIDE=""
 SKIP_NOTARIZE=0
+SKIP_WHATS_NEW=0
 DMG_THEME="auto"
 
 while [[ $# -gt 0 ]]; do
@@ -99,6 +101,10 @@ while [[ $# -gt 0 ]]; do
     --skip-notarize)
       echo "--skip-notarize is disabled for this project. Notarization is always required." >&2
       exit 1
+      ;;
+    --no-whats-new)
+      SKIP_WHATS_NEW=1
+      shift
       ;;
     -h|--help)
       usage
@@ -159,6 +165,15 @@ TEAM_ID="${TEAM_ID_OVERRIDE:-$TEAM_ID_FROM_XCODE}"
 
 if [[ -z "${VERSION:-}" ]]; then
   echo "Unable to resolve app version. Pass --version." >&2
+  exit 1
+fi
+
+# Every release tells people what changed: 1-3 highlights for this version
+# in WhatsNewCatalog.swift. See docs/whats-new.md.
+WHATS_NEW_CATALOG="Orttaai/Core/WhatsNew/WhatsNewCatalog.swift"
+if [[ "$SKIP_WHATS_NEW" -eq 0 ]] && ! grep -q "WhatsNewRelease(version: \"$VERSION\"" "$WHATS_NEW_CATALOG"; then
+  echo "No What's New for $VERSION. Add 1-3 highlights to $WHATS_NEW_CATALOG (see docs/whats-new.md)," >&2
+  echo "or pass --no-whats-new for a hotfix with nothing to tell." >&2
   exit 1
 fi
 

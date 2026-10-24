@@ -1,22 +1,37 @@
-# Automatic app updates
+# App updates
 
-The automatic-download checkbox in Sparkle and the toggle in About use Sparkle's own persisted `automaticallyDownloadsUpdates` preference. The app observes that preference instead of keeping a second setting or overwriting it at launch. Enabling the About toggle also enables scheduled checks. Homebrew copies remain managed by Homebrew; Debug builds do not start the updater.
+Orttaai drives Sparkle with its own user driver (`AppUpdateService`, an `SPUUserDriver`) instead of Sparkle's windows. Everything about an update shows in one button at the bottom of the sidebar, above Run Setup (`AppUpdateSidebarButton`). Homebrew copies stay managed by Homebrew, and Debug builds don't start the updater.
 
-For an automatic download, `AppUpdateService` waits for Sparkle's `willInstallUpdateOnQuit` callback. At this point download, validation, extraction, and installer preparation have completed. It retains Sparkle's immediate installation handler and shows a compact **Update** button at the bottom of the sidebar, above Run Setup. Clicking it installs and relaunches; the existing install-on-quit behavior also remains available. No additional polling or download worker is introduced.
+## When it checks
 
-Sparkle can also restore a downloaded or installing update in its standard UI. These states show the footer reminder; its action brings Sparkle's update UI forward when no immediate handler is retained. Remind Me Later retains the reminder for a downloaded update. Skip, download cancellation, errors, and replacement downloads clear stale readiness. The app does not persist a ready flag independently of Sparkle's files.
+- Every 4 hours (`SUScheduledCheckInterval` 14400 in Info.plist).
+- When the home window opens, 15 seconds after launch, and 20 seconds after the Mac wakes, if the last check is over an hour old (`checkIfStale`).
+- **Check for Updates** in the menu bar or About opens the window and checks; the button shows "Checking for updates…" and then the result.
 
-The implementation uses Sparkle's [updater delegate](https://sparkle-project.org/documentation/api-reference/Protocols/SPUUpdaterDelegate.html) and [gentle reminder APIs](https://sparkle-project.org/documentation/gentle-reminders/).
+Before this driver, Sparkle checked once a day and, with automatic downloads on, downloaded silently and installed only on quit. A menu bar app is rarely quit, so new versions went unnoticed.
 
-## Version comparison
+## What the button shows
 
-The app displayed 1.10.0 but the Xcode project's internal build version was 1.2.21, causing Sparkle to offer the existing 1.10.0 release again. The application target now derives `CURRENT_PROJECT_VERSION` from `MARKETING_VERSION` in both configurations. The release script can still supply its explicit build version. The rebuilt preview reports 1.10.0 (1.10.0), and a live update check confirmed that it is up to date.
+| Phase | Button | Click |
+| --- | --- | --- |
+| available | Update available · Version x | Downloads, installs and restarts |
+| downloading | A ring filling with the download, "Downloading 42%" | – |
+| preparing | Preparing update… | – |
+| ready | Restart to update · Version x is ready | Installs and restarts |
+| installing | Restarting… | Retries if quitting was stopped |
+| checking / upToDate | Checking… / You're up to date (4 s) | – |
+| failed | Update didn't finish · Click to try again | Checks again |
 
-## Validation
+**Automatically download updates** (About, stored in `OrttaaiAutomaticallyDownloadUpdates`, carried over from Sparkle's `SUAutomaticallyUpdate`) starts the download as soon as an update is found, still with its progress, and stops at "Restart to update". Orttaai never restarts unless the person clicks; a prepared update also installs on quit.
 
-- Release build completed; local preview signatures passed strict verification.
-- Six updater tests passed: preference observation, delayed readiness, install handler invocation/retry, errors, cancellation/replacement, recovered stages, and dismiss/skip behavior.
-- Native UI inspection confirmed the About toggle is enabled and on, the corrected version is displayed, and the footer remains clear when no update is ready.
-- Startup logs confirmed speech-model loading and warm-up completed.
+## How it maps to Sparkle
 
-The prepared-update tests use Sparkle delegate fixtures and inert updater controllers. No newer release is currently available, so a real newer-version download/install was not exercised or published during this change. The local preview remains at `.build/accuracy-preview/Orttaai.app`; its iCloud sync still requires a provisioning profile containing the current signing certificate. The installed `/Applications/Orttaai.app` was not replaced.
+Sparkle's silent download is turned off (`automaticallyDownloadsUpdates = false`) because it bypasses the user driver. The driver never holds Sparkle's reply: an update the person hasn't acted on is answered with **dismiss**, which keeps a downloaded or prepared update (and installs it on quit). The button's click sets `installRequested` and starts a check; Sparkle finds or resumes the same update and the driver answers **install** to it and to the relaunch prompt.
+
+## Trying it
+
+A Debug build started with `-OrttaaiUpdatePreview YES` walks the button through a pretend update (available, download to 100%, preparing, restarting) without Sparkle. `AppUpdateServiceTests` cover the driver's phases and replies.
+
+## What's New
+
+After an update relaunches, the home window shows the release's What's New card. See [whats-new.md](whats-new.md).

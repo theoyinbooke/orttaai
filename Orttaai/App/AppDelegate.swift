@@ -153,6 +153,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Check if setup is needed
         let hasCompletedSetup = UserDefaults.standard.bool(forKey: hasCompletedSetupKey)
+        WhatsNewCenter.shared.evaluate(currentVersion: Bundle.main.shortVersion, isExistingUser: hasCompletedSetup)
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "OrttaaiWhatsNewPreview") {
+            WhatsNewCenter.shared.preview()
+        }
+        #endif
         presentInitialWindow(hasCompletedSetup: hasCompletedSetup)
 
         Logger.ui.info(
@@ -250,12 +256,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureUpdater() {
-        #if !DEBUG
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "OrttaaiUpdatePreview") {
+            appUpdates.startPreview()
+        }
+        #else
         appUpdates.start()
+        // Sparkle's own schedule waits for its interval; a check over an
+        // hour old is redone shortly after launch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            self?.appUpdates.checkIfStale()
+        }
         #endif
     }
 
+    /// The answer shows at the bottom of the sidebar, so the window opens.
     private func checkForUpdates() {
+        windowManager?.showHomeWindow()
         appUpdates.checkForUpdates()
     }
 
@@ -477,6 +494,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Logger.audio.info("System wake detected; marking audio subsystem for revalidation")
             self?.audioService?.markAudioSystemStale()
             CloudSyncScheduler.requestSync(reason: .systemWake, debounce: 1)
+            // After the network is back.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+                self?.appUpdates.checkIfStale()
+            }
         }
     }
 
