@@ -49,6 +49,8 @@ final class WindowManager {
             homeNavigation.selectedSection = section
         }
         requestHomeSyncIfNeeded()
+        // Every time the window opens, including a reopen of the same window.
+        AppUpdateService.shared.checkIfStale()
 
         if let existing = homeWindow {
             Logger.ui.info("Showing existing home window")

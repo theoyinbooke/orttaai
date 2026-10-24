@@ -49,7 +49,6 @@ struct HomeShellView: View {
         .background(Color.Orttaai.bgPrimary)
         .onAppear {
             requestSyncIfShowingHome()
-            appUpdates.checkIfStale()
         }
         .onChange(of: navigation.selectedSection) { oldValue, newValue in
             guard oldValue != newValue else { return }

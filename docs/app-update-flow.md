@@ -5,7 +5,7 @@ Orttaai drives Sparkle with its own user driver (`AppUpdateService`, an `SPUUser
 ## When it checks
 
 - Every 3 hours (`SUScheduledCheckInterval` 10800 in Info.plist). A check fetches one small appcast file.
-- When the home window opens, 15 seconds after launch, and 20 seconds after the Mac wakes, if the last check is over an hour old (`checkIfStale`).
+- Each time the home window opens or reopens (`WindowManager.showHomeWindow`), 15 seconds after launch, and 20 seconds after the Mac wakes, if the last check is over an hour old (`checkIfStale`).
 - **Check for Updates** in the menu bar or About opens the window and checks; the button shows "Checking for updates…" and then the result.
 
 Before this driver, Sparkle checked once a day and, with automatic downloads on, downloaded silently and installed only on quit. A menu bar app is rarely quit, so new versions went unnoticed.
