@@ -1,0 +1,381 @@
+{
+  "evaluated_at": "2026-10-23",
+  "task": "Express live segments: decode each stretch of speech at the speaker's pauses while recording, so finalize decodes only the audio after the last pause",
+  "runner": "OrttaaiTests/Eval/ASREvalRunnerTests with ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini ORTTAAI_ASR_EVAL_EXPRESS_SEGMENTS=1, Debug, Apple M-series Mac Studio, 4x realtime replay; whole = one decode of the recording (the reference), live = segments",
+  "shipped": "Round 4 behind the 'Decode while I speak' setting (off by default), and only while Word Boost has no dictionary words",
+  "notes": [
+    "Round 1 cut at pauses and decoded each segment alone: real-voice WER 15.15% vs 14.88%; numbers lost formatting at cuts and a short tail decoded as a lone 'First.'.",
+    "Rounds 2-3 decoded each segment with audio either side and kept words by FluidAudio token timings. Timings near window edges proved unreliable: duplicated and dropped words, and in round 3 two dropped sentences.",
+    "Round 4 decodes each segment with 3 s before and 2 s after it and stitches neighbouring decodes in the middle of the longest run of words they agree on (at least two); no agreement falls back to one whole decode. Numbers are formatted once on the joined text.",
+    "Round 4 matches or beats the whole decode on WER everywhere; real voice 49/50 identical. With Word Boost it lost two dictionary names at cuts (hard-vocab recall 0.90 -> 0.85 realistic), so segments stay off while Word Boost has dictionary words.",
+    "The realistic_bias run's first attempt ended when the test host exited with code 0 mid-run; the rerun of the same build completed all 36 items.",
+    "Live finalize latency in this runner carries about 30 ms of replay overhead on every item (short clips: whole ~54 ms, live ~88 ms on the same whole-decode path)."
+  ],
+  "rounds": {
+    "1_plain_segments": {
+      "clean": {
+        "whole": {
+          "aggregate_wer": 0.0492,
+          "total_errors": 147,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2405,
+          "latency_ms_p50": 46.5,
+          "latency_ms_p90": 176,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0482,
+          "total_errors": 144,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2405,
+          "latency_ms_p50": 73.0,
+          "latency_ms_p90": 93,
+          "hallucination_item_ids": []
+        }
+      },
+      "realistic": {
+        "whole": {
+          "aggregate_wer": 0.0458,
+          "total_errors": 94,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.25,
+          "latency_ms_p50": 56.0,
+          "latency_ms_p90": 347,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0419,
+          "total_errors": 86,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.325,
+          "latency_ms_p50": 87.0,
+          "latency_ms_p90": 224,
+          "hallucination_item_ids": []
+        }
+      },
+      "real": {
+        "whole": {
+          "aggregate_wer": 0.1488,
+          "total_errors": 111,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 53.0,
+          "latency_ms_p90": 60,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.1515,
+          "total_errors": 113,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 79.0,
+          "latency_ms_p90": 101,
+          "hallucination_item_ids": []
+        }
+      },
+      "realistic_bias": {
+        "whole": {
+          "aggregate_wer": 0.0234,
+          "total_errors": 48,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.9,
+          "latency_ms_p50": 270.5,
+          "latency_ms_p90": 2349,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0234,
+          "total_errors": 48,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.875,
+          "latency_ms_p50": 291.5,
+          "latency_ms_p90": 325,
+          "hallucination_item_ids": []
+        }
+      },
+      "real_bias": {
+        "whole": {
+          "aggregate_wer": 0.0791,
+          "total_errors": 59,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.807,
+          "latency_ms_p50": 270.5,
+          "latency_ms_p90": 354,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0818,
+          "total_errors": 61,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.807,
+          "latency_ms_p50": 311.5,
+          "latency_ms_p90": 339,
+          "hallucination_item_ids": []
+        }
+      }
+    },
+    "2_timing_windows_3s_2s": {
+      "clean": {
+        "whole": {
+          "aggregate_wer": 0.0492,
+          "total_errors": 147,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2405,
+          "latency_ms_p50": 44.0,
+          "latency_ms_p90": 173,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0492,
+          "total_errors": 147,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2532,
+          "latency_ms_p50": 74.0,
+          "latency_ms_p90": 123,
+          "hallucination_item_ids": []
+        }
+      },
+      "realistic": {
+        "whole": {
+          "aggregate_wer": 0.0458,
+          "total_errors": 94,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.25,
+          "latency_ms_p50": 57.0,
+          "latency_ms_p90": 335,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0443,
+          "total_errors": 91,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.25,
+          "latency_ms_p50": 103.0,
+          "latency_ms_p90": 238,
+          "hallucination_item_ids": []
+        }
+      },
+      "real": {
+        "whole": {
+          "aggregate_wer": 0.1488,
+          "total_errors": 111,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 54.0,
+          "latency_ms_p90": 58,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.1488,
+          "total_errors": 111,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 98.5,
+          "latency_ms_p90": 107,
+          "hallucination_item_ids": []
+        }
+      }
+    },
+    "3_timing_windows_1_5s_2_5s": {
+      "clean": {
+        "whole": {
+          "aggregate_wer": 0.0492,
+          "total_errors": 147,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2405,
+          "latency_ms_p50": 53.0,
+          "latency_ms_p90": 173,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0526,
+          "total_errors": 157,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2532,
+          "latency_ms_p50": 95.0,
+          "latency_ms_p90": 114,
+          "hallucination_item_ids": []
+        }
+      },
+      "realistic": {
+        "whole": {
+          "aggregate_wer": 0.0458,
+          "total_errors": 94,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.25,
+          "latency_ms_p50": 57.5,
+          "latency_ms_p90": 334,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0487,
+          "total_errors": 100,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.275,
+          "latency_ms_p50": 100.0,
+          "latency_ms_p90": 227,
+          "hallucination_item_ids": []
+        }
+      },
+      "real": {
+        "whole": {
+          "aggregate_wer": 0.1488,
+          "total_errors": 111,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 54.0,
+          "latency_ms_p90": 59,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.1448,
+          "total_errors": 108,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 95.5,
+          "latency_ms_p90": 105,
+          "hallucination_item_ids": []
+        }
+      }
+    },
+    "4_stitched_overlap": {
+      "clean": {
+        "whole": {
+          "aggregate_wer": 0.0492,
+          "total_errors": 147,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2405,
+          "latency_ms_p50": 54.0,
+          "latency_ms_p90": 174,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0472,
+          "total_errors": 141,
+          "total_ref_words": 2985,
+          "hard_vocab_recall_strict": 0.2532,
+          "latency_ms_p50": 89.0,
+          "latency_ms_p90": 124,
+          "hallucination_item_ids": []
+        }
+      },
+      "realistic": {
+        "whole": {
+          "aggregate_wer": 0.0458,
+          "total_errors": 94,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.25,
+          "latency_ms_p50": 56.5,
+          "latency_ms_p90": 336,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0438,
+          "total_errors": 90,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.25,
+          "latency_ms_p50": 63.5,
+          "latency_ms_p90": 212,
+          "hallucination_item_ids": []
+        }
+      },
+      "real": {
+        "whole": {
+          "aggregate_wer": 0.1488,
+          "total_errors": 111,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 54.0,
+          "latency_ms_p90": 62,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.1488,
+          "total_errors": 111,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.2807,
+          "latency_ms_p50": 89.5,
+          "latency_ms_p90": 107,
+          "hallucination_item_ids": []
+        }
+      },
+      "realistic_bias": {
+        "whole": {
+          "aggregate_wer": 0.0234,
+          "total_errors": 48,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.9,
+          "latency_ms_p50": 261.0,
+          "latency_ms_p90": 2337,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0224,
+          "total_errors": 46,
+          "total_ref_words": 2054,
+          "hard_vocab_recall_strict": 0.85,
+          "latency_ms_p50": 330.0,
+          "latency_ms_p90": 699,
+          "hallucination_item_ids": []
+        }
+      },
+      "real_bias": {
+        "whole": {
+          "aggregate_wer": 0.0791,
+          "total_errors": 59,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.807,
+          "latency_ms_p50": 265.5,
+          "latency_ms_p90": 340,
+          "hallucination_item_ids": []
+        },
+        "live": {
+          "aggregate_wer": 0.0791,
+          "total_errors": 59,
+          "total_ref_words": 746,
+          "hard_vocab_recall_strict": 0.807,
+          "latency_ms_p50": 337.5,
+          "latency_ms_p90": 411,
+          "hallucination_item_ids": []
+        }
+      }
+    }
+  },
+  "round_4_segmented_items": {
+    "clean": {
+      "segmented_items": 22,
+      "whole_ms_p50": 174.0,
+      "live_finalize_ms_p50": 122.0,
+      "identical_text": 77,
+      "items": 92
+    },
+    "realistic": {
+      "segmented_items": 11,
+      "whole_ms_p50": 270,
+      "live_finalize_ms_p50": 100,
+      "identical_text": 26,
+      "items": 36
+    },
+    "real": {
+      "segmented_items": 2,
+      "whole_ms_p50": 154.5,
+      "live_finalize_ms_p50": 142.0,
+      "identical_text": 49,
+      "items": 50
+    },
+    "realistic_bias": {
+      "segmented_items": 11,
+      "whole_ms_p50": 2163,
+      "live_finalize_ms_p50": 430,
+      "identical_text": 28,
+      "items": 36
+    },
+    "real_bias": {
+      "segmented_items": 2,
+      "whole_ms_p50": 766.0,
+      "live_finalize_ms_p50": 545.0,
+      "identical_text": 49,
+      "items": 50
+    }
+  }
+}

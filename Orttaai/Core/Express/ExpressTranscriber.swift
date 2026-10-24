@@ -9,6 +9,8 @@ import os
 /// the service can hold one without availability annotations and tests can
 /// stand in for Fluid Speech Mini without Core ML models.
 protocol ExpressBackend: Actor {
+    /// The cleaned transcript. Numbers are formatted by the caller, once the
+    /// whole dictation's text is together.
     func transcribe(_ audioSamples: [Float]) async throws -> String
     /// Installs the Word Boost vocabulary for later decodes and returns how
     /// many terms it will use: 0 when the list is empty or Word Boost's model
@@ -28,7 +30,8 @@ extension ExpressBackend {
 
 /// Fluid Speech Mini through FluidAudio. Decoding is fast enough (about 40 ms
 /// for a short dictation, 1.5 s for a 10-minute one on the Neural Engine)
-/// that it decodes the whole recording once at the end, with no live clips.
+/// that it decodes the whole recording once at the end, unless live segments
+/// are on (`TranscriptionService`), which decode windows of it as it grows.
 /// With Word Boost, a second small model (Parakeet CTC 110M) checks the
 /// user's dictionary words against the audio and `WordBoostGuard` decides
 /// which of its proposed replacements to keep. That model's scores are
@@ -186,7 +189,7 @@ actor ExpressTranscriber: ExpressBackend {
         if let wordBoost, let model = wordBoostModel, let timings = result.tokenTimings, !timings.isEmpty {
             text = await boosted(text, timings: timings, samples: samples, session: wordBoost, model: model)
         }
-        return ExpressNumberFormatter.format(Self.cleanedText(text))
+        return Self.cleanedText(text)
     }
 
     /// Applies the replacements FluidAudio's own rescorer would apply, minus

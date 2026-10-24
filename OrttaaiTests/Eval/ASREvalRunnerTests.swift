@@ -37,6 +37,8 @@
 //                                 dictionary) as rules_text, the polish stage's input
 //   ORTTAAI_ASR_EVAL_BIAS         1 to snapshot the manifest's bias_vocabulary
 //                                 (for fluid-speech-mini: the Word Boost vocabulary)
+//   ORTTAAI_ASR_EVAL_EXPRESS_SEGMENTS 1 for fluid-speech-mini's live segments
+//                                 on the live path (whole stays one decode)
 //   ORTTAAI_ASR_EVAL_MODEL_ROOT   a storage base laid out like WhisperKit's (models/argmaxinc/whisperkit-coreml/<variant>,
 //                                 models/openai/whisper-*); loads from there instead of scanning ~/Documents, the custom
 //                                 storage folder and the caches, so the eval never triggers a macOS folder-access prompt
@@ -180,6 +182,7 @@ final class ASREvalRunnerTests: XCTestCase {
         try await service.loadModel(named: modelName)
         await service.warmUp()
 
+        await service.setExpressLiveSegments(env["ORTTAAI_ASR_EVAL_EXPRESS_SEGMENTS"] == "1")
         let items = manifest.items.filter { idFilter?.contains($0.id) ?? true }
         var results: [ItemResult] = []
 

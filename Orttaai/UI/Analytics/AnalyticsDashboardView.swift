@@ -137,8 +137,7 @@ final class AnalyticsDashboardViewModel {
     }
 
     private func currentModelID() -> String? {
-        let activeModelId = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        return activeModelId.isEmpty ? nil : activeModelId
+        settings.dictationModelIDForDisplay
     }
 
     private func fetchAnalyticsRecords(from db: DatabaseManager) throws -> [Transcription] {

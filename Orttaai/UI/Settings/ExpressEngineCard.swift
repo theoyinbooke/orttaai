@@ -14,6 +14,7 @@ struct ExpressEngineCard: View {
 
     @AppStorage("expressEngineEnabled") private var expressEngineEnabled = false
     @AppStorage("expressWordBoostEnabled") private var expressWordBoostEnabled = true
+    @AppStorage("expressLiveSegmentsEnabled") private var expressLiveSegmentsEnabled = false
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
     @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
     @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
@@ -51,6 +52,17 @@ struct ExpressEngineCard: View {
                 ) {
                     OrttaaiSwitch(title: "Word Boost", isOn: wordBoostBinding)
                         .disabled(!expressEngineEnabled || controller.isBusy)
+                }
+
+                SettingsDivider()
+
+                detailRow(
+                    "Decode while I speak",
+                    info: "Each stretch of speech is decoded at your pauses while you're still talking, so a long dictation finishes about as fast as a short one. While Word Boost has dictionary words to check, dictation decodes the whole recording at the end instead, so no dictionary word is missed. Off by default while it's being tested.",
+                    detail: "Long dictations finish sooner."
+                ) {
+                    OrttaaiSwitch(title: "Decode while I speak", isOn: $expressLiveSegmentsEnabled)
+                        .disabled(!expressEngineEnabled)
                 }
 
                 SettingsDivider()

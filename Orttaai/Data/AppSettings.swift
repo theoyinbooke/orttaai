@@ -122,6 +122,9 @@ final class AppSettings: ObservableObject {
     @AppStorage("expressEngineEnabled") var expressEngineEnabled: Bool = false
     /// Express checks Personal Memory dictionary words against the audio.
     @AppStorage("expressWordBoostEnabled") var expressWordBoostEnabled: Bool = true
+    /// Express decodes each stretch of speech at the speaker's pauses while
+    /// recording, leaving only the last stretch for after the key is released.
+    @AppStorage("expressLiveSegmentsEnabled") var expressLiveSegmentsEnabled: Bool = false
     @AppStorage("selectedAudioDeviceID") var selectedAudioDeviceID: String = ""
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("hasCompletedSetup") var hasCompletedSetup: Bool = false
@@ -302,6 +305,15 @@ final class AppSettings: ObservableObject {
             && ExpressEngine.supportsLanguage(effectiveDictationLanguage)
     }
 
+    /// The model dictation runs on, for the dashboards: Express when it is
+    /// active (it is never stored as `activeModelId`), otherwise the loaded
+    /// Whisper model; nil before any model has loaded.
+    var dictationModelIDForDisplay: String? {
+        if isExpressEngineActive { return ExpressEngine.modelID }
+        let active = activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return active.isEmpty ? nil : active
+    }
+
     /// The model dictation should load: Express when it is active, otherwise
     /// the Whisper selection (with its English Small adjustment applied).
     @discardableResult
@@ -451,5 +463,6 @@ final class AppSettings: ObservableObject {
             lowLatencyMode: lowLatencyModeEnabled,
             decodingPreferences: decodingPreferences
         )
+        await transcriptionService.setExpressLiveSegments(expressLiveSegmentsEnabled)
     }
 }

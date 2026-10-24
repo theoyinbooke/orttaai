@@ -61,7 +61,7 @@ final class ExpressRoutingTests: XCTestCase {
 
     private func makeService(
         base: URL,
-        backend: FakeExpressBackend,
+        backend: any ExpressBackend,
         loadedFolders: FolderRecorder = FolderRecorder()
     ) -> TranscriptionService {
         let probes = ModelProbeTestSupport.probes(roots: [], beginAccessBase: base)
@@ -123,6 +123,163 @@ final class ExpressRoutingTests: XCTestCase {
         XCTAssertEqual(trace.path, .expressWholeDecode)
         let calls = await backend.sampleCounts
         XCTAssertEqual(calls, [audio.count], "no live clips: one decode of the full recording")
+    }
+
+    // MARK: - Live segments
+
+    private func silence(seconds: Double) -> [Float] {
+        [Float](repeating: 0, count: Int(seconds * 16_000))
+    }
+
+    private func segmentedService(_ backend: ScriptedExpressBackend) async throws -> TranscriptionService {
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.setExpressLiveSegments(true)
+        await service.beginLiveTranscriptionSession()
+        return service
+    }
+
+    func testSegmentEndsAtAPauseOnceItHoldsEightSeconds() {
+        let pending = speech(seconds: 9) + silence(seconds: 0.8)
+        XCTAssertEqual(
+            TranscriptionService.expressSegmentSampleCount(pendingAudio: pending[...]),
+            16_000 * 9 + TranscriptionService.silencePadSampleCount
+        )
+    }
+
+    func testNoSegmentBeforeEightSecondsOrWhileTheSpeakerIsTalking() {
+        let early = speech(seconds: 5) + silence(seconds: 1) + speech(seconds: 3)
+        XCTAssertNil(TranscriptionService.expressSegmentSampleCount(pendingAudio: early[...]))
+        let short = speech(seconds: 6) + silence(seconds: 1)
+        XCTAssertNil(TranscriptionService.expressSegmentSampleCount(pendingAudio: short[...]))
+    }
+
+    func testLongSpeechWithoutAPauseIsCutAtAGapBetweenWordsNeverMidWord() {
+        let gapped = speech(seconds: 12) + silence(seconds: 0.3) + speech(seconds: 9)
+        XCTAssertEqual(
+            TranscriptionService.expressSegmentSampleCount(pendingAudio: gapped[...]),
+            16_000 * 12 + 16_000 * 3 / 20
+        )
+        let tooSoon = speech(seconds: 12) + silence(seconds: 0.3) + speech(seconds: 5)
+        XCTAssertNil(TranscriptionService.expressSegmentSampleCount(pendingAudio: tooSoon[...]), "under 20 s, only a pause cuts")
+        let continuous = speech(seconds: 25)
+        XCTAssertNil(TranscriptionService.expressSegmentSampleCount(pendingAudio: continuous[...]))
+    }
+
+    func testSegmentsDecodeWhileRecordingAndFinalizeDecodesOnlyTheTail() async throws {
+        // Each decode covers its segment plus overlap; they are stitched
+        // where their words agree.
+        let backend = ScriptedExpressBackend(["Ship it on Friday. Then", "on Friday. Then tell Ada."])
+        let service = try await segmentedService(backend)
+        // A pause at 10 s, then 2 s more audio so the pause can be judged.
+        let recorded = speech(seconds: 10) + silence(seconds: 1) + speech(seconds: 2)
+        let audio = recorded + speech(seconds: 2)
+
+        let early = await service.liveAudioSnapshotStart(capturedSampleCount: 16_000 * 10)
+        XCTAssertNil(early, "a pause is only judged 2 s after it")
+        let start = await service.liveAudioSnapshotStart(capturedSampleCount: recorded.count)
+        XCTAssertEqual(start, 0)
+        await service.processLiveAudio(recorded, startingAt: 0)
+        let (text, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: audio)
+
+        XCTAssertEqual(text, "Ship it on Friday. Then tell Ada.")
+        XCTAssertEqual(trace.path, .expressSegments)
+        XCTAssertEqual(trace.committedClipCount, 1)
+        let segment = 16_000 * 10 + TranscriptionService.silencePadSampleCount
+        let calls = await backend.sampleCounts
+        // The segment with 2 s after it, then the tail with 3 s before it.
+        XCTAssertEqual(calls, [segment + 16_000 * 2, audio.count - (segment - 16_000 * 3)])
+    }
+
+    func testNumbersAreFormattedOnceTheSegmentsAreJoined() async throws {
+        let backend = ScriptedExpressBackend(["Meet me at three thirty", "at three thirty pm on Friday."])
+        let service = try await segmentedService(backend)
+        let recorded = speech(seconds: 10) + silence(seconds: 1) + speech(seconds: 2)
+
+        await service.processLiveAudio(recorded, startingAt: 0)
+        let (text, _) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: recorded)
+
+        XCTAssertEqual(text, ExpressNumberFormatter.format("Meet me at three thirty pm on Friday."))
+    }
+
+    func testSeamTakesEachDecodesWordsFromTheSideThatHeardThemInContext() {
+        // The earlier decode heard "first" at its edge; the later one in the
+        // middle of the sentence.
+        XCTAssertEqual(
+            TranscriptionService.stitchedExpressText(
+                "We agreed to test everything on staging. First",
+                "test everything on staging first. Then we ship."
+            ),
+            "We agreed to test everything on staging first. Then we ship."
+        )
+    }
+
+    func testSeamNeedsTwoWordsTheDecodesAgreeOn() {
+        XCTAssertNil(TranscriptionService.stitchedExpressText("Ship it on Friday.", "Then tell Ada."))
+        XCTAssertNil(TranscriptionService.stitchedExpressText("Ship it on Friday.", "Friday. Then tell Ada."))
+        XCTAssertEqual(TranscriptionService.stitchedExpressText(nil, "Then tell Ada."), "Then tell Ada.")
+    }
+
+    func testLiveLoopCopiesOnlyUncommittedAudioAndItsContext() async throws {
+        let backend = ScriptedExpressBackend(["Ship it on Friday."])
+        let service = try await segmentedService(backend)
+        let short = await service.liveAudioSnapshotStart(capturedSampleCount: 16_000 * 10)
+        XCTAssertNil(short, "nothing to segment before 8.7 s plus the 2 s lookahead")
+
+        await service.processLiveAudio(speech(seconds: 10) + silence(seconds: 1) + speech(seconds: 2), startingAt: 0)
+        for _ in 0..<100 where await backend.sampleCounts.isEmpty { await Task.yield() }
+        for _ in 0..<50 {
+            if await service.liveAudioSnapshotStart(capturedSampleCount: 16_000 * 30) != nil { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let next = await service.liveAudioSnapshotStart(capturedSampleCount: 16_000 * 30)
+        XCTAssertEqual(next, 16_000 * 7 + TranscriptionService.silencePadSampleCount, "from 3 s before the commit point")
+    }
+
+    func testFailedSegmentFallsBackToOneWholeDecode() async throws {
+        let backend = ScriptedExpressBackend(["", "Ship it on Friday. Then tell Ada."])
+        let service = try await segmentedService(backend)
+        let first = speech(seconds: 10) + silence(seconds: 1) + speech(seconds: 2)
+        let audio = first + speech(seconds: 2)
+
+        await service.processLiveAudio(first, startingAt: 0)
+        let (text, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: audio)
+
+        XCTAssertEqual(text, "Ship it on Friday. Then tell Ada.")
+        XCTAssertEqual(trace.path, .expressSegmentFallback)
+        let calls = await backend.sampleCounts
+        XCTAssertEqual(calls.last, audio.count)
+    }
+
+    func testSegmentsStayOffWhileWordBoostHasDictionaryWords() async throws {
+        let backend = ScriptedExpressBackend(["Ship it on Friday. Then tell Ada."])
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.setExpressLiveSegments(true)
+        await service.setWordBoostVocabulary([WordBoostTerm(text: "Olanrewaju", aliases: [])])
+        await service.beginLiveTranscriptionSession()
+        let recorded = speech(seconds: 10) + silence(seconds: 1) + speech(seconds: 2)
+
+        await service.processLiveAudio(recorded, startingAt: 0)
+        let (_, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: recorded)
+
+        XCTAssertEqual(trace.path, .expressWholeDecode)
+        let calls = await backend.sampleCounts
+        XCTAssertEqual(calls, [recorded.count])
+    }
+
+    func testShortRecordingWithSegmentsOnStillDecodesWhole() async throws {
+        let backend = ScriptedExpressBackend(["Ship it."])
+        let service = try await segmentedService(backend)
+        let audio = speech(seconds: 5)
+
+        await service.processLiveAudio(audio, startingAt: 0)
+        let (text, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: audio)
+
+        XCTAssertEqual(text, "Ship it.")
+        XCTAssertEqual(trace.path, .expressWholeDecode)
+        let calls = await backend.sampleCounts
+        XCTAssertEqual(calls, [audio.count])
     }
 
     func testRecordingHandsEachCompletedWordBoostChunkToTheBackendOnce() async throws {
@@ -269,6 +426,20 @@ final class ExpressRoutingTests: XCTestCase {
 
     // MARK: - Settings
 
+    func testDashboardsShowTheModelDictationRunsOn() {
+        let settings = AppSettings()
+        settings.activeModelId = "openai_whisper-large-v3-v20240930"
+        settings.dictationLanguage = "en"
+
+        settings.expressEngineEnabled = true
+        XCTAssertEqual(settings.dictationModelIDForDisplay, ExpressEngine.modelID)
+
+        settings.expressEngineEnabled = false
+        XCTAssertEqual(settings.dictationModelIDForDisplay, "openai_whisper-large-v3-v20240930")
+        settings.activeModelId = " "
+        XCTAssertNil(settings.dictationModelIDForDisplay)
+    }
+
     func testDictationUsesExpressOnlyWhenOnAndEnglish() {
         let settings = AppSettings()
         settings.selectedModelId = "openai_whisper-large-v3-v20240930"
@@ -361,6 +532,24 @@ private actor FakeExpressBackend: ExpressBackend {
     func discardPreparedWordBoost() async {
         discardCount += 1
     }
+}
+
+/// Returns its scripted transcripts in order, then repeats the last one.
+private actor ScriptedExpressBackend: ExpressBackend {
+    private var texts: [String]
+    private(set) var sampleCounts: [Int] = []
+
+    init(_ texts: [String]) {
+        self.texts = texts
+    }
+
+    func transcribe(_ audioSamples: [Float]) async throws -> String {
+        sampleCounts.append(audioSamples.count)
+        return texts.count > 1 ? texts.removeFirst() : texts[0]
+    }
+
+
+    func setWordBoost(_ terms: [WordBoostTerm]) async -> Int { terms.count }
 }
 
 private final class FolderRecorder: @unchecked Sendable {

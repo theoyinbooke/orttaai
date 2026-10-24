@@ -101,10 +101,7 @@ final class HomeViewModel {
         }
 
         do {
-            let activeModelId = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-            payload = try statsService.load(
-                currentModelId: activeModelId.isEmpty ? nil : activeModelId
-            )
+            payload = try statsService.load(currentModelId: settings.dictationModelIDForDisplay)
             errorMessage = nil
         } catch {
             payload = .empty

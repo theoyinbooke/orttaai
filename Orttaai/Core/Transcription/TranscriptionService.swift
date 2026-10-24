@@ -29,6 +29,9 @@ protocol Transcribing: Actor {
     func setVocabularyBias(terms: [String])
     /// Express's Word Boost vocabulary; an empty list turns boosting off.
     func setWordBoostVocabulary(_ terms: [WordBoostTerm]) async
+    /// Express live segments: decode at the speaker's pauses while recording.
+    /// Read when a live session begins.
+    func setExpressLiveSegments(_ enabled: Bool)
     func updateSettings(
         language: String,
         computeMode: String,
@@ -40,6 +43,9 @@ protocol Transcribing: Actor {
 extension Transcribing {
     /// Engines without Word Boost ignore the vocabulary.
     func setWordBoostVocabulary(_ terms: [WordBoostTerm]) async {}
+
+    /// Engines other than Express decode the way they always do.
+    func setExpressLiveSegments(_ enabled: Bool) {}
 
     func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? { 0 }
 
@@ -95,6 +101,13 @@ actor TranscriptionService: Transcribing {
         /// degenerated under conditioning. The next decode drops context
         /// conditioning so a bad prompt can never feed a hallucination loop.
         var lastDecodeTrippedFallback = false
+        /// Express decodes this session in live segments (see
+        /// `expressSegmentSampleCount`); fixed when the session begins.
+        var expressSegments = false
+        /// A segment failed to decode: finalize decodes the whole recording.
+        var expressSegmentFailed = false
+        /// Express segments stitched into `committedTexts`' single entry.
+        var expressSegmentCount = 0
     }
 
     private static let liveTranscriptionMinSampleCount = 16_000 * 2
@@ -125,6 +138,22 @@ actor TranscriptionService: Transcribing {
     private static let trimMinSavingsSampleCount = transcriptionSampleRate / 2
     /// A speech gap this long counts as a pause worth committing at.
     static let pauseCommitSilenceSampleCount = transcriptionSampleRate * 7 / 10
+    /// Express live segments are at least this long: Fluid Speech Mini reads
+    /// best with context, and a recording shorter than this decodes whole in
+    /// well under 100 ms anyway.
+    static let expressSegmentMinSampleCount = transcriptionSampleRate * 8
+    /// Uncommitted audio with no 0.7 s pause may still be cut at a shorter
+    /// gap between words once it reaches this length.
+    static let expressSegmentGapSearchSampleCount = transcriptionSampleRate * 20
+    /// The live loop copies uncommitted audio only once a segment is possible.
+    static let expressSegmentSnapshotSampleCount = expressSegmentMinSampleCount + pauseCommitSilenceSampleCount
+    /// Audio before a segment, and after it, decoded with it: neighbouring
+    /// decodes overlap by both, and are stitched there.
+    static let expressSegmentContextSampleCount = transcriptionSampleRate * 3
+    static let expressSegmentLookaheadSampleCount = transcriptionSampleRate * 2
+    /// Words searched for a seam at each end of an overlap: 5 s of audio
+    /// holds about 15 spoken words.
+    static let expressStitchSearchWordCount = 30
     /// Pause commits below this length risk hallucinated decodes; skip them.
     static let pauseCommitMinClipSampleCount = liveTranscriptionMinSampleCount
     /// WhisperKit only starts a decode window while more than `windowClipTime`
@@ -147,6 +176,7 @@ actor TranscriptionService: Transcribing {
     private var wordBoostTerms: [WordBoostTerm] = []
     /// Terms the loaded Express backend is boosting (0 without Word Boost).
     private(set) var wordBoostTermCount = 0
+    private var expressLiveSegmentsEnabled = false
     private var loadedModelIDValue: String?
     /// The model load in progress. Concurrent requests for the same model
     /// (warm-up and the first finalization) share it instead of loading twice.
@@ -423,6 +453,10 @@ actor TranscriptionService: Transcribing {
     func beginLiveTranscriptionSession() {
         cancelLiveTranscriptionSession()
         liveSession = LiveTranscriptionSession()
+        // Word Boost checks a whole recording more reliably than one segment
+        // at a time (a dictionary word near a cut can be missed), so a
+        // recording with dictionary words keeps the whole decode.
+        liveSession?.expressSegments = expressBackend != nil && expressLiveSegmentsEnabled && wordBoostTermCount == 0
         liveTranscriptEventHandler?(.sessionBegan)
         Logger.transcription.debug("Live transcription session started")
     }
@@ -442,6 +476,13 @@ actor TranscriptionService: Transcribing {
     func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? {
         guard let session = liveSession, session.commitTask == nil else { return nil }
         if expressBackend != nil {
+            if session.expressSegments {
+                guard !session.expressSegmentFailed,
+                      capturedSampleCount - session.committedSampleCount
+                        >= Self.expressSegmentSnapshotSampleCount + Self.expressSegmentLookaheadSampleCount
+                else { return nil }
+                return max(0, session.committedSampleCount - Self.expressSegmentContextSampleCount)
+            }
             guard wordBoostTermCount > 0,
                   let completeEnd = WordBoostChunks.completeChunks(inPrefixOf: capturedSampleCount).last?.upperBound,
                   completeEnd > session.committedSampleCount
@@ -458,6 +499,10 @@ actor TranscriptionService: Transcribing {
 
     func processLiveAudio(_ audio: [Float], startingAt start: Int) {
         if let expressBackend {
+            if liveSession?.expressSegments == true {
+                commitExpressSegment(audio, startingAt: start, backend: expressBackend)
+                return
+            }
             guard start == 0 else { return }
             prepareExpressWordBoost(audio, backend: expressBackend)
             return
@@ -562,6 +607,88 @@ actor TranscriptionService: Transcribing {
         liveSession?.commitTask = nil
     }
 
+    /// Decodes the uncommitted audio up to the speaker's pause in the
+    /// background, one segment at a time. The pause is judged on audio at
+    /// least 2 s old, and the segment is decoded together with the 3 s
+    /// before it and the 2 s after it. Neighbouring decodes overlap there and
+    /// are stitched where their words agree (`stitchedExpressText`), so the
+    /// words around a cut come from a decode that heard them in context.
+    /// Word Boost, when on, runs inside each decode.
+    private func commitExpressSegment(_ audio: [Float], startingAt start: Int, backend: any ExpressBackend) {
+        guard var session = liveSession, session.commitTask == nil, !session.expressSegmentFailed else { return }
+        let committed = session.committedSampleCount
+        let recordedSampleCount = start + audio.count
+        guard start <= committed,
+              recordedSampleCount - committed > Self.expressSegmentLookaheadSampleCount else { return }
+        let decidedAudio = audio[(committed - start)..<(audio.count - Self.expressSegmentLookaheadSampleCount)]
+        guard let segmentSampleCount = Self.expressSegmentSampleCount(pendingAudio: decidedAudio) else { return }
+
+        let windowStart = max(start, committed - Self.expressSegmentContextSampleCount)
+        let windowEnd = min(recordedSampleCount, committed + segmentSampleCount + Self.expressSegmentLookaheadSampleCount)
+        let window = Array(audio[(windowStart - start)..<(windowEnd - start)])
+        session.committedSampleCount += segmentSampleCount
+        let sessionID = session.id
+        session.commitTask = Task { [weak self] in
+            let text = try? await backend.transcribe(window)
+            await self?.finishExpressSegment(text, audio: window, sessionID: sessionID)
+        }
+        liveSession = session
+    }
+
+    private func finishExpressSegment(_ decoded: String?, audio: [Float], sessionID: UUID) {
+        guard liveSession?.id == sessionID else { return }
+        liveSession?.commitTask = nil
+        // A segment is only cut after speech, so an empty or rejected decode,
+        // or one that doesn't agree with the previous decode where they
+        // overlap, means the segments can't be trusted for this recording.
+        guard let decoded, case let text = Self.normalizedTranscriptionText(decoded), !text.isEmpty,
+              (try? Self.rejectNonSpeechArtifact(text, audioSamples: audio)) != nil,
+              let stitched = Self.stitchedExpressText(liveSession?.committedTexts.first, text) else {
+            liveSession?.expressSegmentFailed = true
+            return
+        }
+        liveSession?.committedTexts = [stitched]
+        liveSession?.expressSegmentCount += 1
+    }
+
+    /// Joins the text so far to the decode of the next, overlapping window.
+    /// The longest run of words both decoded in the overlap (at least two,
+    /// ignoring case and punctuation) is the seam, split in its middle: the
+    /// earlier decode supplies the words before it and the later one the
+    /// words after, so each side's words near its own window edge, where
+    /// context is thinnest, are dropped. Nil when the two don't agree
+    /// anywhere in the overlap.
+    nonisolated static func stitchedExpressText(_ earlier: String?, _ later: String) -> String? {
+        guard let earlier, !earlier.isEmpty else { return later }
+        let left = earlier.split(whereSeparator: \.isWhitespace).map(String.init)
+        let right = later.split(whereSeparator: \.isWhitespace).map(String.init)
+        func key(_ word: String) -> String { String(word.lowercased().filter { $0.isLetter || $0.isNumber }) }
+        let leftOffset = max(0, left.count - expressStitchSearchWordCount)
+        let leftKeys = left[leftOffset...].map(key)
+        let rightKeys = right.prefix(expressStitchSearchWordCount).map(key)
+
+        // Longest common run of words, by the usual one-row dynamic program;
+        // on a tie, the run ending later in the earlier text.
+        var best: (leftEnd: Int, rightEnd: Int, length: Int)?
+        var runs = [Int](repeating: 0, count: rightKeys.count + 1)
+        for i in 0..<leftKeys.count {
+            var diagonal = 0
+            for j in 0..<rightKeys.count {
+                let above = runs[j + 1]
+                runs[j + 1] = !leftKeys[i].isEmpty && leftKeys[i] == rightKeys[j] ? diagonal + 1 : 0
+                diagonal = above
+                if runs[j + 1] >= max(2, best?.length ?? 0) {
+                    best = (leftOffset + i + 1, j + 1, runs[j + 1])
+                }
+            }
+        }
+        guard let best else { return nil }
+        let half = best.length / 2
+        let leftCut = best.leftEnd - best.length + half
+        let rightCut = best.rightEnd - best.length + half
+        return (left[..<leftCut] + right[rightCut...]).joined(separator: " ")
+    }
+
     /// Express has no live clips: the whole recording is decoded once, which
     /// costs less than WhisperKit's tail decode alone.
     private func finalizeExpress(
@@ -571,21 +698,73 @@ actor TranscriptionService: Transcribing {
         defer { liveSession = nil }
         let clock = ContinuousClock()
         let started = clock.now
-        // Chunks still being scored are part of this decode's work.
+        // Chunks still being scored, or a segment still decoding, are part
+        // of this decode's work.
         await liveSession?.commitTask?.value
         var trace = FinalizeTrace(
             totalAudioSeconds: Double(audioSamples.count) / Double(Self.transcriptionSampleRate)
         )
+        trace.msAwaitingCommit = Self.milliseconds(since: started, on: clock)
         trace.path = .expressWholeDecode
+        if let session = liveSession, session.expressSegments {
+            if let text = try await expressSegmentsTranscript(
+                session: session, audioSamples: audioSamples, backend: backend, trace: &trace, clock: clock
+            ) {
+                trace.path = .expressSegments
+                trace.msTotal = Self.milliseconds(since: started, on: clock)
+                return (text, trace)
+            }
+            trace.path = session.committedTexts.isEmpty && !session.expressSegmentFailed
+                ? .expressWholeDecode
+                : .expressSegmentFallback
+        }
+        let decodeStarted = clock.now
         let text = try await expressTranscript(audioSamples: audioSamples, backend: backend)
+        trace.msFallbackDecode = Self.milliseconds(since: decodeStarted, on: clock)
         trace.msTotal = Self.milliseconds(since: started, on: clock)
         return (text, trace)
+    }
+
+    /// The committed segments plus the audio after the last one, or nil when
+    /// the whole recording should be decoded instead: nothing was committed,
+    /// a segment failed, or the tail holds speech that didn't decode.
+    private func expressSegmentsTranscript(
+        session: LiveTranscriptionSession,
+        audioSamples: [Float],
+        backend: any ExpressBackend,
+        trace: inout FinalizeTrace,
+        clock: ContinuousClock
+    ) async throws -> String? {
+        guard !session.expressSegmentFailed, var text = session.committedTexts.first,
+              session.committedSampleCount <= audioSamples.count else { return nil }
+        let committed = session.committedSampleCount
+        let tail = audioSamples[committed...]
+        trace.committedClipCount = session.expressSegmentCount
+        trace.tailSampleCount = tail.count
+        if Self.containsSpeechEnergy(tail, threshold: Self.faintEnergyFloor) {
+            let tailStarted = clock.now
+            let windowStart = max(0, committed - Self.expressSegmentContextSampleCount)
+            let decoded = (try? await backend.transcribe(Array(audioSamples[windowStart...])))
+                .map(Self.normalizedTranscriptionText) ?? ""
+            trace.msTailDecode = Self.milliseconds(since: tailStarted, on: clock)
+            if decoded.isEmpty {
+                // A faint tail (breath, room noise) may rightly decode to
+                // nothing; real speech that didn't decode may not.
+                guard !Self.containsSpeechEnergy(tail) else { return nil }
+            } else {
+                guard let stitched = Self.stitchedExpressText(text, decoded) else { return nil }
+                text = stitched
+            }
+        }
+        text = Self.normalizedTranscriptionText(ExpressNumberFormatter.format(text))
+        guard (try? Self.rejectNonSpeechArtifact(text, audioSamples: audioSamples)) != nil else { return nil }
+        return text
     }
 
     /// Same contract as a WhisperKit decode: nothing decoded throws the
     /// standard no-result error, and non-speech artifacts are rejected.
     private func expressTranscript(audioSamples: [Float], backend: any ExpressBackend) async throws -> String {
-        let text = Self.normalizedTranscriptionText(try await backend.transcribe(audioSamples))
+        let text = Self.normalizedTranscriptionText(ExpressNumberFormatter.format(try await backend.transcribe(audioSamples)))
         guard !text.isEmpty else {
             throw Self.noTranscriptionResultError()
         }
@@ -845,6 +1024,10 @@ actor TranscriptionService: Transcribing {
             // Warm-up transcription of silence may produce empty results — that's fine
             Logger.transcription.info("Warm-up complete (result may be empty, that's expected)")
         }
+    }
+
+    func setExpressLiveSegments(_ enabled: Bool) {
+        expressLiveSegmentsEnabled = enabled
     }
 
     func updateSettings(
@@ -1711,6 +1894,38 @@ actor TranscriptionService: Transcribing {
         let clipSampleCount = min(pendingAudio.count, lastSpeechEnd + silencePadSampleCount)
         guard clipSampleCount >= pauseCommitMinClipSampleCount else { return nil }
         return clipSampleCount
+    }
+
+    /// Where to end an Express live segment in the uncommitted audio, or nil
+    /// to wait. A segment ends at a pause the speaker is making now (0.7 s,
+    /// as for Whisper's pause commits) once it holds 8 s; past 20 s without
+    /// one, at the latest 200 ms gap between words after the first 8 s. It is
+    /// never cut mid-word: continuous speech simply waits for the next gap,
+    /// and whatever is left decodes at the end.
+    nonisolated static func expressSegmentSampleCount(pendingAudio: ArraySlice<Float>) -> Int? {
+        guard pendingAudio.count >= expressSegmentSnapshotSampleCount else { return nil }
+        if let pause = pauseCommitSampleCount(pendingAudio: pendingAudio), pause >= expressSegmentMinSampleCount {
+            return pause
+        }
+        guard pendingAudio.count >= expressSegmentGapSearchSampleCount else { return nil }
+        let threshold = pauseEnergyThreshold(in: pendingAudio)
+        let searchStart = pendingAudio.startIndex + expressSegmentMinSampleCount
+        var quietSamples = 0
+        var boundary: Int?
+        var frameStart = searchStart
+        while frameStart + energyFrameSampleCount <= pendingAudio.endIndex {
+            let frameEnd = frameStart + energyFrameSampleCount
+            if frameRMS(pendingAudio[frameStart..<frameEnd]) < threshold {
+                quietSamples += energyFrameSampleCount
+            } else {
+                if quietSamples >= clipBoundaryGapSampleCount {
+                    boundary = frameStart - pendingAudio.startIndex - quietSamples / 2
+                }
+                quietSamples = 0
+            }
+            frameStart = frameEnd
+        }
+        return boundary
     }
 
     nonisolated static func isSpeculativeReuseEligible(finalSampleCount: Int) -> Bool {

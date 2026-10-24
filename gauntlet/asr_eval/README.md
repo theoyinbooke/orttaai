@@ -317,3 +317,27 @@ recording, meeting the go rule set before the run; with the blank kept they
 find nothing. Four of the five are product terms, though, and only one missed
 name (Folasade) is recovered, so the verdict is a prototype measured with
 deliberate three-take recordings, not a shipped feature.
+
+## Express live segments
+
+With the "Decode while I speak" setting on, Express decodes each stretch of
+speech at the speaker's pauses while they are still talking, so finalize only
+decodes the audio after the last pause. `ORTTAAI_ASR_EVAL_EXPRESS_SEGMENTS=1`
+runs the live path that way; the whole path stays one decode, the reference:
+
+```bash
+./gauntlet/asr_eval/run_eval.sh /tmp/raw_segments.json ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini \
+  ORTTAAI_ASR_EVAL_MODEL_ROOT=/path/to/storage-base ORTTAAI_ASR_EVAL_EXPRESS_SEGMENTS=1
+```
+
+`express_live_segments_eval.json` (2026-10-23) records four rounds. Each
+segment is decoded with the 3 s before it and the 2 s after it, and
+neighbouring decodes are stitched in the middle of the longest run of words
+they agree on; with no agreement the whole recording is decoded instead.
+Against the whole decode: real voice 14.88% both (49 of 50 identical),
+clean 4.72% vs 4.92%, realistic 4.38% vs 4.58%, real voice with Word Boost
+7.91% both. Segmented recordings finalize in 100 ms instead of 270 ms
+(realistic p50) and 122 ms instead of 174 ms (clean). Keeping words by token
+timings instead of stitching duplicated and dropped words at the cuts, and
+Word Boost run per segment missed two dictionary names, so segments stay off
+while Word Boost has dictionary words.
