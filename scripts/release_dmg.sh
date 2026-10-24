@@ -18,6 +18,7 @@ Options:
   --team-id <id>            Apple Team ID (default: from Xcode build settings).
   --notary-profile <name>   notarytool keychain profile (default: orttaai-notary).
   --output-dir <path>       Artifact directory root (default: dist).
+  --derived-data-path <path> Xcode build output directory.
   --dmg-theme <mode>        DMG background theme: auto|light|dark (default: auto).
   -h, --help                Show this help.
 
@@ -43,6 +44,7 @@ CONFIGURATION="Release"
 APP_NAME="Orttaai"
 NOTARY_PROFILE="orttaai-notary"
 OUTPUT_DIR="dist"
+DERIVED_DATA_PATH=""
 VERSION_OVERRIDE=""
 TEAM_ID_OVERRIDE=""
 SKIP_NOTARIZE=0
@@ -84,6 +86,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --output-dir)
       OUTPUT_DIR="${2:-}"
+      shift 2
+      ;;
+    --derived-data-path)
+      DERIVED_DATA_PATH="${2:-}"
       shift 2
       ;;
     --dmg-theme)
@@ -135,6 +141,9 @@ XCODEBUILD_COMMON_ARGS=(
   -project "$PROJECT_PATH"
   -scheme "$SCHEME"
 )
+if [[ -n "$DERIVED_DATA_PATH" ]]; then
+  XCODEBUILD_COMMON_ARGS+=(-derivedDataPath "$DERIVED_DATA_PATH")
+fi
 if [[ -n "$SPM_PACKAGES_DIR" ]]; then
   XCODEBUILD_COMMON_ARGS+=(
     -clonedSourcePackagesDirPath "$SPM_PACKAGES_DIR"
@@ -392,13 +401,12 @@ trap - EXIT
 hdiutil convert "$DMG_RW_PATH" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH"
 rm -f "$DMG_RW_PATH" "$DMG_BACKGROUND_SOURCE"
 
-# Clean up intermediate .app bundles that macOS Launch Services and TCC
-# will index, creating duplicate Spotlight entries and stale permission
-# records. Only the DMG (and the app inside it) should survive.
+# Clean up intermediate exported .app bundles that macOS Launch Services and
+# TCC will index, creating duplicate Spotlight entries and stale permission records.
+# Preserve the release archive for distribution diagnostics and recovery.
 echo "==> Cleaning intermediate app bundles (prevents stale Spotlight/TCC entries)"
 rm -rf "$DMG_STAGING_PATH"
 rm -rf "$EXPORT_PATH"
-rm -rf "$ARCHIVE_PATH"
 
 if [[ "$SKIP_NOTARIZE" -eq 0 ]]; then
   echo "==> Submitting DMG for notarization"
