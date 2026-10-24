@@ -84,6 +84,37 @@ final class EditLearningWatcherTests: XCTestCase {
         XCTAssertEqual(reader.readCount, 3, "the watch ends once focus moves")
     }
 
+    func testSendingTheMessageKeepsTheFixMadeJustBeforeIt() async {
+        // A chat box empties when the message is sent.
+        let reader = ScriptedFieldReader([field(inserted), field(fixed), field("")])
+        let saved = SavedDrafts()
+        let watcher = makeWatcher(reader, saved: saved)
+
+        watcher.watch(insertedText: inserted, targetApp: .current)
+        for _ in 0..<200 where saved.drafts.isEmpty { await Task.yield() }
+
+        XCTAssertEqual(saved.drafts.map(\.candidateTarget), ["Folasade"])
+        XCTAssertEqual(reader.readCount, 3, "the watch ends once the field empties")
+    }
+
+    func testEachChangeToTheFieldIsReadStraightAway() {
+        // Fixed and sent between two timed reads: only the change
+        // notifications see the fix.
+        let reader = ScriptedFieldReader([field(inserted), field(fixed), field("")])
+        let saved = SavedDrafts()
+        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0 }, sleep: { _ in
+            try? await Task.sleep(for: .seconds(3600))
+        })
+
+        watcher.watch(insertedText: inserted, targetApp: .current)
+        reader.sendChange()
+        XCTAssertTrue(saved.drafts.isEmpty)
+        reader.sendChange()
+
+        XCTAssertEqual(saved.drafts.map(\.candidateTarget), ["Folasade"])
+        XCTAssertNil(reader.onChange, "the observation ends with the watch")
+    }
+
     func testFieldThatTurnsSecureIsDropped() async {
         let reader = ScriptedFieldReader([field(inserted), field(fixed, secure: true)])
         let saved = SavedDrafts()
@@ -134,6 +165,24 @@ private final class ScriptedFieldReader: FocusedFieldReading {
     func readFocusedField(processIdentifier: pid_t) -> FocusedFieldRead? {
         readCount += 1
         return reads.count > 1 ? reads.removeFirst() : reads.first
+    }
+
+    private weak var observation: Observation?
+    var onChange: (() -> Void)? { observation?.onChange }
+
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject? {
+        let observation = Observation(onChange: onChange)
+        self.observation = observation
+        return observation
+    }
+
+    func sendChange() {
+        onChange?()
+    }
+
+    private final class Observation {
+        let onChange: () -> Void
+        init(onChange: @escaping () -> Void) { self.onChange = onChange }
     }
 }
 

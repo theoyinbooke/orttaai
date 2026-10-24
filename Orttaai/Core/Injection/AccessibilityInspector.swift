@@ -50,6 +50,16 @@ nonisolated struct FocusedFieldRead: Equatable, Sendable {
 protocol FocusedFieldReading: AnyObject {
     /// The focused element of the app, or nil when Accessibility can't read it.
     func readFocusedField(processIdentifier: pid_t) -> FocusedFieldRead?
+    /// Calls `onChange` each time the app's focused field changes its value,
+    /// for as long as the returned token is kept. Nil when the field can't
+    /// be observed; callers then rely on their own reads.
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject?
+}
+
+extension FocusedFieldReading {
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject? {
+        nil
+    }
 }
 
 /// Result of an accessibility read. `.axError` means the AX API itself failed
@@ -171,6 +181,11 @@ final class SystemAccessibilityInspector: AccessibilityInspecting, FocusedFieldR
         return read
     }
 
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject? {
+        guard let element = focusedElement(processIdentifier: processIdentifier, policy: .verification) else { return nil }
+        return AXValueChangeObservation(processIdentifier: processIdentifier, element: element, onChange: onChange)
+    }
+
     func insertTextAtFocus(_ text: String, processIdentifier: pid_t?) -> Bool {
         guard let element = focusedElement(processIdentifier: processIdentifier, policy: .verification) else {
             return false
@@ -262,5 +277,36 @@ final class SystemAccessibilityInspector: AccessibilityInspecting, FocusedFieldR
             return nil
         }
         return FocusedTextRange(location: range.location, length: range.length)
+    }
+}
+
+/// Value-changed notifications from one element, delivered on the main run
+/// loop until the observation is released.
+private final class AXValueChangeObservation {
+    private let observer: AXObserver
+    private let element: AXUIElement
+    let onChange: () -> Void
+
+    init?(processIdentifier: pid_t, element: AXUIElement, onChange: @escaping () -> Void) {
+        var created: AXObserver?
+        let callback: AXObserverCallback = { _, _, _, refcon in
+            guard let refcon else { return }
+            let observation = Unmanaged<AXValueChangeObservation>.fromOpaque(refcon).takeUnretainedValue()
+            MainActor.assumeIsolated { observation.onChange() }
+        }
+        guard AXObserverCreate(processIdentifier, callback, &created) == .success, let created else { return nil }
+        observer = created
+        self.element = element
+        self.onChange = onChange
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        guard AXObserverAddNotification(created, element, kAXValueChangedNotification as CFString, refcon) == .success else {
+            return nil
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
+    }
+
+    deinit {
+        AXObserverRemoveNotification(observer, element, kAXValueChangedNotification as CFString)
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
     }
 }

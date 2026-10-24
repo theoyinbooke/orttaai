@@ -12,9 +12,10 @@ protocol InsertedTextWatching: AnyObject {
 }
 
 /// Learns dictionary words from the user's own fixes. Right after a dictation
-/// is inserted it reads the focused field, then reads the same field again a
-/// few times over the next minute (and once more when the next dictation
-/// starts). Words the user corrected inside the dictated text become pending
+/// is inserted it reads the focused field, then reads it again each time its
+/// value changes and a few times over the next minute (and once more when the
+/// next dictation starts). A field that empties, as a chat box does when the
+/// message is sent, ends the watch with the text it held just before. Words the user corrected inside the dictated text become pending
 /// suggestions in Memory > Suggestions; nothing reaches the dictionary until
 /// the user accepts one, and only the word pair is stored, never the field's
 /// text. Secure fields are never read, and a move to another field ends the
@@ -28,6 +29,7 @@ final class EditLearningWatcher: InsertedTextWatching {
         let inserted: String
         let baseline: FocusedFieldRead
         var latestText: String
+        var observation: AnyObject?
     }
 
     private let reader: FocusedFieldReading
@@ -64,6 +66,9 @@ final class EditLearningWatcher: InsertedTextWatching {
             baseline: baseline,
             latestText: text
         )
+        current?.observation = reader.observeFocusedField(processIdentifier: processIdentifier) { [weak self] in
+            self?.fieldChanged()
+        }
         polling = Task { [weak self] in
             for delay in Self.readDelays {
                 await self?.sleep(delay)
@@ -77,6 +82,11 @@ final class EditLearningWatcher: InsertedTextWatching {
 
     func finishCurrentWatch() {
         finish(readingFirst: true)
+    }
+
+    private func fieldChanged() {
+        guard current != nil, !readAgain() else { return }
+        finish(readingFirst: false)
     }
 
     /// Ends the watch and saves what the user corrected. Reads the field one
@@ -111,8 +121,8 @@ final class EditLearningWatcher: InsertedTextWatching {
     }
 
     /// Updates the latest text from the watched field. Returns false when the
-    /// watch is over: the field lost focus, can't be read, or turned secure
-    /// (then nothing is learned at all).
+    /// watch is over: the field lost focus, can't be read, was emptied (the
+    /// message was sent), or turned secure (then nothing is learned at all).
     private func readAgain() -> Bool {
         guard let watch = current else { return false }
         guard let read = reader.readFocusedField(processIdentifier: watch.processIdentifier),
@@ -122,6 +132,7 @@ final class EditLearningWatcher: InsertedTextWatching {
             return false
         }
         if let text = read.text {
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
             current?.latestText = text
         }
         return true
