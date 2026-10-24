@@ -36,7 +36,7 @@ final class EditLearningWatcherTests: XCTestCase {
     }
 
     private func makeWatcher(_ reader: ScriptedFieldReader, saved: SavedDrafts) -> EditLearningWatcher {
-        EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0 }, sleep: { _ in await Task.yield() })
+        EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0; return $0.count }, sleep: { _ in await Task.yield() })
     }
 
     private func waitForReads(_ reader: ScriptedFieldReader, count: Int) async {
@@ -62,7 +62,7 @@ final class EditLearningWatcherTests: XCTestCase {
     func testNextDictationFinishesTheWatchWithTheFixSoFar() {
         let reader = ScriptedFieldReader([field(inserted), field(fixed)])
         let saved = SavedDrafts()
-        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0 }, sleep: { _ in
+        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0; return $0.count }, sleep: { _ in
             try? await Task.sleep(for: .seconds(3600))
         })
 
@@ -102,7 +102,7 @@ final class EditLearningWatcherTests: XCTestCase {
         // notifications see the fix.
         let reader = ScriptedFieldReader([field(inserted), field(fixed), field("")])
         let saved = SavedDrafts()
-        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0 }, sleep: { _ in
+        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0; return $0.count }, sleep: { _ in
             try? await Task.sleep(for: .seconds(3600))
         })
 
@@ -121,10 +121,82 @@ final class EditLearningWatcherTests: XCTestCase {
         EditLearningWatcher(
             reader: reader,
             settings: settings,
-            save: { saved.drafts += $0 },
+            save: { saved.drafts += $0; return $0.count },
             report: { outcome, app, learned in outcomes.entries.append((outcome, learned)) },
             sleep: { _ in await Task.yield() }
         )
+    }
+
+    func testAFixAlreadyKnownIsNotReportedAsLearned() {
+        let outcomes = OutcomeLog()
+        let watcher = EditLearningWatcher(
+            reader: ScriptedFieldReader([field(inserted), field(fixed)]),
+            settings: settings,
+            save: { _ in 0 },
+            report: { outcome, _, learned in outcomes.entries.append((outcome, learned)) },
+            sleep: { _ in try? await Task.sleep(for: .seconds(3600)) }
+        )
+
+        watcher.watch(insertedText: inserted, targetApp: .current)
+        watcher.finishCurrentWatch()
+
+        XCTAssertEqual(outcomes.entries.map(\.0), [.alreadyKnown])
+        XCTAssertEqual(outcomes.entries.first?.1, 0)
+    }
+
+    // MARK: - Getting the app ready
+
+    func testRecordingStartReadiesTheTargetApp() {
+        let reader = ScriptedFieldReader([field(inserted)])
+        let watcher = makeWatcher(reader, saved: SavedDrafts())
+
+        watcher.prepare(targetApp: .current)
+
+        XCTAssertEqual(reader.preparedApps.map(\.processIdentifier), [NSRunningApplication.current.processIdentifier])
+        XCTAssertEqual(reader.readCount, 0, "readying the app reads nothing")
+    }
+
+    func testNoAppIsReadiedWhenLearningIsOffOrNotEnglish() {
+        let reader = ScriptedFieldReader([field(inserted)])
+        let watcher = makeWatcher(reader, saved: SavedDrafts())
+
+        settings.learnFromEditsEnabled = false
+        watcher.prepare(targetApp: .current)
+        settings.learnFromEditsEnabled = true
+        settings.dictationLanguage = "fr"
+        watcher.prepare(targetApp: .current)
+
+        XCTAssertTrue(reader.preparedApps.isEmpty)
+    }
+
+    func testAChangeWhoseReadFailsFallsBackToAFullRead() {
+        // The full read finds the fix and the watch goes on.
+        let reader = ScriptedFieldReader([field(inserted), field(fixed)])
+        let saved = SavedDrafts()
+        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0; return $0.count }, sleep: { _ in
+            try? await Task.sleep(for: .seconds(3600))
+        })
+
+        watcher.watch(insertedText: inserted, targetApp: .current)
+        reader.sendUnreadableChange()
+        XCTAssertTrue(saved.drafts.isEmpty, "the watch is still going")
+        XCTAssertEqual(reader.readCount, 2)
+        watcher.finishCurrentWatch()
+
+        XCTAssertEqual(saved.drafts.map(\.candidateTarget), ["Folasade"])
+    }
+
+    func testAChatBoxThatCapitalizesAndCurlsQuotesStillShowsTheDictation() {
+        let dictated = "the client's name is Folasade, and they're happy."
+        let stored = "The client’s name is Folasade, and they’re happy."
+        let reader = ScriptedFieldReader([field(stored), field(stored)])
+        let outcomes = OutcomeLog()
+        let watcher = reportingWatcher(reader, saved: SavedDrafts(), outcomes: outcomes)
+
+        watcher.watch(insertedText: dictated, targetApp: .current)
+        watcher.finishCurrentWatch()
+
+        XCTAssertEqual(outcomes.entries.map(\.0), [.noChange])
     }
 
     func testEachCheckReportsHowItEnded() {
@@ -175,7 +247,7 @@ final class EditLearningWatcherTests: XCTestCase {
         let stored = "Please call for\u{00A0}Lash a day\ntomorrow."
         let reader = ScriptedFieldReader([field(stored), field("Please call Folasade\ntomorrow.")])
         let saved = SavedDrafts()
-        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0 }, sleep: { _ in
+        let watcher = EditLearningWatcher(reader: reader, settings: settings, save: { saved.drafts += $0; return $0.count }, sleep: { _ in
             try? await Task.sleep(for: .seconds(3600))
         })
 
@@ -232,27 +304,39 @@ private final class ScriptedFieldReader: FocusedFieldReading {
         self.reads = reads
     }
 
+    private(set) var preparedApps: [NSRunningApplication] = []
+
+    func prepareToRead(_ app: NSRunningApplication) {
+        preparedApps.append(app)
+    }
+
     func readFocusedField(processIdentifier: pid_t) -> FocusedFieldRead? {
         readCount += 1
         return reads.count > 1 ? reads.removeFirst() : reads.first
     }
 
     private weak var observation: Observation?
-    var onChange: (() -> Void)? { observation?.onChange }
+    var onChange: ((String?) -> Void)? { observation?.onChange }
 
-    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject? {
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping (String?) -> Void) -> AnyObject? {
         let observation = Observation(onChange: onChange)
         self.observation = observation
         return observation
     }
 
+    /// Delivers the next scripted read's text, as a change notification does.
     func sendChange() {
-        onChange?()
+        onChange?(readFocusedField(processIdentifier: 0)?.text)
+    }
+
+    /// A notification whose read failed.
+    func sendUnreadableChange() {
+        onChange?(nil)
     }
 
     private final class Observation {
-        let onChange: () -> Void
-        init(onChange: @escaping () -> Void) { self.onChange = onChange }
+        let onChange: (String?) -> Void
+        init(onChange: @escaping (String?) -> Void) { self.onChange = onChange }
     }
 }
 

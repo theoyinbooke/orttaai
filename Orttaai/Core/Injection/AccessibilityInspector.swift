@@ -48,17 +48,78 @@ nonisolated struct FocusedFieldRead: Equatable, Sendable {
 }
 
 protocol FocusedFieldReading: AnyObject {
+    /// Asks the app to expose its text fields, ahead of the reads. Called when
+    /// recording starts, so the app has the whole recording to get ready.
+    func prepareToRead(_ app: NSRunningApplication)
     /// The focused element of the app, or nil when Accessibility can't read it.
     func readFocusedField(processIdentifier: pid_t) -> FocusedFieldRead?
-    /// Calls `onChange` each time the app's focused field changes its value,
-    /// for as long as the returned token is kept. Nil when the field can't
-    /// be observed; callers then rely on their own reads.
-    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject?
+    /// Calls `onChange` with the field's new text each time the app's focused
+    /// field changes its value (nil when that read fails or the field goes
+    /// away), for as long as the returned token is kept. Nil when the field
+    /// can't be observed; callers then rely on their own reads.
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping (String?) -> Void) -> AnyObject?
 }
 
 extension FocusedFieldReading {
-    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject? {
+    func prepareToRead(_ app: NSRunningApplication) {}
+
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping (String?) -> Void) -> AnyObject? {
         nil
+    }
+}
+
+/// Chromium keeps a page out of Accessibility until an assistive app asks for
+/// it, so the text boxes of Electron apps (Claude, Slack, T3 Code) and of
+/// Chrome-based apps (Chrome, ChatGPT) read as nothing: no focused element,
+/// no text. Electron apps take `AXManualAccessibility`; Chrome-based apps
+/// only `AXEnhancedUserInterface`, the switch VoiceOver uses. Native apps
+/// need neither and are left alone. The switch is set again before every
+/// dictation, since Chromium can turn an idle tree back off, and is never
+/// turned off: VoiceOver or another assistive app may rely on it.
+nonisolated enum ChromiumAccessibility {
+    nonisolated enum Engine: Equatable, Sendable {
+        case electron
+        case chromium
+        case other
+    }
+
+    static let manualAttribute = "AXManualAccessibility"
+    static let enhancedAttribute = "AXEnhancedUserInterface"
+
+    /// Code editors that change how they behave when Accessibility comes on
+    /// (VS Code switches to screen reader mode), so they are never switched.
+    static let excludedBundleIDs: Set<String> = [
+        "com.microsoft.VSCode",
+        "com.microsoft.VSCodeInsiders",
+        "com.vscodium",
+        "com.todesktop.230313mzl4w4u92", // Cursor
+        "com.exafunction.windsurf"
+    ]
+
+    /// Which web engine the app bundle ships, judged from its frameworks:
+    /// Electron's framework, or any framework with Chromium's crash handler.
+    static func engine(ofBundleAt bundleURL: URL, fileManager: FileManager = .default) -> Engine {
+        let frameworks = bundleURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
+        guard let names = try? fileManager.contentsOfDirectory(atPath: frameworks.path) else { return .other }
+        if names.contains("Electron Framework.framework") { return .electron }
+        for name in names where name.hasSuffix(".framework") {
+            let helpers = frameworks.appendingPathComponent("\(name)/Versions/Current/Helpers", isDirectory: true)
+            if let helperNames = try? fileManager.contentsOfDirectory(atPath: helpers.path),
+               helperNames.contains(where: { $0.hasSuffix("crashpad_handler") }) {
+                return .chromium
+            }
+        }
+        return .other
+    }
+
+    /// The switches to try, in order, for an app.
+    static func attributes(for engine: Engine, bundleID: String?) -> [String] {
+        if let bundleID, excludedBundleIDs.contains(bundleID) { return [] }
+        switch engine {
+        case .electron: return [manualAttribute]
+        case .chromium: return [manualAttribute, enhancedAttribute]
+        case .other: return []
+        }
     }
 }
 
@@ -181,9 +242,40 @@ final class SystemAccessibilityInspector: AccessibilityInspecting, FocusedFieldR
         return read
     }
 
-    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping () -> Void) -> AnyObject? {
+    /// Engines found per app bundle; looked up once per app.
+    private var engines: [URL: ChromiumAccessibility.Engine] = [:]
+    private let switchQueue = DispatchQueue(label: "com.orttaai.accessibility-switch", qos: .userInitiated)
+
+    func prepareToRead(_ app: NSRunningApplication) {
+        guard let bundleURL = app.bundleURL else { return }
+        let engine = engines[bundleURL] ?? ChromiumAccessibility.engine(ofBundleAt: bundleURL)
+        engines[bundleURL] = engine
+        let attributes = ChromiumAccessibility.attributes(for: engine, bundleID: app.bundleIdentifier)
+        guard !attributes.isEmpty else { return }
+        let processIdentifier = app.processIdentifier
+        // Off the main thread: a busy app must not delay the recording start.
+        switchQueue.async {
+            let appElement = AXUIElementCreateApplication(processIdentifier)
+            _ = AXUIElementSetMessagingTimeout(appElement, AXTimeoutPolicy.verificationSeconds)
+            for attribute in attributes
+            where AXUIElementSetAttributeValue(appElement, attribute as CFString, kCFBooleanTrue) == .success {
+                return
+            }
+            Logger.injection.info("Couldn't turn on Accessibility for pid \(processIdentifier)")
+        }
+    }
+
+    func observeFocusedField(processIdentifier: pid_t, onChange: @escaping (String?) -> Void) -> AnyObject? {
         guard let element = focusedElement(processIdentifier: processIdentifier, policy: .verification) else { return nil }
-        return AXValueChangeObservation(processIdentifier: processIdentifier, element: element, onChange: onChange)
+        return AXValueChangeObservation(processIdentifier: processIdentifier, element: element) { [weak self] destroyed in
+            // Only the value of the field already being watched: one call,
+            // instead of finding the focused field and its role again.
+            guard !destroyed, let self, case .value(let value) = self.readAttribute(element, kAXValueAttribute) else {
+                onChange(nil)
+                return
+            }
+            onChange(value as? String)
+        }
     }
 
     func insertTextAtFocus(_ text: String, processIdentifier: pid_t?) -> Bool {
@@ -280,19 +372,21 @@ final class SystemAccessibilityInspector: AccessibilityInspecting, FocusedFieldR
     }
 }
 
-/// Value-changed notifications from one element, delivered on the main run
-/// loop until the observation is released.
+/// Value-changed notifications from one element, and the element going away
+/// (true), delivered on the main run loop until the observation is released.
 private final class AXValueChangeObservation {
     private let observer: AXObserver
     private let element: AXUIElement
-    let onChange: () -> Void
+    private var destroyedObserved = false
+    let onChange: (_ destroyed: Bool) -> Void
 
-    init?(processIdentifier: pid_t, element: AXUIElement, onChange: @escaping () -> Void) {
+    init?(processIdentifier: pid_t, element: AXUIElement, onChange: @escaping (_ destroyed: Bool) -> Void) {
         var created: AXObserver?
-        let callback: AXObserverCallback = { _, _, _, refcon in
+        let callback: AXObserverCallback = { _, _, notification, refcon in
             guard let refcon else { return }
             let observation = Unmanaged<AXValueChangeObservation>.fromOpaque(refcon).takeUnretainedValue()
-            MainActor.assumeIsolated { observation.onChange() }
+            let destroyed = (notification as String) == kAXUIElementDestroyedNotification
+            MainActor.assumeIsolated { observation.onChange(destroyed) }
         }
         guard AXObserverCreate(processIdentifier, callback, &created) == .success, let created else { return nil }
         observer = created
@@ -302,11 +396,19 @@ private final class AXValueChangeObservation {
         guard AXObserverAddNotification(created, element, kAXValueChangedNotification as CFString, refcon) == .success else {
             return nil
         }
+        // Optional: not every app reports it, and the timed reads catch a
+        // field that went away anyway.
+        destroyedObserved = AXObserverAddNotification(
+            created, element, kAXUIElementDestroyedNotification as CFString, refcon
+        ) == .success
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
     }
 
     deinit {
         AXObserverRemoveNotification(observer, element, kAXValueChangedNotification as CFString)
+        if destroyedObserved {
+            AXObserverRemoveNotification(observer, element, kAXUIElementDestroyedNotification as CFString)
+        }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
     }
 }

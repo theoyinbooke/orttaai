@@ -5,10 +5,17 @@ import AppKit
 import Foundation
 import os
 
-/// Called after a dictation is inserted, and again when the next one starts.
+/// Called when recording starts, after a dictation is inserted, and again
+/// when the next one starts.
 protocol InsertedTextWatching: AnyObject {
+    /// Recording into `targetApp` has started: get its field ready to read.
+    func prepare(targetApp: NSRunningApplication?)
     func watch(insertedText: String, targetApp: NSRunningApplication?)
     func finishCurrentWatch()
+}
+
+extension InsertedTextWatching {
+    func prepare(targetApp: NSRunningApplication?) {}
 }
 
 /// How one check of a dictation's field ended. Shown in Memory › Suggestions
@@ -16,6 +23,9 @@ protocol InsertedTextWatching: AnyObject {
 nonisolated enum EditCheckOutcome: String, Codable, Sendable, CaseIterable {
     /// A fixed name or term became a suggestion.
     case learned
+    /// A name or term was fixed, but it is already in the dictionary or
+    /// was turned down before.
+    case alreadyKnown
     /// The dictation was edited, but not in a way that teaches a word.
     case editedNoName
     /// The dictation was left as it was.
@@ -30,19 +40,24 @@ nonisolated enum EditCheckOutcome: String, Codable, Sendable, CaseIterable {
     case notEnglish
 }
 
-/// Learns dictionary words from the user's own fixes. Right after a dictation
-/// is inserted it reads the focused field (again for up to about a second and
-/// a half if the paste hasn't shown up yet), then reads it again each time
-/// its value changes and a few times over the next minute (and once more
-/// when the next dictation starts). A field that empties, as a chat box does
-/// when the message is sent, ends the watch with the text it held just
-/// before. Words the user corrected inside the dictated text become pending
+/// Learns dictionary words from the user's own fixes. When recording starts it
+/// asks the target app to expose its fields (Chromium apps hide them until
+/// asked). Right after a dictation is inserted it reads the focused field
+/// (again for up to about a second and a half if the paste hasn't shown up
+/// yet), then takes the field's text each time its value changes, checks a
+/// few times over the next several minutes that the user is still in the
+/// same field, and reads it once more when the next dictation starts. A
+/// field that empties, as a chat box does when the message is sent, ends the
+/// watch with the text it held just before. Words the user corrected inside the dictated text become pending
 /// suggestions in Memory > Suggestions; nothing reaches the dictionary until
 /// the user accepts one, and only the word pair is stored, never the field's
 /// text. Secure fields are never read, and a move to another field ends the
 /// watch. Each watch reports how it ended, with no text.
 final class EditLearningWatcher: InsertedTextWatching {
-    static let readDelays: [Duration] = [.seconds(4), .seconds(12), .seconds(30), .seconds(60)]
+    /// Timed reads, cumulative ~6.8 minutes. Edits are taken from change
+    /// notifications as they happen; these reads notice that the user moved
+    /// to another field, and stand in for notifications an app doesn't send.
+    static let readDelays: [Duration] = [.seconds(4), .seconds(12), .seconds(30), .seconds(60), .seconds(120), .seconds(180)]
     /// Re-reads while waiting for the pasted text to appear in the field.
     static let baselineRetries = 10
     static let baselineRetryDelay: Duration = .milliseconds(150)
@@ -58,7 +73,9 @@ final class EditLearningWatcher: InsertedTextWatching {
 
     private let reader: FocusedFieldReading
     private let settings: AppSettings
-    private let save: ([LearningSuggestionDraft]) -> Void
+    /// Saves the drafts and returns how many became (or refreshed) pending
+    /// suggestions.
+    private let save: ([LearningSuggestionDraft]) -> Int
     private let report: (EditCheckOutcome, String?, Int) -> Void
     private let sleep: (Duration) async -> Void
     private var current: Watch?
@@ -69,7 +86,7 @@ final class EditLearningWatcher: InsertedTextWatching {
     init(
         reader: FocusedFieldReading,
         settings: AppSettings,
-        save: @escaping ([LearningSuggestionDraft]) -> Void,
+        save: @escaping ([LearningSuggestionDraft]) -> Int,
         report: @escaping (EditCheckOutcome, String?, Int) -> Void = { _, _, _ in },
         sleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     ) {
@@ -78,6 +95,11 @@ final class EditLearningWatcher: InsertedTextWatching {
         self.save = save
         self.report = report
         self.sleep = sleep
+    }
+
+    func prepare(targetApp: NSRunningApplication?) {
+        guard settings.learnFromEditsEnabled, settings.effectiveDictationLanguage == "en", let targetApp else { return }
+        reader.prepareToRead(targetApp)
     }
 
     func watch(insertedText: String, targetApp: NSRunningApplication?) {
@@ -159,8 +181,8 @@ final class EditLearningWatcher: InsertedTextWatching {
             baseline: baseline,
             latestText: text
         )
-        current?.observation = reader.observeFocusedField(processIdentifier: processIdentifier) { [weak self] in
-            self?.fieldChanged()
+        current?.observation = reader.observeFocusedField(processIdentifier: processIdentifier) { [weak self] text in
+            self?.fieldChanged(to: text)
         }
         polling = Task { [weak self] in
             for delay in Self.readDelays {
@@ -174,9 +196,24 @@ final class EditLearningWatcher: InsertedTextWatching {
         return .began
     }
 
-    private func fieldChanged() {
-        guard current != nil, !readAgain() else { return }
+    /// `text` is the watched field's new value, or nil when it couldn't be
+    /// read; then a full read decides whether the watch goes on.
+    private func fieldChanged(to text: String?) {
+        guard current != nil else { return }
+        if let text {
+            guard Self.isEmptied(text) else {
+                current?.latestText = text
+                return
+            }
+        } else if readAgain() {
+            return
+        }
         finish(readingFirst: false)
+    }
+
+    /// A chat box that empties has sent its message.
+    private static func isEmptied(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Ends the watch and saves what the user corrected. Reads the field one
@@ -197,13 +234,13 @@ final class EditLearningWatcher: InsertedTextWatching {
             after: watch.latestText
         )
         guard !corrections.isEmpty else {
-            let edited = EditCorrectionFinder.normalizedWhitespace(watch.latestText)
-                != EditCorrectionFinder.normalizedWhitespace(watch.baseline.text ?? "")
+            let edited = EditCorrectionFinder.comparable(watch.latestText)
+                != EditCorrectionFinder.comparable(watch.baseline.text ?? "")
             report(edited ? .editedNoName : .noChange, watch.appName, 0)
             return
         }
         let evidence = watch.appName.map { "Corrected after dictating into \($0)" } ?? "Corrected after dictating"
-        save(corrections.map {
+        let saved = save(corrections.map {
             LearningSuggestionDraft(
                 type: .dictionary,
                 candidateSource: $0.heard,
@@ -212,8 +249,12 @@ final class EditLearningWatcher: InsertedTextWatching {
                 evidence: evidence
             )
         })
-        report(.learned, watch.appName, corrections.count)
-        Logger.memory.info("Learned \(corrections.count) correction(s) from an edit")
+        guard saved > 0 else {
+            report(.alreadyKnown, watch.appName, 0)
+            return
+        }
+        report(.learned, watch.appName, saved)
+        Logger.memory.info("Learned \(saved) correction(s) from an edit")
     }
 
     /// Updates the latest text from the watched field. Returns false when the
@@ -229,7 +270,7 @@ final class EditLearningWatcher: InsertedTextWatching {
             return false
         }
         if let text = read.text {
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            guard !Self.isEmptied(text) else { return false }
             current?.latestText = text
         }
         return true

@@ -113,6 +113,60 @@ final class EditCorrectionFinderTests: XCTestCase {
         )
     }
 
+    func testNameCapitalizedInMidSentenceIsLearned() {
+        // Case-only fixes of words that aren't ordinary English.
+        XCTAssertEqual(corrections(inserted: "Send it to ola in lagos tomorrow.", edited: "Send it to Ola in Lagos tomorrow."),
+                       [pair("ola", "Ola"), pair("lagos", "Lagos")])
+        // Two heard words joined into one name, even one the word list holds.
+        XCTAssertEqual(corrections(inserted: "Open x code and build it.", edited: "Open Xcode and build it."),
+                       [pair("x code", "Xcode")])
+        // A capitalized name the word list happens to hold.
+        XCTAssertEqual(corrections(inserted: "I met with Tanya today.", edited: "I met with Tania today."),
+                       [pair("Tanya", "Tania")])
+        XCTAssertEqual(corrections(inserted: "Please deploy the cooper netties cluster.", edited: "Please deploy the Kubernetes cluster."),
+                       [pair("cooper netties", "Kubernetes")])
+    }
+
+    func testCapitalsThatAreNotNamesAreIgnored() {
+        // An ordinary word capitalized.
+        XCTAssertEqual(corrections(inserted: "Meet me at the park later.", edited: "Meet me at the Park later."), [])
+        // Starting a new sentence capitalizes for that reason.
+        XCTAssertEqual(
+            corrections(inserted: "We shipped it yesterday and the team loved it.", edited: "We shipped it yesterday. The team loved it."),
+            []
+        )
+        // A capital at the start of the field.
+        XCTAssertEqual(corrections(inserted: "lagos is hot today.", edited: "Lagos is hot today."), [])
+    }
+
+    func testMisheardNameThatSoundsAlikeIsLearned() {
+        XCTAssertEqual(corrections(inserted: "Build or tie for the release.", edited: "Build Orttaai for the release."),
+                       [pair("or tie", "Orttaai")])
+    }
+
+    func testContractionsAreOrdinaryWords() {
+        XCTAssertEqual(corrections(inserted: "I think their going to review it.", edited: "I think they're going to review it."), [])
+        XCTAssertEqual(corrections(inserted: "It is not ready yet.", edited: "It isn't ready yet."), [])
+    }
+
+    func testSoundKeys() {
+        XCTAssertEqual(EditCorrectionFinder.consonantKey("orttaai"), "rt")
+        XCTAssertEqual(EditCorrectionFinder.consonantKey("kubernetes"), "kbrnts")
+        XCTAssertEqual(EditCorrectionFinder.consonantKey("philip"), "flp")
+        XCTAssertTrue(EditCorrectionFinder.soundsAlike("ortie", "orttaai"))
+        XCTAssertFalse(EditCorrectionFinder.soundsAlike("cat", "kubectl"))
+    }
+
+    func testDictationIsFoundThoughTheEditorCapitalizedAndCurledIt() {
+        let inserted = "ask Adayemi about the client's deck."
+        let before = "Ask Adayemi about the client’s deck."
+        XCTAssertEqual(
+            EditCorrectionFinder.corrections(inserted: inserted, before: before, insertionEndUTF16: before.utf16.count,
+                                             after: "Ask Adeyemi about the client’s deck."),
+            [pair("Adayemi", "Adeyemi")]
+        )
+    }
+
     func testDictationTheAppChangedIsNotLocated() {
         XCTAssertEqual(
             EditCorrectionFinder.corrections(inserted: "Call Adayemi.", before: "Something else entirely.", insertionEndUTF16: 24, after: "Call Adeyemi."),

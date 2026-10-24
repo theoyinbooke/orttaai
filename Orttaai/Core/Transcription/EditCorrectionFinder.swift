@@ -13,9 +13,11 @@ nonisolated struct EditCorrection: Equatable, Sendable {
 /// Finds dictionary-worthy corrections by comparing a text field right after
 /// a dictation was inserted with the same field a little later. Deliberately
 /// narrow: only small replacements inside the dictated text count, the new
-/// spelling must look like a name or term, and a rewrite of the dictation is
-/// ignored. Ordinary edits (a synonym, a reworded sentence, text typed after
-/// the dictation) never become suggestions.
+/// spelling must look like a name or term (an unusual word, inner capitals,
+/// or a capital in mid-sentence) and sound like what was heard, and a
+/// rewrite of the dictation is ignored. Ordinary edits (a synonym, a
+/// reworded sentence, text typed after the dictation) never become
+/// suggestions.
 nonisolated enum EditCorrectionFinder {
     /// At most this many dictated words replaced by one correction
     /// ("for lash a day" -> "Folasade").
@@ -39,12 +41,12 @@ nonisolated enum EditCorrectionFinder {
         insertionEndUTF16 rawCaret: Int?,
         after rawAfter: String
     ) -> [EditCorrection] {
-        let inserted = normalizedWhitespace(inserted)
-        let before = normalizedWhitespace(rawBefore)
-        let after = normalizedWhitespace(rawAfter)
+        let inserted = comparable(inserted)
+        let before = comparable(rawBefore)
+        let after = comparable(rawAfter)
         let insertionEndUTF16 = rawCaret.map { caret -> Int in
             let end = String.Index(utf16Offset: min(max(0, caret), rawBefore.utf16.count), in: rawBefore)
-            return normalizedWhitespace(String(rawBefore[..<end])).utf16.count
+            return comparable(String(rawBefore[..<end])).utf16.count
         }
         guard before != after,
               let insertedRange = locate(inserted, in: before, endingNearUTF16: insertionEndUTF16) else { return [] }
@@ -79,7 +81,15 @@ nonisolated enum EditCorrectionFinder {
 
             let heard = String(before[first.range.lowerBound..<last.range.upperBound])
             let corrected = String(after[correctedFirst.range.lowerBound..<correctedLast.range.upperBound])
-            if isDictionaryWorthy(heard: heard, corrected: corrected, correctedWords: correctedWords.map(\.text)) {
+            if isDictionaryWorthy(
+                heard: heard,
+                corrected: corrected,
+                correctedWords: correctedWords.map(\.text),
+                joinsWords: heardWords.count > correctedWords.count,
+                // A fix that starts a new sentence capitalizes for that reason.
+                atSentenceStart: startsSentence(at: first.range.lowerBound, in: before)
+                    || startsSentence(at: correctedFirst.range.lowerBound, in: after)
+            ) {
                 corrections.append(EditCorrection(heard: heard, corrected: corrected))
             }
         }
@@ -92,29 +102,98 @@ nonisolated enum EditCorrectionFinder {
 
     // MARK: - Rules
 
-    private static func isDictionaryWorthy(heard: String, corrected: String, correctedWords: [String]) -> Bool {
+    private static func isDictionaryWorthy(
+        heard: String,
+        corrected: String,
+        correctedWords: [String],
+        joinsWords: Bool,
+        atSentenceStart: Bool
+    ) -> Bool {
         let heardLetters = letters(of: heard)
         let correctedLetters = letters(of: corrected)
         guard !correctedLetters.isEmpty, heard != corrected else { return false }
+        // Capitals in mid-sentence mark a name ("tanya" -> "Tania",
+        // "x code" -> "Xcode") even when the word list holds the word.
+        let capitalizedName = !atSentenceStart && correctedWords.allSatisfy { $0.first?.isUppercase == true }
 
         if heardLetters == correctedLetters {
             // A case-only fix is worth keeping for terms like GitHub or GRDB,
-            // not for capitalizing the start of a sentence.
-            return correctedWords.contains(where: hasInnerUppercase)
+            // and for a name capitalized in mid-sentence (ola -> Ola,
+            // x code -> Xcode), not for capitalizing the start of a sentence
+            // or an ordinary word.
+            if correctedWords.contains(where: hasInnerUppercase) { return true }
+            return capitalizedName && (joinsWords || correctedWords.contains(where: looksLikeTerm))
         }
-        guard correctedWords.contains(where: looksLikeTerm) else { return false }
+        guard capitalizedName || correctedWords.contains(where: looksLikeTerm) else { return false }
         // The fix has to sound like what was heard: a misspelled or misheard
         // name, not a different word chosen on reflection.
-        let distance = WordBoostGuard.editDistance(heardLetters, correctedLetters)
-        return distance <= max(2, max(heardLetters.count, correctedLetters.count) / 2)
+        return soundsAlike(heardLetters, correctedLetters)
     }
+
+    /// Close in spelling, or the same consonants in the same order
+    /// ("or tie" -> "Orttaai"), which a different word chosen on reflection
+    /// rarely is ("cat" -> "kubectl").
+    static func soundsAlike(_ heard: String, _ corrected: String) -> Bool {
+        let distance = WordBoostGuard.editDistance(heard, corrected)
+        if distance <= max(2, max(heard.count, corrected.count) / 2) { return true }
+        let heardKey = consonantKey(heard)
+        let correctedKey = consonantKey(corrected)
+        guard min(heardKey.count, correctedKey.count) >= 2 else { return false }
+        let allowed = max(heardKey.count, correctedKey.count) >= 4 ? 1 : 0
+        return WordBoostGuard.editDistance(heardKey, correctedKey) <= allowed
+    }
+
+    /// Lowercase letters reduced to their consonant sounds: vowels and
+    /// silent-prone h/w dropped, letters that sound alike folded, doubles
+    /// collapsed ("orttaai" -> "rt", "kubernetes" -> "kbrnts").
+    static func consonantKey(_ letters: String) -> String {
+        var key = ""
+        var previous: Character?
+        for letter in letters.replacingOccurrences(of: "ph", with: "f") {
+            let folded: Character
+            switch letter {
+            case "a", "e", "i", "o", "u", "y", "h", "w":
+                previous = nil
+                continue
+            case "c", "q": folded = "k"
+            case "z": folded = "s"
+            default: folded = letter
+            }
+            if folded != previous { key.append(folded) }
+            previous = folded
+        }
+        return key
+    }
+
+    /// Contractions and possessives are judged by the word they're built on
+    /// (isn't, they're, Folasade's).
+    private static let contractionEndings: Set<String> = ["t", "re", "ve", "ll", "d", "m", "s"]
 
     /// A name, product or code term rather than an ordinary English word.
     private static func looksLikeTerm(_ word: String) -> Bool {
         let lowered = word.lowercased()
         if hasInnerUppercase(word) { return true }
         if word.contains(where: \.isNumber), word.contains(where: \.isLetter) { return true }
+        let parts = lowered.split(whereSeparator: { "'’".contains($0) }).map(String.init)
+        if parts.count == 2, contractionEndings.contains(parts[1]) {
+            // "isn't" splits as "isn" + "t": the base is "is".
+            let bases = parts[1] == "t" ? [parts[0], String(parts[0].dropLast())] : [parts[0]]
+            return !bases.contains(where: EnglishLexicon.isRealWord)
+        }
         return word.contains(where: \.isLetter) && !EnglishLexicon.isRealWord(lowered)
+    }
+
+    /// Whether the word starting at `index` begins a sentence: the start of
+    /// the field, or after . ! or ? (skipping spaces and opening quotes).
+    private static func startsSentence(at index: String.Index, in text: String) -> Bool {
+        var position = index
+        while position > text.startIndex {
+            position = text.index(before: position)
+            let character = text[position]
+            if character.isWhitespace || "\"'([“‘".contains(character) { continue }
+            return ".!?".contains(character)
+        }
+        return true
     }
 
     private static func hasInnerUppercase(_ word: String) -> Bool {
@@ -126,6 +205,19 @@ nonisolated enum EditCorrectionFinder {
     }
 
     // MARK: - Whitespace
+
+    /// Text as compared: whitespace as `normalizedWhitespace` does it, and
+    /// curly quotes as straight ones, since many editors curl them as the
+    /// text goes in. Every character maps to one, so offsets stay put.
+    static func comparable(_ text: String) -> String {
+        String(normalizedWhitespace(text).map { character -> Character in
+            switch character {
+            case "‘", "’": return "'"
+            case "“", "”": return "\""
+            default: return character
+            }
+        })
+    }
 
     /// Editors keep spaces and line breaks their own way: a chat box may
     /// store a non-breaking space, or turn a line break into a paragraph.
@@ -147,11 +239,12 @@ nonisolated enum EditCorrectionFinder {
     }
 
     /// Whether a field's text holds the dictation, ignoring how the editor
-    /// stored its whitespace.
+    /// stored its whitespace and quotes, and a capital it added or removed
+    /// (a chat box that capitalizes the first word).
     static func fieldText(_ text: String, contains inserted: String) -> Bool {
-        let needle = normalizedWhitespace(inserted).trimmingCharacters(in: .whitespaces)
+        let needle = comparable(inserted).trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return false }
-        return normalizedWhitespace(text).contains(needle)
+        return comparable(text).range(of: needle, options: .caseInsensitive) != nil
     }
 
     // MARK: - Locating and aligning
@@ -162,7 +255,7 @@ nonisolated enum EditCorrectionFinder {
         guard !trimmed.isEmpty else { return nil }
         var ranges: [Range<String.Index>] = []
         var searchStart = text.startIndex
-        while let range = text.range(of: trimmed, range: searchStart..<text.endIndex) {
+        while let range = text.range(of: trimmed, options: .caseInsensitive, range: searchStart..<text.endIndex) {
             ranges.append(range)
             searchStart = range.upperBound
         }

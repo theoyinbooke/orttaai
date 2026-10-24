@@ -323,17 +323,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 save: { [weak self, weak db] drafts in
                     do {
                         guard let saved = try db?.saveLearningSuggestions(drafts), saved > 0,
-                              let first = drafts.first else { return }
+                              let first = drafts.first else { return 0 }
                         let prefix = "Corrected after dictating into "
                         let appName = first.evidence.flatMap { $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : nil }
                         self?.milestoneToast.showLearnedWord(
                             heard: first.candidateSource,
                             corrected: first.candidateTarget,
                             appName: appName,
-                            alsoLearned: drafts.count - 1
+                            alsoLearned: saved - 1
                         )
+                        return saved
                     } catch {
                         Logger.memory.error("Failed to save edit suggestions: \(error.localizedDescription)")
+                        return 0
                     }
                 },
                 report: { [weak db] outcome, appName, learned in

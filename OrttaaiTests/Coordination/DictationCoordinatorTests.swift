@@ -464,6 +464,7 @@ final class DictationCoordinatorTests: XCTestCase {
     func testInsertedDictationIsWatchedForEdits() async {
         coordinator.startRecording()
         XCTAssertEqual(editLearner.finishCount, 1, "starting a dictation ends the previous watch")
+        XCTAssertEqual(editLearner.preparedCount, 1, "the target app is readied while recording")
         try? await Task.sleep(nanoseconds: 700_000_000)
         coordinator.stopRecording()
         _ = await waitUntil { self.coordinator.state == .idle }
@@ -1730,6 +1731,11 @@ private extension MockTranscriptionService {
 final class RecordingEditLearner: InsertedTextWatching {
     private(set) var watchedTexts: [String] = []
     private(set) var finishCount = 0
+    private(set) var preparedCount = 0
+
+    func prepare(targetApp: NSRunningApplication?) {
+        preparedCount += 1
+    }
 
     func watch(insertedText: String, targetApp: NSRunningApplication?) {
         watchedTexts.append(insertedText)

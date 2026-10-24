@@ -410,6 +410,7 @@ final class DictationCoordinator {
         editSelection = selection
         // The next insertion would mix into the field being watched.
         editLearner?.finishCurrentWatch()
+        editLearner?.prepare(targetApp: frontmostApp)
 
         do {
             // Capture the target app NOW, before the floating panel appears

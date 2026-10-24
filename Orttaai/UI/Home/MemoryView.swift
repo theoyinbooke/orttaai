@@ -605,6 +605,7 @@ struct MemoryView: View {
     static func description(for outcome: EditCheckOutcome?, learned: Int) -> String {
         switch outcome {
         case .learned: return learned == 1 ? "Learned a word from your fix" : "Learned \(learned) words from your fixes"
+        case .alreadyKnown: return "Fixed a word Orttaai already knows"
         case .editedNoName: return "Edited, but no misheard name to learn"
         case .noChange: return "Left as dictated"
         case .textNotFound: return "Couldn't find the dictation in the box"
@@ -618,6 +619,7 @@ struct MemoryView: View {
     static func symbol(for outcome: EditCheckOutcome?) -> String {
         switch outcome {
         case .learned: return "character.book.closed.fill"
+        case .alreadyKnown: return "checkmark.circle"
         case .editedNoName: return "pencil"
         case .noChange: return "checkmark"
         case .textNotFound, .unreadable: return "eye.slash"
