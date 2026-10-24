@@ -136,6 +136,7 @@ struct MilestoneToastView: View {
                     .frame(height: 30)
                     .background(Capsule().fill(Color.Orttaai.accent))
                     .contentShape(Capsule())
+                    .pointingHandCursorWhileInactive()
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
@@ -143,6 +144,7 @@ struct MilestoneToastView: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursorWhileInactive()
                 .foregroundStyle(Color(hex: "8E8E93"))
                 .accessibilityLabel("Dismiss")
             }

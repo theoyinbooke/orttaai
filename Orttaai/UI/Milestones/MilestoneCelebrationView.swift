@@ -103,6 +103,7 @@ struct MilestoneCelebrationCard: View {
             HStack {
                 Button("See all milestones", action: onSeeAll)
                     .buttonStyle(.plain)
+                    .pointingHandCursor()
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color(hex: "E8B45A"))
                 Spacer()
@@ -126,6 +127,7 @@ struct MilestoneCelebrationCard: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .pointingHandCursor()
                     .foregroundStyle(Color.Orttaai.textPrimary)
                     .accessibilityLabel("Next milestone")
                 }
@@ -167,6 +169,7 @@ private struct CelebrationButtonStyle: ButtonStyle {
             )
             .opacity(configuration.isPressed ? 0.8 : 1)
             .contentShape(Capsule())
+            .pointingHandCursor()
     }
 }
 

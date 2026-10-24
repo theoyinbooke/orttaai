@@ -2364,34 +2364,3 @@ private extension View {
     }
 }
 
-private extension View {
-    /// The hand pointer over a control that can be clicked, and the arrow
-    /// over one that can't. Saying so explicitly matters next to the
-    /// composer's text view, whose I-beam otherwise lingers over buttons.
-    @ViewBuilder
-    func pointingHandCursor(when enabled: Bool) -> some View {
-        if #available(macOS 15, *) {
-            pointerStyle(enabled ? .link : .default)
-        } else {
-            modifier(ChatAILegacyPointer(enabled: enabled))
-        }
-    }
-}
-
-/// macOS 14 has no `pointerStyle`; push the cursor while hovered.
-private struct ChatAILegacyPointer: ViewModifier {
-    let enabled: Bool
-    @State private var pushed = false
-
-    func body(content: Content) -> some View {
-        content.onHover { inside in
-            if inside, !pushed {
-                (enabled ? NSCursor.pointingHand : NSCursor.arrow).push()
-                pushed = true
-            } else if !inside, pushed {
-                NSCursor.pop()
-                pushed = false
-            }
-        }
-    }
-}

@@ -48,6 +48,7 @@ struct MilestonesView: View {
                 Label("Share progress", systemImage: "square.and.arrow.up")
             }
             .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+            .pointingHandCursor(when: center.stats.dictations > 0)
             .disabled(center.stats.dictations == 0)
             .help("Make a card from your numbers so far")
         }
@@ -180,6 +181,7 @@ struct MilestonesView: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
@@ -245,6 +247,7 @@ private struct MilestoneBadgeCell: View {
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
+        .pointingHandCursor(when: state.isUnlocked)
         .disabled(!state.isUnlocked)
         .onHover { isHovered = $0 }
         .help(state.isUnlocked ? "Share a card for \(badge.name)" : badge.rule)

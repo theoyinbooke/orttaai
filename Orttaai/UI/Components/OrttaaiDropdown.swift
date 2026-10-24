@@ -29,6 +29,8 @@ struct OrttaaiDropdown<Value: Hashable>: View {
 
     @State private var isOpen = false
     @State private var isHovered = false
+    /// The field's width, so the list drops down exactly as wide as it.
+    @State private var triggerWidth: CGFloat = 0
 
     init(
         selection: Binding<Value>,
@@ -53,6 +55,7 @@ struct OrttaaiDropdown<Value: Hashable>: View {
             trigger
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
         .onHover { isHovered = $0 }
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             optionList
@@ -88,6 +91,13 @@ struct OrttaaiDropdown<Value: Hashable>: View {
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: CornerRadius.input))
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { triggerWidth = geometry.size.width }
+                    .onChange(of: geometry.size.width) { _, newWidth in triggerWidth = newWidth }
+            }
+        )
     }
 
     private var optionList: some View {
@@ -105,7 +115,8 @@ struct OrttaaiDropdown<Value: Hashable>: View {
             }
             .padding(Spacing.xs)
         }
-        .frame(minWidth: max(200, width ?? 0), maxHeight: 320)
+        .frame(width: max(200, width ?? triggerWidth))
+        .frame(maxHeight: 320)
         .background(Color.Orttaai.bgSecondary)
     }
 
@@ -140,6 +151,7 @@ struct OrttaaiDropdown<Value: Hashable>: View {
                 .contentShape(RoundedRectangle(cornerRadius: CornerRadius.input, style: .continuous))
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
             .onHover { isHovered = $0 }
         }
 

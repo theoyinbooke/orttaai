@@ -97,21 +97,15 @@ struct MilestoneShareSheet: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
                 .keyboardShortcut(.cancelAction)
                 .accessibilityLabel("Close")
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 fieldLabel("Milestone")
-                Picker("Milestone", selection: $selection) {
-                    Text("\(center.stats.totalWords.formatted()) words · my stats so far").tag(MilestoneShareSubject.progress)
-                    ForEach(center.unlockedBadges) { badge in
-                        Text(badgeLabel(badge)).tag(MilestoneShareSubject.badge(badge))
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
+                OrttaaiDropdown(selection: $selection, options: milestoneOptions)
+                    .accessibilityLabel("Milestone")
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -155,6 +149,11 @@ struct MilestoneShareSheet: View {
             }
         }
         .foregroundStyle(Color.Orttaai.textPrimary)
+    }
+
+    private var milestoneOptions: [OrttaaiDropdown<MilestoneShareSubject>.Option] {
+        [.init(.progress, "\(center.stats.totalWords.formatted()) words · my stats so far")]
+            + center.unlockedBadges.map { .init(.badge($0), badgeLabel($0)) }
     }
 
     private func badgeLabel(_ badge: MilestoneBadge) -> String {
@@ -227,6 +226,7 @@ struct MilestoneShareSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
         .accessibilityLabel("\(option.title) template")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -251,6 +251,7 @@ struct MilestoneShareSheet: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
             .accessibilityLabel(label)
         }
         .frame(height: 130)
@@ -268,6 +269,7 @@ struct MilestoneShareSheet: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -340,6 +342,7 @@ private struct ShareSheetButtonStyle: ButtonStyle {
             .overlay(Capsule().strokeBorder(primary ? .clear : Color.Orttaai.border, lineWidth: 1))
             .opacity(configuration.isPressed ? 0.8 : 1)
             .contentShape(Capsule())
+            .pointingHandCursor()
     }
 }
 
