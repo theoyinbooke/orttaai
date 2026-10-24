@@ -1559,11 +1559,21 @@ struct ChatAIView: View {
     private var chatSurface: some View {
         VStack(spacing: 0) {
             if viewModel.hasMessages {
+                // The conversation scrolls on under the composer: beside the
+                // context strip it stays visible, and it disappears only at
+                // the input card.
                 messageList
-                composer
-                    .padding(.horizontal, Spacing.xxxl)
-                    .padding(.bottom, Spacing.xxl)
-                    .frame(maxWidth: activeComposerMaxWidth)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        composer
+                            .padding(.horizontal, Spacing.xxxl)
+                            .padding(.bottom, Spacing.xxl)
+                            .frame(maxWidth: activeComposerMaxWidth)
+                            .frame(maxWidth: .infinity)
+                            .background(alignment: .bottom) {
+                                Color.Orttaai.bgPrimary
+                                    .padding(.top, Self.composerStripHeight)
+                            }
+                    }
             } else {
                 Spacer(minLength: 0)
 
@@ -1773,6 +1783,10 @@ struct ChatAIView: View {
     /// Laid out like Codex's: a context strip tucked behind the top (what the
     /// reply draws on, and settings), then the input card with attach and
     /// mode on the left, and model, voice and send on the right.
+    /// How far the context strip stands above the input card: the band
+    /// beside it is left clear so the conversation shows through.
+    private static let composerStripHeight: CGFloat = 36
+
     private var composer: some View {
         VStack(spacing: 0) {
             contextStrip
@@ -1780,8 +1794,9 @@ struct ChatAIView: View {
                 .padding(.top, 7)
                 .padding(.bottom, 17)
                 .background(
+                    // Solid, since the conversation now passes behind it.
                     UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14, style: .continuous)
-                        .fill(Color.Orttaai.bgSecondary.opacity(0.55))
+                        .fill(Color(hex: "252527"))
                 )
                 .overlay(
                     UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14, style: .continuous)
@@ -2143,14 +2158,6 @@ private struct ChatAIHistoryRow: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isSelected ? Color.Orttaai.accentSubtle : (isHovered ? Color.Orttaai.bgTertiary.opacity(0.55) : Color.clear))
             )
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    Capsule()
-                        .fill(Color.Orttaai.accent)
-                        .frame(width: 3, height: 18)
-                        .padding(.leading, 3)
-                }
-            }
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
