@@ -605,6 +605,16 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v16_milestones") { db in
+            // Badges earned, kept even if the history that earned them is
+            // deleted. Local to this Mac; never synced.
+            try db.create(table: "milestone_unlock") { t in
+                t.column("badgeID", .text).primaryKey()
+                t.column("unlockedAt", .datetime).notNull()
+                t.column("celebratedAt", .datetime)
+            }
+        }
+
         return migrator
     }
 
@@ -2303,6 +2313,71 @@ final class DatabaseManager {
 
     func logSkippedRecording(duration: TimeInterval) {
         Logger.database.info("Skipped recording: \(duration, format: .fixed(precision: 2))s (< 0.5s)")
+    }
+
+    // MARK: - Milestones
+
+    func fetchMilestoneUnlocks() throws -> [MilestoneUnlock] {
+        try dbQueue.read { db in
+            try MilestoneUnlock.order(Column("unlockedAt").asc).fetchAll(db)
+        }
+    }
+
+    /// Records badges not unlocked before; ones already stored keep their
+    /// original date. Returns the ones that were new.
+    @discardableResult
+    func insertMilestoneUnlocks(_ unlocks: [MilestoneUnlock]) throws -> [MilestoneUnlock] {
+        guard !unlocks.isEmpty else { return [] }
+        return try dbQueue.write { db in
+            var inserted: [MilestoneUnlock] = []
+            for unlock in unlocks where try MilestoneUnlock.fetchOne(db, key: unlock.badgeID) == nil {
+                try unlock.insert(db)
+                inserted.append(unlock)
+            }
+            return inserted
+        }
+    }
+
+    func markMilestonesCelebrated(_ badgeIDs: [String], at date: Date = Date()) throws {
+        guard !badgeIDs.isEmpty else { return }
+        try dbQueue.write { db in
+            try MilestoneUnlock
+                .filter(badgeIDs.contains(Column("badgeID")))
+                .filter(Column("celebratedAt") == nil)
+                .updateAll(db, Column("celebratedAt").set(to: date))
+        }
+    }
+
+    /// What the milestone engine reads: dictations only (not edit
+    /// commands), as counts and times, plus when each active dictionary
+    /// entry was added.
+    func fetchMilestoneInputs() throws -> (dictations: [MilestoneDictation], dictionaryEntryDates: [Date]) {
+        let editKind = Transcription.editEntryKind
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT createdAt, text, recordingDurationMs, targetAppName
+                FROM transcription
+                WHERE entryKind IS NULL OR entryKind != ?
+                ORDER BY createdAt ASC
+                """,
+                arguments: [editKind]
+            )
+            let dictations = rows.map { row in
+                MilestoneDictation(
+                    createdAt: row["createdAt"],
+                    words: MilestoneDictation.wordCount(of: row["text"] ?? ""),
+                    recordingMs: row["recordingDurationMs"] ?? 0,
+                    appName: row["targetAppName"]
+                )
+            }
+            let entryDates = try Date.fetchAll(
+                db,
+                sql: "SELECT createdAt FROM dictionary_entry WHERE isActive = 1 ORDER BY createdAt ASC"
+            )
+            return (dictations, entryDates)
+        }
     }
 
     // MARK: - Observation
