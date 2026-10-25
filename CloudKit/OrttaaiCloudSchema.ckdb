@@ -143,3 +143,237 @@ RECORD TYPE OrttaaiSyncMetadata (
     GRANT READ TO "_creator",
     GRANT WRITE TO "_creator"
 );
+
+// Sync v2 (Orttaai 1.15+, Orttakey): CKSyncEngine in custom zones. Text is
+// only ever in the encrypted payload field. The v1 types above stay for
+// older Orttaai versions; v2 never writes them.
+
+RECORD TYPE Dictation (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE DictionaryEntry (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE Snippet (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE Device (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE MacSummary (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE MacPreferences (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE ToneProfile (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE ChatConversation (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE LearningSuggestion (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
+
+RECORD TYPE WritingInsight (
+    "___createTime" TIMESTAMP,
+    "___createdBy"  REFERENCE,
+    "___etag"       STRING,
+    "___modTime"    TIMESTAMP,
+    "___modifiedBy" REFERENCE,
+    "___recordID"   REFERENCE QUERYABLE,
+    schemaVersion   INT64,
+    revCounter      INT64,
+    revModifiedAt   TIMESTAMP,
+    revWriter       STRING,
+    deleted         INT64,
+    generation      INT64,
+    deletedAt       TIMESTAMP,
+    createdAt       TIMESTAMP,
+    originDeviceID  STRING,
+    originKind      STRING,
+    payload         ENCRYPTED BYTES,
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_creator",
+    GRANT WRITE TO "_creator"
+);
