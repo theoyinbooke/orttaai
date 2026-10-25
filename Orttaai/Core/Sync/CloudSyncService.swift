@@ -6,18 +6,18 @@ import Foundation
 import os
 import Security
 
-enum CloudSyncSetupResolution: String, Codable, Sendable {
+nonisolated enum CloudSyncSetupResolution: String, Codable, Sendable {
     case merge
     case useICloud
 }
 
-struct CloudSyncSetupPreview: Sendable, Equatable {
+nonisolated struct CloudSyncSetupPreview: Sendable, Equatable {
     let localStats: CloudSyncStats
     let iCloudStats: CloudSyncStats
     let hasConflict: Bool
 }
 
-enum CloudSyncStatus: Equatable {
+nonisolated enum CloudSyncStatus: Equatable {
     case idle
     case checking
     case needsSetup(CloudSyncSetupPreview)
@@ -26,7 +26,7 @@ enum CloudSyncStatus: Equatable {
     case failed(String)
 }
 
-enum CloudSyncServiceError: LocalizedError {
+nonisolated enum CloudSyncServiceError: LocalizedError {
     case missingCloudKitEntitlement
     case iCloudUnavailable
     case iCloudRestricted
@@ -52,13 +52,18 @@ enum CloudSyncServiceError: LocalizedError {
     }
 }
 
-final class CloudSyncService {
-    nonisolated static let shared = CloudSyncService()
+/// Syncs History, Personal Memory and synced settings with the private
+/// iCloud database. A first sync can move thousands of records, so the
+/// work runs off the main thread (`@concurrent` entry points); only reading
+/// and applying settings and the completion notification hop to the main
+/// actor. Callers serialize runs (the scheduler and the settings screen).
+nonisolated final class CloudSyncService: @unchecked Sendable {
+    static let shared = CloudSyncService()
 
-    nonisolated static let containerIdentifier = "iCloud.com.orttaai.Orttaai"
-    nonisolated static let syncEnabledKey = "cloudSyncEnabled"
-    nonisolated static let lastCompletedAtKey = "cloudSyncLastCompletedAt"
-    nonisolated static let deviceIDKey = "cloudSyncDeviceID"
+    static let containerIdentifier = "iCloud.com.orttaai.Orttaai"
+    static let syncEnabledKey = "cloudSyncEnabled"
+    static let lastCompletedAtKey = "cloudSyncLastCompletedAt"
+    static let deviceIDKey = "cloudSyncDeviceID"
 
     private let containerProvider: () -> CKContainer
     private let requiresEntitlementCheck: Bool
@@ -81,19 +86,21 @@ final class CloudSyncService {
         self.decoder = decoder
     }
 
+    @concurrent
     func setupPreview() async throws -> CloudSyncSetupPreview {
         try await ensureAccountAvailable()
 
-        let local = try localFullSnapshot()
+        let local = try await localFullSnapshot()
         let remote = try await fetchRemoteFullSnapshot()
         return Self.makeSetupPreview(local: local, remote: remote)
     }
 
+    @concurrent
     func enableSync(resolution: CloudSyncSetupResolution) async throws -> CloudSyncSetupPreview {
         // Fetch the iCloud profile once: with thousands of records, every
         // extra full download makes setup noticeably slower.
         try await ensureAccountAvailable()
-        let local = try localFullSnapshot()
+        let local = try await localFullSnapshot()
         let remote = try await fetchRemoteFullSnapshot()
         let preview = Self.makeSetupPreview(local: local, remote: remote)
 
@@ -105,21 +112,19 @@ final class CloudSyncService {
             try DatabaseManager().applyCloudSnapshot(mergedDatabase, replacingLocalData: true)
 
             let profile = Self.newerProfile(local.profile, remote.profile) ?? local.profile
-            profile.apply()
+            await profile.apply()
             try await pushLocalSnapshot()
 
         case .useICloud:
             _ = try DatabaseManager.backupDefaultDatabase(reason: "icloud-profile-replace")
             try DatabaseManager().applyCloudSnapshot(remote.database, replacingLocalData: true)
-            remote.profile.apply()
+            await remote.profile.apply()
             try await pushLocalSnapshot()
         }
 
-        UserDefaults.standard.set(true, forKey: Self.syncEnabledKey)
         let completedAt = Date()
         try DatabaseManager().markCloudSyncCompleted(at: completedAt)
-        markUserDefaultsSyncCompleted(at: completedAt)
-        postSyncCompleted(at: completedAt)
+        await finishSync(at: completedAt)
         return preview
     }
 
@@ -132,9 +137,10 @@ final class CloudSyncService {
         }
     }
 
+    @concurrent
     func syncNow() async throws {
         try await ensureAccountAvailable()
-        let local = try localFullSnapshot()
+        let local = try await localFullSnapshot()
         let remote = try await fetchRemoteFullSnapshot()
 
         let mergedDatabase = Self.mergedDatabaseSnapshot(local: local.database, remote: remote.database)
@@ -153,7 +159,7 @@ final class CloudSyncService {
         }
 
         if localProfileNeedsUpdate {
-            profile.apply()
+            await profile.apply()
         }
 
         if remoteDatabaseNeedsUpdate || remoteProfileNeedsUpdate {
@@ -162,45 +168,46 @@ final class CloudSyncService {
 
         let completedAt = Date()
         try databaseManager.markCloudSyncCompleted(at: completedAt)
-        UserDefaults.standard.set(true, forKey: Self.syncEnabledKey)
-        markUserDefaultsSyncCompleted(at: completedAt)
-        postSyncCompleted(at: completedAt)
+        await finishSync(at: completedAt)
 
         Logger.database.info(
             "Cloud sync resolved changes [localDatabaseUpdated=\(localDatabaseNeedsUpdate), remoteDatabaseUpdated=\(remoteDatabaseNeedsUpdate), localProfileUpdated=\(localProfileNeedsUpdate), remoteProfileUpdated=\(remoteProfileNeedsUpdate)]"
         )
     }
 
-    private func localFullSnapshot() throws -> CloudFullSnapshot {
+    private func localFullSnapshot() async throws -> CloudFullSnapshot {
         let database = try DatabaseManager().cloudSyncSnapshot()
-        let profile = CloudProfileSnapshot.capture()
+        let profile = await MainActor.run { CloudProfileSnapshot.capture() }
         return CloudFullSnapshot(database: database, profile: profile, capturedAt: Date())
     }
 
     private func pushLocalSnapshot() async throws {
-        let snapshot = try localFullSnapshot()
+        let snapshot = try await localFullSnapshot()
+        let source = await MainActor.run {
+            RecordSource(deviceID: DeviceIdentity.currentID, deviceName: Host.current().localizedName ?? "Mac")
+        }
         var records: [CKRecord] = []
 
         records += try snapshot.database.transcriptions.map {
-            try makeRecord(type: CloudSyncTable.transcription.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
+            try makeRecord(source: source, type: CloudSyncTable.transcription.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
         }
         records += try snapshot.database.dictionaryEntries.map {
-            try makeRecord(type: CloudSyncTable.dictionaryEntry.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
+            try makeRecord(source: source, type: CloudSyncTable.dictionaryEntry.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
         }
         records += try snapshot.database.snippetEntries.map {
-            try makeRecord(type: CloudSyncTable.snippetEntry.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
+            try makeRecord(source: source, type: CloudSyncTable.snippetEntry.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
         }
         records += try snapshot.database.learningSuggestions.map {
-            try makeRecord(type: CloudSyncTable.learningSuggestion.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
+            try makeRecord(source: source, type: CloudSyncTable.learningSuggestion.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
         }
         records += try snapshot.database.writingInsightSnapshots.map {
-            try makeRecord(type: CloudSyncTable.writingInsightSnapshot.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
+            try makeRecord(source: source, type: CloudSyncTable.writingInsightSnapshot.recordType, syncID: $0.syncID, modifiedAt: $0.modifiedAt, payload: $0)
         }
         records += try snapshot.database.tombstones.map {
-            try makeRecord(type: "OrttaaiDeletedRecord", syncID: $0.id, modifiedAt: $0.deletedAt, payload: $0)
+            try makeRecord(source: source, type: "OrttaaiDeletedRecord", syncID: $0.id, modifiedAt: $0.deletedAt, payload: $0)
         }
-        records.append(try makeProfileRecord(snapshot.profile))
-        records.append(try makeMetadataRecord(stats: snapshot.stats))
+        records.append(try makeProfileRecord(snapshot.profile, source: source))
+        records.append(try makeMetadataRecord(stats: snapshot.stats, source: source))
 
         let database = try privateDatabase()
         for batch in records.chunked(maxSize: 200) {
@@ -290,7 +297,14 @@ final class CloudSyncService {
         }
     }
 
+    /// Which Mac wrote a record; read on the main actor once per push.
+    private struct RecordSource {
+        let deviceID: String
+        let deviceName: String
+    }
+
     private func makeRecord<T: Encodable>(
+        source: RecordSource,
         type: String,
         syncID: String,
         modifiedAt: Date,
@@ -304,12 +318,12 @@ final class CloudSyncService {
         record["modifiedAt"] = modifiedAt as NSDate
         record["payloadData"] = try encoder.encode(payload) as NSData
         record["schemaVersion"] = 1 as NSNumber
-        record["sourceDeviceID"] = deviceID() as NSString
-        record["sourceDeviceName"] = (Host.current().localizedName ?? "Mac") as NSString
+        record["sourceDeviceID"] = source.deviceID as NSString
+        record["sourceDeviceName"] = source.deviceName as NSString
         return record
     }
 
-    private func makeProfileRecord(_ profile: CloudProfileSnapshot) throws -> CKRecord {
+    private func makeProfileRecord(_ profile: CloudProfileSnapshot, source: RecordSource) throws -> CKRecord {
         let record = CKRecord(
             recordType: "OrttaaiProfile",
             recordID: CKRecord.ID(recordName: "profile")
@@ -318,11 +332,11 @@ final class CloudSyncService {
         record["modifiedAt"] = (profile.modifiedAt ?? Date()) as NSDate
         record["payloadData"] = try encoder.encode(profile) as NSData
         record["schemaVersion"] = 1 as NSNumber
-        record["sourceDeviceID"] = deviceID() as NSString
+        record["sourceDeviceID"] = source.deviceID as NSString
         return record
     }
 
-    private func makeMetadataRecord(stats: CloudSyncStats) throws -> CKRecord {
+    private func makeMetadataRecord(stats: CloudSyncStats, source: RecordSource) throws -> CKRecord {
         let record = CKRecord(
             recordType: "OrttaaiSyncMetadata",
             recordID: CKRecord.ID(recordName: "metadata")
@@ -331,7 +345,7 @@ final class CloudSyncService {
         record["modifiedAt"] = Date() as NSDate
         record["payloadData"] = try encoder.encode(stats) as NSData
         record["schemaVersion"] = 1 as NSNumber
-        record["sourceDeviceID"] = deviceID() as NSString
+        record["sourceDeviceID"] = source.deviceID as NSString
         return record
     }
 
@@ -348,15 +362,12 @@ final class CloudSyncService {
             .replacingOccurrences(of: "/", with: "-")
     }
 
-    private func deviceID() -> String {
-        DeviceIdentity.currentID
-    }
-
-    private func markUserDefaultsSyncCompleted(at date: Date) {
+    /// Marks sync on and tells the UI, on the main actor where the settings
+    /// screen and observers expect them.
+    @MainActor
+    private func finishSync(at date: Date) {
+        UserDefaults.standard.set(true, forKey: Self.syncEnabledKey)
         UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Self.lastCompletedAtKey)
-    }
-
-    private func postSyncCompleted(at date: Date) {
         NotificationCenter.default.post(
             name: .cloudSyncDidComplete,
             object: self,
@@ -445,7 +456,7 @@ final class CloudSyncService {
         }
     }
 
-    private static func mergedDatabaseSnapshot(
+    static func mergedDatabaseSnapshot(
         local: CloudDatabaseSnapshot,
         remote: CloudDatabaseSnapshot
     ) -> CloudDatabaseSnapshot {
@@ -584,11 +595,11 @@ final class CloudSyncService {
     }
 }
 
-enum CloudSyncNotificationKey {
+nonisolated enum CloudSyncNotificationKey {
     static let completedAt = "completedAt"
 }
 
-private extension Array {
+nonisolated private extension Array {
     func chunked(maxSize: Int) -> [[Element]] {
         guard maxSize > 0, !isEmpty else { return [] }
         var chunks: [[Element]] = []

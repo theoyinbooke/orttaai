@@ -875,6 +875,7 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(snapshot.modifiedAt, Date(timeIntervalSince1970: 1_800_000_100.0))
     }
 
+    @MainActor
     func testApplyingCloudProfilePreservesMissingToneProfileAndLocalSyncState() throws {
         let suiteName = "CloudProfileApplyTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

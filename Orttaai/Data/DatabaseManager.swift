@@ -18,16 +18,16 @@ final class DatabaseManager {
     private let dbQueue: DatabaseQueue
     private let databaseURL: URL?
     private let backupDirectoryURL: URL?
-    private static let maxInsightSnapshots = 60
-    private static let maxRecentCloudSyncBackups = 100
-    private static let maxDailyCloudSyncBackups = 30
-    private static let databaseFileName = "orttaai.db"
+    nonisolated private static let maxInsightSnapshots = 60
+    nonisolated private static let maxRecentCloudSyncBackups = 100
+    nonisolated private static let maxDailyCloudSyncBackups = 30
+    nonisolated private static let databaseFileName = "orttaai.db"
 
-    convenience init(dbQueue: DatabaseQueue) throws {
+    nonisolated convenience init(dbQueue: DatabaseQueue) throws {
         try self.init(dbQueue: dbQueue, databaseURL: nil, backupDirectoryURL: nil)
     }
 
-    init(
+    nonisolated init(
         dbQueue: DatabaseQueue,
         databaseURL: URL?,
         backupDirectoryURL: URL? = nil
@@ -43,13 +43,13 @@ final class DatabaseManager {
         }
     }
 
-    convenience init() throws {
+    nonisolated convenience init() throws {
         try self.init(sharedFileAt: try Self.defaultDatabaseURL())
     }
 
     /// A manager on the database file at `databaseURL`, sharing its queue
     /// with every other manager on that file.
-    convenience init(sharedFileAt databaseURL: URL) throws {
+    nonisolated convenience init(sharedFileAt databaseURL: URL) throws {
         let queue = try Self.sharedQueue(at: databaseURL)
         do {
             try self.init(dbQueue: queue, databaseURL: databaseURL)
@@ -84,31 +84,31 @@ final class DatabaseManager {
         }
     }
 
-    static func applicationSupportRootURL() throws -> URL {
+    nonisolated static func applicationSupportRootURL() throws -> URL {
         try AppStoragePaths.applicationSupportRootURL()
     }
 
-    static func defaultApplicationSupportURL(createDirectory: Bool = true) throws -> URL {
+    nonisolated static func defaultApplicationSupportURL(createDirectory: Bool = true) throws -> URL {
         try AppStoragePaths.applicationSupportURL(createDirectory: createDirectory)
     }
 
-    static func defaultDatabaseURL(createDirectory: Bool = true) throws -> URL {
+    nonisolated static func defaultDatabaseURL(createDirectory: Bool = true) throws -> URL {
         try defaultApplicationSupportURL(createDirectory: createDirectory)
             .appendingPathComponent(databaseFileName)
     }
 
-    static func defaultBackupDirectoryURL(createDirectory: Bool = true) throws -> URL {
+    nonisolated static func defaultBackupDirectoryURL(createDirectory: Bool = true) throws -> URL {
         try AppStoragePaths.backupDirectoryURL(createDirectory: createDirectory)
     }
 
     @discardableResult
-    static func backupDefaultDatabase(reason: String) throws -> URL? {
+    nonisolated static func backupDefaultDatabase(reason: String) throws -> URL? {
         let databaseURL = try defaultDatabaseURL(createDirectory: false)
         return try backupDatabase(at: databaseURL, reason: reason)
     }
 
     @discardableResult
-    static func backupDatabase(
+    nonisolated static func backupDatabase(
         at databaseURL: URL,
         using source: (any DatabaseReader)? = nil,
         backupDirectoryURL: URL? = nil,
@@ -160,7 +160,7 @@ final class DatabaseManager {
     }
 
     @discardableResult
-    static func pruneCloudSyncBackups(in backupDirectoryURL: URL) throws -> Int {
+    nonisolated static func pruneCloudSyncBackups(in backupDirectoryURL: URL) throws -> Int {
         let fileManager = FileManager.default
         let cloudSyncBackups = try fileManager.contentsOfDirectory(
             at: backupDirectoryURL,
@@ -210,11 +210,11 @@ final class DatabaseManager {
         )
     }
 
-    private static var databaseFileNameWithoutExtension: String {
+    nonisolated private static var databaseFileNameWithoutExtension: String {
         (databaseFileName as NSString).deletingPathExtension
     }
 
-    private static func backupTimestamp(date: Date = Date()) -> String {
+    nonisolated private static func backupTimestamp(date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone.current
@@ -222,7 +222,7 @@ final class DatabaseManager {
         return formatter.string(from: date)
     }
 
-    private static func sanitizedBackupReason(_ reason: String) -> String {
+    nonisolated private static func sanitizedBackupReason(_ reason: String) -> String {
         let sanitized = reason
             .lowercased()
             .replacingOccurrences(
@@ -248,7 +248,7 @@ final class DatabaseManager {
         _ = try backupDatabase(reason: reason)
     }
 
-    private var migrator: DatabaseMigrator {
+    nonisolated private var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
         migrator.registerMigration("v1") { db in
@@ -704,7 +704,7 @@ final class DatabaseManager {
         }
     }
 
-    private static func newSyncID() -> String {
+    nonisolated private static func newSyncID() -> String {
         UUID().uuidString.lowercased()
     }
 
@@ -726,7 +726,7 @@ final class DatabaseManager {
         )
     }
 
-    private static func recordTombstone(
+    nonisolated private static func recordTombstone(
         in db: Database,
         table: CloudSyncTable,
         id: Int64,
@@ -773,7 +773,7 @@ final class DatabaseManager {
         }
     }
 
-    private static func recordTombstone(
+    nonisolated private static func recordTombstone(
         in db: Database,
         table: CloudSyncTable,
         syncID: String,
@@ -1044,7 +1044,7 @@ final class DatabaseManager {
         try deleteSemanticIndex(in: db)
     }
 
-    private static func deleteSemanticIndex(in db: Database) throws {
+    nonisolated private static func deleteSemanticIndex(in db: Database) throws {
         try db.execute(sql: "DELETE FROM concept_extraction")
         try db.execute(sql: "DELETE FROM session_analysis")
         try db.execute(sql: "DELETE FROM semantic_signal")
@@ -1052,7 +1052,7 @@ final class DatabaseManager {
         try db.execute(sql: "DELETE FROM semantic_chunk")
     }
 
-    private static func deleteSemanticMemory(forTranscriptionID transcriptionID: Int64, in db: Database) throws {
+    nonisolated private static func deleteSemanticMemory(forTranscriptionID transcriptionID: Int64, in db: Database) throws {
         let chunkIDs = try Int64.fetchAll(
             db,
             sql: "SELECT id FROM semantic_chunk WHERE transcriptionID = ?",
@@ -2463,7 +2463,9 @@ final class DatabaseManager {
 
 // MARK: - Cloud Sync Export/Import
 
-extension DatabaseManager {
+/// Called by `CloudSyncService` off the main thread; GRDB's queue
+/// serializes these with every other read and write.
+nonisolated extension DatabaseManager {
     func cloudSyncSnapshot() throws -> CloudDatabaseSnapshot {
         try dbQueue.write { db in
             try Self.repairMissingCloudSyncMetadata(in: db)
@@ -2524,7 +2526,21 @@ extension DatabaseManager {
             }
         }
 
-        NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+        Self.postPersonalMemoryDidChangeOnMain()
+    }
+
+    /// Views reload when this arrives, so a sync running in the background
+    /// still delivers it on the main thread.
+    private static func postPersonalMemoryDidChangeOnMain() {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+            }
+        } else {
+            Task { @MainActor in
+                NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
+            }
+        }
     }
 
     func markCloudSyncCompleted(at date: Date = Date()) throws {
@@ -3089,7 +3105,7 @@ extension DatabaseManager {
     }
 }
 
-private extension Array where Element == Int64 {
+nonisolated private extension Array where Element == Int64 {
     var sqlInList: String {
         guard !isEmpty else { return "(NULL)" }
         return "(" + [String](repeating: "?", count: count).joined(separator: ",") + ")"

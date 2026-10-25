@@ -3,7 +3,7 @@
 
 import Foundation
 
-enum CloudSyncTable: String, Codable, CaseIterable, Sendable {
+nonisolated enum CloudSyncTable: String, Codable, CaseIterable, Sendable {
     case transcription
     case dictionaryEntry = "dictionary_entry"
     case snippetEntry = "snippet_entry"
@@ -31,7 +31,7 @@ enum CloudSyncTable: String, Codable, CaseIterable, Sendable {
     }
 }
 
-struct CloudSyncStats: Codable, Equatable, Sendable {
+nonisolated struct CloudSyncStats: Codable, Equatable, Sendable {
     var transcriptionCount: Int = 0
     var dictionaryCount: Int = 0
     var snippetCount: Int = 0
@@ -58,7 +58,7 @@ struct CloudSyncStats: Codable, Equatable, Sendable {
     }
 }
 
-struct CloudDatabaseSnapshot: Codable, Equatable, Sendable {
+nonisolated struct CloudDatabaseSnapshot: Codable, Equatable, Sendable {
     var transcriptions: [CloudSyncTranscription] = []
     var dictionaryEntries: [CloudSyncDictionaryEntry] = []
     var snippetEntries: [CloudSyncSnippetEntry] = []
@@ -89,7 +89,7 @@ struct CloudDatabaseSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-struct CloudFullSnapshot: Codable, Equatable, Sendable {
+nonisolated struct CloudFullSnapshot: Codable, Equatable, Sendable {
     var database: CloudDatabaseSnapshot
     var profile: CloudProfileSnapshot
     var capturedAt: Date
@@ -105,7 +105,7 @@ struct CloudFullSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-struct CloudSyncTranscription: Codable, Equatable, Sendable {
+nonisolated struct CloudSyncTranscription: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -131,7 +131,7 @@ struct CloudSyncTranscription: Codable, Equatable, Sendable {
     var editInstruction: String? = nil
 }
 
-struct CloudSyncDictionaryEntry: Codable, Equatable, Sendable {
+nonisolated struct CloudSyncDictionaryEntry: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -145,7 +145,7 @@ struct CloudSyncDictionaryEntry: Codable, Equatable, Sendable {
     var updatedAt: Date
 }
 
-struct CloudSyncSnippetEntry: Codable, Equatable, Sendable {
+nonisolated struct CloudSyncSnippetEntry: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -158,7 +158,7 @@ struct CloudSyncSnippetEntry: Codable, Equatable, Sendable {
     var updatedAt: Date
 }
 
-struct CloudSyncLearningSuggestion: Codable, Equatable, Sendable {
+nonisolated struct CloudSyncLearningSuggestion: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -173,7 +173,7 @@ struct CloudSyncLearningSuggestion: Codable, Equatable, Sendable {
     var updatedAt: Date
 }
 
-struct CloudSyncWritingInsightSnapshot: Codable, Equatable, Sendable {
+nonisolated struct CloudSyncWritingInsightSnapshot: Codable, Equatable, Sendable {
     var localID: Int64?
     var syncID: String
     var modifiedAt: Date
@@ -186,14 +186,14 @@ struct CloudSyncWritingInsightSnapshot: Codable, Equatable, Sendable {
     var snapshotJSON: String
 }
 
-struct CloudSyncTombstone: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct CloudSyncTombstone: Codable, Equatable, Identifiable, Sendable {
     var id: String { "\(table.rawValue):\(syncID)" }
     var table: CloudSyncTable
     var syncID: String
     var deletedAt: Date
 }
 
-enum UserDefaultsSyncValue: Codable, Equatable, Sendable {
+nonisolated enum UserDefaultsSyncValue: Codable, Equatable, Sendable {
     case string(String)
     case bool(Bool)
     case int(Int)
@@ -228,7 +228,7 @@ enum UserDefaultsSyncValue: Codable, Equatable, Sendable {
     }
 }
 
-struct CloudProfileSnapshot: Codable, Equatable, Sendable {
+nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     static let modifiedAtKey = "cloudSyncProfileModifiedAt"
     private static let preserveWhenMissingKeys: Set<String> = [
         "toneOfVoiceProfile"
@@ -327,6 +327,8 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         return values
     }
 
+    /// Settings drive SwiftUI views, so they change on the main actor.
+    @MainActor
     func apply(to defaults: UserDefaults = .standard) {
         CloudProfileChangeTracker.shared.performWithoutTracking {
             for key in Self.syncedUserDefaultsKeys

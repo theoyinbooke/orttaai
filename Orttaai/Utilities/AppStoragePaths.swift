@@ -3,7 +3,7 @@
 
 import Foundation
 
-enum AppStoragePaths {
+nonisolated enum AppStoragePaths {
     static var applicationSupportFolderName: String {
         isDebugBuild ? "Orttaai Debug" : "Orttaai"
     }
