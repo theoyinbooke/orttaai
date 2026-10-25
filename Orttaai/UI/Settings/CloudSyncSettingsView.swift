@@ -112,22 +112,74 @@ struct CloudSyncSettingsView: View {
             HStack(alignment: .top, spacing: Spacing.md) {
                 Image(systemName: systemImage)
                     .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(isPrimary ? Color.Orttaai.accent : Color.Orttaai.textPrimary)
                     .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(title)
-                        .font(.Orttaai.bodyMedium)
+                    HStack(spacing: Spacing.sm) {
+                        Text(title)
+                            .font(.Orttaai.bodyMedium)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                        if isPrimary {
+                            Text("Recommended")
+                                .font(.Orttaai.caption.weight(.medium))
+                                .foregroundStyle(Color.Orttaai.accent)
+                        }
+                    }
                     Text(subtitle)
                         .font(.Orttaai.caption)
                         .foregroundStyle(Color.Orttaai.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(OrttaaiButtonStyle(isPrimary ? .primary : .secondary))
+        .buttonStyle(SyncChoiceButtonStyle(isRecommended: isPrimary))
         .disabled(viewModel.isBusy)
+    }
+}
+
+/// A full-width choice card. Unlike the solid primary button, it keeps light
+/// text on a dark surface so the explanation under the title stays readable;
+/// the recommended choice is marked with an accent tint and border instead.
+private struct SyncChoiceButtonStyle: ButtonStyle {
+    let isRecommended: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        ChoiceCard(configuration: configuration, isRecommended: isRecommended)
+    }
+
+    private struct ChoiceCard: View {
+        let configuration: ButtonStyleConfiguration
+        let isRecommended: Bool
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            let shape = RoundedRectangle(cornerRadius: CornerRadius.button)
+            configuration.label
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.md)
+                .background(shape.fill(backgroundColor))
+                .overlay(shape.stroke(borderColor, lineWidth: BorderWidth.standard))
+                .contentShape(shape)
+                .opacity(isEnabled ? 1 : 0.45)
+                .onHover { isHovered = $0 }
+        }
+
+        private var backgroundColor: Color {
+            let isActive = isEnabled && (isHovered || configuration.isPressed)
+            if isRecommended {
+                return isActive ? Color.Orttaai.accent.opacity(0.2) : Color.Orttaai.accentSubtle
+            }
+            return isActive ? Color.Orttaai.bgTertiary : .clear
+        }
+
+        private var borderColor: Color {
+            isRecommended ? Color.Orttaai.accentRing : Color.Orttaai.border
+        }
     }
 }
 

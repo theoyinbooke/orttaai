@@ -86,17 +86,16 @@ final class CloudSyncService {
 
         let local = try localFullSnapshot()
         let remote = try await fetchRemoteFullSnapshot()
-        return CloudSyncSetupPreview(
-            localStats: local.stats,
-            iCloudStats: remote.stats,
-            hasConflict: local.stats.hasUserData && remote.stats.hasUserData
-        )
+        return Self.makeSetupPreview(local: local, remote: remote)
     }
 
     func enableSync(resolution: CloudSyncSetupResolution) async throws -> CloudSyncSetupPreview {
-        let preview = try await setupPreview()
+        // Fetch the iCloud profile once: with thousands of records, every
+        // extra full download makes setup noticeably slower.
+        try await ensureAccountAvailable()
         let local = try localFullSnapshot()
         let remote = try await fetchRemoteFullSnapshot()
+        let preview = Self.makeSetupPreview(local: local, remote: remote)
 
         switch resolution {
         case .merge:
@@ -422,6 +421,14 @@ final class CloudSyncService {
         return []
     }
 
+    private static func makeSetupPreview(local: CloudFullSnapshot, remote: CloudFullSnapshot) -> CloudSyncSetupPreview {
+        CloudSyncSetupPreview(
+            localStats: local.stats,
+            iCloudStats: remote.stats,
+            hasConflict: local.stats.hasUserData && remote.stats.hasUserData
+        )
+    }
+
     private static func newerProfile(
         _ local: CloudProfileSnapshot,
         _ remote: CloudProfileSnapshot
@@ -450,12 +457,13 @@ final class CloudSyncService {
         merged.writingInsightSnapshots = mergeRows(local.writingInsightSnapshots, remote.writingInsightSnapshots, id: \.syncID, date: \.modifiedAt)
         merged.tombstones = mergeRows(local.tombstones, remote.tombstones, id: \.id, date: \.deletedAt)
 
-        merged.transcriptions.removeAll { isDeleted(table: .transcription, syncID: $0.syncID, tombstones: merged.tombstones, modifiedAt: $0.modifiedAt) }
-        merged.dictionaryEntries.removeAll { isDeleted(table: .dictionaryEntry, syncID: $0.syncID, tombstones: merged.tombstones, modifiedAt: $0.modifiedAt) }
-        merged.snippetEntries.removeAll { isDeleted(table: .snippetEntry, syncID: $0.syncID, tombstones: merged.tombstones, modifiedAt: $0.modifiedAt) }
-        merged.learningSuggestions.removeAll { isDeleted(table: .learningSuggestion, syncID: $0.syncID, tombstones: merged.tombstones, modifiedAt: $0.modifiedAt) }
+        let deletions = latestDeletionDates(merged.tombstones)
+        merged.transcriptions.removeAll { isDeleted(table: .transcription, syncID: $0.syncID, deletions: deletions, modifiedAt: $0.modifiedAt) }
+        merged.dictionaryEntries.removeAll { isDeleted(table: .dictionaryEntry, syncID: $0.syncID, deletions: deletions, modifiedAt: $0.modifiedAt) }
+        merged.snippetEntries.removeAll { isDeleted(table: .snippetEntry, syncID: $0.syncID, deletions: deletions, modifiedAt: $0.modifiedAt) }
+        merged.learningSuggestions.removeAll { isDeleted(table: .learningSuggestion, syncID: $0.syncID, deletions: deletions, modifiedAt: $0.modifiedAt) }
         merged.writingInsightSnapshots.removeAll {
-            isDeleted(table: .writingInsightSnapshot, syncID: $0.syncID, tombstones: merged.tombstones, modifiedAt: $0.modifiedAt)
+            isDeleted(table: .writingInsightSnapshot, syncID: $0.syncID, deletions: deletions, modifiedAt: $0.modifiedAt)
         }
         return merged
     }
@@ -491,17 +499,29 @@ final class CloudSyncService {
         }
     }
 
+    /// Latest deletion date per table and sync ID, so filtering thousands of
+    /// rows is a lookup per row instead of a scan of every tombstone.
+    private static func latestDeletionDates(
+        _ tombstones: [CloudSyncTombstone]
+    ) -> [CloudSyncTable: [String: Date]] {
+        var deletions: [CloudSyncTable: [String: Date]] = [:]
+        for tombstone in tombstones {
+            let existing = deletions[tombstone.table]?[tombstone.syncID]
+            if existing.map({ tombstone.deletedAt > $0 }) ?? true {
+                deletions[tombstone.table, default: [:]][tombstone.syncID] = tombstone.deletedAt
+            }
+        }
+        return deletions
+    }
+
     private static func isDeleted(
         table: CloudSyncTable,
         syncID: String,
-        tombstones: [CloudSyncTombstone],
+        deletions: [CloudSyncTable: [String: Date]],
         modifiedAt: Date
     ) -> Bool {
-        tombstones.contains { tombstone in
-            tombstone.table == table
-                && tombstone.syncID == syncID
-                && tombstone.deletedAt >= modifiedAt
-        }
+        guard let deletedAt = deletions[table]?[syncID] else { return false }
+        return deletedAt >= modifiedAt
     }
 
     private static func databaseContentMatches(
