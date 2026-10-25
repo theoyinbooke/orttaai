@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.15.0", items: [
+            WhatsNewItem(
+                id: "1.15-iphone",
+                title: "Your iPhone dictations here",
+                detail: "With Orttakey on iPhone or iPad, what you dictate there shows up in History and counts in your stats, marked with its device.",
+                art: .symbol("laptopcomputer.and.iphone")
+            ),
+            WhatsNewItem(
+                id: "1.15-sync",
+                title: "Faster, private sync",
+                detail: "iCloud Sync now sends only what changed, encrypted, and updates your history in place instead of reloading all of it.",
+                art: .symbol("lock.icloud")
+            ),
+            WhatsNewItem(
+                id: "1.15-history",
+                title: "Where you said it",
+                detail: "History marks each dictation's device, filters by device, and shows what you actually said when it differs from the text.",
+                art: .symbol("text.magnifyingglass")
+            ),
+        ]),
         WhatsNewRelease(version: "1.14.0", items: [
             WhatsNewItem(
                 id: "1.14-formatting",
