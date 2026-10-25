@@ -37,6 +37,9 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     // mac, iphone, ipad or unknown: the kind of device it was said on. NULL
     // only on rows written before sync v2's migration filled it in.
     var sourceDeviceKind: String? = nil
+    // Where it was said (an IANA identifier). NULL on rows from before v21
+    // and from devices that don't send it.
+    var timeZoneIdentifier: String? = nil
 
     static let databaseTableName = "transcription"
 

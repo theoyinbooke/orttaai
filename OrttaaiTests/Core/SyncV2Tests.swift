@@ -61,6 +61,29 @@ final class SyncV2Tests: XCTestCase {
         return InboundRecord(envelope: envelope, systemFields: Data("sys".utf8))
     }
 
+    // MARK: Time zones
+
+    func testADictationCarriesTheTimeZoneItWasSaidIn() throws {
+        let zone = SyncZone.dictations(originDeviceID: phoneID)
+        var payload = DictationPayload(createdAt: SyncDate.rounded(Date()), text: "Said in Tokyo", recordingMs: 2_000)
+        payload.timeZoneIdentifier = "Asia/Tokyo"
+        let envelope = SyncEnvelope(
+            id: .dictation(syncID: "tokyo", zone: zone),
+            revision: Revision(counter: 3, modifiedAt: SyncDate.rounded(Date()), writerDeviceID: phoneID),
+            payload: try PayloadCoder.encode(payload),
+            origin: DictationOrigin(deviceID: phoneID, kind: .iphone)
+        )
+        _ = try store.applyInbound([InboundRecord(envelope: envelope, systemFields: Data("sys".utf8))], decide: ConflictPolicy.decide)
+        XCTAssertEqual(try db.fetchRecent().first { $0.text == "Said in Tokyo" }?.timeZoneIdentifier, "Asia/Tokyo")
+
+        // This Mac's own dictations send where they were said.
+        let id = try db.saveTranscription(text: "Said here", appName: nil, recordingMs: 500, processingMs: 50, modelId: "m")
+        let mine = SyncRecordID.dictation(syncID: try syncID(ofTranscription: id), zone: .dictations(originDeviceID: DeviceIdentity.currentID))
+        let sent = try XCTUnwrap(try store.outgoingRecord(for: mine))
+        let sentPayload = try PayloadCoder.decode(DictationPayload.self, from: try XCTUnwrap(sent.envelope.payload))
+        XCTAssertEqual(sentPayload.timeZoneIdentifier, TimeZone.current.identifier)
+    }
+
     /// The id saving returns is the new dictation's, not the last row the
     /// sync ledger wrote: the dictation's delivery details are completed on
     /// it afterwards.
@@ -75,6 +98,57 @@ final class SyncV2Tests: XCTestCase {
         XCTAssertEqual(rows.map { $0["text"] as String }, ["From the phone first", "Earlier on the Mac", "Just said"])
         XCTAssertEqual(rows.map { $0["injectionMethod"] as String? }, [nil, nil, "paste"])
         XCTAssertEqual(rows.last?["processingDurationMs"] as Int?, 420)
+    }
+
+    // MARK: Suggestions from two Macs
+
+    private func suggestFix(confidence: Double) throws {
+        _ = try db.saveLearningSuggestions([
+            LearningSuggestionDraft(type: .dictionary, candidateSource: "orta", candidateTarget: "Orttaai", confidence: confidence, evidence: nil),
+        ])
+    }
+
+    /// The same suggestion as another Mac made it, under its own sync ID.
+    private func addOtherMacsCopy(confidence: Double, status: LearningSuggestionStatus = .pending) throws {
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO learning_suggestion (type, candidateSource, candidateTarget, normalizedSource, confidence, status, evidence, createdAt, updatedAt, modifiedAt, syncID)
+                SELECT type, candidateSource, candidateTarget, normalizedSource, ?, ?, evidence, createdAt, updatedAt, modifiedAt, 'other-mac-copy'
+                FROM learning_suggestion LIMIT 1
+                """, arguments: [confidence, status.rawValue])
+        }
+    }
+
+    func testTheSameSuggestionFromTwoMacsShowsOnce() throws {
+        try suggestFix(confidence: 0.6)
+        try addOtherMacsCopy(confidence: 0.9)
+
+        let pending = try db.fetchLearningSuggestions(status: .pending)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending.first?.confidence, 0.9)
+        XCTAssertEqual(try db.pendingLearningSuggestionCount(), 1)
+    }
+
+    func testDecidingASuggestionDecidesItsCopies() throws {
+        try suggestFix(confidence: 0.6)
+        try addOtherMacsCopy(confidence: 0.9)
+        let id = try XCTUnwrap(try db.fetchLearningSuggestions(status: .pending).first?.id)
+
+        try db.updateLearningSuggestionStatus(id: id, status: .accepted)
+
+        XCTAssertEqual(try db.pendingLearningSuggestionCount(), 0)
+        let statuses = try queue.read { try String.fetchAll($0, sql: "SELECT status FROM learning_suggestion") }
+        XCTAssertEqual(statuses, ["accepted", "accepted"])
+        // Both copies sync their new status.
+        XCTAssertEqual(try outbox().keys.filter { $0.hasPrefix("suggestion.") }.count, 2)
+    }
+
+    func testASuggestionAnotherMacRejectedIsNoLongerPending() throws {
+        try suggestFix(confidence: 0.6)
+        try addOtherMacsCopy(confidence: 0.6, status: .rejected)
+
+        XCTAssertTrue(try db.fetchLearningSuggestions(status: .pending).isEmpty)
+        XCTAssertEqual(try db.pendingLearningSuggestionCount(), 0)
     }
 
     // MARK: Ledger

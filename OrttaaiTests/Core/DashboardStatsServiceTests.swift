@@ -273,6 +273,52 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(payload.performance.averageTranscriptionMs, 700)
     }
 
+    func testUntaggedRowsAreNotThisMacsOnceAnotherMacHasDictated() throws {
+        try save(text: "legacy row", dayOffset: 0, recordingMs: 1_000, processingMs: 900)
+        try clearSourceDeviceIDs()
+        try save(text: "from the other mac", dayOffset: 0, recordingMs: 1_000, processingMs: 5_000, sourceDeviceID: "other-mac")
+        try setKind("mac", forDevice: "other-mac")
+
+        let payload = try service.load(currentModelId: nil)
+
+        // Either Mac could have written the untagged row: it's not this one's.
+        XCTAssertEqual(payload.performance.sampleCount, 0)
+        XCTAssertFalse(service.devices.untaggedAreThisMac)
+    }
+
+    func testDeviceFilterCountsOnlyThatDevice() throws {
+        try save(text: "said on this mac", dayOffset: 0, recordingMs: 1_000, processingMs: 900)
+        try save(text: "said on the phone today", dayOffset: 0, recordingMs: 1_000, processingMs: 400, appName: nil, sourceDeviceID: "phone")
+        try setKind("iphone", forDevice: "phone")
+
+        let phone = try service.load(currentModelId: nil, deviceFilter: .iphone)
+        XCTAssertEqual(phone.header.totalWords, 5)
+        XCTAssertEqual(phone.today.sessions, 1)
+        XCTAssertEqual(phone.recent.count, 1)
+        XCTAssertEqual(phone.topApps30d.first?.name, "Orttakey on iPhone")
+        // Performance is this Mac's whatever the filter.
+        XCTAssertEqual(phone.performance.sampleCount, 1)
+
+        let all = try service.load(currentModelId: nil)
+        XCTAssertEqual(all.header.totalWords, 9)
+    }
+
+    func testDeviceBreakdownGroupsUntaggedRowsWithThisMac() throws {
+        try save(text: "legacy words here", dayOffset: 0, recordingMs: 1_000)
+        try clearSourceDeviceIDs()
+        try save(text: "tagged mac words", dayOffset: 0, recordingMs: 1_000)
+        try save(text: "phone", dayOffset: 0, recordingMs: 1_000, sourceDeviceID: "phone")
+        try setKind("iphone", forDevice: "phone")
+        _ = try service.load(currentModelId: nil)
+
+        let rows = DashboardStatsService.deviceBreakdown(from: try db.fetchAllTranscriptions(), devices: service.devices)
+
+        XCTAssertEqual(rows.map(\.name), ["This Mac", "iPhone"])
+        XCTAssertEqual(rows.map(\.words), [6, 1])
+        XCTAssertEqual(rows.map(\.dictations), [2, 1])
+        XCTAssertEqual(rows.first?.kindName, "mac")
+    }
+
     func testPerformanceModelLabelIgnoresOtherDevicesNewestRecord() throws {
         try save(
             text: "local sample",
@@ -410,6 +456,12 @@ final class DashboardStatsServiceTests: XCTestCase {
             createdAt: createdAt,
             sourceDeviceID: sourceDeviceID
         )
+    }
+
+    private func setKind(_ kind: String, forDevice deviceID: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE transcription SET sourceDeviceKind = ? WHERE sourceDeviceID = ?", arguments: [kind, deviceID])
+        }
     }
 
     private func clearSourceDeviceIDs() throws {

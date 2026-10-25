@@ -53,6 +53,13 @@ enum AnalyticsTimeRange: String, CaseIterable, Identifiable {
 final class AnalyticsDashboardViewModel {
     private let settings: AppSettings
     var selectedRange: AnalyticsTimeRange = .thirtyDays
+    /// The device group every card counts, apart from Performance (always
+    /// this Mac's) and By Device.
+    private(set) var deviceFilter: DictationDeviceFilter = .all
+    /// All, plus each device group the archive has dictations from.
+    private(set) var availableDeviceFilters: [DictationDeviceFilter] = [.all]
+    /// Every device's words and dictations in the range.
+    private(set) var deviceBreakdown: [DeviceBreakdownRow] = []
     private(set) var payload: DashboardStatsPayload = .empty
     private(set) var trendPoints: [DashboardTrendPoint] = []
     private(set) var hourlyActivity: [HourlyActivityPoint] = []
@@ -119,6 +126,14 @@ final class AnalyticsDashboardViewModel {
         }
     }
 
+    func setDeviceFilter(_ filter: DictationDeviceFilter) {
+        guard deviceFilter != filter else { return }
+        deviceFilter = filter
+        if hasLoaded {
+            refresh()
+        }
+    }
+
     func setSelectedRange(_ range: AnalyticsTimeRange) {
         guard selectedRange != range else { return }
         selectedRange = range
@@ -131,9 +146,18 @@ final class AnalyticsDashboardViewModel {
         using db: DatabaseManager,
         service: DashboardStatsService
     ) throws {
-        payload = try service.load(currentModelId: currentModelID())
+        let devices = try db.fetchDictationDevices()
+        let present = Set(try db.fetchDictationDeviceSources().map { devices.filter(deviceID: $0.deviceID, kind: $0.kind) })
+        availableDeviceFilters = DictationDeviceFilter.allCases.filter { $0 == .all || present.contains($0) }
+        if !availableDeviceFilters.contains(deviceFilter) {
+            deviceFilter = .all
+        }
+
+        payload = try service.load(currentModelId: currentModelID(), deviceFilter: deviceFilter)
         let records = try fetchAnalyticsRecords(from: db)
-        computeExtendedMetrics(from: records)
+        deviceBreakdown = DashboardStatsService.deviceBreakdown(from: records, devices: devices)
+        let filter = deviceFilter
+        computeExtendedMetrics(from: filter == .all ? records : records.filter { devices.filter(for: $0) == filter })
     }
 
     private func currentModelID() -> String? {
@@ -168,9 +192,22 @@ final class AnalyticsDashboardViewModel {
         let calendar = Calendar.current
         activeDays = Set(records.map { calendar.startOfDay(for: $0.createdAt) }).count
         trendPoints = makeTrendPoints(from: records, calendar: calendar)
+
+        // The hour and weekday it was where each dictation was said, when
+        // its time zone is known: 9 a.m. on a trip is still 9 a.m.
+        var calendarsByZone: [String: Calendar] = [:]
+        func localCalendar(for record: Transcription) -> Calendar {
+            guard let identifier = record.timeZoneIdentifier, identifier != calendar.timeZone.identifier else { return calendar }
+            if let cached = calendarsByZone[identifier] { return cached }
+            var local = calendar
+            if let zone = TimeZone(identifier: identifier) { local.timeZone = zone }
+            calendarsByZone[identifier] = local
+            return local
+        }
+
         var countByHour = [Int: Int]()
         for record in records {
-            let hour = calendar.component(.hour, from: record.createdAt)
+            let hour = localCalendar(for: record).component(.hour, from: record.createdAt)
             countByHour[hour, default: 0] += 1
         }
         hourlyActivity = (0..<24).map { hour in
@@ -180,7 +217,7 @@ final class AnalyticsDashboardViewModel {
         // Weekdays, starting on the calendar's first day of the week
         var countByWeekday = [Int: Int]()
         for record in records {
-            countByWeekday[calendar.component(.weekday, from: record.createdAt), default: 0] += 1
+            countByWeekday[localCalendar(for: record).component(.weekday, from: record.createdAt), default: 0] += 1
         }
         weekdayActivity = (0..<7).map { offset in
             let weekday = (calendar.firstWeekday - 1 + offset) % 7 + 1
@@ -224,8 +261,9 @@ final class AnalyticsDashboardViewModel {
         // Words by app
         var appWords = [String: Int]()
         for record in records {
-            let name = record.targetAppName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown"
-            let appName = name.isEmpty ? "Unknown" : name
+            // Phone dictations have no app (iOS doesn't tell a keyboard):
+            // they count as "Orttakey on iPhone".
+            let appName = record.displayAppName ?? "Unknown"
             appWords[appName, default: 0] += record.text.split(whereSeparator: \.isWhitespace).count
         }
         wordsByApp = appWords
@@ -399,6 +437,10 @@ struct AnalyticsDashboardContent: View {
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
             }
 
+            if viewModel.availableDeviceFilters.count > 2 {
+                deviceFilterBar
+            }
+
             summaryCards
 
             TrendCardView(
@@ -408,6 +450,10 @@ struct AnalyticsDashboardContent: View {
                 axisTickCount: range.axisTickCount,
                 emptyMessage: "No activity in this range yet."
             )
+
+            if viewModel.deviceFilter == .all, viewModel.deviceBreakdown.count > 1 {
+                deviceCard
+            }
 
             pairedRow {
                 weekdayCard
@@ -423,6 +469,84 @@ struct AnalyticsDashboardContent: View {
 
             performanceCard
         }
+    }
+
+    // MARK: - Devices
+
+    /// Shown once dictations come from more than one kind of device.
+    private var deviceFilterBar: some View {
+        HStack(spacing: Spacing.sm) {
+            Text("Showing")
+                .font(.Orttaai.secondary)
+                .foregroundStyle(Color.Orttaai.textSecondary)
+            HeaderSegmentedPicker(
+                options: viewModel.availableDeviceFilters,
+                selection: Binding(get: { viewModel.deviceFilter }, set: { viewModel.setDeviceFilter($0) }),
+                title: \.title,
+                accessibilityTitle: "Device"
+            )
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var deviceCard: some View {
+        let devices = viewModel.deviceBreakdown
+        let total = max(1, devices.reduce(0) { $0 + $1.words })
+
+        return analyticsCard(title: "By Device", detail: "\(devices.count) devices") {
+            if let top = devices.first {
+                headline(
+                    "\(top.name) has the most words",
+                    detail: "\(percent(top.words, of: total)) of your words in this range"
+                )
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(devices) { device in
+                    deviceRow(device, share: Double(device.words) / Double(total))
+                }
+            }
+        }
+    }
+
+    private func deviceRow(_ device: DeviceBreakdownRow, share: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: DeviceLabel.symbol(kindName: device.kindName))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .frame(width: 16)
+                Text(device.name)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                    .lineLimit(1)
+                Text(device.dictations == 1 ? "1 dictation" : "\(device.dictations.formatted()) dictations")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: Spacing.sm)
+                Text(device.words.formatted())
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .monospacedDigit()
+                Text("\(Int((share * 100).rounded()))%")
+                    .font(.Orttaai.caption)
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .monospacedDigit()
+                    .frame(width: 34, alignment: .trailing)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.Orttaai.textTertiary.opacity(0.15))
+                    Capsule()
+                        .fill(Color.Orttaai.accent.opacity(device.isThisMac ? 1 : 0.55))
+                        .frame(width: max(4, geometry.size.width * share))
+                }
+            }
+            .frame(height: 5)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(device.name), \(device.words) words in \(device.dictations) dictations, \(Int((share * 100).rounded())) percent")
     }
 
     // MARK: - Summary
@@ -735,7 +859,8 @@ struct AnalyticsDashboardContent: View {
                 Spacer(minLength: Spacing.sm)
 
                 if hasData {
-                    Text("\(health.sampleCount == 1 ? "1 dictation" : "\(health.sampleCount.formatted()) dictations") · \(ModelManager.formatDisplayName(health.currentModelId))")
+                    // Always this Mac's speed: say so once other devices dictate too.
+                    Text("\(viewModel.availableDeviceFilters.count > 2 ? "This Mac · " : "")\(health.sampleCount == 1 ? "1 dictation" : "\(health.sampleCount.formatted()) dictations") · \(ModelManager.formatDisplayName(health.currentModelId))")
                         .font(.Orttaai.caption)
                         .foregroundStyle(Color.Orttaai.textTertiary)
                         .lineLimit(1)

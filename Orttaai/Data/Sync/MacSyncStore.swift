@@ -320,6 +320,7 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
                 payload.appActivationMs, payload.clipboardRestoreDelayMs, payload.modelID ?? "",
                 payload.audioDevice, payload.rawText == payload.text ? nil : payload.rawText,
                 origin?.deviceID, origin?.kind.rawValue, payload.injectionMethod, payload.entryKind, payload.editInstruction,
+                payload.timeZoneIdentifier,
             ]
             let id: Int64
             if let existingID {
@@ -331,7 +332,7 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
                         transcriptionDurationMs = ?, textProcessingDurationMs = ?, injectionDurationMs = ?,
                         appActivationDurationMs = ?, clipboardRestoreDelayMs = ?, modelId = ?,
                         audioDevice = ?, rawText = ?, sourceDeviceID = ?, sourceDeviceKind = ?,
-                        injectionMethod = ?, entryKind = ?, editInstruction = ?, modifiedAt = ?
+                        injectionMethod = ?, entryKind = ?, editInstruction = ?, timeZoneIdentifier = ?, modifiedAt = ?
                     WHERE id = ?
                     """, arguments: arguments + [now, existingID])
                 id = existingID
@@ -346,9 +347,9 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
                         processingDurationMs, settingsSyncDurationMs, transcriptionDurationMs,
                         textProcessingDurationMs, injectionDurationMs, appActivationDurationMs,
                         clipboardRestoreDelayMs, modelId, audioDevice, rawText, sourceDeviceID, sourceDeviceKind,
-                        injectionMethod, entryKind, editInstruction, modifiedAt, syncID
+                        injectionMethod, entryKind, editInstruction, timeZoneIdentifier, modifiedAt, syncID
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: arguments + [now, envelope.id.localKey])
                 id = db.lastInsertedRowID
             }
@@ -748,7 +749,8 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
             audioDevice: row["audioDevice"],
             injectionMethod: row["injectionMethod"],
             entryKind: row["entryKind"],
-            editInstruction: row["editInstruction"]
+            editInstruction: row["editInstruction"],
+            timeZoneIdentifier: row["timeZoneIdentifier"]
         )
     }
 }

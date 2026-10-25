@@ -17,8 +17,8 @@ struct HistoryView: View {
     @State private var copiedEntryID: Int64?
     @State private var copyFeedbackTask: Task<Void, Never>?
     @State private var snippetDraft: SnippetDraft?
-    @State private var deviceFilter: HistoryDeviceFilter = .all
-    @State private var deviceNames: [String: String] = [:]
+    @State private var deviceFilter: DictationDeviceFilter = .all
+    @State private var devices = DictationDevices()
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -203,9 +203,9 @@ struct HistoryView: View {
     }
 
     /// "All" plus each kind of device the history has dictations from.
-    private var availableDeviceFilters: [HistoryDeviceFilter] {
+    private var availableDeviceFilters: [DictationDeviceFilter] {
         let present = Set(entries.map(\.deviceFilter))
-        return HistoryDeviceFilter.allCases.filter { $0 == .all || present.contains($0) }
+        return DictationDeviceFilter.allCases.filter { $0 == .all || present.contains($0) }
     }
 
     private var searchField: some View {
@@ -479,7 +479,7 @@ struct HistoryView: View {
     private func loadEntries() {
         do {
             let db = try DatabaseManager()
-            deviceNames = (try? db.fetchSyncDeviceNames()) ?? [:]
+            devices = (try? db.fetchDictationDevices()) ?? DictationDevices()
             let records = try db.fetchAllTranscriptions()
             entries = makeTableEntries(from: records)
             errorMessage = nil
@@ -493,7 +493,7 @@ struct HistoryView: View {
         do {
             let db = try DatabaseManager()
             observation = db.observeTranscriptions(limit: nil) { [self] records in
-                deviceNames = (try? DatabaseManager().fetchSyncDeviceNames()) ?? deviceNames
+                devices = (try? DatabaseManager().fetchDictationDevices()) ?? devices
                 entries = makeTableEntries(from: records)
             }
         } catch {
@@ -547,19 +547,6 @@ struct HistoryView: View {
         }
     }
 
-    private func deviceName(for record: Transcription) -> String {
-        if let id = record.sourceDeviceID {
-            if id == DeviceIdentity.currentID { return "This Mac" }
-            if let name = deviceNames[id] { return name }
-        }
-        switch record.sourceDeviceKind {
-        case "iphone": return "iPhone"
-        case "ipad": return "iPad"
-        case "mac": return "Another Mac"
-        default: return "Unknown device"
-        }
-    }
-
     private func suggestedSnippetTrigger(for text: String) -> String {
         let tokens = text
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -606,9 +593,9 @@ struct HistoryView: View {
                 editInstruction: record.editInstruction?.trimmingCharacters(in: .whitespacesAndNewlines),
                 exactText: record.text,
                 rawText: record.distinctRawText,
-                deviceKind: record.sourceDeviceKind,
-                deviceName: deviceName(for: record),
-                deviceFilter: HistoryDeviceFilter(record)
+                deviceKind: devices.kindName(for: record),
+                deviceName: devices.name(for: record),
+                deviceFilter: devices.filter(for: record)
             )
         }
     }
@@ -633,35 +620,7 @@ private struct HistoryTableEntry: Identifiable {
     var rawText: String?
     var deviceKind: String?
     var deviceName: String = ""
-    var deviceFilter: HistoryDeviceFilter = .thisMac
-}
-
-enum HistoryDeviceFilter: String, CaseIterable, Identifiable {
-    case all
-    case thisMac
-    case iphone
-    case ipad
-    case other
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .all: "All"
-        case .thisMac: "This Mac"
-        case .iphone: "iPhone"
-        case .ipad: "iPad"
-        case .other: "Other"
-        }
-    }
-
-    init(_ record: Transcription) {
-        switch record.sourceDeviceKind {
-        case "iphone": self = .iphone
-        case "ipad": self = .ipad
-        default: self = record.sourceDeviceID == DeviceIdentity.currentID ? .thisMac : .other
-        }
-    }
+    var deviceFilter: DictationDeviceFilter = .thisMac
 }
 
 private enum HistoryDurationFormatter {

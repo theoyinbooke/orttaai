@@ -66,6 +66,18 @@ struct DashboardRecentDictation: Identifiable {
     let processingMs: Int
 }
 
+/// One device's share of the dictations in a range.
+struct DeviceBreakdownRow: Identifiable, Equatable {
+    /// The device ID, or "unknown" for dictations whose device isn't known.
+    let id: String
+    let name: String
+    /// "mac", "iphone", "ipad" or "unknown", for its symbol.
+    let kindName: String?
+    let isThisMac: Bool
+    var words: Int
+    var dictations: Int
+}
+
 struct DashboardStatsPayload {
     let header: DashboardHeaderStats
     let today: DashboardTodaySnapshot

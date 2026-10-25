@@ -9,6 +9,9 @@ final class DashboardStatsService {
     private let calendar: Calendar
     private let nowProvider: () -> Date
     private let currentDeviceID: String
+    /// Read at each load: whose the untagged dictations are can change as
+    /// other Macs join.
+    private(set) var devices: DictationDevices
 
     init(
         databaseManager: DatabaseManager,
@@ -20,28 +23,62 @@ final class DashboardStatsService {
         self.calendar = calendar
         self.nowProvider = now
         self.currentDeviceID = currentDeviceID
+        self.devices = DictationDevices(currentDeviceID: currentDeviceID)
     }
 
-    func load(currentModelId: String? = nil) throws -> DashboardStatsPayload {
+    /// Words and dictations per device, the most words first, this Mac
+    /// leading ties.
+    static func deviceBreakdown(from records: [Transcription], devices: DictationDevices) -> [DeviceBreakdownRow] {
+        var rows: [String: DeviceBreakdownRow] = [:]
+        for record in records {
+            let key = devices.key(for: record)
+            var row = rows[key] ?? DeviceBreakdownRow(
+                id: key,
+                name: devices.name(for: record),
+                kindName: devices.kindName(for: record),
+                isThisMac: devices.isThisMac(record),
+                words: 0,
+                dictations: 0
+            )
+            row.words += record.text.split(whereSeparator: \.isWhitespace).count
+            row.dictations += 1
+            rows[key] = row
+        }
+        return rows.values.sorted {
+            if $0.words != $1.words { return $0.words > $1.words }
+            if $0.isThisMac != $1.isThisMac { return $0.isThisMac }
+            return $0.name < $1.name
+        }
+    }
+
+    /// - Parameter deviceFilter: the device group the totals, trend, apps
+    ///   and recent dictations count; Performance is always this Mac's.
+    func load(currentModelId: String? = nil, deviceFilter: DictationDeviceFilter = .all) throws -> DashboardStatsPayload {
         let now = nowProvider()
+        devices = (try? databaseManager.fetchDictationDevices(currentDeviceID: currentDeviceID)) ?? DictationDevices(currentDeviceID: currentDeviceID)
+        let onDevice: ([Transcription]) -> [Transcription] = { [devices] records in
+            deviceFilter == .all ? records : records.filter { devices.filter(for: $0) == deviceFilter }
+        }
         let todayStart = calendar.startOfDay(for: now)
         let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now
         let weekStart = calendar.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
         let thirtyDayStart = calendar.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
 
-        let allRecords = try databaseManager.fetchAllTranscriptions()
-        let weekRecords = try databaseManager.fetchTranscriptions(from: weekStart, to: tomorrowStart)
-        let thirtyDayRecords = try databaseManager.fetchTranscriptions(from: thirtyDayStart, to: tomorrowStart)
+        let allRecords = onDevice(try databaseManager.fetchAllTranscriptions())
+        let unfilteredWeekRecords = try databaseManager.fetchTranscriptions(from: weekStart, to: tomorrowStart)
+        let weekRecords = onDevice(unfilteredWeekRecords)
+        let thirtyDayRecords = onDevice(try databaseManager.fetchTranscriptions(from: thirtyDayStart, to: tomorrowStart))
         let todayRecords = weekRecords.filter { $0.createdAt >= todayStart && $0.createdAt < tomorrowStart }
-        let recentRecords = try databaseManager.fetchRecent(limit: 12)
+        let unfilteredRecentRecords = try databaseManager.fetchRecent(limit: deviceFilter == .all ? 12 : 200)
+        let recentRecords = Array(onDevice(unfilteredRecentRecords).prefix(12))
 
         let header = makeHeaderStats(from: allRecords)
         let today = makeTodaySnapshot(from: todayRecords)
         let trend30d = makeTrendPoints(from: thirtyDayRecords, startDay: thirtyDayStart, dayCount: 30)
         let topApps30d = makeTopApps(from: thirtyDayRecords, limit: 4)
         let performance = makePerformance(
-            from: weekRecords,
-            modelSourceRecords: recentRecords,
+            from: unfilteredWeekRecords,
+            modelSourceRecords: unfilteredRecentRecords,
             currentModelId: currentModelId
         )
         let recent = makeRecentDictations(from: recentRecords)
@@ -255,11 +292,9 @@ final class DashboardStatsService {
     }
 
     private func recordsForCurrentDevice(in records: [Transcription]) -> [Transcription] {
-        records.filter { record in
-            // NULL = row predates device tagging or came from an older app
-            // version; treat as local so history doesn't vanish after upgrade.
-            record.sourceDeviceID == nil || record.sourceDeviceID == currentDeviceID
-        }
+        // Rows from before device tagging count as this Mac's unless another
+        // Mac could have written them.
+        records.filter { devices.isThisMac($0) }
     }
 
     private func performanceLevel(for averageProcessingMs: Int?) -> DashboardPerformanceLevel {

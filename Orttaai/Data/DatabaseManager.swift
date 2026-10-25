@@ -671,6 +671,15 @@ final class DatabaseManager {
             try SyncSchema.backfillV1Tombstones(db, thisDeviceID: DeviceIdentity.currentID)
         }
 
+        migrator.registerMigration("v21_dictation_time_zone") { db in
+            try db.alter(table: "transcription") { t in
+                // Where it was said, so Analytics charts its hour and weekday
+                // in that place's time. NULL on rows from before this and
+                // from devices that don't send it.
+                t.add(column: "timeZoneIdentifier", .text)
+            }
+        }
+
         return migrator
     }
 
@@ -920,7 +929,8 @@ final class DatabaseManager {
                 injectionMethod: injectionMethod,
                 entryKind: entryKind,
                 editInstruction: editInstruction,
-                sourceDeviceKind: sourceDeviceID == DeviceIdentity.currentID ? "mac" : nil
+                sourceDeviceKind: sourceDeviceID == DeviceIdentity.currentID ? "mac" : nil,
+                timeZoneIdentifier: TimeZone.current.identifier
             )
             try record.insert(db)
             // Read before the ledger writes its own rows, which move
@@ -1444,14 +1454,33 @@ final class DatabaseManager {
     }
 
     /// Device names from sync, for showing where a dictation was said.
-    func fetchSyncDeviceNames() throws -> [String: String] {
+    /// The archive's devices: names from their device records, and whether
+    /// dictations from before device tagging are this Mac's (they are unless
+    /// another Mac has dictations or a device record here).
+    func fetchDictationDevices(currentDeviceID: String = DeviceIdentity.currentID) throws -> DictationDevices {
         try dbQueue.read { db in
-            var names: [String: String] = [:]
+            var devices = DictationDevices(currentDeviceID: currentDeviceID)
+            var anotherMac = false
             for row in try Row.fetchAll(db, sql: "SELECT payload FROM sync_record WHERE kind = 'Device' AND isDeleted = 0") {
                 guard let data: Data = row["payload"], let device = try? PayloadCoder.decode(DevicePayload.self, from: data) else { continue }
-                names[device.deviceID] = device.name
+                devices.names[device.deviceID] = device.name
+                if device.kind == .mac, device.deviceID != currentDeviceID { anotherMac = true }
             }
-            return names
+            if !anotherMac {
+                anotherMac = try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM transcription WHERE sourceDeviceKind = 'mac' AND sourceDeviceID IS NOT NULL AND sourceDeviceID != ?)
+                    """, arguments: [currentDeviceID]) ?? false
+            }
+            devices.untaggedAreThisMac = !anotherMac
+            return devices
+        }
+    }
+
+    /// Each device and device kind the archive has dictations from.
+    func fetchDictationDeviceSources() throws -> [(deviceID: String?, kind: String?)] {
+        try dbQueue.read { db in
+            try Row.fetchAll(db, sql: "SELECT DISTINCT sourceDeviceID, sourceDeviceKind FROM transcription")
+                .map { (deviceID: $0["sourceDeviceID"], kind: $0["sourceDeviceKind"]) }
         }
     }
 
@@ -2396,8 +2425,41 @@ final class DatabaseManager {
                 request = request.filter(Column("status") == status.rawValue)
             }
 
-            return try request.fetchAll(db)
+            return Self.collapsingDuplicateSuggestions(try request.fetchAll(db), decided: try Self.decidedSuggestionKeys(in: db))
         }
+    }
+
+    /// Two Macs can each suggest the same fix, and both copies sync: one
+    /// per pair and status is shown (the most confident), and none still
+    /// pending once a copy was accepted or rejected.
+    static func collapsingDuplicateSuggestions(_ suggestions: [LearningSuggestion], decided: Set<String>) -> [LearningSuggestion] {
+        var bestByKey: [String: LearningSuggestion] = [:]
+        var order: [String] = []
+        for suggestion in suggestions {
+            let pair = suggestionKey(type: suggestion.type, normalizedSource: suggestion.normalizedSource, target: suggestion.candidateTarget)
+            if suggestion.status == LearningSuggestionStatus.pending.rawValue, decided.contains(pair) { continue }
+            let key = "\(pair)|\(suggestion.status)"
+            if let best = bestByKey[key] {
+                if suggestion.confidence > best.confidence { bestByKey[key] = suggestion }
+            } else {
+                bestByKey[key] = suggestion
+                order.append(key)
+            }
+        }
+        return order.compactMap { bestByKey[$0] }
+    }
+
+    static func suggestionKey(type: String, normalizedSource: String, target: String) -> String {
+        "\(type)|\(normalizedSource)|\(target)"
+    }
+
+    private static func decidedSuggestionKeys(in db: Database) throws -> Set<String> {
+        let rows = try Row.fetchAll(
+            db,
+            sql: "SELECT DISTINCT type, normalizedSource, candidateTarget FROM learning_suggestion WHERE status != ?",
+            arguments: [LearningSuggestionStatus.pending.rawValue]
+        )
+        return Set(rows.map { suggestionKey(type: $0["type"], normalizedSource: $0["normalizedSource"], target: $0["candidateTarget"]) })
     }
 
     func updateLearningSuggestionStatus(
@@ -2406,18 +2468,28 @@ final class DatabaseManager {
     ) throws {
         try dbQueue.write { db in
             let now = Date()
-            try db.execute(
-                sql: """
-                UPDATE learning_suggestion
-                SET status = ?,
-                    updatedAt = ?,
-                    modifiedAt = ?,
-                    lastSyncedAt = NULL
-                WHERE id = ?
-                """,
-                arguments: [status.rawValue, now, now, id]
-            )
-            try SyncLedger.noteChange(in: db, table: CloudSyncTable.learningSuggestion.rawValue, localID: id)
+            // Copies of the same suggestion from another Mac are decided too.
+            var ids = [id]
+            if let row = try Row.fetchOne(db, sql: "SELECT type, normalizedSource, candidateTarget FROM learning_suggestion WHERE id = ?", arguments: [id]) {
+                ids += try Int64.fetchAll(db, sql: """
+                    SELECT id FROM learning_suggestion
+                    WHERE type = ? AND normalizedSource = ? AND candidateTarget = ? AND status = ? AND id != ?
+                    """, arguments: [row["type"], row["normalizedSource"], row["candidateTarget"], LearningSuggestionStatus.pending.rawValue, id])
+            }
+            for id in ids {
+                try db.execute(
+                    sql: """
+                    UPDATE learning_suggestion
+                    SET status = ?,
+                        updatedAt = ?,
+                        modifiedAt = ?,
+                        lastSyncedAt = NULL
+                    WHERE id = ?
+                    """,
+                    arguments: [status.rawValue, now, now, id]
+                )
+                try SyncLedger.noteChange(in: db, table: CloudSyncTable.learningSuggestion.rawValue, localID: id)
+            }
         }
         requestCloudSyncIfEnabled()
         NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
@@ -2469,9 +2541,20 @@ final class DatabaseManager {
         }
     }
 
+    /// Pending suggestions, each pair counted once and none another Mac
+    /// already decided.
     func pendingLearningSuggestionCount() throws -> Int {
         try dbQueue.read { db in
-            try LearningSuggestion.filter(Column("status") == LearningSuggestionStatus.pending.rawValue).fetchCount(db)
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM (
+                    SELECT DISTINCT p.type, p.normalizedSource, p.candidateTarget FROM learning_suggestion p
+                    WHERE p.status = ? AND NOT EXISTS (
+                        SELECT 1 FROM learning_suggestion d
+                        WHERE d.type = p.type AND d.normalizedSource = p.normalizedSource
+                          AND d.candidateTarget = p.candidateTarget AND d.status != ?
+                    )
+                )
+                """, arguments: [LearningSuggestionStatus.pending.rawValue, LearningSuggestionStatus.pending.rawValue]) ?? 0
         }
     }
 

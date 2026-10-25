@@ -57,6 +57,9 @@ public struct DictationPayload: Codable, Hashable, Sendable {
     /// "edit" for a voice edit command, nil for a dictation.
     public var entryKind: String?
     public var editInstruction: String?
+    /// Where it was said, as an IANA identifier ("Europe/London"), so its
+    /// hour and weekday read in that place's time. Nil from older versions.
+    public var timeZoneIdentifier: String?
 
     public init(
         createdAt: Date,
@@ -76,7 +79,8 @@ public struct DictationPayload: Codable, Hashable, Sendable {
         audioDevice: String? = nil,
         injectionMethod: String? = nil,
         entryKind: String? = nil,
-        editInstruction: String? = nil
+        editInstruction: String? = nil,
+        timeZoneIdentifier: String? = nil
     ) {
         self.createdAt = createdAt
         self.text = text
@@ -96,6 +100,7 @@ public struct DictationPayload: Codable, Hashable, Sendable {
         self.injectionMethod = injectionMethod
         self.entryKind = entryKind
         self.editInstruction = editInstruction
+        self.timeZoneIdentifier = timeZoneIdentifier
     }
 
     public var isEdit: Bool { entryKind == "edit" }
