@@ -923,13 +923,16 @@ final class DatabaseManager {
                 sourceDeviceKind: sourceDeviceID == DeviceIdentity.currentID ? "mac" : nil
             )
             try record.insert(db)
+            // Read before the ledger writes its own rows, which move
+            // lastInsertedRowID on.
+            let id = db.lastInsertedRowID
             try Self.touchSyncMetadata(
                 in: db,
                 table: CloudSyncTable.transcription.rawValue,
-                id: db.lastInsertedRowID,
+                id: id,
                 modifiedAt: createdAt
             )
-            return db.lastInsertedRowID
+            return id
         }
         requestCloudSyncIfEnabled()
         return rowID

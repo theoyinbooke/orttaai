@@ -61,6 +61,22 @@ final class SyncV2Tests: XCTestCase {
         return InboundRecord(envelope: envelope, systemFields: Data("sys".utf8))
     }
 
+    /// The id saving returns is the new dictation's, not the last row the
+    /// sync ledger wrote: the dictation's delivery details are completed on
+    /// it afterwards.
+    func testSavingReturnsTheNewDictationsID() throws {
+        _ = try store.applyInbound([try phoneDictation("p0", text: "From the phone first")], decide: ConflictPolicy.decide)
+        _ = try db.saveTranscription(text: "Earlier on the Mac", appName: "Notes", recordingMs: 500, processingMs: 50, modelId: "m")
+
+        let id = try db.saveTranscription(text: "Just said", appName: "Notes", recordingMs: 500, processingMs: 50, modelId: "m")
+        try db.completeTranscriptionEntry(id: id, processingMs: 420, latency: DictationLatencyTelemetry(settingsSyncMs: nil, transcriptionMs: 300, textProcessingMs: nil, injectionMs: 20, appActivationMs: nil, clipboardRestoreDelayMs: nil), injectionMethod: "paste")
+
+        let rows = try queue.read { try Row.fetchAll($0, sql: "SELECT text, injectionMethod, processingDurationMs FROM transcription ORDER BY id") }
+        XCTAssertEqual(rows.map { $0["text"] as String }, ["From the phone first", "Earlier on the Mac", "Just said"])
+        XCTAssertEqual(rows.map { $0["injectionMethod"] as String? }, [nil, nil, "paste"])
+        XCTAssertEqual(rows.last?["processingDurationMs"] as Int?, 420)
+    }
+
     // MARK: Ledger
 
     func testSavingADictationRecordsItForSync() throws {
