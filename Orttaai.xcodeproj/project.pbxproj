@@ -13,6 +13,8 @@
 		DBD11A922F4BD2DD0058DD90 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DBD11A912F4BD2DD0058DD90 /* Sparkle */; };
 		DBD11A952F4BD2DD0058DD90 /* ExpressAudio in Frameworks */ = {isa = PBXBuildFile; productRef = DBD11A942F4BD2DD0058DD90 /* ExpressAudio */; };
 		C0FFEE510000000000000001 /* PolishEngine in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE510000000000000002 /* PolishEngine */; };
+		C0FFEE520000000000000001 /* OrttaaiSyncCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE520000000000000002 /* OrttaaiSyncCore */; };
+		C0FFEE520000000000000004 /* OrttaaiSyncCloudKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE520000000000000005 /* OrttaaiSyncCloudKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -80,6 +82,8 @@
 				DBD11A902F4BD2D60058DD90 /* KeyboardShortcuts in Frameworks */,
 				DBD11A952F4BD2DD0058DD90 /* ExpressAudio in Frameworks */,
 				C0FFEE510000000000000001 /* PolishEngine in Frameworks */,
+				C0FFEE520000000000000001 /* OrttaaiSyncCore in Frameworks */,
+				C0FFEE520000000000000004 /* OrttaaiSyncCloudKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,6 +158,8 @@
 				DBD11A912F4BD2DD0058DD90 /* Sparkle */,
 				DBD11A942F4BD2DD0058DD90 /* ExpressAudio */,
 				C0FFEE510000000000000002 /* PolishEngine */,
+				C0FFEE520000000000000002 /* OrttaaiSyncCore */,
+				C0FFEE520000000000000005 /* OrttaaiSyncCloudKit */,
 			);
 			productName = Orttaai;
 			productReference = DBDBFF2D2F4BCC0800217055 /* Orttaai.app */;
@@ -244,6 +250,7 @@
 				DBD11A892F4BCE7F0058DD90 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
 				DBD11A932F4BD2DD0058DD90 /* XCLocalSwiftPackageReference "LocalPackages/ExpressAudio" */,
 				C0FFEE510000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/PolishEngine" */,
+				C0FFEE520000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiSync" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DBDBFF2E2F4BCC0800217055 /* Products */;
@@ -673,6 +680,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LocalPackages/ExpressAudio;
 		};
+		C0FFEE520000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiSync" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/OrttaaiSync;
+		};
 		C0FFEE510000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/PolishEngine" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LocalPackages/PolishEngine;
@@ -734,6 +745,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DBD11A882F4BCE570058DD90 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		C0FFEE520000000000000002 /* OrttaaiSyncCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0FFEE520000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiSync" */;
+			productName = OrttaaiSyncCore;
+		};
+		C0FFEE520000000000000005 /* OrttaaiSyncCloudKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0FFEE520000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiSync" */;
+			productName = OrttaaiSyncCloudKit;
 		};
 		C0FFEE510000000000000002 /* PolishEngine */ = {
 			isa = XCSwiftPackageProductDependency;

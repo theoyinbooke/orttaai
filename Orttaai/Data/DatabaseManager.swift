@@ -3,6 +3,7 @@
 
 import Foundation
 import GRDB
+import OrttaaiSyncCore
 import os
 
 struct DictationLatencyTelemetry: Sendable {
@@ -15,7 +16,9 @@ struct DictationLatencyTelemetry: Sendable {
 }
 
 final class DatabaseManager {
-    private let dbQueue: DatabaseQueue
+    /// Shared with the sync store (MacSyncStore), which must write through
+    /// the same queue so History and Home observe its changes.
+    let dbQueue: DatabaseQueue
     private let databaseURL: URL?
     private let backupDirectoryURL: URL?
     nonisolated private static let maxInsightSnapshots = 60
@@ -35,6 +38,7 @@ final class DatabaseManager {
         self.dbQueue = dbQueue
         self.databaseURL = databaseURL
         self.backupDirectoryURL = backupDirectoryURL
+        try Self.backupBeforePendingMigrations(dbQueue: dbQueue, databaseURL: databaseURL, backupDirectoryURL: backupDirectoryURL, migrator: migrator)
         try migrator.migrate(dbQueue)
         if let databaseURL {
             Logger.database.info("Database initialized at \(databaseURL.path, privacy: .public)")
@@ -243,12 +247,33 @@ final class DatabaseManager {
         return String(day)
     }
 
+    /// A database file that already has data gets a backup before any new
+    /// migration changes it (sync v2 rewrites how every row is tracked).
+    nonisolated private static func backupBeforePendingMigrations(
+        dbQueue: DatabaseQueue,
+        databaseURL: URL?,
+        backupDirectoryURL: URL?,
+        migrator: DatabaseMigrator
+    ) throws {
+        guard let databaseURL else { return }
+        let needsBackup = try dbQueue.read { db -> Bool in
+            let applied = try migrator.appliedIdentifiers(db)
+            return try !applied.isEmpty && !migrator.hasCompletedMigrations(db)
+        }
+        guard needsBackup else { return }
+        _ = try backupDatabase(at: databaseURL, using: dbQueue, backupDirectoryURL: backupDirectoryURL, reason: "before-migration")
+    }
+
     private func createDestructiveOperationBackup(reason: String) throws {
         guard databaseURL != nil else { return }
         _ = try backupDatabase(reason: reason)
     }
 
-    nonisolated private var migrator: DatabaseMigrator {
+    nonisolated private var migrator: DatabaseMigrator { Self.schemaMigrator }
+
+    /// Every migration, in order. Static so tests can build a database at an
+    /// older version (`migrate(_:upTo:)`) and check what a later one does.
+    nonisolated static var schemaMigrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
         migrator.registerMigration("v1") { db in
@@ -636,6 +661,16 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration(SyncSchema.migrationIdentifier) { db in
+            try SyncSchema.migrate(db, thisDeviceID: DeviceIdentity.currentID)
+        }
+
+        migrator.registerMigration(SyncSchema.generationMigrationIdentifier) { db in
+            try SyncSchema.addGeneration(db)
+            // Also for databases that ran an early v19 without it.
+            try SyncSchema.backfillV1Tombstones(db, thisDeviceID: DeviceIdentity.currentID)
+        }
+
         return migrator
     }
 
@@ -724,6 +759,7 @@ final class DatabaseManager {
             """,
             arguments: [newSyncID(), modifiedAt, id]
         )
+        try SyncLedger.noteChange(in: db, table: table, localID: id)
     }
 
     nonisolated private static func recordTombstone(
@@ -733,6 +769,7 @@ final class DatabaseManager {
         deletedAt: Date = Date(),
         needsCloudSync: Bool = true
     ) throws {
+        try SyncLedger.noteDeletion(in: db, table: table.rawValue, localID: id)
         guard let syncID = try String.fetchOne(
             db,
             sql: "SELECT syncID FROM \(table.rawValue) WHERE id = ?",
@@ -756,6 +793,10 @@ final class DatabaseManager {
         deletedAt: Date = Date(),
         needsCloudSync: Bool = true
     ) throws {
+        let ids = try Int64.fetchAll(db, sql: "SELECT id FROM \(table.rawValue) \(condition.map { "WHERE \($0)" } ?? "")")
+        for id in ids {
+            try SyncLedger.noteDeletion(in: db, table: table.rawValue, localID: id)
+        }
         let sql = """
         SELECT syncID
         FROM \(table.rawValue)
@@ -878,7 +919,8 @@ final class DatabaseManager {
                 sourceDeviceID: sourceDeviceID,
                 injectionMethod: injectionMethod,
                 entryKind: entryKind,
-                editInstruction: editInstruction
+                editInstruction: editInstruction,
+                sourceDeviceKind: sourceDeviceID == DeviceIdentity.currentID ? "mac" : nil
             )
             try record.insert(db)
             try Self.touchSyncMetadata(
@@ -972,12 +1014,15 @@ final class DatabaseManager {
         }
     }
 
+    /// Dictations new to this Mac since `date`: said since then, or arrived
+    /// since then from another device (an older phone dictation synced in
+    /// today still makes an insight report out of date).
     func countTranscriptions(since date: Date) throws -> Int {
         try dbQueue.read { db in
             try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM transcription WHERE createdAt > ?",
-                arguments: [date]
+                sql: "SELECT COUNT(*) FROM transcription WHERE createdAt > ? OR modifiedAt > ?",
+                arguments: [date, date]
             ) ?? 0
         }
     }
@@ -1052,7 +1097,8 @@ final class DatabaseManager {
         try db.execute(sql: "DELETE FROM semantic_chunk")
     }
 
-    nonisolated private static func deleteSemanticMemory(forTranscriptionID transcriptionID: Int64, in db: Database) throws {
+    /// Also used by the sync store when a dictation is deleted elsewhere.
+    nonisolated static func deleteSemanticMemory(forTranscriptionID transcriptionID: Int64, in db: Database) throws {
         let chunkIDs = try Int64.fetchAll(
             db,
             sql: "SELECT id FROM semantic_chunk WHERE transcriptionID = ?",
@@ -1288,7 +1334,7 @@ final class DatabaseManager {
             try ConceptSource.fetchAll(
                 db,
                 sql: """
-                SELECT id, text, createdAt, targetAppName FROM transcription
+                SELECT id, text, createdAt, targetAppName, sourceDeviceID FROM transcription
                 WHERE (entryKind IS NULL OR entryKind != 'edit') AND length(trim(text)) > 0
                 ORDER BY createdAt ASC
                 """
@@ -1356,13 +1402,58 @@ final class DatabaseManager {
         Logger.memory.info("Semantic memory index cleared")
     }
 
+    /// The newest dictations plus any queued for indexing (dictations synced
+    /// in from other devices, whatever their age), so a backfill gets
+    /// indexed in batches instead of being skipped for being old.
     func fetchSemanticIndexSourceTranscriptions(limit: Int = 1_000) throws -> [Transcription] {
         try dbQueue.read { db in
-            try Transcription
+            let newest = try Transcription
                 .order(Column("createdAt").desc)
                 .limit(max(1, limit))
                 .fetchAll(db)
+            let queued = try Transcription.fetchAll(
+                db,
+                sql: """
+                SELECT transcription.* FROM transcription
+                JOIN semantic_index_queue q ON q.transcriptionID = transcription.id
+                ORDER BY q.enqueuedAt ASC
+                LIMIT ?
+                """,
+                arguments: [max(1, limit)]
+            )
+            let newestIDs = Set(newest.compactMap(\.id))
+            return newest + queued.filter { !newestIDs.contains($0.id ?? -1) }
         }
+    }
+
+    /// Dictations indexed by a finished run leave the queue.
+    func dequeueSemanticIndex(transcriptionIDs: [Int64]) throws {
+        guard !transcriptionIDs.isEmpty else { return }
+        try dbQueue.write { db in
+            for batch in stride(from: 0, to: transcriptionIDs.count, by: 500) {
+                let ids = Array(transcriptionIDs[batch..<min(batch + 500, transcriptionIDs.count)])
+                try db.execute(
+                    sql: "DELETE FROM semantic_index_queue WHERE transcriptionID IN \(ids.sqlInList)",
+                    arguments: StatementArguments(ids)
+                )
+            }
+        }
+    }
+
+    /// Device names from sync, for showing where a dictation was said.
+    func fetchSyncDeviceNames() throws -> [String: String] {
+        try dbQueue.read { db in
+            var names: [String: String] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT payload FROM sync_record WHERE kind = 'Device' AND isDeleted = 0") {
+                guard let data: Data = row["payload"], let device = try? PayloadCoder.decode(DevicePayload.self, from: data) else { continue }
+                names[device.deviceID] = device.name
+            }
+            return names
+        }
+    }
+
+    func semanticIndexQueueCount() throws -> Int {
+        try dbQueue.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM semantic_index_queue") ?? 0 }
     }
 
     func fetchSemanticEmbeddingChunkIDs(modelID: String) throws -> Set<Int64> {
@@ -1398,6 +1489,10 @@ final class DatabaseManager {
                     arguments: StatementArguments(staleChunkIDs)
                 )
                 try db.execute(
+                    sql: "DELETE FROM semantic_signal WHERE chunkID IN \(staleChunkIDs.sqlInList)",
+                    arguments: StatementArguments(staleChunkIDs)
+                )
+                try db.execute(
                     sql: "DELETE FROM semantic_chunk WHERE id IN \(staleChunkIDs.sqlInList)",
                     arguments: StatementArguments(staleChunkIDs)
                 )
@@ -1417,8 +1512,13 @@ final class DatabaseManager {
                     existing.updatedAt = now
                     try existing.update(db)
                     if textChanged, let chunkID = existing.id {
+                        // Signals came from the old words too.
                         try db.execute(
                             sql: "DELETE FROM semantic_embedding WHERE chunkID = ?",
+                            arguments: [chunkID]
+                        )
+                        try db.execute(
+                            sql: "DELETE FROM semantic_signal WHERE chunkID = ?",
                             arguments: [chunkID]
                         )
                     }
@@ -1839,6 +1939,7 @@ final class DatabaseManager {
                 """,
                 arguments: [isPinned, Date(), id]
             )
+            try SyncLedger.noteChange(in: db, table: CloudSyncTable.writingInsightSnapshot.rawValue, localID: id)
         }
         requestCloudSyncIfEnabled()
     }
@@ -2313,6 +2414,7 @@ final class DatabaseManager {
                 """,
                 arguments: [status.rawValue, now, now, id]
             )
+            try SyncLedger.noteChange(in: db, table: CloudSyncTable.learningSuggestion.rawValue, localID: id)
         }
         requestCloudSyncIfEnabled()
         NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)

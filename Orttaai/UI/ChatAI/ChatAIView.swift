@@ -518,6 +518,9 @@ private final class ChatAIViewModel: ObservableObject {
     }
     private var voiceModelWarmupTask: Task<Void, Never>?
     private var didLoad = false
+    /// The conversation a reply is being generated for (it may not be the
+    /// selected one if the person switched chats meanwhile).
+    private var inFlightConversationID: UUID?
     @Published private(set) var voiceRecordingStartedAt: Date?
     /// Models the provider says can't chat (an Ollama model without the
     /// completion capability) are left out of `availableModels`; this holds
@@ -636,6 +639,11 @@ private final class ChatAIViewModel: ObservableObject {
         guard !didLoad else { return }
         didLoad = true
         loadConversations()
+        // Chats synced in from another Mac: take them, keeping a reply in
+        // progress here.
+        NotificationCenter.default.addObserver(forName: .syncedChatsDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadSyncedConversations() }
+        }
         selectedModel = settings.normalizedLocalLLMInsightsModel
         if !selectedModelSupportsThinking {
             thinkingEnabled = false
@@ -774,6 +782,7 @@ private final class ChatAIViewModel: ObservableObject {
     }
 
     func deleteConversation(_ conversation: ChatAIConversation) {
+        MacProfileSync.noteChatDeleted(conversation.id)
         conversations.removeAll { $0.id == conversation.id }
         if selectedConversationID == conversation.id {
             selectedConversationID = conversations.first?.id
@@ -834,12 +843,14 @@ private final class ChatAIViewModel: ObservableObject {
         draft = ""
         errorMessage = nil
         isSending = true
+        inFlightConversationID = selectedConversationID
         streamingReply = nil
         streamingThought = nil
         thoughtShownAt = nil
         replyStartedAt = Date()
         defer {
             isSending = false
+            inFlightConversationID = nil
             streamingReply = nil
             streamingThought = nil
             thoughtShownAt = nil
@@ -1019,6 +1030,19 @@ private final class ChatAIViewModel: ObservableObject {
             selectedConversationID = conversations.first?.id
         } else {
             newConversation()
+        }
+    }
+
+    private func reloadSyncedConversations() {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              var decoded = try? JSONDecoder().decode([ChatAIConversation].self, from: data) else { return }
+        if let inFlightConversationID, let current = conversations.first(where: { $0.id == inFlightConversationID }) {
+            decoded.removeAll { $0.id == current.id }
+            decoded.append(current)
+        }
+        conversations = decoded.sorted { $0.updatedAt > $1.updatedAt }
+        if let selectedConversationID, !conversations.contains(where: { $0.id == selectedConversationID }) {
+            self.selectedConversationID = conversations.first?.id
         }
     }
 

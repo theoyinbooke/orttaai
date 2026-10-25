@@ -34,6 +34,9 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     var entryKind: String?
     // The spoken instruction that produced an edit entry; NULL on dictations.
     var editInstruction: String?
+    // mac, iphone, ipad or unknown: the kind of device it was said on. NULL
+    // only on rows written before sync v2's migration filled it in.
+    var sourceDeviceKind: String? = nil
 
     static let databaseTableName = "transcription"
 
@@ -42,6 +45,29 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
 
     var isEditCommand: Bool {
         entryKind == Self.editEntryKind
+    }
+
+    /// Said on Orttakey on an iPhone or iPad.
+    var isFromMobile: Bool {
+        sourceDeviceKind == "iphone" || sourceDeviceKind == "ipad"
+    }
+
+    /// The app it went into, or where it came from when that isn't known:
+    /// iOS never tells a keyboard which app it's typing in.
+    var displayAppName: String? {
+        if let name = targetAppName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
+        switch sourceDeviceKind {
+        case "iphone": return "Orttakey on iPhone"
+        case "ipad": return "Orttakey on iPad"
+        default: return nil
+        }
+    }
+
+    /// What the speech model heard, when it was kept and differs from the
+    /// text. NULL never means "the same" for old rows, so nothing is shown.
+    var distinctRawText: String? {
+        guard let rawText, rawText != text, !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return rawText
     }
 }
 

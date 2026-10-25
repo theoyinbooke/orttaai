@@ -6,7 +6,7 @@ import Foundation
 /// Stable per-device identifier used to attribute records to the Mac that
 /// produced them. Persisted in UserDefaults under the same key CloudSync has
 /// always used to stamp CKRecords, so existing installs keep their identity.
-enum DeviceIdentity {
+nonisolated enum DeviceIdentity {
     static let defaultsKey = "cloudSyncDeviceID"
 
     static var currentID: String {
