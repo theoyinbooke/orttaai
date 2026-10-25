@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.14.0", items: [
+            WhatsNewItem(
+                id: "1.14-formatting",
+                title: "Lists and paragraphs",
+                detail: "Say \u{201C}first, \u{2026} second, \u{2026}\u{201D} for a numbered list. Long dictations are split into paragraphs where you move on.",
+                art: .symbol("list.number")
+            ),
+            WhatsNewItem(
+                id: "1.14-polish",
+                title: "Polish built in",
+                detail: "S1-mini cleans up each dictation on your Mac, long ones included, with no server to run. Download it in Model settings.",
+                art: .symbol("text.badge.checkmark")
+            ),
+            WhatsNewItem(
+                id: "1.14-learning",
+                title: "Learns in more apps",
+                detail: "Learn from My Edits now reads your fixes in Claude, Slack, ChatGPT and other Electron and Chrome-based apps.",
+                art: .learning
+            ),
+        ]),
         WhatsNewRelease(version: "1.13.0", items: [
             WhatsNewItem(
                 id: "1.13-milestones",
