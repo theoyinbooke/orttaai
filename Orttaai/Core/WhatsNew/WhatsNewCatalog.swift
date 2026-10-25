@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.15.1", items: [
+            WhatsNewItem(
+                id: "1.15.1-devices",
+                title: "Your devices, side by side",
+                detail: "Analytics shows each device's words and dictations, and can show just your Mac, iPhone or iPad.",
+                art: .symbol("chart.bar.xaxis")
+            ),
+            WhatsNewItem(
+                id: "1.15.1-lists",
+                title: "Numbered and lettered lists",
+                detail: "Say \u{201C}letter a\u{201D} for lettered points, nested under a number. Lists end where your paragraph does, and Polish keeps them.",
+                art: .symbol("list.bullet.indent")
+            ),
+            WhatsNewItem(
+                id: "1.15.1-quit",
+                title: "No crash on quit",
+                detail: "Quitting or updating with Polish on no longer ends in a crash report.",
+                art: .symbol("checkmark.seal")
+            ),
+        ]),
         WhatsNewRelease(version: "1.15.0", items: [
             WhatsNewItem(
                 id: "1.15-iphone",
