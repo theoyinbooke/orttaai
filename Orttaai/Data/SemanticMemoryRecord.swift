@@ -304,6 +304,23 @@ nonisolated struct ConceptSource: FetchableRecord, Decodable, Sendable {
     let text: String
     let createdAt: Date
     let targetAppName: String?
+    /// Where it was said, so dictations from a phone (which never know the
+    /// app) group by device rather than all into one "no app" session.
+    var sourceDeviceID: String? = nil
+
+    init(id: Int64, text: String, createdAt: Date, targetAppName: String?, sourceDeviceID: String? = nil) {
+        self.id = id
+        self.text = text
+        self.createdAt = createdAt
+        self.targetAppName = targetAppName
+        self.sourceDeviceID = sourceDeviceID
+    }
+
+    /// What dictations are grouped by into working sessions.
+    var sessionGroup: String {
+        if let app = targetAppName, !app.isEmpty { return "app:\(app)" }
+        return "device:\(sourceDeviceID ?? "")"
+    }
 }
 
 /// Cached concept extraction for one dictation. Valid while `textHash` and

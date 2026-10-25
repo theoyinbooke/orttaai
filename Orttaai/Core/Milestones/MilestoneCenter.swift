@@ -41,6 +41,7 @@ final class MilestoneCenter: ObservableObject {
     private var database: DatabaseManager?
     private var observation: DatabaseCancellable?
     private var memoryObserver: NSObjectProtocol?
+    private var syncObserver: NSObjectProtocol?
     private var isEvaluating = false
     private var pendingPass: Bool?
     private var hasSeenFirstChange = false
@@ -67,6 +68,18 @@ final class MilestoneCenter: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.evaluate(allowToast: true)
+            }
+        }
+        // Dictations synced in from the phone or another Mac may be older
+        // than the newest one watched above: count them, without toasts for
+        // history that was already there.
+        syncObserver = NotificationCenter.default.addObserver(
+            forName: .cloudSyncDidComplete,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.evaluate(allowToast: false)
             }
         }
     }

@@ -1,6 +1,7 @@
 // WorkActivity.swift
 // Orttaai
 
+import CryptoKit
 import Foundation
 
 /// The kind of work a dictation session was doing.
@@ -120,7 +121,7 @@ nonisolated enum WorkSessionBuilder {
         var groups: [[ConceptSource]] = []
         var openGroupByApp: [String: (index: Int, last: Date)] = [:]
         for source in sources.sorted(by: { $0.createdAt < $1.createdAt }) {
-            let app = source.targetAppName ?? ""
+            let app = source.sessionGroup
             if let open = openGroupByApp[app], source.createdAt.timeIntervalSince(open.last) <= gap {
                 groups[open.index].append(source)
                 openGroupByApp[app] = (open.index, source.createdAt)
@@ -138,7 +139,7 @@ nonisolated enum WorkSessionBuilder {
                 .map(\.key)
                 .filter { seen.insert($0).inserted }
             return WorkSession(
-                key: "\(ids.first!)-\(ids.count)-\(group.reduce(0) { $0 + $1.text.count })",
+                key: Self.sessionKey(group),
                 dictationIDs: ids,
                 start: group.first!.createdAt,
                 end: group.last!.createdAt,
@@ -147,6 +148,19 @@ nonisolated enum WorkSessionBuilder {
                 conceptKeys: keys
             )
         }
+    }
+
+    /// Changes whenever any dictation in the session changes, not only its
+    /// length, so a stale reading of an edited session is never reused.
+    static func sessionKey(_ group: [ConceptSource]) -> String {
+        var digest = SHA256()
+        for source in group {
+            digest.update(data: Data("\(source.id)\u{1F}\(source.createdAt.timeIntervalSince1970)\u{1F}\(source.sessionGroup)\u{1F}".utf8))
+            digest.update(data: Data(source.text.utf8))
+            digest.update(data: Data([0x1E]))
+        }
+        let hash = digest.finalize().prefix(10).map { String(format: "%02x", $0) }.joined()
+        return "\(group.first!.id)-\(group.count)-\(hash)"
     }
 
     static func condensed(_ texts: [String]) -> String {

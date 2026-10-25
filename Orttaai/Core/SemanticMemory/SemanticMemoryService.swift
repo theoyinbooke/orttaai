@@ -526,6 +526,7 @@ final class SemanticMemoryService: SemanticMemoryServiceProviding {
                 embeddedCount = try await embed(chunks: chunksToEmbed, using: provider)
             }
 
+            try databaseManager.dequeueSemanticIndex(transcriptionIDs: transcriptions.compactMap(\.id))
             let graph = try rebuildGraph(modelID: provider.modelID)
             return SemanticIndexRunResult(
                 sourceCount: transcriptions.count,

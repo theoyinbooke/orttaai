@@ -197,9 +197,14 @@ final class ConceptGraphStore {
 
     private static func signature(sources: [ConceptSource], dictionaryTerms: [String]) -> String {
         var hasher = Hasher()
+        // The words themselves, not their length: an edit that keeps the
+        // length (a dictation corrected on another device) must still count.
         for source in sources {
             hasher.combine(source.id)
-            hasher.combine(source.text.count)
+            hasher.combine(source.text)
+            hasher.combine(source.createdAt)
+            hasher.combine(source.targetAppName)
+            hasher.combine(source.sourceDeviceID)
         }
         hasher.combine(dictionaryTerms.sorted())
         hasher.combine(ConceptExtractor.version)

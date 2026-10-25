@@ -132,7 +132,7 @@ final class DashboardStatsService {
 
         var byApp: [String: AppAggregate] = [:]
         for record in records {
-            let appName = normalizedAppName(record.targetAppName)
+            let appName = normalizedAppName(record.displayAppName)
             var aggregate = byApp[appName, default: AppAggregate()]
             aggregate.sessions += 1
             aggregate.words += countWords(in: record.text)
@@ -212,7 +212,7 @@ final class DashboardStatsService {
                 createdAt: record.createdAt,
                 fullText: record.text,
                 previewText: previewText(record.text),
-                appName: normalizedAppName(record.targetAppName),
+                appName: normalizedAppName(record.displayAppName),
                 wordCount: wordCount,
                 processingMs: max(0, record.processingDurationMs)
             )

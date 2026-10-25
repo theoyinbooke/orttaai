@@ -17,6 +17,8 @@ struct HistoryView: View {
     @State private var copiedEntryID: Int64?
     @State private var copyFeedbackTask: Task<Void, Never>?
     @State private var snippetDraft: SnippetDraft?
+    @State private var deviceFilter: HistoryDeviceFilter = .all
+    @State private var deviceNames: [String: String] = [:]
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -118,7 +120,7 @@ struct HistoryView: View {
             HistoryTranscriptDetailModal(
                 entry: entry,
                 onCopy: {
-                    copyTranscript(entry.fullText)
+                    copyTranscript(entry.exactText)
                 },
                 onCreateSnippet: {
                     detailEntry = nil
@@ -126,7 +128,7 @@ struct HistoryView: View {
                         snippetDraft = SnippetDraft(
                             id: entry.id,
                             entry: entry,
-                            trigger: suggestedSnippetTrigger(for: entry.fullText)
+                            trigger: suggestedSnippetTrigger(for: entry.exactText)
                         )
                     }
                 }
@@ -135,9 +137,9 @@ struct HistoryView: View {
         .sheet(item: $snippetDraft) { draft in
             CreateSnippetSheet(
                 initialTrigger: draft.trigger,
-                transcript: draft.entry.fullText,
+                transcript: draft.entry.exactText,
                 onSave: { trigger in
-                    saveSnippet(trigger: trigger, transcript: draft.entry.fullText)
+                    saveSnippet(trigger: trigger, transcript: draft.entry.exactText)
                 }
             )
         }
@@ -161,7 +163,9 @@ struct HistoryView: View {
                 pendingDeleteEntry = nil
             }
         } message: { _ in
-            Text("This removes the transcript from local history.")
+            Text(ArchiveSyncController.shared.isEnabled
+                 ? "This deletes the dictation here and on every device that syncs through your iCloud."
+                 : "This removes the transcript from local history.")
         }
     }
 
@@ -184,7 +188,24 @@ struct HistoryView: View {
             }
 
             searchField
+
+            if availableDeviceFilters.count > 2 {
+                Picker("Device", selection: $deviceFilter) {
+                    ForEach(availableDeviceFilters) { filter in
+                        Text(filter.title).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
         }
+    }
+
+    /// "All" plus each kind of device the history has dictations from.
+    private var availableDeviceFilters: [HistoryDeviceFilter] {
+        let present = Set(entries.map(\.deviceFilter))
+        return HistoryDeviceFilter.allCases.filter { $0 == .all || present.contains($0) }
     }
 
     private var searchField: some View {
@@ -280,12 +301,19 @@ struct HistoryView: View {
                 .foregroundStyle(Color.Orttaai.textSecondary)
                 .frame(width: 96, alignment: .leading)
 
-            Text(entry.appName)
-                .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: appColumnWidth, alignment: .leading)
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: DeviceLabel.symbol(kindName: entry.deviceKind))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.Orttaai.textTertiary)
+                    .frame(width: 14)
+                Text(entry.appName)
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .help(entry.deviceName)
+            .frame(width: appColumnWidth, alignment: .leading)
 
             HStack(spacing: Spacing.xs) {
                 if entry.isEditCommand {
@@ -348,7 +376,7 @@ struct HistoryView: View {
                     snippetDraft = SnippetDraft(
                         id: entry.id,
                         entry: entry,
-                        trigger: suggestedSnippetTrigger(for: entry.fullText)
+                        trigger: suggestedSnippetTrigger(for: entry.exactText)
                     )
                 }
 
@@ -358,7 +386,7 @@ struct HistoryView: View {
                     label: isCopied ? "Copied" : "Copy",
                     tint: isCopied ? Color.Orttaai.success : Color.Orttaai.textSecondary
                 ) {
-                    copyTranscript(entry.fullText)
+                    copyTranscript(entry.exactText)
                     showCopyFeedback(for: entry.id)
                 }
 
@@ -436,12 +464,14 @@ struct HistoryView: View {
 
     private var filteredEntries: [HistoryTableEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let onDevice = deviceFilter == .all ? entries : entries.filter { $0.deviceFilter == deviceFilter }
         if query.isEmpty {
-            return entries
+            return onDevice
         }
-        return entries.filter { entry in
+        return onDevice.filter { entry in
             entry.fullText.localizedCaseInsensitiveContains(query)
                 || entry.appName.localizedCaseInsensitiveContains(query)
+                || entry.deviceName.localizedCaseInsensitiveContains(query)
                 || entry.modelId.localizedCaseInsensitiveContains(query)
         }
     }
@@ -449,6 +479,7 @@ struct HistoryView: View {
     private func loadEntries() {
         do {
             let db = try DatabaseManager()
+            deviceNames = (try? db.fetchSyncDeviceNames()) ?? [:]
             let records = try db.fetchAllTranscriptions()
             entries = makeTableEntries(from: records)
             errorMessage = nil
@@ -462,6 +493,7 @@ struct HistoryView: View {
         do {
             let db = try DatabaseManager()
             observation = db.observeTranscriptions(limit: nil) { [self] records in
+                deviceNames = (try? DatabaseManager().fetchSyncDeviceNames()) ?? deviceNames
                 entries = makeTableEntries(from: records)
             }
         } catch {
@@ -515,6 +547,19 @@ struct HistoryView: View {
         }
     }
 
+    private func deviceName(for record: Transcription) -> String {
+        if let id = record.sourceDeviceID {
+            if id == DeviceIdentity.currentID { return "This Mac" }
+            if let name = deviceNames[id] { return name }
+        }
+        switch record.sourceDeviceKind {
+        case "iphone": return "iPhone"
+        case "ipad": return "iPad"
+        case "mac": return "Another Mac"
+        default: return "Unknown device"
+        }
+    }
+
     private func suggestedSnippetTrigger(for text: String) -> String {
         let tokens = text
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -539,15 +584,7 @@ struct HistoryView: View {
                 previewText = normalizedText
             }
 
-            let appName: String = {
-                guard
-                    let trimmed = record.targetAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
-                    !trimmed.isEmpty
-                else {
-                    return "Unknown App"
-                }
-                return trimmed
-            }()
+            let appName = record.displayAppName ?? "Unknown App"
             let modelId = record.modelId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? "Not set"
                 : record.modelId
@@ -566,7 +603,12 @@ struct HistoryView: View {
                 processingMs: max(0, record.processingDurationMs),
                 modelId: modelId,
                 isEditCommand: record.isEditCommand,
-                editInstruction: record.editInstruction?.trimmingCharacters(in: .whitespacesAndNewlines)
+                editInstruction: record.editInstruction?.trimmingCharacters(in: .whitespacesAndNewlines),
+                exactText: record.text,
+                rawText: record.distinctRawText,
+                deviceKind: record.sourceDeviceKind,
+                deviceName: deviceName(for: record),
+                deviceFilter: HistoryDeviceFilter(record)
             )
         }
     }
@@ -584,6 +626,42 @@ private struct HistoryTableEntry: Identifiable {
     let modelId: String
     var isEditCommand: Bool = false
     var editInstruction: String?
+    /// The text as written, line breaks and all (fullText is flattened for
+    /// the table and search).
+    var exactText: String = ""
+    /// What the speech model heard, when kept and different.
+    var rawText: String?
+    var deviceKind: String?
+    var deviceName: String = ""
+    var deviceFilter: HistoryDeviceFilter = .thisMac
+}
+
+enum HistoryDeviceFilter: String, CaseIterable, Identifiable {
+    case all
+    case thisMac
+    case iphone
+    case ipad
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .thisMac: "This Mac"
+        case .iphone: "iPhone"
+        case .ipad: "iPad"
+        case .other: "Other"
+        }
+    }
+
+    init(_ record: Transcription) {
+        switch record.sourceDeviceKind {
+        case "iphone": self = .iphone
+        case "ipad": self = .ipad
+        default: self = record.sourceDeviceID == DeviceIdentity.currentID ? .thisMac : .other
+        }
+    }
 }
 
 private enum HistoryDurationFormatter {
@@ -627,7 +705,7 @@ private struct HistoryTranscriptDetailModal: View {
                         .font(.Orttaai.heading)
                         .foregroundStyle(Color.Orttaai.textPrimary)
 
-                    Text("\(entry.appName) • \(Self.detailFormatter.string(from: entry.createdAt))")
+                    Text("\(entry.appName) • \(entry.deviceName) • \(Self.detailFormatter.string(from: entry.createdAt))")
                         .font(.Orttaai.secondary)
                         .foregroundStyle(Color.Orttaai.textSecondary)
                 }
@@ -658,14 +736,34 @@ private struct HistoryTranscriptDetailModal: View {
             }
 
             ScrollView(showsIndicators: false) {
-                Text(entry.fullText)
-                    .font(.Orttaai.body)
-                    .foregroundStyle(Color.Orttaai.textPrimary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.md)
-                    .background(Color.Orttaai.bgSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    Text(entry.exactText)
+                        .font(.Orttaai.body)
+                        .foregroundStyle(Color.Orttaai.textPrimary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Spacing.md)
+                        .background(Color.Orttaai.bgSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+
+                    if let rawText = entry.rawText {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            Text("You said")
+                                .font(.Orttaai.caption)
+                                .foregroundStyle(Color.Orttaai.textTertiary)
+                            Text(rawText)
+                                .font(.Orttaai.secondary)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(Spacing.md)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.card)
+                                .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
+                        )
+                    }
+                }
             }
 
             HStack {
