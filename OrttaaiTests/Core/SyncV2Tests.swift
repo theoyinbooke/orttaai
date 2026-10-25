@@ -315,7 +315,10 @@ final class SyncV2Tests: XCTestCase {
         }
         let newer = SyncEnvelope(
             id: confirmed,
-            revision: Revision(counter: 0, modifiedAt: Date().addingTimeInterval(3_600), writerDeviceID: LegacySyncBridge.legacyWriter),
+            // Rounded to the millisecond as LegacySyncBridge rounds it: the
+            // stored copy is, and an unrounded date would compare newer than
+            // itself and be adopted again.
+            revision: Revision(counter: 0, modifiedAt: SyncDate.rounded(Date().addingTimeInterval(3_600)), writerDeviceID: LegacySyncBridge.legacyWriter),
             payload: try PayloadCoder.encode(DictationPayload(createdAt: Date(), text: "Edited on an older Mac")),
             origin: DictationOrigin(deviceID: DeviceIdentity.currentID, kind: .mac)
         )
