@@ -100,6 +100,23 @@ final class S1MiniPolishController {
         Logger.ai.info("S1-mini unloaded")
     }
 
+    /// Whether quitting has to free the model first.
+    var holdsModel: Bool { polisher != nil || loading != nil }
+
+    /// Frees the model before the app exits: llama.cpp aborts at exit while a
+    /// model is still on the GPU. A load in progress is waited for, and so is
+    /// a polish already running (the polisher takes one at a time).
+    func unloadBeforeQuit() async {
+        let loaded: S1MiniPolisher?
+        if let polisher {
+            loaded = polisher
+        } else {
+            loaded = await loading?.value
+        }
+        unload()
+        await loaded?.unload()
+    }
+
     private func load() async -> S1MiniPolisher? {
         do {
             let access = try await locator.beginAccess(createIfNeeded: false, requiresWrite: false)

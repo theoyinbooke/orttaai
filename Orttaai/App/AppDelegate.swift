@@ -176,6 +176,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// S1-mini has to leave the GPU before the process exits, or llama.cpp
+    /// aborts during exit and macOS reports a crash. A polish still running
+    /// gets up to two seconds to finish.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let polish = S1MiniPolishController.shared
+        guard polish.holdsModel else { return .terminateNow }
+        var replied = false
+        let reply = {
+            guard !replied else { return }
+            replied = true
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        Task {
+            await polish.unloadBeforeQuit()
+            reply()
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if !replied { Logger.ai.error("S1-mini still busy at quit; quitting anyway") }
+            reply()
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
         KeyboardShortcuts.removeHandler(for: .editCommand)
