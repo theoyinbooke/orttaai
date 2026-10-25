@@ -45,6 +45,28 @@ final class WordBoostTests: XCTestCase {
         XCTAssertFalse(accepts("release.", "camelCase", margin: -4.23))
     }
 
+    /// Swaps from real Express dictations (Oct 24-25) that put a dictionary
+    /// word where the user said something spelled nothing like it.
+    func testTermsSpelledNothingLikeTheHeardWordsAreRejected() {
+        XCTAssertFalse(accepts("Mac mini", "Meetumo", margin: -0.4))
+        XCTAssertFalse(accepts("space bar", "supabase", margin: -0.3))
+        XCTAssertFalse(accepts("make a", "Arsenal", margin: -0.2))
+        XCTAssertFalse(accepts("I'm", "Meetumo", margin: 0.5))
+        // Near-misses of names still pass.
+        XCTAssertTrue(accepts("Folosiday", "Folasade", margin: -1.43))
+        XCTAssertTrue(accepts("Olama's", "Ollama", margin: 0.84))
+    }
+
+    func testContractionsAndCommonWordsCountAsOrdinaryWords() {
+        for word in ["i'm", "it's", "don't", "didn't", "you're", "we've", "they'll", "she'd", "can't", "won't", "it\u{2019}s"] {
+            XCTAssertTrue(EnglishLexicon.isRealWord(word), word)
+        }
+        XCTAssertTrue(EnglishLexicon.isRealWord("mini"))
+        XCTAssertTrue(EnglishLexicon.isRealWord("spacebar"))
+        XCTAssertFalse(EnglishLexicon.isRealWord("olama's"))
+        XCTAssertEqual(WordBoostGuard.words(in: "It\u{2019}s fine"), ["it's", "fine"])
+    }
+
     func testReplacementsThatDropSpokenWordsAreRejected() {
         XCTAssertFalse(accepts("keep LM Studio", "LM Studio", margin: 0.29))
         XCTAssertFalse(accepts("or LM Studio", "LM Studio", margin: -0.26))

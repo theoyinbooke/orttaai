@@ -37,6 +37,13 @@ nonisolated enum WordBoostGuard {
     /// Replacing ordinary English words needs the term to sound nearly as
     /// likely as the words themselves.
     static let ordinaryWordsMargin: Float = -0.75
+    /// The heard phrase must be spelled at least this much like the term.
+    /// Every correct proposal in the gauntlet set scores 0.56 or more; the
+    /// swaps users reported score far lower (Mac mini -> Meetumo 0.14,
+    /// space bar -> supabase 0.38, make a -> Arsenal 0.29), and they passed
+    /// on margin alone because a word like "I'm" or "mini" was missing from
+    /// the word list.
+    static let minimumSpellingSimilarity: Float = 0.5
     /// A near-spelled join may differ by this many letters...
     static let nearSpelledMaxEdits = 2
     /// ...when the term is at least this long, so code -> Xcode never counts.
@@ -56,6 +63,9 @@ nonisolated enum WordBoostGuard {
                 && editDistance(heardLetters, termLetters) <= nearSpelledMaxEdits) {
             return true
         }
+        if spellingSimilarity(heardLetters, termLetters) < minimumSpellingSimilarity {
+            return false
+        }
         // "keep LM Studio" -> "LM Studio" would delete a spoken word.
         if heardWords.count > termWords.count, termWords.allSatisfy(heardWords.contains) {
             return false
@@ -72,8 +82,16 @@ nonisolated enum WordBoostGuard {
     /// Lowercased letters, digits and apostrophes, punctuation dropped.
     static func words(in text: String) -> [String] {
         text.lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
             .split { !($0.isLetter || $0.isNumber || $0 == "'") }
             .map(String.init)
+    }
+
+    /// 1 for identical letters, 0 for nothing in common.
+    static func spellingSimilarity(_ a: String, _ b: String) -> Float {
+        let length = max(a.count, b.count)
+        guard length > 0 else { return 1 }
+        return 1 - Float(editDistance(a, b)) / Float(length)
     }
 
     static func editDistance(_ a: String, _ b: String) -> Int {

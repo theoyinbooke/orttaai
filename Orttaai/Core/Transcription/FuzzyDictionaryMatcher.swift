@@ -28,6 +28,21 @@ nonisolated enum EnglishLexicon {
         "me", "my", "no", "of", "oh", "ok", "on", "or", "so", "to", "up", "us", "we"
     ]
 
+    /// Everyday words the bundled list lacks. Without them a phrase like
+    /// "Mac mini" counted as unusual and Word Boost could replace it.
+    private static let supplementalWords: Set<String> = [
+        "mini", "spacebar", "checkbox", "dropdowns", "unmute", "touchpad", "trackpad"
+    ]
+
+    /// Contractions whose base is not simply the part before the apostrophe.
+    private static let irregularContractions: Set<String> = [
+        "can't", "won't", "shan't", "ain't", "y'all", "o'clock", "ma'am"
+    ]
+
+    /// Endings after an apostrophe that leave a real word in front of them:
+    /// it's, I'm, you're, we've, she'll, they'd, didn't.
+    private static let contractionSuffixes = ["n't", "'s", "'m", "'re", "'ve", "'ll", "'d"]
+
     private static let suffixRules: [(suffix: String, restorations: [String])] = [
         ("ies", ["y"]), ("es", [""]), ("s", [""]), ("ed", ["", "e"]), ("d", [""]),
         ("ing", ["", "e"]), ("ly", [""]), ("er", ["", "e"]), ("ers", ["", "e"]),
@@ -41,9 +56,20 @@ nonisolated enum EnglishLexicon {
     /// `word` must already be lowercase. Accepts listed words and their
     /// regular inflections (verses, codes, stopped, running).
     static func isRealWord(_ word: String) -> Bool {
+        let word = word.replacingOccurrences(of: "\u{2019}", with: "'")
+        if word.contains("'") { return isContraction(word) }
         if word.count < 3 { return shortWords.contains(word) }
-        if words.contains(word) { return true }
+        if words.contains(word) || supplementalWords.contains(word) { return true }
         return stems(of: word).contains(where: words.contains)
+    }
+
+    private static func isContraction(_ word: String) -> Bool {
+        if irregularContractions.contains(word) { return true }
+        for suffix in contractionSuffixes where word.hasSuffix(suffix) {
+            let base = String(word.dropLast(suffix.count))
+            if !base.isEmpty, !base.contains("'"), isRealWord(base) { return true }
+        }
+        return false
     }
 
     /// The base forms `word` could be a regular inflection of, with the

@@ -37,6 +37,23 @@ final class ExpressLongRecordingTests: XCTestCase {
         XCTAssertEqual(after / before, 4, accuracy: 0.01, "lifted by the 4x ceiling")
     }
 
+    /// AirPods and other headset mics hiss a little above the room floor in
+    /// the pause after the last word; lifting that hiss made Express invent
+    /// words at the end of the dictation.
+    func testHeadsetHissAfterTheLastWordIsUntouched() {
+        let audio = recording(seconds: 5, level: 0.2, tailSeconds: 1.5, tailLevel: 0.01)
+        XCTAssertEqual(ExpressAudioConditioner.liftingQuietTail(audio), audio)
+    }
+
+    func testBriefClickInTheTailIsUntouched() {
+        var audio = recording(seconds: 5, level: 0.2, tailSeconds: 1.5, tailLevel: 0.004)
+        let clickStart = audio.count - second
+        for index in clickStart..<(clickStart + second / 25) {
+            audio[index] = 0.05 * sin(Float(index) * 0.07)
+        }
+        XCTAssertEqual(ExpressAudioConditioner.liftingQuietTail(audio), audio)
+    }
+
     func testLiftNeverClips() {
         let audio = recording(seconds: 5, level: 0.9, tailSeconds: 1, tailLevel: 0.3)
         let lifted = ExpressAudioConditioner.liftingQuietTail(audio)

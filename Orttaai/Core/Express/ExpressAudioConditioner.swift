@@ -17,10 +17,15 @@ nonisolated enum ExpressAudioConditioner {
     static let tailSampleCount = sampleRate * 3 / 2
     private static let rampSampleCount = sampleRate / 10
     private static let maximumGain: Float = 4
+    /// The tail must hold at least this much speech (100 ms) to be lifted:
+    /// a soft final word does, the hiss or room sound in the pause after the
+    /// last word (common on Bluetooth headset mics) does not.
+    static let minimumTailSpeechFrames = 5
 
     /// Returns the samples with the last 1.5 s raised toward the recording's
     /// typical speech level when its speech sits below half of it. Speech
-    /// frames are those well above the quietest tenth of the recording.
+    /// frames are those well above the quietest tenth of the recording, in
+    /// the tail as in the body.
     static func liftingQuietTail(_ samples: [Float]) -> [Float] {
         let frameCount = (samples.count - 1) / frameSampleCount
         guard frameCount > tailSampleCount / frameSampleCount else { return samples }
@@ -38,8 +43,10 @@ nonisolated enum ExpressAudioConditioner {
         let typical = percentile(speech, 0.5)
 
         let tailFrames = tailSampleCount / frameSampleCount
-        let tailSpeech = frames.suffix(tailFrames).filter { $0 > max(2 * floor, 0.006) }
-        guard !tailSpeech.isEmpty else { return samples }
+        // Same bar as speech in the body: noise a little above the floor
+        // must not count, or the lift turns it into words.
+        let tailSpeech = frames.suffix(tailFrames).filter { $0 > max(3 * floor, 0.008) }
+        guard tailSpeech.count >= minimumTailSpeechFrames else { return samples }
         let tailLevel = percentile(tailSpeech, 0.5)
         guard tailLevel < 0.5 * typical else { return samples }
 
