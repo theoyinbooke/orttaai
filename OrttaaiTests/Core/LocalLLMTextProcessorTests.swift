@@ -19,6 +19,7 @@ final class LocalLLMTextProcessorTests: XCTestCase {
         "spokenFormattingEnabled",
         "polishModeEnabled",
         "dictationReliabilityRecoveryVersion",
+        "polishEngine",
     ]
 
     private var previousValues: [String: Any?] = [:]
@@ -32,6 +33,8 @@ final class LocalLLMTextProcessorTests: XCTestCase {
         }
         settings = AppSettings()
         settings.localLLMPolishEnabled = true
+        // These tests cover the local LLM server engine; S1-mini is the default.
+        settings.polishEngine = "localLLM"
         settings.localLLMPolishModel = "test-model"
         settings.localLLMPolishTimeoutMs = 1_000
         settings.localLLMPolishMaxChars = 400
@@ -105,6 +108,22 @@ final class LocalLLMTextProcessorTests: XCTestCase {
             400,
             "The old 280-char default must migrate so polish covers longer dictation"
         )
+    }
+
+    func testS1MiniEngineLeavesPolishToItAndNeverContactsTheProvider() async throws {
+        settings.polishEngine = "s1Mini"
+        let client = MockLocalLLMClient(result: .success("Should never be used."))
+        let processor = makeProcessor(client: client)
+
+        let output = try await processor.process(makeInput("this text stays as the rules wrote it"))
+
+        XCTAssertEqual(output.text, "this text stays as the rules wrote it")
+        XCTAssertEqual(client.generateCallCount, 0)
+    }
+
+    func testS1MiniIsTheDefaultPolishEngine() {
+        UserDefaults.standard.removeObject(forKey: "polishEngine")
+        XCTAssertTrue(AppSettings().usesS1MiniPolish)
     }
 
     func testDisabledPolishNeverContactsTheProvider() async throws {

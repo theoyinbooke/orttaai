@@ -210,6 +210,9 @@ final class AppSettings: ObservableObject {
     @AppStorage("appleIntelligencePolishEnabled") var appleIntelligencePolishEnabled: Bool = false
     @AppStorage("localLLMEndpoint") var localLLMEndpoint: String = "http://127.0.0.1:11434"
     @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma4:e2b"
+    /// Which model Text Polish uses: "s1Mini" (S1-mini by Superwhisper,
+    /// built in) or "localLLM" (the local LLM server's model below).
+    @AppStorage("polishEngine") var polishEngine: String = "s1Mini"
     @AppStorage("localLLMPolishTimeoutMs") var localLLMPolishTimeoutMs: Int = 3_000
     @AppStorage("localLLMPolishMaxChars") var localLLMPolishMaxChars: Int = 400
     @AppStorage("localLLMInsightsEnabled") var localLLMInsightsEnabled: Bool = false
@@ -422,6 +425,11 @@ final class AppSettings: ObservableObject {
             seen.insert(key)
             return true
         }
+    }
+
+    /// Text Polish runs S1-mini in-process rather than the local LLM server.
+    var usesS1MiniPolish: Bool {
+        polishEngine != "localLLM"
     }
 
     var clampedLocalLLMPolishTimeoutMs: Int {

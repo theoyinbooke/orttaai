@@ -21,6 +21,7 @@ struct ExpressEngineCard: View {
     // Read so the polish footnote redraws when the model or provider changes.
     @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma4:e2b"
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
+    @AppStorage("polishEngine") private var polishEngine = "s1Mini"
 
     private static let downloadSizeText = ByteCountFormatter.string(
         fromByteCount: ExpressModelStore.totalBytes,
@@ -174,7 +175,9 @@ struct ExpressEngineCard: View {
 
     private var polishStatus: String {
         let settings = AppSettings()
-        let model = "\(settings.normalizedLocalLLMPolishModel) on \(settings.polishLLMProvider.displayName)"
+        let model = settings.usesS1MiniPolish
+            ? "S1-mini on this Mac"
+            : "\(settings.normalizedLocalLLMPolishModel) on \(settings.polishLLMProvider.displayName)"
         guard localLLMPolishEnabled else {
             return "Off. When on, polishes with \(model)."
         }

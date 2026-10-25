@@ -32,7 +32,8 @@ final class LocalLLMTextProcessor: TextProcessor {
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
         let baseOutput = try await baseProcessor.process(input)
 
-        guard settings.localLLMPolishEnabled, !input.deferPolish else {
+        // S1-mini (S1MiniPolishProcessor) polishes instead when it's the engine.
+        guard settings.localLLMPolishEnabled, !settings.usesS1MiniPolish, !input.deferPolish else {
             return baseOutput
         }
 

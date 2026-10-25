@@ -64,6 +64,7 @@ struct ModelSettingsView: View {
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
     @AppStorage("lmStudioEndpoint") private var lmStudioEndpoint = "http://127.0.0.1:1234"
     @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma4:e2b"
+    @AppStorage("polishEngine") private var polishEngine = "s1Mini"
     @AppStorage("localLLMPolishTimeoutMs") private var localLLMPolishTimeoutMs = 3_000
     @AppStorage("localLLMPolishMaxChars") private var localLLMPolishMaxChars = 400
     @AppStorage("localLLMInsightsEnabled") private var localLLMInsightsEnabled = false
@@ -818,48 +819,73 @@ struct ModelSettingsView: View {
 
             SettingsToggleRow(
                 title: "Local Text Polish",
-                info: "Polishes each dictation with the model below. If it doesn't answer within the timeout, the unpolished text is inserted.",
+                info: "Polishes each dictation on this Mac before it's inserted, a paragraph at a time. Whatever can't be polished safely or in time is inserted unpolished.",
                 isOn: $localLLMPolishEnabled
             )
 
             SettingsDivider()
 
-            SettingsRow(title: "Polish Model") {
+            SettingsRow(title: "Polish Engine", info: "S1-mini is built in and runs on this Mac's GPU. The local LLM server uses the model you pick below.") {
                 OrttaaiDropdown(
-                    selection: Binding(
-                        get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
-                        set: { localLLMPolishModel = $0 }
-                    ),
-                    options: modelDropdownOptions(current: normalizedPolishOllamaModel),
+                    selection: $polishEngine,
+                    options: [.init("s1Mini", "S1-mini (built in)"), .init("localLLM", "Local LLM server")],
                     width: SettingsLayout.controlWidth
                 )
             }
 
             SettingsDivider()
 
-            SettingsSliderRow(
-                title: "Polish Timeout",
-                info: "How long to wait for polish before inserting the unpolished text.",
-                value: Binding(
-                    get: { Double(localLLMPolishTimeoutMs) },
-                    set: { localLLMPolishTimeoutMs = Int($0) }
-                ),
-                range: 80...4_000,
-                step: 10,
-                valueText: "\(localLLMPolishTimeoutMs) ms"
-            )
+            if polishEngine == "localLLM" {
+                SettingsRow(title: "Polish Model") {
+                    OrttaaiDropdown(
+                        selection: Binding(
+                            get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
+                            set: { localLLMPolishModel = $0 }
+                        ),
+                        options: modelDropdownOptions(current: normalizedPolishOllamaModel),
+                        width: SettingsLayout.controlWidth
+                    )
+                }
 
-            SettingsDivider()
+                SettingsDivider()
 
-            SettingsStepperRow(
-                title: "Max Characters",
-                info: "Longer dictations skip polish to stay responsive.",
-                value: $localLLMPolishMaxChars,
-                range: 80...2_000,
-                step: 20
-            )
+                SettingsSliderRow(
+                    title: "Polish Timeout",
+                    info: "How long to wait for polish before inserting the unpolished text.",
+                    value: Binding(
+                        get: { Double(localLLMPolishTimeoutMs) },
+                        set: { localLLMPolishTimeoutMs = Int($0) }
+                    ),
+                    range: 80...4_000,
+                    step: 10,
+                    valueText: "\(localLLMPolishTimeoutMs) ms"
+                )
 
-            SettingsFootnote(polishRecommendationMessage)
+                SettingsDivider()
+
+                SettingsStepperRow(
+                    title: "Max Characters",
+                    info: "Longer dictations skip polish to stay responsive.",
+                    value: $localLLMPolishMaxChars,
+                    range: 80...2_000,
+                    step: 20
+                )
+
+                SettingsFootnote(polishRecommendationMessage)
+            } else {
+                S1MiniPolishRow(controller: S1MiniPolishController.shared)
+            }
+        }
+        .onChange(of: polishEngine) { _, _ in applyS1MiniLoading() }
+        .onChange(of: localLLMPolishEnabled) { _, _ in applyS1MiniLoading() }
+    }
+
+    /// Keeps S1-mini loaded only while it's the engine and Polish is on.
+    private func applyS1MiniLoading() {
+        if localLLMPolishEnabled, polishEngine != "localLLM" {
+            Task { _ = await S1MiniPolishController.shared.readyPolisher() }
+        } else {
+            S1MiniPolishController.shared.unload()
         }
     }
 

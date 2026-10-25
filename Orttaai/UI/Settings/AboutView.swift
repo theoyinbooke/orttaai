@@ -42,6 +42,12 @@ struct AboutView: View {
             systemImage: "text.badge.checkmark"
         ),
         AboutCredit(name: "FluidAudio", detail: "Runs Fluid Speech Mini on the Neural Engine, Apache 2.0", systemImage: "cpu"),
+        AboutCredit(
+            name: "S1-mini",
+            detail: "Text Polish model by Superwhisper, Apache 2.0, built on Qwen3 0.6B by Alibaba Cloud",
+            systemImage: "text.alignleft"
+        ),
+        AboutCredit(name: "llama.cpp", detail: "Runs S1-mini on this Mac, MIT License", systemImage: "cpu"),
         AboutCredit(name: "GRDB.swift", detail: "SQLite database toolkit", systemImage: "cylinder"),
         AboutCredit(name: "Sparkle", detail: "Auto-update framework", systemImage: "arrow.down.circle"),
         AboutCredit(name: "KeyboardShortcuts", detail: "Shortcut recording", systemImage: "keyboard"),

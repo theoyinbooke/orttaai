@@ -115,6 +115,21 @@ nonisolated enum ExpressModelStore {
         ]
     )
 
+    /// S1-mini by Superwhisper, for Polish: Qwen3 0.6B fine-tuned for
+    /// dictation clean-up, run in-process by PolishEngine. Its own download,
+    /// not part of Express; the licence and notice travel with it (Apache 2.0,
+    /// credited as "S1-mini" by "Superwhisper"). The revision Orttakey uses.
+    static let s1Mini = ExpressModelPackage(
+        name: "S1-mini",
+        repository: "superwhisper/s1-mini-GGUF",
+        revision: "34add00a48a2e5d24e5a4ee5405a99620a3a240c",
+        files: [
+            file("s1-mini-q4_k_m.gguf", 484_219_808, "3b41ebe2502cbd03e811d5d16b022f5ab551eda58d62597d152f89535003c634"),
+            file("LICENSE", 12_033, "f715982df6ce767ae64864d74b95644e5d658aab54717dbceeb252eb3cbcb421"),
+            file("NOTICE", 507, "6eb1e98a0d0046dd1b71da19d3b64ebccc12622e7d62e5efcad10298b4d66292"),
+        ]
+    )
+
     static let packages = [speech, wordBoost]
 
     /// Everything turning Express on downloads.

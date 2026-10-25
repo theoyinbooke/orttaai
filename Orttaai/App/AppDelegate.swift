@@ -310,10 +310,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 baseProcessor: baseTextProcessor,
                 settings: settings
             )
-            let textProcessor = AppleIntelligencePolishProcessor(
+            let s1MiniProcessor = S1MiniPolishProcessor(
                 baseProcessor: localLLMProcessor,
                 settings: settings
             )
+            let textProcessor = AppleIntelligencePolishProcessor(
+                baseProcessor: s1MiniProcessor,
+                settings: settings
+            )
+            // Load S1-mini now (about 0.4 s), so the first dictation isn't the one that waits.
+            if settings.localLLMPolishEnabled, settings.usesS1MiniPolish {
+                Task { _ = await S1MiniPolishController.shared.readyPolisher() }
+            }
             databaseManager = db
             startMilestones(database: db, settings: settings)
 
