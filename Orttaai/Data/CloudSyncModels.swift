@@ -253,6 +253,7 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         "showProcessingEstimate",
         "homeWorkspaceAutoOpenEnabled",
         "spokenFormattingEnabled",
+        "autoParagraphsEnabled",
         "dictionaryEnabled",
         "fuzzyDictionaryEnabled",
         "disfluencyCleanupEnabled",

@@ -128,6 +128,14 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
             changes.append(contentsOf: formattingResult.changes)
         }
 
+        let speakerSetBreaks = changes.contains { $0.hasPrefix("Spoken formatting:") && $0.contains("line break") }
+        if settings.autoParagraphsEnabled, !expandedSnippet, !speakerSetBreaks,
+           AutoParagraphFormatter.appliesTo(targetApp: input.targetApp) {
+            let paragraphResult = AutoParagraphFormatter.format(resolvedText)
+            resolvedText = paragraphResult.text
+            changes.append(contentsOf: paragraphResult.changes)
+        }
+
         return TextProcessorOutput(text: resolvedText, changes: changes)
     }
 
@@ -260,6 +268,9 @@ enum SpokenFormattingFormatter {
     private struct OrderedMarker {
         let range: Range<String.Index>
         let number: Int
+        /// "First," is ordinary prose on its own; only "number one" and
+        /// "item one" may start a one-item list.
+        var isOrdinal = false
     }
 
     private struct TextMarker {
@@ -277,6 +288,14 @@ enum SpokenFormattingFormatter {
 
     private static let inlineOrderedMarkerPattern = #"""
     (?<![\p{L}\p{N}_])([1-9]|10)[\.\)](?=\s+)
+    """#
+
+    /// "First, … Second, …" and "Firstly: …": an ordinal opening a clause
+    /// and followed by a comma or colon. Mid-sentence ordinals ("the first
+    /// time") never match, and one alone is not a list. Spaces are written
+    /// \x20 because these patterns are compiled ignoring literal whitespace.
+    private static let ordinalMarkerPattern = #"""
+    (?:^|(?<=[.!?:;,][\x20\t]))(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)(?:ly)?(?=[\x20\t]*[,:])
     """#
 
     private static let bulletMarkerPattern = #"""
@@ -375,20 +394,25 @@ enum SpokenFormattingFormatter {
         guard let run = orderedRun(from: markers, in: text) else { return nil }
 
         var lines: [String] = []
+        var trailingProse: String?
         for index in run.indices {
             let marker = run[index]
             let itemStart = marker.range.upperBound
             let itemEnd = index == run.index(before: run.endIndex)
                 ? text.endIndex
                 : run[run.index(after: index)].range.lowerBound
-            let item = cleanedItemContent(String(text[itemStart..<itemEnd]))
+            var item = cleanedItemContent(String(text[itemStart..<itemEnd]))
             guard !item.isEmpty else { return nil }
+            if index == run.index(before: run.endIndex) {
+                (item, trailingProse) = splitTrailingProse(fromLastItem: item)
+            }
             lines.append("\(marker.number). \(capitalizedFirstContentWord(item))")
         }
 
         return joinedFormattedText(
             prefix: String(text[..<run[run.startIndex].range.lowerBound]),
-            lines: lines
+            lines: lines,
+            trailingProse: trailingProse
         )
     }
 
@@ -397,20 +421,25 @@ enum SpokenFormattingFormatter {
         guard let run = bulletRun(from: markers, in: text) else { return nil }
 
         var lines: [String] = []
+        var trailingProse: String?
         for index in run.indices {
             let marker = run[index]
             let itemStart = marker.range.upperBound
             let itemEnd = index == run.index(before: run.endIndex)
                 ? text.endIndex
                 : run[run.index(after: index)].range.lowerBound
-            let item = cleanedItemContent(String(text[itemStart..<itemEnd]))
+            var item = cleanedItemContent(String(text[itemStart..<itemEnd]))
             guard !item.isEmpty else { return nil }
+            if index == run.index(before: run.endIndex) {
+                (item, trailingProse) = splitTrailingProse(fromLastItem: item)
+            }
             lines.append("- \(capitalizedFirstContentWord(item))")
         }
 
         return joinedFormattedText(
             prefix: String(text[..<run[run.startIndex].range.lowerBound]),
-            lines: lines
+            lines: lines,
+            trailingProse: trailingProse
         )
     }
 
@@ -439,7 +468,7 @@ enum SpokenFormattingFormatter {
             return bestRun
         }
 
-        if firstMarker.number == 1, isLikelySingleMarkerCommand(firstMarker.range, in: text, kind: .ordered) {
+        if firstMarker.number == 1, !firstMarker.isOrdinal, isLikelySingleMarkerCommand(firstMarker.range, in: text, kind: .ordered) {
             return [firstMarker]
         }
 
@@ -472,6 +501,20 @@ enum SpokenFormattingFormatter {
                     return nil
                 }
                 return OrderedMarker(range: fullRange, number: number)
+            })
+        }
+
+        if let ordinalRegex = try? NSRegularExpression(
+            pattern: ordinalMarkerPattern,
+            options: [.caseInsensitive, .allowCommentsAndWhitespace, .anchorsMatchLines]
+        ) {
+            markers.append(contentsOf: ordinalRegex.matches(in: text, options: [], range: nsRange).compactMap { match in
+                guard let fullRange = Range(match.range, in: text),
+                      let ordinalRange = Range(match.range(at: 1), in: text),
+                      let number = numberValue(String(text[ordinalRange])) else {
+                    return nil
+                }
+                return OrderedMarker(range: fullRange, number: number, isOrdinal: true)
             })
         }
 
@@ -624,12 +667,38 @@ enum SpokenFormattingFormatter {
         )
     }
 
-    private static func joinedFormattedText(prefix: String, lines: [String]) -> String {
+    /// Nothing marks where the last item ends, so a long one keeps its
+    /// opening sentences (up to `lastItemMaximumWords`) and the rest of the
+    /// dictation follows the list as its own paragraph.
+    private static let lastItemMaximumWords = 40
+    private static let lastItemMaximumSentences = 3
+
+    private static func splitTrailingProse(fromLastItem item: String) -> (item: String, trailing: String?) {
+        let sentences = AutoParagraphFormatter.sentences(in: item)
+        guard sentences.count > 1, wordCount(in: item) > lastItemMaximumWords else { return (item, nil) }
+
+        var kept: [String] = [sentences[0]]
+        var keptWords = wordCount(in: sentences[0])
+        for sentence in sentences.dropFirst() {
+            let words = wordCount(in: sentence)
+            guard kept.count < lastItemMaximumSentences, keptWords + words <= lastItemMaximumWords else { break }
+            kept.append(sentence)
+            keptWords += words
+        }
+        guard kept.count < sentences.count else { return (item, nil) }
+        let trailing = sentences.dropFirst(kept.count).joined(separator: " ")
+        return (kept.joined(separator: " "), capitalizedFirstContentWord(trailing))
+    }
+
+    private static func joinedFormattedText(prefix: String, lines: [String], trailingProse: String? = nil) -> String {
         let cleanedPrefix = prefix
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: " ,;"))
 
-        let listText = lines.joined(separator: "\n")
+        var listText = lines.joined(separator: "\n")
+        if let trailingProse {
+            listText += "\n\n" + trailingProse
+        }
         guard !cleanedPrefix.isEmpty else {
             return listText
         }
@@ -672,7 +741,17 @@ enum SpokenFormattingFormatter {
             "seven": 7,
             "eight": 8,
             "nine": 9,
-            "ten": 10
+            "ten": 10,
+            "first": 1,
+            "second": 2,
+            "third": 3,
+            "fourth": 4,
+            "fifth": 5,
+            "sixth": 6,
+            "seventh": 7,
+            "eighth": 8,
+            "ninth": 9,
+            "tenth": 10
         ][value]
     }
 
@@ -684,6 +763,124 @@ enum SpokenFormattingFormatter {
         text.split { !$0.isLetter && !$0.isNumber }
             .first
             .map { String($0).lowercased() }
+    }
+}
+
+/// Splits a long dictation that came out as one block into paragraphs, the
+/// way it would have been typed: at sentence ends, preferring a sentence
+/// that opens a new point ("Also", "Another thing", "Finally"). Not used
+/// when the speaker laid the text out with "new line" / "new paragraph".
+enum AutoParagraphFormatter {
+    /// Shorter dictations (about 30 seconds of speech) stay one paragraph.
+    static let minimumWords = 80
+    /// A paragraph may end at a new point once it has this much...
+    private static let minimumSentencesBeforeShift = 2
+    private static let minimumWordsBeforeShift = 25
+    /// ...and must end by this size even without one.
+    private static let maximumParagraphWords = 90
+    private static let minimumSentencesPerParagraph = 3
+    /// A shorter last sentence joins the paragraph before it.
+    private static let minimumTrailingWords = 12
+
+    /// Openers that move to a new point. Matched against the start of a
+    /// sentence, case-insensitively, as whole words.
+    private static let topicShiftOpeners = [
+        "also", "another", "additionally", "in addition", "next", "then",
+        "finally", "lastly", "now", "anyway", "so", "however", "on the other hand",
+        "the other thing", "the other one", "one more thing", "moving on",
+        "secondly", "thirdly", "besides", "meanwhile", "overall", "in summary"
+    ]
+
+    /// Apps where a pasted newline runs a command.
+    private static let terminalApps: Set<String> = [
+        "terminal", "iterm", "iterm2", "ghostty", "warp", "alacritty", "kitty",
+        "wezterm", "hyper", "tabby", "cmux"
+    ]
+
+    static func appliesTo(targetApp: String?) -> Bool {
+        guard let targetApp else { return true }
+        return !terminalApps.contains(targetApp.lowercased())
+    }
+
+    /// Splits each block of prose (text between blank lines) on its own, so
+    /// the paragraph after a list is split too; blocks with line breaks
+    /// inside, like the list itself, stay as they are.
+    static func format(_ text: String) -> (text: String, changes: [String]) {
+        var added = 0
+        let blocks = text.components(separatedBy: "\n\n").map { block -> String in
+            let split = paragraphs(in: block)
+            added += split.count - 1
+            return split.joined(separator: "\n\n")
+        }
+        guard added > 0 else { return (text, []) }
+        let label = added == 1 ? "1 paragraph break" : "\(added) paragraph breaks"
+        return (blocks.joined(separator: "\n\n"), ["Formatting: added \(label)"])
+    }
+
+    private static func paragraphs(in text: String) -> [String] {
+        guard !text.contains("\n") else { return [text] }
+        let allSentences = sentences(in: text)
+        guard allSentences.count >= minimumSentencesPerParagraph * 2,
+              wordCount(text) >= minimumWords else { return [text] }
+
+        var paragraphs: [[String]] = [[]]
+        var currentWords = 0
+        for sentence in allSentences {
+            let words = wordCount(sentence)
+            let current = paragraphs[paragraphs.count - 1]
+            let shiftsTopic = opensNewPoint(sentence)
+                && current.count >= minimumSentencesBeforeShift
+                && currentWords >= minimumWordsBeforeShift
+            let isFull = current.count >= minimumSentencesPerParagraph
+                && currentWords + words > maximumParagraphWords
+            if !current.isEmpty, shiftsTopic || isFull {
+                paragraphs.append([])
+                currentWords = 0
+            }
+            paragraphs[paragraphs.count - 1].append(sentence)
+            currentWords += words
+        }
+
+        if paragraphs.count > 1,
+           let last = paragraphs.last,
+           last.count == 1,
+           wordCount(last[0]) < minimumTrailingWords {
+            paragraphs.removeLast()
+            paragraphs[paragraphs.count - 1].append(last[0])
+        }
+        guard paragraphs.count > 1 else { return [text] }
+        return paragraphs.map { $0.joined(separator: " ") }
+    }
+
+    /// Sentences end at . ! ? (with any closing quote) before a capital
+    /// letter or digit, so "e.g. this" and "3.5 GB" stay whole.
+    static func sentences(in text: String) -> [String] {
+        let pattern = #"(?<=[.!?][\"”’)]?)\s+(?=[\"“(]?[\p{Lu}\p{N}])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [text] }
+        var sentences: [String] = []
+        var start = text.startIndex
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range, in: text) else { continue }
+            let sentence = text[start..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+            if !sentence.isEmpty { sentences.append(sentence) }
+            start = range.upperBound
+        }
+        let tail = text[start...].trimmingCharacters(in: .whitespaces)
+        if !tail.isEmpty { sentences.append(tail) }
+        return sentences
+    }
+
+    private static func opensNewPoint(_ sentence: String) -> Bool {
+        let lowered = sentence.lowercased()
+        return topicShiftOpeners.contains { opener in
+            guard lowered.hasPrefix(opener) else { return false }
+            let next = lowered.dropFirst(opener.count).first
+            return next.map { !$0.isLetter } ?? true
+        }
+    }
+
+    private static func wordCount(_ text: String) -> Int {
+        text.split { $0.isWhitespace }.count
     }
 }
 

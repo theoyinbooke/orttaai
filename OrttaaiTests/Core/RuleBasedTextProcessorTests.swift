@@ -15,6 +15,7 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         "dictionaryEnabled",
         "snippetsEnabled",
         "spokenFormattingEnabled",
+        "autoParagraphsEnabled",
         "fuzzyDictionaryEnabled",
         "disfluencyCleanupEnabled",
         "dictationLanguage",
@@ -33,6 +34,7 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         settings.dictionaryEnabled = true
         settings.snippetsEnabled = true
         settings.spokenFormattingEnabled = true
+        settings.autoParagraphsEnabled = true
         settings.fuzzyDictionaryEnabled = true
         settings.disfluencyCleanupEnabled = true
         settings.dictationLanguage = "en"
@@ -147,6 +149,96 @@ final class RuleBasedTextProcessorTests: XCTestCase {
 
         XCTAssertEqual(output.text, "1. It has to be this\n2. It has to be that")
         XCTAssertTrue(output.changes.contains("Spoken formatting: numbered list"))
+    }
+
+    private func processed(_ text: String, app: String? = nil) async throws -> TextProcessorOutput {
+        try await processor.process(TextProcessorInput(rawTranscript: text, targetApp: app, mode: .raw))
+    }
+
+    func testFormatsNumberedListFromOrdinalWords() async throws {
+        let output = try await processed(
+            "My concerns are these. First, the cancel button should match the others. Second, we don't need the extra keys. Third, it should be pure voice."
+        )
+        XCTAssertEqual(
+            output.text,
+            "My concerns are these.\n1. The cancel button should match the others.\n2. We don't need the extra keys.\n3. It should be pure voice."
+        )
+    }
+
+    /// The shape of a real Express dictation: "First, …" then "Number two, …".
+    func testOrdinalAndNumberMarkersMakeOneList() async throws {
+        let output = try await processed("First, fix the cancel button. Number two, remove the extra keys.")
+        XCTAssertEqual(output.text, "1. Fix the cancel button.\n2. Remove the extra keys.")
+    }
+
+    /// Nothing marks the end of the last item, so a long tail after it
+    /// becomes its own paragraph instead of part of item two.
+    func testLongTailAfterTheLastItemBecomesAParagraph() async throws {
+        let tail = "The other thing I wanted to say is that the colors feel far too loud for a keyboard"
+            + " that sits under every single app you use all day long on your phone and on your iPad too."
+        let output = try await processed(
+            "First, fix the cancel button. Second, drop the extra keys. It should be pure voice. " + tail
+        )
+        XCTAssertEqual(
+            output.text,
+            "1. Fix the cancel button.\n2. Drop the extra keys. It should be pure voice.\n\n" + tail
+        )
+    }
+
+    func testFirstlySecondlyMakeAList() async throws {
+        let output = try await processed("Firstly: ship the fix. Secondly: tell the testers.")
+        XCTAssertEqual(output.text, "1. Ship the fix.\n2. Tell the testers.")
+    }
+
+    func testOrdinalWordsInProseAreLeftAlone() async throws {
+        for text in [
+            "First, let me check the logs before we ship.",
+            "This is the first time, and the second time, it worked.",
+            "Wait a second, I think it is fine.",
+        ] {
+            let output = try await processed(text)
+            XCTAssertEqual(output.text, text)
+        }
+    }
+
+    private func longDictation(paragraphOpeners: [String]) -> String {
+        let body = "The keyboard should feel like a regular keyboard with one big microphone in the middle."
+            + " The cancel button should sit at the bottom where people expect it."
+            + " Every extra control we add makes it harder to use with one hand."
+        return paragraphOpeners.map { "\($0) \(body)" }.joined(separator: " ")
+    }
+
+    func testLongDictationIsSplitIntoParagraphsAtNewPoints() async throws {
+        let text = longDictation(paragraphOpeners: ["Here is my take.", "Also, one more thing.", "Finally, to wrap up."])
+        let output = try await processed(text)
+
+        let paragraphs = output.text.components(separatedBy: "\n\n")
+        XCTAssertEqual(paragraphs.count, 3)
+        XCTAssertTrue(paragraphs[1].hasPrefix("Also, one more thing."))
+        XCTAssertTrue(paragraphs[2].hasPrefix("Finally, to wrap up."))
+        XCTAssertEqual(output.text.replacingOccurrences(of: "\n\n", with: " "), text, "no words change")
+    }
+
+    func testShortDictationStaysOneParagraph() async throws {
+        let text = "Also, the cancel button should sit at the bottom. Finally, ship it today."
+        let output = try await processed(text)
+        XCTAssertEqual(output.text, text)
+    }
+
+    func testAutomaticParagraphsSkipTerminalsAndCanBeDisabled() async throws {
+        let text = longDictation(paragraphOpeners: ["Here is my take.", "Also, one more thing.", "Finally, to wrap up."])
+        let terminalOutput = try await processed(text, app: "Terminal")
+        XCTAssertEqual(terminalOutput.text, text)
+
+        settings.autoParagraphsEnabled = false
+        let disabledOutput = try await processed(text)
+        XCTAssertEqual(disabledOutput.text, text)
+    }
+
+    func testSpeakersOwnBreaksAreKept() async throws {
+        let text = longDictation(paragraphOpeners: ["Here is my take.", "Also, one more thing."]) + " new paragraph Finally, done."
+        let output = try await processed(text)
+        XCTAssertEqual(output.text.components(separatedBy: "\n\n").count, 2, "only the spoken break")
     }
 
     func testFormatsNumberedListWithWhisperPunctuation() async throws {

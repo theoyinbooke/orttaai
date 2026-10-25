@@ -6,6 +6,31 @@ import XCTest
 
 @MainActor
 final class DisfluencyCleanerTests: XCTestCase {
+    func testCollapsesRestartedPhrases() {
+        let cases: [(input: String, expected: String)] = [
+            ("We don't we don't need them.", "We don't need them."),
+            ("we don't, we don't need them", "we don't need them"),
+            ("I think I think it works", "I think it works"),
+            ("it should be it should be pure voice", "it should be pure voice"),
+            ("we don't we don't we don't", "we don't"),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(DisfluencyCleaner.clean(input).text, expected, input)
+        }
+    }
+
+    func testKeepsDeliberateRepetition() {
+        for input in [
+            "I tried over and over and over again.",
+            "Do it step by step by step.",
+            "It got better day after day after day.",
+            "We had had enough.",
+            "no no no, not that one",
+        ] {
+            XCTAssertEqual(DisfluencyCleaner.clean(input).text, input)
+        }
+    }
+
     func testCleansFillersStuttersAndPronounI() {
         let cases: [(input: String, expected: String)] = [
             ("And, um, remember", "And remember"),

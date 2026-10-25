@@ -30,6 +30,19 @@ enum DisfluencyCleaner {
         options: [.caseInsensitive]
     )
 
+    private static let connective = #"(?:and|or|by|after|to|upon|than)\b"#
+
+    /// A two-to-four word phrase said twice in a row when the speaker
+    /// restarts ("we don't we don't need them"). Phrases that start or end
+    /// with a connective are left alone so "over and over and over" and
+    /// "step by step by step" keep their meaning.
+    private static let repeatedPhraseRegex = try? NSRegularExpression(
+        pattern: boundaryBefore
+            + #"((?!"# + connective + #")(?:[\p{L}'’]+[ \t]+){1,3}(?!"# + connective + #")[\p{L}'’]+)(?:[ \t]*,)?[ \t]+\1"#
+            + boundaryAfter,
+        options: [.caseInsensitive]
+    )
+
     private static let contractionRegex = try? NSRegularExpression(
         pattern: #"(?<![\p{L}\p{N}_'’.\-/@#$])i(?=['’](?:m|ll|ve|d)(?![\p{L}\p{N}_]))"#
     )
@@ -67,6 +80,12 @@ enum DisfluencyCleaner {
         value = repeated.text
         if repeated.count > 0 {
             changes.append("Disfluency: collapsed \(repeated.count) repeated word\(repeated.count == 1 ? "" : "s")")
+        }
+
+        let phrases = collapseRepeatedPhrases(in: value)
+        value = phrases.text
+        if phrases.count > 0 {
+            changes.append("Disfluency: collapsed \(phrases.count) repeated phrase\(phrases.count == 1 ? "" : "s")")
         }
 
         let capitalized = capitalizePronounI(in: value)
@@ -183,6 +202,21 @@ enum DisfluencyCleaner {
             guard matches > 0 else { break }
             count += matches
             value = repeatedWordRegex.stringByReplacingMatches(in: value, range: range, withTemplate: "$1")
+        }
+        return (value, count)
+    }
+
+    private static func collapseRepeatedPhrases(in text: String) -> (text: String, count: Int) {
+        guard let repeatedPhraseRegex else { return (text, 0) }
+        var value = text
+        var count = 0
+        // "we don't we don't we don't" needs a second pass.
+        while true {
+            let range = NSRange(value.startIndex..., in: value)
+            let matches = repeatedPhraseRegex.numberOfMatches(in: value, range: range)
+            guard matches > 0 else { break }
+            count += matches
+            value = repeatedPhraseRegex.stringByReplacingMatches(in: value, range: range, withTemplate: "$1")
         }
         return (value, count)
     }

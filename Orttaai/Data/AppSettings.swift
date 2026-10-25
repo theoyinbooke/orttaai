@@ -138,6 +138,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
     @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
+    /// Breaks a long dictation that came out as one block into paragraphs.
+    @AppStorage("autoParagraphsEnabled") var autoParagraphsEnabled: Bool = true
     @AppStorage("dictionaryEnabled") var dictionaryEnabled: Bool = true
     /// Corrects recognizer near-misses of dictionary targets (Tematope ->
     /// Temitope) after the literal source rows have run.
