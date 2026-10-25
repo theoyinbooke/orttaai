@@ -219,13 +219,24 @@ actor ExpressTranscriber: ExpressBackend {
                       let range = candidate.baseTextUTF8Range,
                       let vocabularyScore = candidate.rawVocabularyCTCScore,
                       let originalScore = candidate.rawOriginalCTCScore else { return nil }
+                let margin = vocabularyScore - originalScore
                 let accepted = WordBoostGuard.accepts(.init(
                     heard: candidate.basePhrase,
                     term: candidate.canonicalTerm,
-                    acousticMargin: vocabularyScore - originalScore
+                    acousticMargin: margin
                 ))
+                // Every proposal, kept or not, so a wrong swap can be traced
+                // to its numbers. What was said stays private in the log.
+                let similarity = WordBoostGuard.spellingSimilarity(
+                    WordBoostGuard.words(in: candidate.basePhrase).joined(),
+                    WordBoostGuard.words(in: candidate.canonicalTerm).joined()
+                )
+                Logger.transcription.info(
+                    "Word Boost \(accepted ? "applied" : "rejected", privacy: .public): \(candidate.basePhrase, privacy: .private) -> \(candidate.canonicalTerm, privacy: .public) [margin \(margin, format: .fixed(precision: 2), privacy: .public), spelling \(similarity, format: .fixed(precision: 2), privacy: .public)]"
+                )
                 return accepted ? (range, candidate.canonicalTerm) : nil
             }
+            Logger.transcription.info("Word Boost: \(replacements.count, privacy: .public) of \(evidence.candidates.count, privacy: .public) proposals applied")
             return Self.applying(replacements, to: evidence.baseText)
         } catch {
             Logger.transcription.error("Word Boost skipped: \(error.localizedDescription, privacy: .public)")
