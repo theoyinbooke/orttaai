@@ -39,6 +39,12 @@ final class ArchiveSyncController {
     private(set) var pendingCount = 0
     private(set) var quarantinedCount = 0
     private(set) var lastError: String?
+    /// Sync Now was turned away for now (iCloud busy or rate-limited).
+    private var syncNowDeferred = false
+
+    /// iCloud asked to wait; the engine retries on its own, so it's shown as
+    /// progress, not as an error.
+    var isWaitingToRetry: Bool { syncNowDeferred || status.waitingToRetry }
 
     @ObservationIgnored private var host: CloudSyncEngineHost?
     @ObservationIgnored private var store: MacSyncStore?
@@ -259,7 +265,12 @@ final class ArchiveSyncController {
         }
         do {
             try await host.syncNow()
+            lastError = nil
+            syncNowDeferred = false
             if includingOlderMacs { await runLegacyBridge(force: true) }
+        } catch where CloudSyncEngineHost.isTransient(error) {
+            logger.notice("Sync Now deferred: \(error.localizedDescription, privacy: .public)")
+            syncNowDeferred = true
         } catch {
             lastError = error.localizedDescription
         }
@@ -422,7 +433,15 @@ extension ArchiveSyncController: SyncCoordinatorObserver {
 
     nonisolated func syncStatusDidChange(_ status: SyncStatus) {
         Task { @MainActor in
+            let sent = status.lastSentAt != self.status.lastSentAt
+            let fetched = status.lastFetchedAt != self.status.lastFetchedAt
             self.status = status
+            if sent || fetched {
+                // Sync got through since Sync Now failed: that error is over.
+                self.lastError = nil
+                self.syncNowDeferred = false
+            }
+            if sent { self.refreshDetails() }
             if status.suspension == .accountChanged, self.phase != .needsAccountChoice {
                 await self.accountSwitched()
             } else if status.suspension == .awaitingAccountCheck {

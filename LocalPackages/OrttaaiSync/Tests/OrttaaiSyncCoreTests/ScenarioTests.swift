@@ -333,6 +333,24 @@ struct ScenarioTests {
         #expect(cloud.record(id) != nil)
     }
 
+    @Test func throttledSendWaitsWithoutAnError() async throws {
+        let cloud = SimCloud()
+        let mac = SimDevice(name: "mac", platform: .mac, kind: .mac)
+        try await mac.boot()
+        await settle([mac], cloud, rounds: 1)
+        let id = mac.store.createDictation(text: "Sent once iCloud has room")
+        let commands = await mac.coordinator.handle(.sentRecordZoneChanges(saved: [], failed: [FailedSave(id: id, failure: .transient)]))
+        #expect(commands.contains(.addPendingSaves([id])))
+        var status = await mac.coordinator.currentStatus
+        #expect(status.waitingToRetry)
+        #expect(status.lastError == nil)
+        await mac.noteLocalChanges([id])
+        await settle([mac], cloud, rounds: 2)
+        #expect(cloud.record(id) != nil)
+        status = await mac.coordinator.currentStatus
+        #expect(!status.waitingToRetry)
+    }
+
     @Test func unreadableAndFutureRecordsAreQuarantined() async throws {
         let mac = SimDevice(name: "mac", platform: .mac, kind: .mac)
         try await mac.boot()

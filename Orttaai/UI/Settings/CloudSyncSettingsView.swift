@@ -62,9 +62,10 @@ struct CloudSyncSettingsView: View {
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
         case .running:
-            Label(runningText, systemImage: sync.pendingCount > 0 ? "arrow.triangle.2.circlepath.icloud" : "checkmark.icloud")
+            let busy = sync.pendingCount > 0 || sync.isWaitingToRetry
+            Label(runningText, systemImage: busy ? "arrow.triangle.2.circlepath.icloud" : "checkmark.icloud")
                 .font(.Orttaai.caption)
-                .foregroundStyle(sync.pendingCount > 0 ? Color.Orttaai.textSecondary : Color.Orttaai.success)
+                .foregroundStyle(busy ? Color.Orttaai.textSecondary : Color.Orttaai.success)
         case .needsAccountChoice:
             EmptyView()
         case .unavailable(let message):
@@ -74,7 +75,11 @@ struct CloudSyncSettingsView: View {
 
     private var runningText: String {
         if sync.pendingCount > 0 {
-            return "Sending \(sync.pendingCount) change\(sync.pendingCount == 1 ? "" : "s")"
+            let sending = "Sending \(sync.pendingCount) change\(sync.pendingCount == 1 ? "" : "s")"
+            return sync.isWaitingToRetry ? "\(sending) · iCloud is busy, retrying shortly" : sending
+        }
+        if sync.isWaitingToRetry {
+            return "iCloud is busy, retrying shortly"
         }
         if let date = sync.status.lastFetchedAt {
             return "Up to date · \(date.formatted(date: .omitted, time: .shortened))"

@@ -105,19 +105,24 @@ public struct SyncStatus: Equatable, Sendable {
     /// The last fetch that finished, or nil before the first one.
     public var lastFetchedAt: Date?
     public var lastSentAt: Date?
+    /// The last send was turned away for now (iCloud busy, rate-limited,
+    /// offline): the engine retries on its own, nothing is wrong.
+    public var waitingToRetry: Bool
 
     public init(
         suspension: SyncSuspension = .none,
         missingZones: [SyncZone] = [],
         lastError: String? = nil,
         lastFetchedAt: Date? = nil,
-        lastSentAt: Date? = nil
+        lastSentAt: Date? = nil,
+        waitingToRetry: Bool = false
     ) {
         self.suspension = suspension
         self.missingZones = missingZones
         self.lastError = lastError
         self.lastFetchedAt = lastFetchedAt
         self.lastSentAt = lastSentAt
+        self.waitingToRetry = waitingToRetry
     }
 }
 
@@ -492,6 +497,7 @@ public actor SyncCoordinator {
             status.lastSentAt = Date()
             status.lastError = nil
         }
+        status.waitingToRetry = failed.contains { $0.failure == .transient }
 
         var commands: [EngineCommand] = []
         var resend: [SyncRecordID] = []

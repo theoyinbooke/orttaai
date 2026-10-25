@@ -327,6 +327,16 @@ public actor CloudSyncEngineHost: CKSyncEngineDelegate {
         }
     }
 
+    /// Whether a failed fetch or send only has to wait (iCloud busy,
+    /// rate-limited, offline): CKSyncEngine retries these on its own.
+    public static func isTransient(_ error: Error) -> Bool {
+        guard let error = error as? CKError else { return false }
+        if error.code == .partialFailure, let partial = error.partialErrorsByItemID, !partial.isEmpty {
+            return partial.values.allSatisfy { isTransient($0) }
+        }
+        return saveFailure(error) == .transient
+    }
+
     static func saveFailure(_ error: CKError) -> SaveFailure {
         switch error.code {
         case .serverRecordChanged:
