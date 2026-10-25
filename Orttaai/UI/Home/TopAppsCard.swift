@@ -58,6 +58,6 @@ struct TopAppsCard: View {
     }
 
     private var displayedApps: [DashboardTopApp] {
-        Array(apps.prefix(3))
+        Array(apps.prefix(4))
     }
 }

@@ -38,7 +38,7 @@ final class DashboardStatsService {
         let header = makeHeaderStats(from: allRecords)
         let today = makeTodaySnapshot(from: todayRecords)
         let trend30d = makeTrendPoints(from: thirtyDayRecords, startDay: thirtyDayStart, dayCount: 30)
-        let topApps30d = makeTopApps(from: thirtyDayRecords, limit: 3)
+        let topApps30d = makeTopApps(from: thirtyDayRecords, limit: 4)
         let performance = makePerformance(
             from: weekRecords,
             modelSourceRecords: recentRecords,

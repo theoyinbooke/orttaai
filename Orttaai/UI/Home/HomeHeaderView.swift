@@ -35,7 +35,7 @@ struct HomeHeaderView: View {
                 Button {
                     onToggleInsights()
                 } label: {
-                    Label("Insight", systemImage: "lightbulb")
+                    Label("Insight", systemImage: "waveform.and.magnifyingglass")
                         .lineLimit(1)
                 }
                 .buttonStyle(ChipButtonStyle())

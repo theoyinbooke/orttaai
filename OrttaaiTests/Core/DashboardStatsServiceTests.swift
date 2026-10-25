@@ -93,20 +93,21 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(payload.header.averageWPM, 108)
     }
 
-    func testTopAppsUseThirtyDaysAndLimitToThree() throws {
+    func testTopAppsUseThirtyDaysAndLimitToFour() throws {
         try save(text: "notes one", dayOffset: 0, recordingMs: 1_000, appName: "Notes")
         try save(text: "notes two", dayOffset: -7, recordingMs: 1_000, appName: "Notes")
         try save(text: "notes three", dayOffset: -29, recordingMs: 1_000, appName: "Notes")
         try save(text: "safari one", dayOffset: -8, recordingMs: 1_000, appName: "Safari")
         try save(text: "safari two", dayOffset: -20, recordingMs: 1_000, appName: "Safari")
         try save(text: "mail has more words", dayOffset: -10, recordingMs: 1_000, appName: "Mail")
-        try save(text: "xcode", dayOffset: -11, recordingMs: 1_000, appName: "Xcode")
+        try save(text: "xcode build", dayOffset: -11, recordingMs: 1_000, appName: "Xcode")
+        try save(text: "pages", dayOffset: -12, recordingMs: 1_000, appName: "Pages")
         try save(text: "old app should be excluded", dayOffset: -30, recordingMs: 1_000, appName: "Old App")
 
         let payload = try service.load(currentModelId: "test-model")
 
-        XCTAssertEqual(payload.topApps30d.map(\.name), ["Notes", "Safari", "Mail"])
-        XCTAssertEqual(payload.topApps30d.map(\.sessions), [3, 2, 1])
+        XCTAssertEqual(payload.topApps30d.map(\.name), ["Notes", "Safari", "Mail", "Xcode"])
+        XCTAssertEqual(payload.topApps30d.map(\.sessions), [3, 2, 1, 1])
     }
 
     func testPerformanceLevelThresholds() throws {
