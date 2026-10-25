@@ -271,11 +271,24 @@ enum SpokenFormattingFormatter {
         /// "First," is ordinary prose on its own; only "number one" and
         /// "item one" may start a one-item list.
         var isOrdinal = false
+        /// Written as a digit ("2."), which prose has too ("I bought 2."):
+        /// a list of these must start at 1.
+        var isInline = false
     }
 
     private struct TextMarker {
         let range: Range<String.Index>
     }
+
+    private struct LetterMarker {
+        let range: Range<String.Index>
+        /// 1 for a, 2 for b…
+        let index: Int
+    }
+
+    /// One item's lines, and for the last item the prose that follows the
+    /// list (its own paragraph).
+    private typealias ItemLayout = (lines: [String], trailingProse: String?)
 
     private enum MarkerKind {
         case ordered
@@ -283,24 +296,33 @@ enum SpokenFormattingFormatter {
     }
 
     private static let orderedMarkerPattern = #"""
-    (?<![\p{L}\p{N}_])(?:number|item)\s+(one|two|three|four|five|six|seven|eight|nine|ten|1|2|3|4|5|6|7|8|9|10)(?![\p{L}\p{N}_])
+    (?<![\p{L}\p{N}_])(?:number|item)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|20|1[0-9]|[1-9])(?![\p{L}\p{N}_])
     """#
 
     private static let inlineOrderedMarkerPattern = #"""
-    (?<![\p{L}\p{N}_])([1-9]|10)[\.\)](?=\s+)
+    (?<![\p{L}\p{N}_])(20|1[0-9]|[1-9])[\.\)](?=\s+)
     """#
 
     /// "First, … Second, …" and "Firstly: …": an ordinal opening a clause
-    /// and followed by a comma or colon. Mid-sentence ordinals ("the first
-    /// time") never match, and one alone is not a list. Spaces are written
-    /// \x20 because these patterns are compiled ignoring literal whitespace.
+    /// (or following ", and") and followed by a comma or colon. Mid-sentence
+    /// ordinals ("the first time") never match, and one alone is not a list.
+    /// Spaces are written \x20 because these patterns are compiled ignoring
+    /// literal whitespace.
     private static let ordinalMarkerPattern = #"""
-    (?:^|(?<=[.!?:;,][\x20\t]))(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)(?:ly)?(?=[\x20\t]*[,:])
+    (?:^|(?<=[.!?:;,][\x20\t])|(?<=,[\x20\t]and[\x20\t]))(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)(?:ly)?(?=[\x20\t]*[,:])
     """#
 
     private static let bulletMarkerPattern = #"""
     (?<![\p{L}\p{N}_])bullet\s+point(?![\p{L}\p{N}_])
     """#
+
+    /// "letter a, … letter b, …" as said, "a) … b) …" / "(a) … (b) …" as
+    /// transcribed, and "a. …" at the start of a line, the way a formatted
+    /// list writes them. "a." mid-sentence is left alone: it's an initial or
+    /// the article more often than a list.
+    private static let spokenLetterPattern = #"(?<![\p{L}\p{N}_])letter\s+([a-j])(?![\p{L}\p{N}_])"#
+    private static let writtenLetterPattern = #"(?:(?<![\p{L}\p{N}_])\(?([a-j])\)|^[ \t]*([a-j])[.)])(?=[ \t])"#
+    private static let lineStartsWithLetterPattern = #"^[ \t]*(?:\(?[a-j][.)](?=[ \t])|letter\s+[a-j](?![\p{L}\p{N}_]))"#
 
     /// Guards that keep break commands from firing inside noun phrases:
     /// "add [a] new paragraph [about pricing]" is prose, "new paragraph" alone
@@ -322,16 +344,25 @@ enum SpokenFormattingFormatter {
 
     static func format(_ text: String) -> (text: String, changes: [String]) {
         let lineBreakResult = applyLineBreakCommands(to: text)
+        var changes = lineBreakResult.changes
 
-        if let formattedText = formatOrderedList(lineBreakResult.text) {
-            return (formattedText, lineBreakResult.changes + ["Spoken formatting: numbered list"])
+        // One paragraph at a time: a list ends where its paragraph does, and
+        // a list already laid out (by Polish, or an earlier pass) comes
+        // through as it is.
+        let formatters: [(format: (String) -> String?, change: String)] = [
+            (formatOrderedLists, "Spoken formatting: numbered list"),
+            (formatLetteredList, "Spoken formatting: lettered list"),
+            (formatBulletList, "Spoken formatting: bullet list"),
+        ]
+        let blocks = lineBreakResult.text.components(separatedBy: "\n\n").map { block -> String in
+            for formatter in formatters {
+                guard let formatted = formatter.format(block) else { continue }
+                if formatted != block, !changes.contains(formatter.change) { changes.append(formatter.change) }
+                return formatted
+            }
+            return block
         }
-
-        if let formattedText = formatBulletList(lineBreakResult.text) {
-            return (formattedText, lineBreakResult.changes + ["Spoken formatting: bullet list"])
-        }
-
-        return (lineBreakResult.text, lineBreakResult.changes)
+        return (blocks.joined(separator: "\n\n"), changes)
     }
 
     /// Applies spoken "new line" / "new paragraph" commands as real breaks,
@@ -389,90 +420,166 @@ enum SpokenFormattingFormatter {
         return result
     }
 
-    private static func formatOrderedList(_ text: String) -> String? {
-        let markers = orderedMarkers(in: text)
-        guard let run = orderedRun(from: markers, in: text) else { return nil }
+    /// Every numbered list in a paragraph. When a second list follows in
+    /// the same paragraph, the first one's last item ends at the last
+    /// sentence before it, so the sentence that introduces the second list
+    /// ("For the afternoon,") stays with it.
+    private static func formatOrderedLists(_ text: String) -> String? {
+        let runs = orderedRuns(from: orderedMarkers(in: text), in: text)
+        guard !runs.isEmpty else { return nil }
 
-        var lines: [String] = []
-        var trailingProse: String?
-        for index in run.indices {
-            let marker = run[index]
-            let itemStart = marker.range.upperBound
-            let itemEnd = index == run.index(before: run.endIndex)
-                ? text.endIndex
-                : run[run.index(after: index)].range.lowerBound
-            var item = cleanedItemContent(String(text[itemStart..<itemEnd]))
-            guard !item.isEmpty else { return nil }
-            if index == run.index(before: run.endIndex) {
-                (item, trailingProse) = splitTrailingProse(fromLastItem: item)
-            }
-            lines.append("\(marker.number). \(capitalizedFirstContentWord(item))")
+        var lists: [String] = []
+        var start = text.startIndex
+        for (index, run) in runs.enumerated() {
+            let end = index + 1 < runs.count
+                ? lastSentenceEnd(in: text, from: run[run.count - 1].range.upperBound, to: runs[index + 1][0].range.lowerBound)
+                : text.endIndex
+            guard let list = laidOutList(run.map(\.range), in: text, from: start, to: end, item: { item, raw, isLast in
+                orderedItemLayout(number: run[item].number, raw: raw, isLast: isLast)
+            }) else { return nil }
+            lists.append(list)
+            start = end
         }
+        return lists.joined(separator: "\n\n")
+    }
 
-        return joinedFormattedText(
-            prefix: String(text[..<run[run.startIndex].range.lowerBound]),
-            lines: lines,
-            trailingProse: trailingProse
-        )
+    /// "1. Item", and under it "a. …" lines when the item holds its own
+    /// lettered points ("letter a, … letter b, …").
+    private static func orderedItemLayout(number: Int, raw: String, isLast: Bool) -> ItemLayout? {
+        guard let letters = letterRun(in: raw) else {
+            return itemLayout(marker: "\(number).", raw: raw, isLast: isLast)
+        }
+        let head = cleanedItemContent(String(raw[..<letters[0].range.lowerBound]))
+        var lines = [head.isEmpty ? "\(number)." : "\(number). \(capitalizedFirstContentWord(head))"]
+        var trailingProse: String?
+        for index in letters.indices {
+            let isLastLetter = index == letters.count - 1
+            let end = isLastLetter ? raw.endIndex : letters[index + 1].range.lowerBound
+            guard let layout = itemLayout(
+                marker: "\(letter(letters[index].index, uppercase: false)).",
+                raw: String(raw[letters[index].range.upperBound..<end]),
+                isLast: isLast && isLastLetter,
+                indent: nestedIndent
+            ) else { return nil }
+            lines += layout.lines
+            trailingProse = layout.trailingProse
+        }
+        return (lines, trailingProse)
+    }
+
+    /// Lettered points under a numbered item sit under its text.
+    private static let nestedIndent = "   "
+
+    /// A list of letters on its own: "A. …", "B. …".
+    private static func formatLetteredList(_ text: String) -> String? {
+        guard let run = letterRun(in: text) else { return nil }
+        return laidOutList(run.map(\.range), in: text, from: text.startIndex, to: text.endIndex) { item, raw, isLast in
+            itemLayout(marker: "\(letter(run[item].index, uppercase: true)).", raw: raw, isLast: isLast)
+        }
     }
 
     private static func formatBulletList(_ text: String) -> String? {
-        let markers = bulletMarkers(in: text)
-        guard let run = bulletRun(from: markers, in: text) else { return nil }
-
-        var lines: [String] = []
-        var trailingProse: String?
-        for index in run.indices {
-            let marker = run[index]
-            let itemStart = marker.range.upperBound
-            let itemEnd = index == run.index(before: run.endIndex)
-                ? text.endIndex
-                : run[run.index(after: index)].range.lowerBound
-            var item = cleanedItemContent(String(text[itemStart..<itemEnd]))
-            guard !item.isEmpty else { return nil }
-            if index == run.index(before: run.endIndex) {
-                (item, trailingProse) = splitTrailingProse(fromLastItem: item)
-            }
-            lines.append("- \(capitalizedFirstContentWord(item))")
+        guard let run = bulletRun(from: bulletMarkers(in: text), in: text) else { return nil }
+        return laidOutList(run.map(\.range), in: text, from: text.startIndex, to: text.endIndex) { _, raw, isLast in
+            itemLayout(marker: "-", raw: raw, isLast: isLast)
         }
-
-        return joinedFormattedText(
-            prefix: String(text[..<run[run.startIndex].range.lowerBound]),
-            lines: lines,
-            trailingProse: trailingProse
-        )
     }
 
-    private static func orderedRun(from markers: [OrderedMarker], in text: String) -> [OrderedMarker]? {
-        guard let firstMarker = markers.first else { return nil }
+    /// Lays out one run of markers found in `text[start..<end]`: what comes
+    /// before the first marker is the list's introduction, each item runs to
+    /// the next marker, and the last one to `end`, or to a line break the
+    /// speaker (or Polish) put after it. Nil if an item is empty.
+    private static func laidOutList(
+        _ markers: [Range<String.Index>],
+        in text: String,
+        from start: String.Index,
+        to end: String.Index,
+        item: (_ index: Int, _ raw: String, _ isLast: Bool) -> ItemLayout?
+    ) -> String? {
+        var lines: [String] = []
+        var trailingProse: String?
+        var trailingLines: String?
+        for index in markers.indices {
+            let isLast = index == markers.count - 1
+            var raw = String(text[markers[index].upperBound..<(isLast ? end : markers[index + 1].lowerBound)])
+            if isLast { (raw, trailingLines) = endOfLastItem(raw) }
+            guard let layout = item(index, raw, isLast) else { return nil }
+            lines += layout.lines
+            if isLast { trailingProse = layout.trailingProse }
+        }
 
-        var bestRun: [OrderedMarker] = []
-        var currentRun = [firstMarker]
+        var list = lines.joined(separator: "\n")
+        if let trailingProse { list += "\n\n" + trailingProse }
+        if let trailingLines { list += "\n" + trailingLines }
 
-        for marker in markers.dropFirst() {
-            if marker.number == currentRun[currentRun.count - 1].number + 1 {
-                currentRun.append(marker)
+        let prefix = text[start..<markers[0].lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,;"))
+        return prefix.isEmpty ? list : "\(prefix)\n\(list)"
+    }
+
+    private static func itemLayout(marker: String, raw: String, isLast: Bool, indent: String = "") -> ItemLayout? {
+        var item = cleanedItemContent(raw)
+        guard !item.isEmpty else { return nil }
+        var trailingProse: String?
+        if isLast {
+            (item, trailingProse) = splitTrailingProse(fromLastItem: item)
+        }
+        return (["\(indent)\(marker) \(capitalizedFirstContentWord(item))"], trailingProse)
+    }
+
+    /// The last item ends at a line break, unless the next line carries on
+    /// with the item's own lettered points. What follows the break is kept
+    /// as it was.
+    private static func endOfLastItem(_ raw: String) -> (item: String, trailing: String?) {
+        var searchStart = raw.startIndex
+        while let newline = raw[searchStart...].firstIndex(of: "\n") {
+            let rest = String(raw[raw.index(after: newline)...])
+            searchStart = raw.index(after: newline)
+            // Item text starting on the next line ("number one, new line, …").
+            guard !cleanedItemContent(String(raw[..<newline])).isEmpty else { continue }
+            if rest.range(of: lineStartsWithLetterPattern, options: [.regularExpression, .caseInsensitive]) != nil { continue }
+            let trailing = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (String(raw[..<newline]), trailing.isEmpty ? nil : trailing)
+        }
+        return (raw, nil)
+    }
+
+    /// Just after the last sentence end in `text[start..<end]`, or `end`.
+    private static func lastSentenceEnd(in text: String, from start: String.Index, to end: String.Index) -> String.Index {
+        guard let regex = try? NSRegularExpression(pattern: #"[.!?]["”’)]?\s+"#),
+              let match = regex.matches(in: text, range: NSRange(start..<end, in: text)).last,
+              let range = Range(match.range, in: text) else {
+            return end
+        }
+        return range.upperBound
+    }
+
+    /// Runs of consecutive numbers (1, 2, 3…), each of at least two items,
+    /// in order. Digit-only runs must start at 1, so "I bought 2. Then I
+    /// bought 3." stays prose. A lone "number one" opening the paragraph is a
+    /// one-item list.
+    private static func orderedRuns(from markers: [OrderedMarker], in text: String) -> [[OrderedMarker]] {
+        var sequences: [[OrderedMarker]] = []
+        for marker in markers {
+            if let last = sequences.last?.last, marker.number == last.number + 1 {
+                sequences[sequences.count - 1].append(marker)
             } else {
-                if currentRun.count > bestRun.count {
-                    bestRun = currentRun
-                }
-                currentRun = [marker]
+                sequences.append([marker])
             }
         }
 
-        if currentRun.count > bestRun.count {
-            bestRun = currentRun
+        let runs = sequences.filter { $0.count >= 2 && !($0[0].isInline && $0[0].number != 1) }
+        if !runs.isEmpty {
+            return runs
         }
 
-        if bestRun.count >= 2 {
-            return bestRun
+        if let firstMarker = markers.first, firstMarker.number == 1, !firstMarker.isOrdinal,
+           isLikelySingleMarkerCommand(firstMarker.range, in: text, kind: .ordered) {
+            return [[firstMarker]]
         }
 
-        if firstMarker.number == 1, !firstMarker.isOrdinal, isLikelySingleMarkerCommand(firstMarker.range, in: text, kind: .ordered) {
-            return [firstMarker]
-        }
-
-        return nil
+        return []
     }
 
     private static func bulletRun(from markers: [TextMarker], in text: String) -> [TextMarker]? {
@@ -528,11 +635,17 @@ enum SpokenFormattingFormatter {
                       let number = numberValue(String(text[numberRange])) else {
                     return nil
                 }
-                return OrderedMarker(range: fullRange, number: number)
+                return OrderedMarker(range: fullRange, number: number, isInline: true)
             })
         }
 
-        return markers.sorted { $0.range.lowerBound < $1.range.lowerBound }
+        // "number 2." matches as a spoken and as a written marker: keep one.
+        var kept: [OrderedMarker] = []
+        for marker in markers.sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) {
+            if let previous = kept.last, marker.range.lowerBound < previous.range.upperBound { continue }
+            kept.append(marker)
+        }
+        return kept
     }
 
     private static func bulletMarkers(in text: String) -> [TextMarker] {
@@ -548,6 +661,43 @@ enum SpokenFormattingFormatter {
             guard let range = Range(match.range, in: text) else { return nil }
             return TextMarker(range: range)
         }
+    }
+
+    /// The first run of consecutive letters starting at "a", at least two
+    /// long.
+    private static func letterRun(in text: String) -> [LetterMarker]? {
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        var markers: [LetterMarker] = []
+        for pattern in [spokenLetterPattern, writtenLetterPattern] {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .anchorsMatchLines]) else { continue }
+            for match in regex.matches(in: text, range: nsRange) {
+                guard let range = Range(match.range, in: text) else { continue }
+                let letterRange = (1..<match.numberOfRanges).lazy
+                    .compactMap { Range(match.range(at: $0), in: text) }
+                    .first
+                guard let letterRange, let scalar = text[letterRange].lowercased().unicodeScalars.first else { continue }
+                markers.append(LetterMarker(range: range, index: Int(scalar.value) - 96))
+            }
+        }
+        markers.sort { $0.range.lowerBound < $1.range.lowerBound }
+
+        var run: [LetterMarker] = []
+        for marker in markers {
+            if let last = run.last, marker.range.lowerBound < last.range.upperBound { continue }
+            if let last = run.last, marker.index == last.index + 1 {
+                run.append(marker)
+            } else if run.count >= 2 {
+                break
+            } else {
+                run = marker.index == 1 ? [marker] : []
+            }
+        }
+        return run.count >= 2 ? run : nil
+    }
+
+    private static func letter(_ index: Int, uppercase: Bool) -> String {
+        let value = String(UnicodeScalar(UInt8(96 + index)))
+        return uppercase ? value.uppercased() : value
     }
 
     private static func isLikelySingleMarkerCommand(
@@ -661,7 +811,7 @@ enum SpokenFormattingFormatter {
 
     private static func stripTrailingConnector(from text: String) -> String {
         text.replacingOccurrences(
-            of: #"(?i)(?:,?\s+)?(?:and|then|next)$"#,
+            of: #"(?i)(?:,?\s+)?(?:and|or|then|next)$"#,
             with: "",
             options: .regularExpression
         )
@@ -688,21 +838,6 @@ enum SpokenFormattingFormatter {
         guard kept.count < sentences.count else { return (item, nil) }
         let trailing = sentences.dropFirst(kept.count).joined(separator: " ")
         return (kept.joined(separator: " "), capitalizedFirstContentWord(trailing))
-    }
-
-    private static func joinedFormattedText(prefix: String, lines: [String], trailingProse: String? = nil) -> String {
-        let cleanedPrefix = prefix
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: " ,;"))
-
-        var listText = lines.joined(separator: "\n")
-        if let trailingProse {
-            listText += "\n\n" + trailingProse
-        }
-        guard !cleanedPrefix.isEmpty else {
-            return listText
-        }
-        return "\(cleanedPrefix)\n\(listText)"
     }
 
     private static func capitalizedFirstContentWord(_ text: String) -> String {
@@ -742,6 +877,16 @@ enum SpokenFormattingFormatter {
             "eight": 8,
             "nine": 9,
             "ten": 10,
+            "eleven": 11,
+            "twelve": 12,
+            "thirteen": 13,
+            "fourteen": 14,
+            "fifteen": 15,
+            "sixteen": 16,
+            "seventeen": 17,
+            "eighteen": 18,
+            "nineteen": 19,
+            "twenty": 20,
             "first": 1,
             "second": 2,
             "third": 3,

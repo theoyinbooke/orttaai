@@ -482,6 +482,135 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         XCTAssertEqual(output.text, "here is the plan\n1. Review the budget\n2. Send the report")
     }
 
+    // MARK: Lists end where their paragraph ends
+
+    func testNewParagraphAfterTheLastItemEndsTheList() async throws {
+        let output = try await processed(
+            "Number one, open the app. Number two, click save. New paragraph. Then we are done with the setup and we can go home."
+        )
+        XCTAssertEqual(output.text, "1. Open the app.\n2. Click save.\n\nThen we are done with the setup and we can go home.")
+    }
+
+    func testParagraphsAroundAListKeepTheirBreaks() async throws {
+        let output = try await processed(
+            "Thanks for joining the call today. New paragraph. Here is what we agreed. Number one, Sam owns the pricing page."
+                + " Number two, Ade fixes the login bug. Number three, we meet again on Thursday. New paragraph."
+                + " Let me know if I missed anything. New paragraph. Thanks, Theo."
+        )
+        XCTAssertEqual(
+            output.text,
+            "Thanks for joining the call today.\n\nHere is what we agreed.\n1. Sam owns the pricing page.\n2. Ade fixes the login bug."
+                + "\n3. We meet again on Thursday.\n\nLet me know if I missed anything.\n\nThanks, Theo."
+        )
+    }
+
+    func testNewLineAfterTheLastItemEndsIt() async throws {
+        let output = try await processed("Number one, open the app. Number two, click save. New line. Thanks.")
+        XCTAssertEqual(output.text, "1. Open the app.\n2. Click save.\nThanks.")
+    }
+
+    func testTwoListsSeparatedByANewParagraph() async throws {
+        let output = try await processed(
+            "For the morning, number one, coffee, number two, email. New paragraph. For the afternoon, number one, meetings, number two, code review."
+        )
+        XCTAssertEqual(output.text, "For the morning\n1. Coffee\n2. Email.\n\nFor the afternoon\n1. Meetings\n2. Code review.")
+    }
+
+    /// The sentence before the second list introduces it.
+    func testTwoListsInOneParagraph() async throws {
+        let output = try await processed(
+            "For the morning, number one, coffee, number two, email. For the afternoon, number one, meetings, number two, code review."
+        )
+        XCTAssertEqual(output.text, "For the morning\n1. Coffee\n2. Email.\n\nFor the afternoon\n1. Meetings\n2. Code review.")
+    }
+
+    // MARK: Formatting again after Polish
+
+    /// S1-mini's answer goes through spoken formatting again: lists it laid
+    /// out, and the paragraphs around them, must come through as they are.
+    func testFormattingAPolishedAnswerAgainChangesNothing() {
+        for polished in [
+            "For the morning:\n1. Coffee\n2. Email\n\nFor the afternoon:\n1. Meetings\n2. Code review",
+            "The meeting went well.\n\n1. We agreed on the pricing.\n2. We agreed on the launch date.\n\nAfter the meeting, I sent the notes to everyone.",
+            "Here is what we agreed:\n\n1. Sam owns the pricing page.\n2. Ade fixes the login bug.\n\nThanks, Theo.",
+            "1. Rent chairs.\n2. Print the menus.\n\nNumber 11, print the menus.",
+            "1. Fruits.\n   a. Apples.\n   b. Pears.\n2. Vegetables.\n   a. Carrots.\n   b. Spinach.",
+            "The options are:\nA. The red one\nB. The blue one\nC. The green one",
+            "We have three things to do:\n- Update the pricing page.\n- Fix the login bug.\n\nAfter that, the iPhone app.",
+            "1. Open the app.\n2. Click save.\nThanks.",
+        ] {
+            let result = SpokenFormattingFormatter.format(polished)
+            XCTAssertEqual(result.text, polished)
+            XCTAssertTrue(result.changes.isEmpty, "\(result.changes)")
+        }
+    }
+
+    /// Polish may drop the indent of lettered points; they go back under
+    /// their item.
+    func testLetteredPointsWithoutTheirIndentGoBackUnderTheirItem() {
+        let result = SpokenFormattingFormatter.format("1. Fruits.\na. Apples.\nb. Pears.\n2. Vegetables.\na. Carrots.\nb. Spinach.")
+        XCTAssertEqual(result.text, "1. Fruits.\n   a. Apples.\n   b. Pears.\n2. Vegetables.\n   a. Carrots.\n   b. Spinach.")
+    }
+
+    // MARK: Which numbers make a list
+
+    func testDigitsInProseAreNotAList() async throws {
+        let text = "I bought 2. Then I bought 3. That is all for today."
+        let output = try await processed(text)
+        XCTAssertEqual(output.text, text)
+    }
+
+    func testOrdinalAfterAndContinuesTheList() async throws {
+        let output = try await processed(
+            "My three priorities are, first, hiring two engineers, second, closing the seed round, and third, launching the iPhone app."
+        )
+        XCTAssertEqual(output.text, "My three priorities are\n1. Hiring two engineers\n2. Closing the seed round\n3. Launching the iPhone app.")
+    }
+
+    func testListsGoPastTen() async throws {
+        let items = ["call the bank", "email Sarah", "review the contract", "book the venue", "order the food", "send invites",
+                     "buy decorations", "hire a DJ", "confirm the photographer", "rent chairs", "print the menus", "clean up"]
+        let words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"]
+        let spoken = zip(words, items).map { "Number \($0), \($1)." }.joined(separator: " ")
+        let output = try await processed(spoken)
+        let expected = items.enumerated().map { "\($0.offset + 1). \($0.element.prefix(1).uppercased())\($0.element.dropFirst())." }
+        XCTAssertEqual(output.text, expected.joined(separator: "\n"))
+    }
+
+    // MARK: Lettered lists
+
+    func testFormatsLetteredListFromSpokenLetters() async throws {
+        let output = try await processed("The options are letter A, the red one, letter B, the blue one, and letter C, the green one.")
+        XCTAssertEqual(output.text, "The options are\nA. The red one\nB. The blue one\nC. The green one.")
+        XCTAssertTrue(output.changes.contains("Spoken formatting: lettered list"))
+    }
+
+    func testFormatsLetteredListFromParentheses() async throws {
+        let output = try await processed("Choose one of these. A) red, B) blue, C) green.")
+        XCTAssertEqual(output.text, "Choose one of these.\nA. Red\nB. Blue\nC. Green.")
+
+        let wrapped = try await processed("Pick one: (a) the red car, (b) the blue car, or (c) the green car.")
+        XCTAssertEqual(wrapped.text, "Pick one:\nA. The red car\nB. The blue car\nC. The green car.")
+    }
+
+    func testLettersUnderNumbersNest() async throws {
+        let output = try await processed(
+            "Number one, fruits. Letter A, apples. Letter B, pears. Number two, vegetables. Letter A, carrots. Letter B, spinach."
+        )
+        XCTAssertEqual(output.text, "1. Fruits.\n   a. Apples.\n   b. Pears.\n2. Vegetables.\n   a. Carrots.\n   b. Spinach.")
+    }
+
+    func testLettersInProseAreLeftAlone() async throws {
+        for text in [
+            "Send a letter a day to keep in touch.",
+            "I wrote a letter to Bob and a letter to Ann.",
+            "Plan a) is fine for now.",
+        ] {
+            let output = try await processed(text)
+            XCTAssertEqual(output.text, text)
+        }
+    }
+
     func testVocabularyBiasTermsSnapshotsActiveTargetsAndTriggers() throws {
         _ = try db.upsertDictionaryEntry(source: "olan rewaju", target: "Olanrewaju")
         _ = try db.upsertDictionaryEntry(source: "wisper kit", target: "WhisperKit")
