@@ -10,6 +10,7 @@ import os
 struct ReadyStepView: View {
     var onStart: (() -> Void)?
     @AppStorage("selectedAudioDeviceID") private var selectedAudioDeviceID = ""
+    @AppStorage("selectedAudioDeviceUID") private var selectedAudioDeviceUID = ""
     @State private var quickTestText = ""
     @State private var quickTestState: DictationStateSignal = .idle
     @State private var quickTestMessage = "Waiting for hotkey."
@@ -152,6 +153,12 @@ struct ReadyStepView: View {
         .onAppear {
             refreshHotkeyLabel()
             audioDeviceManager.refreshDevices()
+            if let value = AudioInputSelection.pickerValue(
+                selectedUID: selectedAudioDeviceUID,
+                devices: audioDeviceManager.devices
+            ), value != selectedAudioDeviceID {
+                selectedAudioDeviceID = value
+            }
             updateMicMonitorForCurrentState()
         }
         .onDisappear {
@@ -176,7 +183,16 @@ struct ReadyStepView: View {
                 Spacer(minLength: Spacing.xs)
 
                 OrttaaiDropdown(
-                    selection: $selectedAudioDeviceID,
+                    selection: Binding(
+                        get: { selectedAudioDeviceID },
+                        set: { newValue in
+                            selectedAudioDeviceID = newValue
+                            selectedAudioDeviceUID = AudioInputSelection.uid(
+                                forPickerValue: newValue,
+                                devices: audioDeviceManager.devices
+                            )
+                        }
+                    ),
                     options: [.init("", systemDefaultInputLabel)]
                         + audioDeviceManager.devices.map { .init(String($0.id), $0.name) },
                     width: 148

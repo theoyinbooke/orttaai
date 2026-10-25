@@ -11,6 +11,7 @@ import CoreAudio
 final class MockAudioCaptureService: AudioCapturing {
     var audioLevel: Float = 0
     var activeInputDeviceID: AudioDeviceID?
+    var activeInputDeviceName: String? = "Test Mic"
     var shouldFail = false
     var startCaptureError: Error = OrttaaiError.microphoneAccessDenied
     /// When set, every startCapture call from this (1-based) call number on
@@ -158,11 +159,13 @@ actor MockTranscriptionService: Transcribing {
 
 final class MockTextProcessor: TextProcessor, VocabularyBiasProviding {
     var mockVocabularyBiasTerms: [String] = []
+    /// Stands in for dictionary, polish and formatting.
+    var rewrite: (String) -> String = { $0 }
     private(set) var inputs: [TextProcessorInput] = []
 
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
         inputs.append(input)
-        return TextProcessorOutput(text: input.rawTranscript, changes: [])
+        return TextProcessorOutput(text: rewrite(input.rawTranscript), changes: [])
     }
 
     func isAvailable() -> Bool { true }
@@ -206,6 +209,8 @@ final class FailingHistoryStore: TranscriptionHistoryStoring {
         recordingMs: Int,
         processingMs: Int,
         modelId: String,
+        audioDevice: String?,
+        rawText: String?,
         latency: DictationLatencyTelemetry,
         injectionMethod: String?
     ) throws -> Int64 {
@@ -293,6 +298,7 @@ final class DictationCoordinatorTests: XCTestCase {
     private var savedDefaults: [String: Any] = [:]
     private let isolatedDefaultKeys = [
         "selectedAudioDeviceID",
+        "selectedAudioDeviceUID",
         "selectedModelId",
         "activeModelId",
         "dictationLanguage",
@@ -712,6 +718,22 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertTrue(becameIdle, "An unreadable Codex editor is not an insertion failure")
         let saved = try await waitForTranscription()
         XCTAssertEqual(saved.injectionMethod, "unverified_paste")
+    }
+
+    @MainActor
+    func testHistoryKeepsTheMicAndWhatTheModelHeard() async throws {
+        audioService.activeInputDeviceName = "AirPods Pro"
+        textProcessor.rewrite = { $0 + "." }
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.text, "Hello world.")
+        XCTAssertEqual(saved.rawText, "Hello world")
+        XCTAssertEqual(saved.audioDevice, "AirPods Pro")
     }
 
     @MainActor

@@ -7,6 +7,7 @@ import os
 
 struct AudioSettingsView: View {
     @AppStorage("selectedAudioDeviceID") private var selectedDeviceID = ""
+    @AppStorage("selectedAudioDeviceUID") private var selectedDeviceUID = ""
     @State private var audioDeviceManager = AudioDeviceManager()
     @State private var audioLevel: Float = 0
     @State private var testCapture: AudioCaptureService?
@@ -23,7 +24,7 @@ struct AudioSettingsView: View {
                     info: "The microphone Orttaai records from. System Default follows the input chosen in macOS Sound settings."
                 ) {
                     OrttaaiDropdown(
-                        selection: $selectedDeviceID,
+                        selection: deviceSelection,
                         options: [.init("", "System Default")]
                             + audioDeviceManager.devices.map { .init(String($0.id), $0.name) },
                         width: SettingsLayout.controlWidth
@@ -89,6 +90,7 @@ struct AudioSettingsView: View {
             }
         }
         .onAppear {
+            showRememberedMic()
             startLevelMonitoring()
         }
         .onDisappear {
@@ -109,6 +111,32 @@ struct AudioSettingsView: View {
             if success {
                 startLevelMonitoring()
             }
+        }
+    }
+
+    /// Only a choice made in the picker changes the remembered mic; a mic
+    /// that is merely disconnected stays remembered for when it is back.
+    private var deviceSelection: Binding<String> {
+        Binding(
+            get: { selectedDeviceID },
+            set: { newValue in
+                selectedDeviceID = newValue
+                selectedDeviceUID = AudioInputSelection.uid(
+                    forPickerValue: newValue,
+                    devices: audioDeviceManager.devices
+                )
+            }
+        )
+    }
+
+    /// The remembered mic may have reconnected under a new ID.
+    private func showRememberedMic() {
+        audioDeviceManager.refreshDevices()
+        if let value = AudioInputSelection.pickerValue(
+            selectedUID: selectedDeviceUID,
+            devices: audioDeviceManager.devices
+        ), value != selectedDeviceID {
+            selectedDeviceID = value
         }
     }
 

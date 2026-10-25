@@ -9,6 +9,8 @@ import os
 protocol AudioCapturing: AnyObject {
     var audioLevel: Float { get }
     var activeInputDeviceID: AudioDeviceID? { get }
+    /// Name of the device being recorded from, nil when not recording.
+    var activeInputDeviceName: String? { get }
     func startCapture(deviceID: AudioDeviceID?) throws
     func stopCapture() -> [Float]
     func currentSamplesSnapshot(maxSamples: Int?) -> [Float]
@@ -110,6 +112,9 @@ final class AudioCaptureService: AudioCapturing {
 
     private(set) var audioLevel: Float = 0
     private(set) var activeInputDeviceID: AudioDeviceID?
+    var activeInputDeviceName: String? {
+        activeInputDeviceID.map(Self.deviceName(for:))
+    }
 
     private var engine = AVAudioEngine()
     private struct ConverterState {
@@ -208,8 +213,10 @@ final class AudioCaptureService: AudioCapturing {
                 Logger.audio.warning(
                     "Audio start attempt \(attemptIndex + 1) (\(mode)) failed: \(error.localizedDescription)"
                 )
-                if attemptDeviceID != nil, deviceID == nil {
-                    Logger.audio.warning("Preferred input failed startup handshake; retrying with system default")
+                // The chosen mic may have disconnected or come back under a
+                // new ID; record from System Default rather than fail.
+                if attemptDeviceID != nil {
+                    Logger.audio.warning("Preferred input failed to start; retrying with system default")
                     attemptDeviceID = nil
                 }
             }

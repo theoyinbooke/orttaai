@@ -32,6 +32,38 @@ final class DatabaseManagerTests: XCTestCase {
         XCTAssertEqual(records.first?.targetAppName, "TextEdit")
     }
 
+    func testHistoryKeepsMicAndRawTranscriptThroughCloudSync() throws {
+        try db.saveTranscription(
+            text: "Ship it to Vercel.",
+            appName: "Notes",
+            recordingMs: 2000,
+            processingMs: 300,
+            modelId: "fluid-speech-mini",
+            audioDevice: "AirPods Pro",
+            rawText: "ship it to vercel"
+        )
+        try db.saveTranscription(
+            text: "Unchanged",
+            appName: "Notes",
+            recordingMs: 1000,
+            processingMs: 200,
+            modelId: "fluid-speech-mini",
+            audioDevice: "Wireless microphone",
+            rawText: "Unchanged"
+        )
+
+        let records = try db.fetchRecent().sorted { $0.text < $1.text }
+        XCTAssertEqual(records.map(\.audioDevice), ["AirPods Pro", "Wireless microphone"])
+        XCTAssertEqual(records.map(\.rawText), ["ship it to vercel", nil], "raw text is kept only when it differs")
+
+        // A sync round trip replaces local rows from the snapshot.
+        let snapshot = try db.cloudSyncSnapshot()
+        try db.applyCloudSnapshot(snapshot, replacingLocalData: true)
+        let synced = try db.fetchRecent().sorted { $0.text < $1.text }
+        XCTAssertEqual(synced.map(\.audioDevice), ["AirPods Pro", "Wireless microphone"])
+        XCTAssertEqual(synced.map(\.rawText), ["ship it to vercel", nil])
+    }
+
     func testSaveEditCommandEntryPersistsKindAndInstruction() throws {
         try db.saveEditCommandEntry(
             text: "The edited replacement text.",

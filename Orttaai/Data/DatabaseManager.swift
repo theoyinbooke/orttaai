@@ -627,6 +627,15 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v18_raw_transcript") { db in
+            try db.alter(table: "transcription") { t in
+                // What the speech model heard, before dictionary, polish and
+                // formatting, when that differs from `text`. NULL when they
+                // match and on rows written before this shipped.
+                t.add(column: "rawText", .text)
+            }
+        }
+
         return migrator
     }
 
@@ -841,6 +850,7 @@ final class DatabaseManager {
         processingMs: Int,
         modelId: String,
         audioDevice: String? = nil,
+        rawText: String? = nil,
         latency: DictationLatencyTelemetry? = nil,
         injectionMethod: String? = nil,
         entryKind: String? = nil,
@@ -864,6 +874,7 @@ final class DatabaseManager {
                 clipboardRestoreDelayMs: latency?.clipboardRestoreDelayMs,
                 modelId: modelId,
                 audioDevice: audioDevice,
+                rawText: rawText == text ? nil : rawText,
                 sourceDeviceID: sourceDeviceID,
                 injectionMethod: injectionMethod,
                 entryKind: entryKind,
@@ -2586,7 +2597,7 @@ extension DatabaseManager {
                    recordingDurationMs, processingDurationMs, settingsSyncDurationMs,
                    transcriptionDurationMs, textProcessingDurationMs, injectionDurationMs,
                    appActivationDurationMs, clipboardRestoreDelayMs, modelId, audioDevice,
-                   sourceDeviceID, injectionMethod, entryKind, editInstruction
+                   rawText, sourceDeviceID, injectionMethod, entryKind, editInstruction
             FROM transcription
             WHERE syncID IS NOT NULL
             """
@@ -2619,6 +2630,7 @@ extension DatabaseManager {
                 clipboardRestoreDelayMs: row["clipboardRestoreDelayMs"],
                 modelId: modelId,
                 audioDevice: row["audioDevice"],
+                rawText: row["rawText"],
                 sourceDeviceID: row["sourceDeviceID"],
                 injectionMethod: row["injectionMethod"],
                 entryKind: row["entryKind"],
@@ -2809,8 +2821,8 @@ extension DatabaseManager {
                     recordingDurationMs = ?, processingDurationMs = ?, settingsSyncDurationMs = ?,
                     transcriptionDurationMs = ?, textProcessingDurationMs = ?, injectionDurationMs = ?,
                     appActivationDurationMs = ?, clipboardRestoreDelayMs = ?, modelId = ?,
-                    audioDevice = ?, sourceDeviceID = ?, injectionMethod = ?, entryKind = ?,
-                    editInstruction = ?, syncID = ?, modifiedAt = ?
+                    audioDevice = ?, rawText = ?, sourceDeviceID = ?, injectionMethod = ?,
+                    entryKind = ?, editInstruction = ?, syncID = ?, modifiedAt = ?
                 WHERE id = ?
                 """,
                 arguments: transcriptionArguments(record) + [id]
@@ -2822,10 +2834,10 @@ extension DatabaseManager {
                     createdAt, text, targetAppName, targetAppBundleID, recordingDurationMs,
                     processingDurationMs, settingsSyncDurationMs, transcriptionDurationMs,
                     textProcessingDurationMs, injectionDurationMs, appActivationDurationMs,
-                    clipboardRestoreDelayMs, modelId, audioDevice, sourceDeviceID,
+                    clipboardRestoreDelayMs, modelId, audioDevice, rawText, sourceDeviceID,
                     injectionMethod, entryKind, editInstruction, syncID, modifiedAt
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: transcriptionArguments(record)
             )
@@ -2848,6 +2860,7 @@ extension DatabaseManager {
             record.clipboardRestoreDelayMs,
             record.modelId,
             record.audioDevice,
+            record.rawText,
             record.sourceDeviceID,
             record.injectionMethod,
             record.entryKind,
@@ -3096,6 +3109,8 @@ protocol TranscriptionHistoryStoring: AnyObject {
         recordingMs: Int,
         processingMs: Int,
         modelId: String,
+        audioDevice: String?,
+        rawText: String?,
         latency: DictationLatencyTelemetry,
         injectionMethod: String?
     ) throws -> Int64
@@ -3129,6 +3144,8 @@ extension DatabaseManager: TranscriptionHistoryStoring {
         recordingMs: Int,
         processingMs: Int,
         modelId: String,
+        audioDevice: String?,
+        rawText: String?,
         latency: DictationLatencyTelemetry,
         injectionMethod: String?
     ) throws -> Int64 {
@@ -3139,6 +3156,8 @@ extension DatabaseManager: TranscriptionHistoryStoring {
             recordingMs: recordingMs,
             processingMs: processingMs,
             modelId: modelId,
+            audioDevice: audioDevice,
+            rawText: rawText,
             latency: latency,
             injectionMethod: injectionMethod
         )

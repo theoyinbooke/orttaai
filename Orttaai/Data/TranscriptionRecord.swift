@@ -20,6 +20,9 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     var clipboardRestoreDelayMs: Int?
     var modelId: String
     var audioDevice: String?
+    // What the speech model heard before dictionary, polish and formatting;
+    // NULL when it matches `text` and on rows from before it was kept.
+    var rawText: String? = nil
     // NULL on rows created before device tagging or synced from older app
     // versions; readers treat NULL as belonging to this device.
     var sourceDeviceID: String?

@@ -123,6 +123,7 @@ struct CloudSyncTranscription: Codable, Equatable, Sendable {
     var clipboardRestoreDelayMs: Int?
     var modelId: String
     var audioDevice: String?
+    var rawText: String? = nil
     // Optional for backward compatibility with payloads from older app versions.
     var sourceDeviceID: String?
     var injectionMethod: String? = nil
@@ -237,7 +238,8 @@ struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     // hardware, downloaded models, and audio devices, so syncing these breaks the
     // receiving machine (e.g. Performance Health filtering by a model this device
     // never ran, or activating a model that isn't downloaded here):
-    // selectedModelId, activeModelId, selectedAudioDeviceID, computeMode,
+    // selectedModelId, activeModelId, selectedAudioDeviceID, selectedAudioDeviceUID,
+    // computeMode,
     // decodingWorkerCount, lowLatencyModeEnabled, fastFirstRecommendedModelId,
     // fastFirstPrefetchStarted/Ready/ErrorMessage, localLLMPolishModel,
     // localLLMInsightsModel, semanticEmbeddingModel, expressEngineEnabled,

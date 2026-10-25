@@ -50,13 +50,6 @@ final class DictationCoordinator {
 
     var onStateChange: ((State, State?) -> Void)?
 
-    static func resolvedInputDeviceID(from selectedAudioDeviceID: String?) -> AudioDeviceID? {
-        guard let selectedAudioDeviceID else { return nil }
-        let trimmed = selectedAudioDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard let rawID = UInt32(trimmed), rawID != 0 else { return nil }
-        return AudioDeviceID(rawID)
-    }
 
     private(set) var state: State = .idle {
         didSet {
@@ -131,6 +124,9 @@ final class DictationCoordinator {
     private var processingTask: Task<Void, Never>?
     private var audioHealthTask: Task<Void, Never>?
     private var targetApp: NSRunningApplication?
+    /// The microphone the current recording came from, kept with its history
+    /// row (capture forgets the device when it stops).
+    private var recordingInputDeviceName: String?
     /// Watches each inserted dictation for the user's fixes.
     private let editLearner: (any InsertedTextWatching)?
     /// Per-session speech accounting behind the hands-free silence auto-stop
@@ -415,8 +411,9 @@ final class DictationCoordinator {
         do {
             // Capture the target app NOW, before the floating panel appears
             targetApp = frontmostApp
-            let selectedDeviceID = Self.resolvedInputDeviceID(from: settings.selectedAudioDevice)
+            let selectedDeviceID = settings.selectedInputDeviceID
             try audioService.startCapture(deviceID: selectedDeviceID)
+            recordingInputDeviceName = audioService.activeInputDeviceName
             state = .recording(startTime: Date())
             startCapTimer()
             startBackgroundDecodeLoop()
@@ -628,6 +625,7 @@ final class DictationCoordinator {
             let preDeliveryProcessingMs = Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000)
             let historyEntryID = await persistTranscription(
                 text: output.text,
+                rawText: transcript,
                 appName: appName,
                 bundleID: appBundleID,
                 recordingMs: recordingDurationMs,
@@ -721,6 +719,7 @@ final class DictationCoordinator {
     /// Clears per-session context once a session (dictation or edit) is over.
     private func endSessionContext() {
         targetApp = nil
+        recordingInputDeviceName = nil
         editSelection = nil
         sessionKind = .dictation
         autoStopPolicy = HandsFreeAutoStopPolicy()
@@ -886,6 +885,7 @@ final class DictationCoordinator {
     /// second history row.
     private func persistTranscription(
         text: String,
+        rawText: String,
         appName: String?,
         bundleID: String?,
         recordingMs: Int,
@@ -904,6 +904,8 @@ final class DictationCoordinator {
                     recordingMs: recordingMs,
                     processingMs: processingMs,
                     modelId: modelId,
+                    audioDevice: recordingInputDeviceName,
+                    rawText: rawText,
                     latency: latency,
                     injectionMethod: injectionMethod?.rawValue
                 )
@@ -1193,8 +1195,8 @@ final class DictationCoordinator {
                 guard case .recording = self.state else { return }
 
                 do {
-                    let selectedDeviceID = Self.resolvedInputDeviceID(from: self.settings.selectedAudioDevice)
-                    try self.audioService.startCapture(deviceID: selectedDeviceID)
+                    try self.audioService.startCapture(deviceID: self.settings.selectedInputDeviceID)
+                    self.recordingInputDeviceName = self.audioService.activeInputDeviceName
                     Logger.dictation.info("Audio capture recovered after health check")
                 } catch {
                     Logger.dictation.error("Audio recovery failed: \(error.localizedDescription)")

@@ -925,8 +925,7 @@ private final class ChatAIViewModel: ObservableObject {
 
     private func startVoiceInput() {
         do {
-            let selectedDeviceID = DictationCoordinator.resolvedInputDeviceID(from: settings.selectedAudioDevice)
-            try voiceAudioService.startCapture(deviceID: selectedDeviceID)
+            try voiceAudioService.startCapture(deviceID: settings.selectedInputDeviceID)
             voiceRecordingStartedAt = Date()
             isVoiceRecording = true
             errorMessage = nil

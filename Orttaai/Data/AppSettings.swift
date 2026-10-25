@@ -1,6 +1,7 @@
 // AppSettings.swift
 // Orttaai
 
+import CoreAudio
 import SwiftUI
 import Combine
 
@@ -126,6 +127,9 @@ final class AppSettings: ObservableObject {
     /// recording, leaving only the last stretch for after the key is released.
     @AppStorage("expressLiveSegmentsEnabled") var expressLiveSegmentsEnabled: Bool = false
     @AppStorage("selectedAudioDeviceID") var selectedAudioDeviceID: String = ""
+    /// Persistent UID of the chosen microphone; see `AudioInputSelection`.
+    /// Empty for System Default and for choices made before it was kept.
+    @AppStorage("selectedAudioDeviceUID") var selectedAudioDeviceUID: String = ""
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("hasCompletedSetup") var hasCompletedSetup: Bool = false
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
@@ -226,6 +230,16 @@ final class AppSettings: ObservableObject {
 
     var selectedAudioDevice: String? {
         selectedAudioDeviceID.isEmpty ? nil : selectedAudioDeviceID
+    }
+
+    /// The device to record from for the chosen mic, nil for System Default
+    /// (including when the chosen mic is not connected).
+    var selectedInputDeviceID: AudioDeviceID? {
+        AudioInputSelection.deviceID(
+            selectedUID: selectedAudioDeviceUID,
+            legacyID: selectedAudioDevice,
+            devices: AudioDeviceManager.currentInputDevices
+        )
     }
 
     var decodingPreset: DecodingPreset {
