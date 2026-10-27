@@ -42,45 +42,11 @@ final class AnalyticsRefreshMeasureTests: XCTestCase {
                 await viewModel.waitForRefresh()
                 let shown = started.duration(to: .now)
                 try await Task.sleep(for: .milliseconds(100))
-                report.append("round \(round), \(label): longest main-thread stall \(Self.ms(monitor.longest)) ms, call \(Self.ms(call)) ms, shown after \(Self.ms(shown)) ms, \(viewModel.totalSessions) dictations")
+                report.append("round \(round), \(label): longest main-thread stall \(StallMonitor.ms(monitor.longest)) ms, call \(StallMonitor.ms(call)) ms, shown after \(StallMonitor.ms(shown)) ms, \(viewModel.totalSessions) dictations")
             }
             viewModel.setDeviceFilter(.all)
             viewModel.setSelectedRange(.thirtyDays)
             await viewModel.waitForRefresh()
         }
-    }
-
-    private static func ms(_ duration: Duration) -> Int {
-        Int(duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000)
-    }
-}
-
-/// The longest gap between ticks of a 1 ms main-thread timer.
-@MainActor
-private final class StallMonitor {
-    private var timer: Timer?
-    private var last = ContinuousClock.now
-    private(set) var longest: Duration = .zero
-
-    func start() {
-        last = .now
-        timer = Timer.scheduledTimer(withTimeInterval: 0.001, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
-        }
-    }
-
-    func reset() {
-        last = .now
-        longest = .zero
-    }
-
-    func stop() {
-        timer?.invalidate()
-    }
-
-    private func tick() {
-        let now = ContinuousClock.now
-        longest = max(longest, last.duration(to: now))
-        last = now
     }
 }

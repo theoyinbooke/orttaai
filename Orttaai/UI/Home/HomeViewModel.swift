@@ -47,6 +47,9 @@ final class HomeViewModel {
     private let settings: AppSettings
     private var observation: DatabaseCancellable?
     private var cloudSyncObserver: NSObjectProtocol?
+    private var refreshTask: Task<Void, Never>?
+    /// Asked for again while a refresh ran, so it runs once more.
+    private var needsRefresh = false
     private let githubStarPromptCooldown: TimeInterval = 7 * 24 * 60 * 60
     private let githubStarPromptMinimumSessions = 3
     private let githubStarPromptMinimumWords = 200
@@ -93,29 +96,55 @@ final class HomeViewModel {
             refreshFastFirstState()
             return
         }
+        // Before the first refresh, so a change between the two isn't missed.
+        startObservingIfNeeded(statsService)
+        refresh()
+    }
 
+    /// Works the dashboard out again away from the main thread, where
+    /// reading every dictation and counting its words froze the app for
+    /// 0.2 s on each open, Refresh and new dictation. One refresh runs at a
+    /// time; asked for again meanwhile, it runs once more when it finishes,
+    /// so the numbers shown end up current.
+    func refresh() {
+        guard let statsService else { return }
+        needsRefresh = true
+        guard refreshTask == nil else { return }
         isLoading = true
-        defer {
-            isLoading = false
-            hasLoaded = true
+        refreshTask = Task { [weak self] in
+            while let self, self.needsRefresh {
+                self.needsRefresh = false
+                let modelID = self.settings.dictationModelIDForDisplay
+                let result = await Task.detached(priority: .userInitiated) {
+                    Result { try statsService.load(currentModelId: modelID) }
+                }.value
+                self.show(result)
+            }
+            self?.isLoading = false
+            self?.refreshTask = nil
         }
+    }
 
-        do {
-            payload = try statsService.load(currentModelId: settings.dictationModelIDForDisplay)
+    /// Waits until the refreshes asked for so far are shown (for tests).
+    func waitForRefresh() async {
+        while let refreshTask {
+            await refreshTask.value
+        }
+    }
+
+    private func show(_ result: Result<DashboardStatsPayload, Error>) {
+        switch result {
+        case .success(let payload):
+            self.payload = payload
             errorMessage = nil
-        } catch {
+        case .failure(let error):
             payload = .empty
             errorMessage = "Couldn't load dashboard data."
             Logger.database.error("Dashboard load failed: \(error.localizedDescription)")
         }
-
+        hasLoaded = true
         refreshFastFirstState()
-        startObservingIfNeeded()
         evaluateGitHubStarPromptIfNeeded()
-    }
-
-    func refresh() {
-        load()
     }
 
     func evaluateGitHubStarPromptIfNeeded() {
@@ -405,10 +434,17 @@ final class HomeViewModel {
         }
     }
 
-    private func startObservingIfNeeded() {
+    private func startObservingIfNeeded(_ statsService: DashboardStatsService) {
         guard observation == nil else { return }
-        guard let statsService else { return }
+        var isFirstCall = true
         observation = statsService.observeChanges { [weak self] in
+            // The first call is the archive as it is now, which the load
+            // reads anyway: refreshing for it too worked the whole dashboard
+            // out twice on every open.
+            guard !isFirstCall else {
+                isFirstCall = false
+                return
+            }
             Task { @MainActor in
                 self?.refresh()
             }

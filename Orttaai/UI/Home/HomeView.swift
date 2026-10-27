@@ -36,12 +36,13 @@ struct HomeView: View {
     var body: some View {
         ZStack {
             Group {
-                if viewModel.isLoading && !viewModel.hasLoaded {
-                    HomeLoadingView()
-                        .transition(reduceMotion ? .identity : .opacity)
-                } else {
+                if viewModel.hasLoaded {
                     content
                         .transition(reduceMotion ? .identity : .opacity)
+                } else {
+                    // Until the numbers, worked out in the background,
+                    // arrive: an empty page rather than zeros.
+                    Color.clear
                 }
             }
             // A dimming layer only while the GitHub prompt is up. A blur here,
@@ -82,7 +83,7 @@ struct HomeView: View {
         .background(Color.Orttaai.bgPrimary)
         .workspaceHeader("Welcome back", leading: { EmptyView() }) {
             HomeHeaderView(
-                isRefreshing: viewModel.isLoading && viewModel.hasLoaded,
+                isRefreshing: viewModel.isLoading,
                 isInsightsVisible: viewModel.isInsightsPanelVisible,
                 onOpenHistory: onOpenHistory,
                 onToggleInsights: viewModel.toggleInsightsPanel
