@@ -6,11 +6,19 @@ import Foundation
 /// Silence-based auto-stop policy for hands-free dictation, and the
 /// per-session speech accounting it decides from.
 ///
-/// Reuses the exact energy framing the transcription pipeline already applies
-/// for pause commits (100ms frames at the EnergyVAD 0.02 RMS threshold), but
+/// Uses the transcription pipeline's energy framing (100ms frames), and
 /// accounts for frames incrementally: `advance` scans only the samples
 /// recorded since the previous call, so each poll costs a few frames no
 /// matter how long the recording or how wide the silence window.
+///
+/// What counts as speech adapts to the session. A fixed 0.02 RMS line (the
+/// EnergyVAD threshold) cut people off mid-sentence when their microphone ran
+/// quiet: on a test Mac, speech peaking at 0.025 left only 4 of 520 frames
+/// over the line, and the six-second silence window stopped a recording the
+/// person was still talking into. Speech is now a frame well above the
+/// session's own background (2.5 times its quietest 5%) and not far below its
+/// loudest (a tenth of the peak), never stricter than 0.02 (loud setups and
+/// noisy rooms behave as before) nor looser than 0.006.
 ///
 /// The recording arms only on sustained speech (a single loud frame — a
 /// click, a bump, a cough — never arms it) and stops only once the trailing
@@ -26,6 +34,17 @@ nonisolated struct HandsFreeAutoStopPolicy: Equatable {
     private(set) var speechFrameCount = 0
     private(set) var peakFrameRMS: Float = 0
     private var lastSpeechEndSample: Int?
+    /// What counts as speech now; the transcription's 0.02 until a second of
+    /// audio shows the session's background.
+    private(set) var speechThreshold = TranscriptionService.speechEnergyThreshold
+    /// Every frame's loudness so far, in bins a fifth of a decade wide from
+    /// 0.0001 RMS, for the session's background without keeping every frame.
+    private var loudness = [Int](repeating: 0, count: Self.loudnessBins)
+    private var frameCount = 0
+
+    private static let loudnessBins = 26
+    /// Never counts audio this quiet as speech (the transcription's faint floor, plus a margin).
+    static let quietestSpeech: Float = 0.006
 
     /// True once enough speech has been heard for silence to mean "finished".
     var isArmed: Bool {
@@ -55,12 +74,34 @@ nonisolated struct HandsFreeAutoStopPolicy: Equatable {
             let rms = TranscriptionService.frameRMS(samples[frameStart..<frameStart + frame])
             peakFrameRMS = max(peakFrameRMS, rms)
             scannedSampleCount += frame
-            if rms >= TranscriptionService.speechEnergyThreshold {
+            heard(rms)
+            if rms >= speechThreshold {
                 speechFrameCount += 1
                 lastSpeechEndSample = scannedSampleCount
             }
             frameStart += frame
         }
+    }
+
+    /// Counts the frame's loudness, and sets what counts as speech from the
+    /// session so far.
+    private mutating func heard(_ rms: Float) {
+        let bin = rms > 0.0001 ? min(Self.loudnessBins - 1, Int((log10(rms) + 4) * 5)) : 0
+        loudness[bin] += 1
+        frameCount += 1
+        guard frameCount >= 10 else { return }
+        // The quietest 5% of frames: pauses and breaths, or the room.
+        var seen = 0
+        var background: Float = 0
+        for (index, count) in loudness.enumerated() {
+            seen += count
+            if seen * 20 >= frameCount {
+                background = index == 0 ? 0 : pow(10, (Float(index) + 0.5) / 5 - 4)
+                break
+            }
+        }
+        let adaptive = max(Self.quietestSpeech, background * 2.5, peakFrameRMS * 0.1)
+        speechThreshold = min(TranscriptionService.speechEnergyThreshold, adaptive)
     }
 
     /// True when the recording should stop because the trailing silence has

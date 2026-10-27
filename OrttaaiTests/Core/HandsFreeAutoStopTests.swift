@@ -88,6 +88,50 @@ final class HandsFreeAutoStopTests: XCTestCase {
         XCTAssertFalse(shouldStop(speech(seconds: 1.0) + quietSpeech))
     }
 
+    // MARK: - A quiet microphone
+
+    /// Speech that alternates between soft and softer syllables, as a quiet
+    /// microphone records it: all of it under the old fixed 0.02 line.
+    private func quietSpeech(seconds: Double, loud: Float = 0.015, soft: Float = 0.009) -> [Float] {
+        var samples: [Float] = []
+        let frame = TranscriptionService.energyFrameSampleCount
+        for index in 0..<Int(seconds * 10) {
+            samples += [Float](repeating: index % 3 == 2 ? soft : loud, count: frame)
+        }
+        return samples
+    }
+
+    private func room(seconds: Double, level: Float) -> [Float] {
+        [Float](repeating: level, count: Int(seconds * Double(sampleRate)))
+    }
+
+    func testQuietMicrophoneKeepsRecordingWhileTalking() {
+        // The reported cut-off: a pause, then 20 s of speech under 0.02.
+        let samples = room(seconds: 1.5, level: 0.002) + quietSpeech(seconds: 20)
+        let scanned = policy(scanning: samples)
+        XCTAssertLessThan(scanned.speechThreshold, 0.009)
+        XCTAssertFalse(shouldStop(samples, window: 6, duration: 21.5), "Quiet speech is speech, not silence")
+    }
+
+    func testQuietMicrophoneStillStopsAfterSilence() {
+        let samples = room(seconds: 1.5, level: 0.002) + quietSpeech(seconds: 10) + room(seconds: 6.5, level: 0.002)
+        XCTAssertTrue(shouldStop(samples, window: 6, duration: 18))
+    }
+
+    func testNoisyRoomStillStopsAfterSpeech() {
+        // A fan at 0.015: above the quietest speech, below the old line.
+        let samples = room(seconds: 1, level: 0.015) + speech(seconds: 2) + room(seconds: 6.5, level: 0.015)
+        let scanned = policy(scanning: samples)
+        XCTAssertEqual(scanned.speechThreshold, TranscriptionService.speechEnergyThreshold, accuracy: 0.000_1)
+        XCTAssertTrue(shouldStop(samples, window: 6, duration: 9.5))
+    }
+
+    func testNeverStricterThanTheTranscriptionThreshold() {
+        let scanned = policy(scanning: speech(seconds: 3) + silence(seconds: 1))
+        XCTAssertLessThanOrEqual(scanned.speechThreshold, TranscriptionService.speechEnergyThreshold)
+        XCTAssertGreaterThanOrEqual(scanned.speechThreshold, HandsFreeAutoStopPolicy.quietestSpeech)
+    }
+
     func testHonorsMinimumDuration() {
         let samples = speech(seconds: 0.5) + silence(seconds: 2.5)
         XCTAssertFalse(shouldStop(samples, duration: 0.4))

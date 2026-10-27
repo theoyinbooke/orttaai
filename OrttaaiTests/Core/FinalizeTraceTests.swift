@@ -203,7 +203,8 @@ final class FinalizeTraceTests: XCTestCase {
         XCTAssertEqual(
             Set(objects[1].keys),
             ["ts", "kind", "reason", "recording_duration_ms", "mode", "silence_stop_seconds",
-             "speech_frame_count", "peak_frame_rms", "trailing_silence_ms", "hands_free_armed"],
+             "speech_frame_count", "peak_frame_rms", "trailing_silence_ms", "hands_free_armed",
+             "speech_threshold_rms"],
             "A recording-end line carries numbers and enums only"
         )
     }

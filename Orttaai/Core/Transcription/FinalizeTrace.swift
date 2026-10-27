@@ -171,6 +171,8 @@ nonisolated struct RecordingEndTrace: Sendable, Equatable {
     var trailingSilenceMs: Int
     /// True once a hands-free recording had heard sustained speech.
     var handsFreeArmed: Bool
+    /// What counted as speech by the end (it adapts to the session).
+    var speechThresholdRMS: Float = TranscriptionService.speechEnergyThreshold
 }
 
 nonisolated extension RecordingEndTrace: Encodable {
@@ -183,6 +185,7 @@ nonisolated extension RecordingEndTrace: Encodable {
         case peakFrameRMS = "peak_frame_rms"
         case trailingSilenceMs = "trailing_silence_ms"
         case handsFreeArmed = "hands_free_armed"
+        case speechThresholdRMS = "speech_threshold_rms"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -195,6 +198,7 @@ nonisolated extension RecordingEndTrace: Encodable {
         try container.encode(peakFrameRMS, forKey: .peakFrameRMS)
         try container.encode(trailingSilenceMs, forKey: .trailingSilenceMs)
         try container.encode(handsFreeArmed, forKey: .handsFreeArmed)
+        try container.encode(speechThresholdRMS, forKey: .speechThresholdRMS)
     }
 }
 
