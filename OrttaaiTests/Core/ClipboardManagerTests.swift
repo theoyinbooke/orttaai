@@ -88,4 +88,32 @@ final class ClipboardManagerTests: XCTestCase {
         // Cleanup
         try? FileManager.default.removeItem(at: tempURL)
     }
+
+    @MainActor
+    func testSaveGivesUpWhenReadingTheClipboardIsSlow() async {
+        // As when the clipboard holds an item copied on an iPhone that
+        // doesn't answer: macOS waits 20 s before giving up on it.
+        let slow = ClipboardManager(readItems: {
+            Thread.sleep(forTimeInterval: 1.5)
+            return []
+        })
+        let started = ContinuousClock.now
+
+        let saved = await slow.save(giveUpAfterMs: 100)
+
+        XCTAssertNil(saved)
+        XCTAssertLessThan(started.duration(to: .now), .seconds(1), "the paste must not wait for the slow read")
+    }
+
+    @MainActor
+    func testSaveReturnsTheClipboardWhenReadingIsQuick() async {
+        let kept = Data("kept".utf8)
+        let quick = ClipboardManager(readItems: {
+            [ClipboardManager.SavedItem(types: [.string], dataByType: [.string: kept])]
+        })
+
+        let saved = await quick.save(giveUpAfterMs: ClipboardManager.saveLimitMs)
+
+        XCTAssertEqual(saved?.first?.dataByType[.string], kept)
+    }
 }

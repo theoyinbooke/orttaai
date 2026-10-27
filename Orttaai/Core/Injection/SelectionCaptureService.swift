@@ -77,8 +77,10 @@ final class SelectionCaptureService: SelectionCapturing {
             return .captured(CapturedSelection(text: selected, method: .axRead))
         }
 
-        // Step 2: Cmd+C fallback into a saved-and-restored clipboard.
-        let saved = clipboard.save()
+        // Step 2: Cmd+C fallback into a saved-and-restored clipboard. When
+        // saving takes too long (an item copied on an iPhone, fetched over
+        // the air), the copy goes ahead and its result stays on the clipboard.
+        let saved = await clipboard.save(giveUpAfterMs: ClipboardManager.saveLimitMs)
         let baselineChangeCount = clipboard.changeCount
         keyPoster.postCopyChord()
 
@@ -90,7 +92,9 @@ final class SelectionCaptureService: SelectionCapturing {
                 break
             }
         }
-        clipboard.restore(saved)
+        if let saved {
+            clipboard.restore(saved)
+        }
 
         guard let copied, !copied.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             Logger.injection.info("Selection capture found no selection (AX empty, copy produced nothing)")

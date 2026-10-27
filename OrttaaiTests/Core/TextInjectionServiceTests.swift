@@ -104,10 +104,13 @@ final class MockClipboard: ClipboardManaging {
     var stringToReturn: String?
     var restoredStringToReturn: String?
     var changeCount: Int = 0
+    /// Saving gives up, as when the clipboard holds an item copied on an
+    /// iPhone that doesn't answer.
+    var saveGivesUp = false
 
-    func save() -> [ClipboardManager.SavedItem] {
+    func save(giveUpAfterMs: Int) async -> [ClipboardManager.SavedItem]? {
         saveCount += 1
-        return savedItemsToReturn
+        return saveGivesUp ? nil : savedItemsToReturn
     }
 
     func restore(_ savedItems: [ClipboardManager.SavedItem]) {
@@ -456,6 +459,22 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.restoreCount, 1)
         let waited = service.lastInjectionTelemetry?.clipboardRestoreDelayMs ?? .max
         XCTAssertLessThan(waited, 80, "restored without waiting out the whole budget")
+    }
+
+    func testPasteGoesAheadWhenSavingTheClipboardTakesTooLong() async {
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        clipboard.saveGivesUp = true
+        keyPoster.onPasteChord = { [inspector] _ in
+            inspector?.simulatedFieldValue = "Hello world"
+        }
+
+        let result = await service.inject(text: "Hello world")
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1)
+        XCTAssertEqual(clipboard.restoreCount, 0, "nothing was saved to restore")
+        XCTAssertEqual(clipboard.stringToReturn, "Hello world", "the transcript stays on the clipboard")
     }
 
     func testVerifiedPasteDoesNotOverwriteNewerClipboardContents() async {

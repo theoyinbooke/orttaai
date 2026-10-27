@@ -254,7 +254,12 @@ final class TextInjectionService: TextInjecting {
         }
 
         // Step 2: Save current pasteboard, then stage the transcript on it.
-        let saved = clipboard.save()
+        let saved = await clipboard.save(giveUpAfterMs: ClipboardManager.saveLimitMs)
+        if saved == nil {
+            Logger.injection.warning(
+                "Saving the clipboard took over \(ClipboardManager.saveLimitMs) ms; pasting without it, so the transcript stays on the clipboard"
+            )
+        }
         clipboard.setString(text)
         let stagedClipboardChangeCount = clipboard.changeCount
 
@@ -454,12 +459,13 @@ final class TextInjectionService: TextInjecting {
     /// Restores the clipboard only while the transcript staged by this
     /// injection is still the newest pasteboard write. This prevents a copy
     /// from another Mac app or Universal Clipboard from being overwritten by
-    /// a delayed restore.
+    /// a delayed restore. With nothing saved, the transcript stays.
     @discardableResult
     private func restoreClipboardIfUnchanged(
-        _ saved: [ClipboardManager.SavedItem],
+        _ saved: [ClipboardManager.SavedItem]?,
         expectedChangeCount: Int
     ) -> Bool {
+        guard let saved else { return false }
         guard clipboard.changeCount == expectedChangeCount else {
             Logger.injection.info(
                 "Clipboard changed after transcript staging; preserving newer contents"

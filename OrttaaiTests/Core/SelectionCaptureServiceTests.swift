@@ -72,6 +72,21 @@ final class SelectionCaptureServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.restoreCount, 1, "Clipboard is restored even when nothing was copied")
     }
 
+    func testCopyGoesAheadWhenSavingTheClipboardTakesTooLong() async {
+        inspector.snapshotErrors = true
+        clipboard.saveGivesUp = true
+        keyPoster.onCopyChord = { [clipboard] _ in
+            clipboard?.stringToReturn = "copied selection"
+            clipboard?.changeCount += 1
+        }
+
+        let captured = await service.captureSelection(processIdentifier: 123)
+
+        XCTAssertEqual(captured, .captured(CapturedSelection(text: "copied selection", method: .clipboardCopy)))
+        XCTAssertEqual(clipboard.restoreCount, 0, "nothing was saved to restore")
+        XCTAssertEqual(clipboard.stringToReturn, "copied selection", "the copied selection stays on the clipboard")
+    }
+
     func testCopyProducingWhitespaceCountsAsNoSelection() async {
         inspector.simulatedSelectedText = nil
         keyPoster.onCopyChord = { [clipboard] _ in
