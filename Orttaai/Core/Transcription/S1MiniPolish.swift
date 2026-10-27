@@ -25,7 +25,8 @@ enum S1MiniStatus: Equatable {
 }
 
 /// Downloads S1-mini when asked, loads it when Polish needs it, and keeps it
-/// loaded (about 0.4 s to load, 0.5 GB memory-mapped) while it's in use.
+/// loaded (about 0.4 s to load, 0.5 GB memory-mapped and 224 MB for its
+/// context) while it's in use.
 @Observable
 final class S1MiniPolishController {
     static let shared = S1MiniPolishController()

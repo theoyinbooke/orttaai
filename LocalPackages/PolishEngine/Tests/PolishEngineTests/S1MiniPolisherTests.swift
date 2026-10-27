@@ -82,7 +82,7 @@ struct S1MiniPolisherTests {
         #expect(S1MiniPolisher.timeBudget(forWords: 5_000) == .milliseconds(8_000))
     }
 
-    /// The real model, when its file is where Orttakey's spike left it.
+    /// The real model, when it's installed on this Mac.
     @Test("S1-mini on this Mac's GPU cleans up a short dictation in well under a second",
           .enabled(if: FileManager.default.fileExists(atPath: S1MiniPolisherTests.localModel)))
     func realModel() async throws {
@@ -96,5 +96,28 @@ struct S1MiniPolisherTests {
         #expect(elapsed < .seconds(1))
     }
 
-    static let localModel = "/Volumes/MyExtSSD/Developer/TaskBuilds/orttakey/polish-spike-20261024/models/s1-mini-q4_k_m.gguf"
+    /// A paragraph too long for the kept context gets one of its own, and its whole answer.
+    @Test("A paragraph longer than the kept context is answered in full",
+          .enabled(if: FileManager.default.fileExists(atPath: S1MiniPolisherTests.localModel)))
+    func longParagraph() throws {
+        let runner = try LlamaRunner(path: Self.localModel, contextLength: 256, maxContextLength: 2_048)
+        let paragraph = """
+            so um the plan for this week is pretty simple we want to get the new onboarding flow out to \
+            everyone by thursday and then spend friday on the bugs that came in from the beta testers uh \
+            the biggest one is the sync issue where notes created on the phone take a few minutes to show \
+            up on the mac and I think that is because the push notification is not waking the app so we \
+            should look at the background refresh settings first and then maybe the subscription itself \
+            um the second thing is the pricing page which still says the old annual price and that needs \
+            to change before the launch email goes out on monday
+            """
+        let prompt = S1MiniPrompt.prompt(for: paragraph)
+        let maxTokens = S1MiniPrompt.maxTokens(for: paragraph)
+        #expect(runner.tokenCount(prompt) + maxTokens > runner.contextLength)
+        let output = try runner.generate(prompt: prompt, maxTokens: maxTokens)
+        #expect(!output.hitLimit)
+        #expect(output.generatedTokens > 100)
+    }
+
+    /// Where Orttaai's model folder keeps S1-mini on this Mac.
+    static let localModel = "/Volumes/MyExtSSD/Huggingface/models/superwhisper/s1-mini-GGUF/s1-mini-q4_k_m.gguf"
 }

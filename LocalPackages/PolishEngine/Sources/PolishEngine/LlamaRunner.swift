@@ -63,7 +63,13 @@ public nonisolated final class LlamaRunner: @unchecked Sendable {
     private let model: OpaquePointer
     private let context: OpaquePointer
     private let vocab: OpaquePointer
+    private let threads: Int32
+    private let useGPU: Bool
+    /// Tokens the context kept loaded holds: prompt and answer together.
     public let contextLength: Int
+    /// A prompt and answer that need more than `contextLength` get a context
+    /// of their own for that generation, up to this many tokens.
+    public let maxContextLength: Int
     /// Seconds from the call to a ready context.
     public let loadSeconds: TimeInterval
     /// The weights' size on disk (memory-mapped, so mostly not counted against the app).
@@ -88,8 +94,18 @@ public nonisolated final class LlamaRunner: @unchecked Sendable {
         Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
     }
 
-    /// - Parameter useGPU: every layer on Metal (the default on a Mac), or the CPU only.
-    public init(path: String, contextLength: Int = 4_096, threads: Int32 = LlamaRunner.defaultThreads, useGPU: Bool = true) throws {
+    /// - Parameters:
+    ///   - contextLength: the context kept loaded, whose memory is held as long as the model is.
+    ///     For S1-mini that's 224 MB at 2,048 tokens, room for a 580-word dictation and its
+    ///     answer; 4,096 held 448 MB for the one dictation in a few hundred that's longer.
+    ///   - useGPU: every layer on Metal (the default on a Mac), or the CPU only.
+    public init(
+        path: String,
+        contextLength: Int = 2_048,
+        maxContextLength: Int = 4_096,
+        threads: Int32 = LlamaRunner.defaultThreads,
+        useGPU: Bool = true
+    ) throws {
         _ = Self.backend
         let started = Date()
 
@@ -110,16 +126,7 @@ public nonisolated final class LlamaRunner: @unchecked Sendable {
             throw Failure.loadFailed(path)
         }
 
-        var contextParams = llama_context_default_params()
-        contextParams.n_ctx = UInt32(contextLength)
-        contextParams.n_batch = 512
-        contextParams.n_ubatch = 512
-        contextParams.n_threads = threads
-        contextParams.n_threads_batch = threads
-        contextParams.offload_kqv = useGPU
-        contextParams.op_offload = useGPU
-        contextParams.no_perf = true
-        guard let context = llama_init_from_model(model, contextParams) else {
+        guard let context = Self.makeContext(model, length: contextLength, threads: threads, useGPU: useGPU) else {
             llama_model_free(model)
             throw Failure.contextFailed
         }
@@ -127,7 +134,10 @@ public nonisolated final class LlamaRunner: @unchecked Sendable {
         self.model = model
         self.context = context
         self.vocab = llama_model_get_vocab(model)
+        self.threads = threads
+        self.useGPU = useGPU
         self.contextLength = contextLength
+        self.maxContextLength = max(contextLength, maxContextLength)
         self.modelBytes = llama_model_size(model)
         self.loadSeconds = Date().timeIntervalSince(started)
     }
@@ -135,6 +145,19 @@ public nonisolated final class LlamaRunner: @unchecked Sendable {
     deinit {
         llama_free(context)
         llama_model_free(model)
+    }
+
+    private static func makeContext(_ model: OpaquePointer, length: Int, threads: Int32, useGPU: Bool) -> OpaquePointer? {
+        var contextParams = llama_context_default_params()
+        contextParams.n_ctx = UInt32(length)
+        contextParams.n_batch = 512
+        contextParams.n_ubatch = 512
+        contextParams.n_threads = threads
+        contextParams.n_threads_batch = threads
+        contextParams.offload_kqv = useGPU
+        contextParams.op_offload = useGPU
+        contextParams.no_perf = true
+        return llama_init_from_model(model, contextParams)
     }
 
     /// `prompt` is already in the model's chat format: special tokens in it are parsed, and the
@@ -147,14 +170,27 @@ public nonisolated final class LlamaRunner: @unchecked Sendable {
         onText: (String) -> Bool = { _ in true }
     ) throws -> Output {
         let started = Date()
+        var tokens = tokenize(prompt)
+        guard !tokens.isEmpty else { throw Failure.tokenizeFailed }
+
+        // Most prompts and their answers fit the kept context; a longer one
+        // gets a context of its own, freed when it's done.
+        var context = self.context
+        var length = contextLength
+        if tokens.count + maxTokens > contextLength, maxContextLength > contextLength {
+            length = min(maxContextLength, tokens.count + maxTokens)
+            guard let larger = Self.makeContext(model, length: length, threads: threads, useGPU: useGPU) else {
+                throw Failure.contextFailed
+            }
+            context = larger
+        }
+        defer { if context != self.context { llama_free(context) } }
         llama_memory_clear(llama_get_memory(context), true)
         let sampler = makeSampler(sampling)
         defer { llama_sampler_free(sampler) }
 
-        var tokens = tokenize(prompt)
-        guard !tokens.isEmpty else { throw Failure.tokenizeFailed }
-        let room = max(0, contextLength - tokens.count)
-        guard room > 0 else { throw Failure.promptTooLong(tokens: tokens.count, context: contextLength) }
+        let room = max(0, length - tokens.count)
+        guard room > 0 else { throw Failure.promptTooLong(tokens: tokens.count, context: length) }
         let limit = min(maxTokens, room)
 
         var offset = 0
