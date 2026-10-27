@@ -132,6 +132,12 @@ struct TrendCardView: View {
                     }
                 }
                 .frame(height: 210)
+                // New data is drawn straight away. Animated, Swift Charts gave
+                // its axis labels negative sizes on every frame of the change
+                // (about 100 "Invalid frame dimension" warnings for each range
+                // or device click), and drawing every frame was seven times
+                // the work of drawing the chart once.
+                .transaction { $0.animation = nil }
                 .accessibilityLabel("\(title) chart")
                 .accessibilityValue(trendAccessibilitySummary)
 
