@@ -8,6 +8,7 @@ struct FloatingPanelHintView: View {
     /// When hands-free mode is on, the hint also teaches the tap gesture.
     var handsFreeEnabled: Bool = false
     let onStart: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -67,7 +68,9 @@ struct FloatingPanelHintView: View {
     }
 
     private var hintBackdrop: some View {
-        TimelineView(.animation) { context in
+        // 30 frames a second is smooth for a slow wave; the display's own
+        // rate (up to 120) redrew it four times as often.
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
             let time = context.date.timeIntervalSinceReferenceDate
 
             Canvas { canvas, size in

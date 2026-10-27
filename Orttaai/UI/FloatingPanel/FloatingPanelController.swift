@@ -21,6 +21,9 @@ final class FloatingPanelController: NSObject {
     /// within; readable so tests can assert the pill never resizes
     /// mid-recording).
     private(set) var currentSize: CGSize = WindowSize.floatingPanelHandle
+    /// Whether the hosting view holds a view (readable so tests can assert
+    /// the handle keeps nothing running).
+    private(set) var holdsContent = false
     private var isShowingHint = false
 
     // The panel frame stays at hint size in handle state so the tracking area
@@ -157,6 +160,8 @@ final class FloatingPanelController: NSObject {
         isShowingHint = false
         let size = WindowSize.floatingPanelHandle
         animateTransition(to: size) { [weak self] in
+            // A recording that started during the shrink keeps its pill.
+            guard self?.panelState == .handle else { return }
             self?.applyHandleAppearance()
         }
     }
@@ -198,6 +203,7 @@ final class FloatingPanelController: NSObject {
     }
 
     func updateContent<V: View>(_ view: V) {
+        holdsContent = true
         if let existing = hostingView {
             existing.rootView = AnyView(view)
             return
@@ -227,6 +233,7 @@ final class FloatingPanelController: NSObject {
 
         updateContent(hintView)
         hostingView?.isHidden = false
+        backgroundView.isHidden = false
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
@@ -250,8 +257,9 @@ final class FloatingPanelController: NSObject {
         }, completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard self.panelState == .handle else { return }
-                self.hostingView?.isHidden = true
+                guard self.panelState == .handle, !self.isShowingHint else { return }
+                self.backgroundView.isHidden = true
+                self.releaseContent()
             }
         })
     }
@@ -307,13 +315,25 @@ final class FloatingPanelController: NSObject {
         handleLayer.isHidden = false
         handleLayer.opacity = 1
         backgroundView.alphaValue = 0
-        hostingView?.isHidden = true
+        backgroundView.isHidden = true
+        releaseContent()
         panel.hasShadow = false
         updateHandleLayerFrame()
     }
 
+    /// A hidden hosting view keeps running its animations: the processing
+    /// shimmer left behind by every dictation, or the hint's wave after a
+    /// hover, went on costing CPU for as long as Orttaai ran. The handle
+    /// keeps nothing in it.
+    private func releaseContent() {
+        hostingView?.isHidden = true
+        hostingView?.rootView = AnyView(EmptyView())
+        holdsContent = false
+    }
+
     private func applyExpandedAppearance() {
         handleLayer.isHidden = true
+        backgroundView.isHidden = false
         backgroundView.alphaValue = 1
         backgroundView.layer?.cornerRadius = currentSize.height / 2
         panel.hasShadow = true
