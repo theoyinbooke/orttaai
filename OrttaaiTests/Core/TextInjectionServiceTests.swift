@@ -374,6 +374,52 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.setStrings, ["Hello Codex"])
     }
 
+    func testCodexClipboardIsRestoredAsSoonAsThePasteShowsUp() async {
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        keyPoster.onPasteChord = { [inspector] _ in
+            inspector?.simulatedFieldValue = "Hello Codex"
+        }
+        let codexService = TextInjectionService(
+            clipboard: clipboard,
+            inspector: inspector,
+            keyPoster: keyPoster,
+            unverifiedPastePolicy: { _ in .guardedRestoreAfterUnverifiedSuccess }
+        )
+
+        let result = await codexService.inject(text: "Hello Codex")
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1)
+        XCTAssertEqual(inspector.snapshotReadCount, 2, "baseline, then one read that finds the text")
+        XCTAssertEqual(clipboard.restoreCount, 1)
+        let waited = codexService.lastInjectionTelemetry?.clipboardRestoreDelayMs ?? .max
+        XCTAssertLessThan(waited, TextInjectionService.codexPasteBudgetMs, "restored without waiting out the budget")
+    }
+
+    func testCodexPasteNotSeenWithinItsBudgetIsNeverRepeated() async {
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = "draft: " // readable, never shows the paste
+        inspector.insertResult = true
+        let codexService = TextInjectionService(
+            clipboard: clipboard,
+            inspector: inspector,
+            keyPoster: keyPoster,
+            unverifiedPastePolicy: { _ in .guardedRestoreAfterUnverifiedSuccess }
+        )
+
+        let result = await codexService.inject(text: "Hello Codex")
+
+        XCTAssertEqual(result, .success(method: .unverifiedPaste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1, "Codex can commit a paste late, so it is never pasted twice")
+        XCTAssertTrue(inspector.insertedTexts.isEmpty, "no AX insert on top of a paste that may still land")
+        XCTAssertTrue(keyPoster.typedTexts.isEmpty, "no typed copy on top of a paste that may still land")
+        XCTAssertEqual(clipboard.restoreCount, 1)
+        let waited = codexService.lastInjectionTelemetry?.clipboardRestoreDelayMs ?? 0
+        XCTAssertGreaterThanOrEqual(waited, TextInjectionService.codexPasteBudgetMs)
+        XCTAssertLessThan(waited, 400, "Codex's budget, not the old fixed 400 ms")
+    }
+
     // MARK: Happy path
 
     func testInjectSuccessOnFirstPaste() async {

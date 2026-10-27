@@ -112,6 +112,11 @@ final class TextInjectionService: TextInjecting {
     static let pasteDeliveryFirstCheckMs = 15
     static let pasteDeliveryPollMs = 10
     static let codexBundleID = "com.openai.codex"
+    /// How long the transcript stays on Codex's clipboard after the paste
+    /// when the field doesn't show it sooner. Measured in October 2026,
+    /// Codex read the clipboard within 115 ms of the paste, about 40 ms
+    /// typically.
+    static let codexPasteBudgetMs = 150
 
     init(
         clipboard: any ClipboardManaging = ClipboardManager(),
@@ -318,27 +323,36 @@ final class TextInjectionService: TextInjecting {
             keyPoster.postPasteChord()
             pasteAttempts += 1
 
+            if unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
+                // The clipboard goes back as soon as the text shows up in the
+                // field, or after Codex's budget. Codex is never pasted twice:
+                // it can commit a paste later than Accessibility shows it, so
+                // one that hasn't shown up yet still counts as sent.
+                restoreDelayMs += Self.codexPasteBudgetMs
+                let delivery = await awaitPasteDelivery(
+                    expectedText: text,
+                    pre: preSnapshot,
+                    pid: targetPid,
+                    budgetMs: Self.codexPasteBudgetMs,
+                    verifiesAfterBudget: false
+                )
+                pasteWaitMs += delivery.waitedMs
+                verdict = delivery.outcome == .confirmed ? .confirmed : .inconclusive
+                break
+            }
+
             // Wait for the paste to be delivered before verifying/restoring.
-            var delay = resolvedRestoreDelayMs(
+            let delay = resolvedRestoreDelayMs(
                 for: timingProfile,
                 activationMs: activationMs,
                 activationSucceeded: appToActivate?.isActive ?? true
             )
-            if unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
-                delay = max(delay, 400)
-            }
             restoreDelayMs += delay
-            if unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
-                try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
-                pasteWaitMs += delay
-                verdict = await verifyInjection(expectedText: text, pre: preSnapshot, pid: targetPid)
-            } else {
-                let delivery = await awaitPasteDelivery(
-                    expectedText: text, pre: preSnapshot, pid: targetPid, budgetMs: delay
-                )
-                pasteWaitMs += delivery.waitedMs
-                verdict = delivery.outcome
-            }
+            let delivery = await awaitPasteDelivery(
+                expectedText: text, pre: preSnapshot, pid: targetPid, budgetMs: delay
+            )
+            pasteWaitMs += delivery.waitedMs
+            verdict = delivery.outcome
             if verdict != .failed { break }
         }
 
@@ -392,11 +406,10 @@ final class TextInjectionService: TextInjecting {
         }
 
         if verdict == .inconclusive, unverifiedPolicy == .guardedRestoreAfterUnverifiedSuccess {
-            // Codex does not expose editor text through Accessibility, so a
-            // CGEvent paste cannot be proved. The transcript has already
-            // remained staged for the full Codex delivery window. Restore the
-            // prior clipboard only if no app or nearby device replaced it in
-            // the meantime.
+            // The text didn't show up in Codex's field within its budget, but
+            // Codex has read the clipboard by then, so the single paste counts
+            // as sent. Restore the prior clipboard only if no app or nearby
+            // device replaced it in the meantime.
             let clipboardRestored = restoreClipboardIfUnchanged(
                 saved,
                 expectedChangeCount: stagedClipboardChangeCount
@@ -411,7 +424,7 @@ final class TextInjectionService: TextInjecting {
             )
             if clipboardRestored {
                 Logger.injection.info(
-                    "Codex paste sent; Accessibility verification unavailable. Prior clipboard restored"
+                    "Codex paste sent but not seen in the field within \(Self.codexPasteBudgetMs) ms. Prior clipboard restored"
                 )
             }
             return .success(method: .unverifiedPaste)
@@ -464,12 +477,13 @@ final class TextInjectionService: TextInjecting {
     /// restored straight away rather than after the whole budget. A field
     /// Accessibility can't read gives no such signal and waits the budget
     /// out, as before; a field that still lacks the text when the budget ends
-    /// gets the usual verification polls.
+    /// gets the usual verification polls, unless `verifiesAfterBudget` is off.
     private func awaitPasteDelivery(
         expectedText: String,
         pre: AXInspection<FocusedTextSnapshot>,
         pid: pid_t?,
-        budgetMs: Int
+        budgetMs: Int,
+        verifiesAfterBudget: Bool = true
     ) async -> (outcome: PasteVerificationOutcome, waitedMs: Int) {
         let start = CFAbsoluteTimeGetCurrent()
         func elapsedMs() -> Int { Int((CFAbsoluteTimeGetCurrent() - start) * 1000) }
@@ -491,6 +505,7 @@ final class TextInjectionService: TextInjecting {
                 return (.inconclusive, elapsedMs())
             case .failed:
                 guard remaining > 0 else {
+                    guard verifiesAfterBudget else { return (.failed, elapsedMs()) }
                     return (await verifyInjection(expectedText: expectedText, pre: pre, pid: pid), elapsedMs())
                 }
                 await sleep(min(remaining, Self.pasteDeliveryPollMs))
