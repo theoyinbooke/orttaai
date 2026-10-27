@@ -32,26 +32,29 @@ final class AnalyticsDeviceTests: XCTestCase {
         }
     }
 
-    func testOneDeviceShowsNoDeviceFilterOrBreakdown() throws {
+    func testOneDeviceShowsNoDeviceFilterOrBreakdown() async throws {
         _ = try db.saveTranscription(text: "just this mac", appName: "Notes", recordingMs: 1_000, processingMs: 200, modelId: "m")
 
         viewModel.load()
+        await viewModel.waitForRefresh()
 
         XCTAssertEqual(viewModel.availableDeviceFilters, [.all, .thisMac])
         XCTAssertEqual(viewModel.deviceBreakdown.count, 1)
     }
 
-    func testFilteringToThePhoneCountsOnlyItsDictations() throws {
+    func testFilteringToThePhoneCountsOnlyItsDictations() async throws {
         _ = try db.saveTranscription(text: "said on this mac", appName: "Notes", recordingMs: 1_000, processingMs: 200, modelId: "m")
         try savePhoneDictation("on the phone")
 
         viewModel.load()
+        await viewModel.waitForRefresh()
         XCTAssertEqual(viewModel.availableDeviceFilters, [.all, .thisMac, .iphone])
         XCTAssertEqual(viewModel.totalWords, 7)
         XCTAssertEqual(viewModel.deviceBreakdown.map(\.words), [4, 3])
         XCTAssertEqual(viewModel.wordsByApp.map(\.name).sorted(), ["Notes", "Orttakey on iPhone"])
 
         viewModel.setDeviceFilter(.iphone)
+        await viewModel.waitForRefresh()
         XCTAssertEqual(viewModel.totalWords, 3)
         XCTAssertEqual(viewModel.totalSessions, 1)
         XCTAssertEqual(viewModel.wordsByApp.map(\.name), ["Orttakey on iPhone"])
@@ -59,12 +62,56 @@ final class AnalyticsDeviceTests: XCTestCase {
         XCTAssertEqual(viewModel.deviceBreakdown.count, 2)
     }
 
-    func testHoursAreChartedInTheTimeZoneTheDictationWasSaidIn() throws {
+    func testOnlyTheLatestOfQuickSwitchesIsShown() async throws {
+        _ = try db.saveTranscription(text: "said on this mac", appName: "Notes", recordingMs: 1_000, processingMs: 200, modelId: "m")
+        try savePhoneDictation("on the phone")
+        viewModel.load()
+        await viewModel.waitForRefresh()
+
+        viewModel.setDeviceFilter(.iphone)
+        viewModel.setDeviceFilter(.thisMac)
+        await viewModel.waitForRefresh()
+
+        XCTAssertEqual(viewModel.deviceFilter, .thisMac)
+        XCTAssertEqual(viewModel.totalWords, 4)
+        XCTAssertEqual(viewModel.totalSessions, 1)
+    }
+
+    func testASwitchMadeWhileLoadingIsShown() async throws {
+        _ = try db.saveTranscription(text: "said on this mac", appName: "Notes", recordingMs: 1_000, processingMs: 200, modelId: "m")
+        try savePhoneDictation("on the phone")
+
+        viewModel.load()
+        viewModel.setDeviceFilter(.iphone)
+        await viewModel.waitForRefresh()
+
+        XCTAssertTrue(viewModel.hasLoaded)
+        XCTAssertEqual(viewModel.deviceFilter, .iphone)
+        XCTAssertEqual(viewModel.totalWords, 3)
+    }
+
+    func testADictationSavedWhileOpenIsCounted() async throws {
+        _ = try db.saveTranscription(text: "said on this mac", appName: "Notes", recordingMs: 1_000, processingMs: 200, modelId: "m")
+        viewModel.load()
+        await viewModel.waitForRefresh()
+        XCTAssertEqual(viewModel.totalSessions, 1)
+
+        _ = try db.saveTranscription(text: "and one more", appName: "Notes", recordingMs: 1_000, processingMs: 200, modelId: "m")
+        // The change reaches the dashboard through its database observation.
+        for _ in 0..<50 where viewModel.totalSessions < 2 {
+            try await Task.sleep(for: .milliseconds(20))
+            await viewModel.waitForRefresh()
+        }
+        XCTAssertEqual(viewModel.totalSessions, 2)
+    }
+
+    func testHoursAreChartedInTheTimeZoneTheDictationWasSaidIn() async throws {
         let elsewhere = TimeZone.current.identifier == "Asia/Tokyo" ? "America/Chicago" : "Asia/Tokyo"
         try savePhoneDictation("said abroad", timeZone: elsewhere)
         let createdAt = try XCTUnwrap(try db.fetchRecent().first?.createdAt)
 
         viewModel.load()
+        await viewModel.waitForRefresh()
 
         var local = Calendar.current
         local.timeZone = try XCTUnwrap(TimeZone(identifier: elsewhere))

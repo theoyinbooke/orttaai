@@ -3,20 +3,20 @@
 
 import Foundation
 
-struct DashboardHeaderStats {
+nonisolated struct DashboardHeaderStats {
     let activeDays: Int
     let totalWords: Int
     let averageWPM: Int
 }
 
-struct DashboardTodaySnapshot {
+nonisolated struct DashboardTodaySnapshot {
     let words: Int
     let sessions: Int
     let activeMinutes: Int
     let averageWPM: Int
 }
 
-struct DashboardTrendPoint: Identifiable {
+nonisolated struct DashboardTrendPoint: Identifiable {
     let dayStart: Date
     let words: Int
     let sessions: Int
@@ -25,7 +25,7 @@ struct DashboardTrendPoint: Identifiable {
     var id: Date { dayStart }
 }
 
-struct DashboardTopApp: Identifiable {
+nonisolated struct DashboardTopApp: Identifiable {
     let name: String
     let sessions: Int
     let words: Int
@@ -34,14 +34,14 @@ struct DashboardTopApp: Identifiable {
     var id: String { name }
 }
 
-enum DashboardPerformanceLevel {
+nonisolated enum DashboardPerformanceLevel {
     case noData
     case fast
     case normal
     case slow
 }
 
-struct DashboardPerformanceHealth {
+nonisolated struct DashboardPerformanceHealth {
     let level: DashboardPerformanceLevel
     let sampleCount: Int
     let averageProcessingMs: Int?
@@ -56,7 +56,7 @@ struct DashboardPerformanceHealth {
     let currentModelId: String
 }
 
-struct DashboardRecentDictation: Identifiable {
+nonisolated struct DashboardRecentDictation: Identifiable {
     let id: Int64
     let createdAt: Date
     let fullText: String
@@ -67,7 +67,7 @@ struct DashboardRecentDictation: Identifiable {
 }
 
 /// One device's share of the dictations in a range.
-struct DeviceBreakdownRow: Identifiable, Equatable {
+nonisolated struct DeviceBreakdownRow: Identifiable, Equatable {
     /// The device ID, or "unknown" for dictations whose device isn't known.
     let id: String
     let name: String
@@ -78,7 +78,7 @@ struct DeviceBreakdownRow: Identifiable, Equatable {
     var dictations: Int
 }
 
-struct DashboardStatsPayload {
+nonisolated struct DashboardStatsPayload {
     let header: DashboardHeaderStats
     let today: DashboardTodaySnapshot
     let trend30d: [DashboardTrendPoint]
@@ -87,15 +87,15 @@ struct DashboardStatsPayload {
     let recent: [DashboardRecentDictation]
 }
 
-extension DashboardHeaderStats {
+nonisolated extension DashboardHeaderStats {
     static let empty = DashboardHeaderStats(activeDays: 0, totalWords: 0, averageWPM: 0)
 }
 
-extension DashboardTodaySnapshot {
+nonisolated extension DashboardTodaySnapshot {
     static let empty = DashboardTodaySnapshot(words: 0, sessions: 0, activeMinutes: 0, averageWPM: 0)
 }
 
-extension DashboardPerformanceHealth {
+nonisolated extension DashboardPerformanceHealth {
     static let empty = DashboardPerformanceHealth(
         level: .noData,
         sampleCount: 0,
@@ -112,7 +112,7 @@ extension DashboardPerformanceHealth {
     )
 }
 
-extension DashboardStatsPayload {
+nonisolated extension DashboardStatsPayload {
     static let empty = DashboardStatsPayload(
         header: .empty,
         today: .empty,

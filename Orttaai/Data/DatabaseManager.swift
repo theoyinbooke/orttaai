@@ -983,7 +983,7 @@ final class DatabaseManager {
         requestCloudSyncIfEnabled()
     }
 
-    func fetchTranscriptions(
+    nonisolated func fetchTranscriptions(
         from startDate: Date,
         to endDate: Date,
         limit: Int? = nil
@@ -1001,7 +1001,7 @@ final class DatabaseManager {
         }
     }
 
-    func fetchAllTranscriptions() throws -> [Transcription] {
+    nonisolated func fetchAllTranscriptions() throws -> [Transcription] {
         try dbQueue.read { db in
             try Transcription
                 .order(Column("createdAt").desc)
@@ -1009,7 +1009,7 @@ final class DatabaseManager {
         }
     }
 
-    func fetchRecent(limit: Int = 50, offset: Int = 0) throws -> [Transcription] {
+    nonisolated func fetchRecent(limit: Int = 50, offset: Int = 0) throws -> [Transcription] {
         try dbQueue.read { db in
             try Transcription
                 .order(Column("createdAt").desc)
@@ -1457,7 +1457,7 @@ final class DatabaseManager {
     /// The archive's devices: names from their device records, and whether
     /// dictations from before device tagging are this Mac's (they are unless
     /// another Mac has dictations or a device record here).
-    func fetchDictationDevices(currentDeviceID: String = DeviceIdentity.currentID) throws -> DictationDevices {
+    nonisolated func fetchDictationDevices(currentDeviceID: String = DeviceIdentity.currentID) throws -> DictationDevices {
         try dbQueue.read { db in
             var devices = DictationDevices(currentDeviceID: currentDeviceID)
             var anotherMac = false
@@ -1477,7 +1477,7 @@ final class DatabaseManager {
     }
 
     /// Each device and device kind the archive has dictations from.
-    func fetchDictationDeviceSources() throws -> [(deviceID: String?, kind: String?)] {
+    nonisolated func fetchDictationDeviceSources() throws -> [(deviceID: String?, kind: String?)] {
         try dbQueue.read { db in
             try Row.fetchAll(db, sql: "SELECT DISTINCT sourceDeviceID, sourceDeviceKind FROM transcription")
                 .map { (deviceID: $0["sourceDeviceID"], kind: $0["sourceDeviceKind"]) }

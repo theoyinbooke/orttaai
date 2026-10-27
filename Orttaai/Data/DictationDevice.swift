@@ -9,7 +9,7 @@
 import Foundation
 
 /// The device groups History and Analytics filter by.
-enum DictationDeviceFilter: String, CaseIterable, Identifiable {
+nonisolated enum DictationDeviceFilter: String, CaseIterable, Identifiable {
     case all
     case thisMac
     case iphone
@@ -32,7 +32,7 @@ enum DictationDeviceFilter: String, CaseIterable, Identifiable {
 
 /// The devices in this archive: their names, and whose the untagged
 /// dictations are.
-struct DictationDevices: Equatable {
+nonisolated struct DictationDevices: Equatable {
     var currentDeviceID: String = DeviceIdentity.currentID
     /// Device records' names, by device ID.
     var names: [String: String] = [:]

@@ -8,7 +8,7 @@ import os
 
 // MARK: - View Model
 
-enum AnalyticsTimeRange: String, CaseIterable, Identifiable {
+nonisolated enum AnalyticsTimeRange: String, CaseIterable, Identifiable {
     case thirtyDays = "30 Days"
     case ninetyDays = "90 Days"
     case allTime = "All Time"
@@ -80,6 +80,10 @@ final class AnalyticsDashboardViewModel {
 
     private var observation: DatabaseCancellable?
     private let makeDatabase: () throws -> DatabaseManager
+    /// Opened by the first load and kept.
+    private var database: DatabaseManager?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration = 0
 
     init(settings: AppSettings, makeDatabase: @escaping () throws -> DatabaseManager = { try DatabaseManager() }) {
         self.settings = settings
@@ -91,85 +95,178 @@ final class AnalyticsDashboardViewModel {
     }
 
     func load() {
-        guard !isLoading else { return }
-        isLoading = true
-        defer {
-            isLoading = false
-        }
-
-        do {
-            let db = try makeDatabase()
-            let service = DashboardStatsService(databaseManager: db)
-            try refresh(using: db, service: service)
-
-            observation = service.observeChanges { [weak self] in
-                Task { @MainActor in
-                    self?.refresh()
+        if database == nil {
+            do {
+                let db = try makeDatabase()
+                database = db
+                var isFirstCall = true
+                observation = DashboardStatsService(databaseManager: db).observeChanges { [weak self] in
+                    // The first call is the archive as it is now, which the
+                    // load below reads anyway: refreshing for it too worked
+                    // the whole dashboard out twice on every open.
+                    guard !isFirstCall else {
+                        isFirstCall = false
+                        return
+                    }
+                    Task { @MainActor in
+                        self?.refresh()
+                    }
                 }
+            } catch {
+                errorMessage = "Failed to load analytics."
+                Logger.database.error("Analytics load error: \(error.localizedDescription)")
+                return
             }
-            hasLoaded = true
-            errorMessage = nil
-        } catch {
-            errorMessage = "Failed to load analytics."
-            Logger.database.error("Analytics load error: \(error.localizedDescription)")
+        }
+        refresh()
+    }
+
+    /// Works the numbers out again away from the main thread, which reading
+    /// every dictation and counting its words froze for 0.3 s on each open
+    /// and click (0.6 s for All Time), and shows them in one update. One
+    /// refresh runs at a time, one still waiting when a newer one starts is
+    /// skipped, and an older refresh's numbers never replace a newer one's.
+    func refresh(animated: Bool = false) {
+        guard let database else { return }
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let range = selectedRange
+        let filter = deviceFilter
+        let modelID = currentModelID()
+        let previous = refreshTask
+        isLoading = true
+        refreshTask = Task { [weak self] in
+            await previous?.value
+            guard let self, generation == self.refreshGeneration else { return }
+            let result = await Task.detached(priority: .userInitiated) {
+                Result {
+                    try AnalyticsDashboardSnapshot.load(
+                        from: database,
+                        range: range,
+                        deviceFilter: filter,
+                        currentModelId: modelID
+                    )
+                }
+            }.value
+            guard generation == self.refreshGeneration else { return }
+            self.isLoading = false
+            switch result {
+            case .success(let snapshot):
+                if animated {
+                    // As the picker that asked for it does.
+                    withAnimation(.easeOut(duration: 0.16)) { self.show(snapshot) }
+                } else {
+                    self.show(snapshot)
+                }
+                self.hasLoaded = true
+                self.errorMessage = nil
+            case .failure(let error):
+                self.errorMessage = self.hasLoaded ? "Failed to refresh analytics." : "Failed to load analytics."
+                Logger.database.error("Analytics load error: \(error.localizedDescription)")
+            }
         }
     }
 
-    func refresh() {
-        do {
-            let db = try makeDatabase()
-            let service = DashboardStatsService(databaseManager: db)
-            try refresh(using: db, service: service)
-            errorMessage = nil
-        } catch {
-            errorMessage = "Failed to refresh analytics."
+    /// Waits until the numbers asked for so far are shown, including any
+    /// refresh started meanwhile (for tests).
+    func waitForRefresh() async {
+        while let task = refreshTask {
+            await task.value
+            if refreshTask == task { return }
         }
     }
 
     func setDeviceFilter(_ filter: DictationDeviceFilter) {
         guard deviceFilter != filter else { return }
         deviceFilter = filter
-        if hasLoaded {
-            refresh()
-        }
+        refresh(animated: true)
     }
 
     func setSelectedRange(_ range: AnalyticsTimeRange) {
         guard selectedRange != range else { return }
         selectedRange = range
-        if hasLoaded {
-            refresh()
-        }
+        refresh(animated: true)
     }
 
-    private func refresh(
-        using db: DatabaseManager,
-        service: DashboardStatsService
-    ) throws {
-        let devices = try db.fetchDictationDevices()
-        let present = Set(try db.fetchDictationDeviceSources().map { devices.filter(deviceID: $0.deviceID, kind: $0.kind) })
-        availableDeviceFilters = DictationDeviceFilter.allCases.filter { $0 == .all || present.contains($0) }
-        if !availableDeviceFilters.contains(deviceFilter) {
-            deviceFilter = .all
-        }
-
-        payload = try service.load(currentModelId: currentModelID(), deviceFilter: deviceFilter)
-        let records = try fetchAnalyticsRecords(from: db)
-        deviceBreakdown = DashboardStatsService.deviceBreakdown(from: records, devices: devices)
-        let filter = deviceFilter
-        computeExtendedMetrics(from: filter == .all ? records : records.filter { devices.filter(for: $0) == filter })
+    private func show(_ snapshot: AnalyticsDashboardSnapshot) {
+        availableDeviceFilters = snapshot.availableDeviceFilters
+        deviceFilter = snapshot.deviceFilter
+        deviceBreakdown = snapshot.deviceBreakdown
+        payload = snapshot.payload
+        trendPoints = snapshot.trendPoints
+        dailyActiveSeconds = snapshot.dailyActiveSeconds
+        hourlyActivity = snapshot.hourlyActivity
+        weekdayActivity = snapshot.weekdayActivity
+        durationBuckets = snapshot.durationBuckets
+        wordsByApp = snapshot.wordsByApp
+        medianDurationMs = snapshot.medianDurationMs
+        totalSessions = snapshot.totalSessions
+        totalWords = snapshot.totalWords
+        totalRecordingMinutes = snapshot.totalRecordingMinutes
+        activeDays = snapshot.activeDays
+        averageWPM = snapshot.averageWPM
     }
 
     private func currentModelID() -> String? {
         settings.dictationModelIDForDisplay
     }
 
-    private func fetchAnalyticsRecords(from db: DatabaseManager) throws -> [Transcription] {
+    func cancelObservation() {
+        observation?.cancel()
+        observation = nil
+    }
+}
+
+/// Everything the dashboard shows for one range and device group, worked
+/// out from the archive away from the main thread.
+nonisolated struct AnalyticsDashboardSnapshot: Sendable {
+    var availableDeviceFilters: [DictationDeviceFilter] = [.all]
+    /// The group asked for, or All when the archive has none of its dictations.
+    var deviceFilter: DictationDeviceFilter = .all
+    var deviceBreakdown: [DeviceBreakdownRow] = []
+    var payload: DashboardStatsPayload = .empty
+    var trendPoints: [DashboardTrendPoint] = []
+    var dailyActiveSeconds: [Int] = []
+    var hourlyActivity: [HourlyActivityPoint] = []
+    var weekdayActivity: [WeekdayActivityPoint] = []
+    var durationBuckets: [DurationBucket] = []
+    var wordsByApp: [AppWordCount] = []
+    var medianDurationMs: Int?
+    var totalSessions = 0
+    var totalWords = 0
+    var totalRecordingMinutes = 0
+    var activeDays = 0
+    var averageWPM = 0
+
+    static func load(
+        from db: DatabaseManager,
+        range: AnalyticsTimeRange,
+        deviceFilter requested: DictationDeviceFilter,
+        currentModelId: String?
+    ) throws -> AnalyticsDashboardSnapshot {
+        var snapshot = AnalyticsDashboardSnapshot()
+        let devices = try db.fetchDictationDevices()
+        let present = Set(try db.fetchDictationDeviceSources().map { devices.filter(deviceID: $0.deviceID, kind: $0.kind) })
+        snapshot.availableDeviceFilters = DictationDeviceFilter.allCases.filter { $0 == .all || present.contains($0) }
+        let filter = snapshot.availableDeviceFilters.contains(requested) ? requested : .all
+        snapshot.deviceFilter = filter
+
+        snapshot.payload = try DashboardStatsService(databaseManager: db).load(currentModelId: currentModelId, deviceFilter: filter)
+        let records = try fetchAnalyticsRecords(from: db, range: range)
+        snapshot.deviceBreakdown = DashboardStatsService.deviceBreakdown(from: records, devices: devices)
+        snapshot.computeExtendedMetrics(
+            from: filter == .all ? records : records.filter { devices.filter(for: $0) == filter },
+            range: range
+        )
+        return snapshot
+    }
+
+    private static func fetchAnalyticsRecords(from db: DatabaseManager, range: AnalyticsTimeRange) throws -> [Transcription] {
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: Date())
         let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? Date()
 
-        guard let dayCount = selectedRange.dayCount else {
+        guard let dayCount = range.dayCount else {
             return try db.fetchAllTranscriptions()
         }
 
@@ -181,7 +278,7 @@ final class AnalyticsDashboardViewModel {
         return try db.fetchTranscriptions(from: start, to: tomorrowStart)
     }
 
-    private func computeExtendedMetrics(from records: [Transcription]) {
+    private mutating func computeExtendedMetrics(from records: [Transcription], range: AnalyticsTimeRange) {
         totalSessions = records.count
         totalWords = records.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
         let totalRecordingMs = records.reduce(0) { $0 + max(0, $1.recordingDurationMs) }
@@ -191,7 +288,7 @@ final class AnalyticsDashboardViewModel {
         // Hourly activity
         let calendar = Calendar.current
         activeDays = Set(records.map { calendar.startOfDay(for: $0.createdAt) }).count
-        trendPoints = makeTrendPoints(from: records, calendar: calendar)
+        trendPoints = makeTrendPoints(from: records, calendar: calendar, range: range)
 
         // The hour and weekday it was where each dictation was said, when
         // its time zone is known: 9 a.m. on a trip is still 9 a.m.
@@ -273,14 +370,15 @@ final class AnalyticsDashboardViewModel {
             .map { $0 }
     }
 
-    private func makeTrendPoints(
+    private mutating func makeTrendPoints(
         from records: [Transcription],
-        calendar: Calendar
+        calendar: Calendar,
+        range: AnalyticsTimeRange
     ) -> [DashboardTrendPoint] {
         let todayStart = calendar.startOfDay(for: Date())
         let startDay: Date
 
-        if let dayCount = selectedRange.dayCount {
+        if let dayCount = range.dayCount {
             startDay = calendar.date(
                 byAdding: .day,
                 value: -(dayCount - 1),
@@ -328,16 +426,11 @@ final class AnalyticsDashboardViewModel {
         guard minutes > 0 else { return 0 }
         return Int((Double(words) / minutes).rounded())
     }
-
-    func cancelObservation() {
-        observation?.cancel()
-        observation = nil
-    }
 }
 
 // MARK: - Data Models
 
-struct HourlyActivityPoint: Identifiable {
+nonisolated struct HourlyActivityPoint: Identifiable {
     let hour: Int
     let count: Int
     var id: Int { hour }
@@ -350,7 +443,7 @@ struct HourlyActivityPoint: Identifiable {
     }
 }
 
-struct DurationBucket: Identifiable {
+nonisolated struct DurationBucket: Identifiable {
     let label: String
     /// How the bucket reads in a sentence ("5 to 15 seconds").
     let phrase: String
@@ -359,7 +452,7 @@ struct DurationBucket: Identifiable {
     var id: String { label }
 }
 
-struct WeekdayActivityPoint: Identifiable {
+nonisolated struct WeekdayActivityPoint: Identifiable {
     /// Calendar weekday, 1 = Sunday.
     let weekday: Int
     let shortName: String
@@ -368,7 +461,7 @@ struct WeekdayActivityPoint: Identifiable {
     var id: Int { weekday }
 }
 
-struct AppWordCount: Identifiable {
+nonisolated struct AppWordCount: Identifiable {
     let name: String
     let words: Int
     var id: String { name }

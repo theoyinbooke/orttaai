@@ -346,6 +346,7 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertEqual(payload.performance.sampleCount, 1)
     }
 
+    @MainActor
     func testRecentDictationIncludesMetadataAndSupportsDelete() throws {
         try save(
             text: "first entry with five words",
@@ -425,6 +426,7 @@ final class DashboardStatsServiceTests: XCTestCase {
         XCTAssertTrue(longEntry?.previewText.hasSuffix("...") == true)
     }
 
+    @MainActor
     func testDeleteRecentDictationReportsMissingId() throws {
         try save(text: "existing entry", dayOffset: 0, recordingMs: 1_000)
         XCTAssertFalse(try service.deleteRecentDictation(id: 99_999))

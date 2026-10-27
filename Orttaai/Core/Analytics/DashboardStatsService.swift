@@ -4,7 +4,7 @@
 import Foundation
 import GRDB
 
-final class DashboardStatsService {
+nonisolated final class DashboardStatsService {
     private let databaseManager: DatabaseManager
     private let calendar: Calendar
     private let nowProvider: () -> Date
@@ -93,12 +93,14 @@ final class DashboardStatsService {
         )
     }
 
+    @MainActor
     func observeChanges(_ onChange: @escaping () -> Void) -> DatabaseCancellable {
         databaseManager.observeTranscriptions { _ in
             onChange()
         }
     }
 
+    @MainActor
     @discardableResult
     func deleteRecentDictation(id: Int64) throws -> Bool {
         try databaseManager.deleteTranscription(id: id)
@@ -365,7 +367,7 @@ final class DashboardStatsService {
     }
 }
 
-private struct DayAggregate {
+nonisolated private struct DayAggregate {
     var words: Int = 0
     var sessions: Int = 0
     var recordingMs: Int = 0

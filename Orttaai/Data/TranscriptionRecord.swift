@@ -4,7 +4,7 @@
 import Foundation
 import GRDB
 
-struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord {
+nonisolated struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord {
     var id: Int64?
     var createdAt: Date
     var text: String
@@ -74,7 +74,7 @@ struct Transcription: Codable, Identifiable, FetchableRecord, PersistableRecord 
     }
 }
 
-extension Transcription {
+nonisolated extension Transcription {
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID
     }
