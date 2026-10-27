@@ -4,9 +4,17 @@
 import SwiftUI
 import Foundation
 
+/// The microphone level the recording pill draws. AppDelegate writes it on
+/// every poll and the pill's canvas reads it each frame, so a new level
+/// redraws one canvas instead of rebuilding the pill.
+final class RecordingLevelMeter {
+    var level: Float = 0
+}
+
 /// The recording pill. It never displays transcript text; the finalized
 /// dictation is inserted once after recording ends.
 struct WaveformView: View {
+    /// The level drawn when there is no meter.
     let audioLevel: Float
     let elapsedSeconds: Int
     var countdownSeconds: Int? = nil
@@ -16,7 +24,10 @@ struct WaveformView: View {
     /// Voice edit sessions get an explicit EDIT badge so the pill never looks
     /// like a plain dictation while an instruction is being recorded.
     var isEditMode: Bool = false
+    /// The live level while recording.
+    var meter: RecordingLevelMeter? = nil
     var onStop: (() -> Void)? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let barCount = 16
     private let barWidth: CGFloat = 2.5
@@ -32,7 +43,7 @@ struct WaveformView: View {
 
     var body: some View {
         ZStack {
-            waveBannerBackground
+            liveCanvas
             controlsRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -43,7 +54,6 @@ struct WaveformView: View {
         )
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, 5)
-        .animation(.linear(duration: 0.033), value: audioLevel)
         .animation(.easeInOut(duration: 0.18), value: elapsedSeconds)
         .animation(.easeInOut(duration: 0.3), value: isCountingDown)
         .animation(.easeInOut(duration: 0.18), value: countdownSeconds)
@@ -53,14 +63,9 @@ struct WaveformView: View {
 
     private var controlsRow: some View {
         HStack(spacing: Spacing.md) {
-            HStack(spacing: barGap) {
-                ForEach(0..<barCount, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
-                        .fill(activeTint.opacity(0.95))
-                        .frame(width: barWidth, height: barHeight(for: index))
-                }
-            }
-            .shadow(color: activeTint.opacity(Double(audioLevel) * 0.5), radius: 6, y: 0)
+            // The level bars are drawn here by `liveCanvas`.
+            Color.clear
+                .frame(width: barsWidth, height: maxBarHeight)
 
             Spacer(minLength: 0)
 
@@ -145,9 +150,18 @@ struct WaveformView: View {
         .padding(.horizontal, Spacing.md)
     }
 
-    private var waveBannerBackground: some View {
-        TimelineView(.animation) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
+    private var currentLevel: Float { meter?.level ?? audioLevel }
+
+    private var barsWidth: CGFloat { CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barGap }
+
+    /// The waves and the level bars, drawn 30 times a second from the
+    /// meter's latest level. Rebuilding the pill for every new level, with
+    /// the bars animating at the display's rate (up to 144 a second here),
+    /// cost twice the CPU while recording.
+    private var liveCanvas: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion && meter == nil)) { context in
+            let time = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+            let audioLevel = currentLevel
 
             Canvas { canvas, size in
                 let primary = wavePath(
@@ -187,6 +201,23 @@ struct WaveformView: View {
                         endPoint: CGPoint(x: 0, y: size.height)
                     )
                 )
+
+                canvas.drawLayer { bars in
+                    bars.addFilter(.shadow(color: activeTint.opacity(Double(audioLevel) * 0.5), radius: 6))
+                    for index in 0..<barCount {
+                        let height = barHeight(for: index, level: audioLevel)
+                        let rect = CGRect(
+                            x: Spacing.md + CGFloat(index) * (barWidth + barGap),
+                            y: (size.height - height) / 2,
+                            width: barWidth,
+                            height: height
+                        )
+                        bars.fill(
+                            Path(roundedRect: rect, cornerRadius: barWidth / 2, style: .continuous),
+                            with: .color(activeTint.opacity(0.95))
+                        )
+                    }
+                }
             }
         }
         .background(
@@ -226,7 +257,7 @@ struct WaveformView: View {
         return path
     }
 
-    private func barHeight(for index: Int) -> CGFloat {
+    private func barHeight(for index: Int, level audioLevel: Float) -> CGFloat {
         let boosted = min(Float(1.0), audioLevel * 2.5 + 0.15)
         let level = CGFloat(boosted)
         let centerDist = abs(Double(index) - Double(barCount - 1) / 2.0)

@@ -24,7 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let milestoneToast = MilestoneToastController()
 
     private var waveformUpdateTask: Task<Void, Never>?
-    private var lastWaveformLevelBucket: Int = -1
+    private let recordingLevelMeter = RecordingLevelMeter()
     private var lastRecordingCountdown: Int?
     private var lastRecordingElapsedSeconds: Int?
     private var lastRecordingTargetAppName: String?
@@ -788,6 +788,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .recording:
             let isHandsFree = coordinator?.isHandsFreeRecording ?? false
             let isEditSession = coordinator?.isEditSession ?? false
+            recordingLevelMeter.level = coordinator?.audioLevel ?? 0
             startWaveformUpdates()
             statusBarController?.updateIcon(state: .recording)
             statusBarMenu?.updateStatusLine(
@@ -802,6 +803,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     countdownSeconds: coordinator?.countdownSeconds,
                     isHandsFree: isHandsFree,
                     isEditMode: isEditSession,
+                    meter: recordingLevelMeter,
                     onStop: { [weak self] in
                         self?.coordinator?.stopRecording()
                     }
@@ -853,7 +855,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startWaveformUpdates() {
         stopWaveformUpdates()
-        lastWaveformLevelBucket = -1
         lastRecordingCountdown = coordinator?.countdownSeconds
         lastRecordingElapsedSeconds = coordinator?.recordingElapsedSeconds
         lastRecordingTargetAppName = coordinator?.targetAppName
@@ -868,8 +869,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let countdownSeconds = coordinator.countdownSeconds
                 let targetAppName = coordinator.targetAppName
                 let isHandsFree = coordinator.isHandsFreeRecording
-                let bucket = Int((level * 24).rounded())
-                let didWaveformChange = bucket != self.lastWaveformLevelBucket
+                // The pill's canvas reads the level as it draws; only the
+                // clock, countdown and mode rebuild the pill.
+                self.recordingLevelMeter.level = level
                 let didElapsedChange = elapsedSeconds != self.lastRecordingElapsedSeconds
                 let didCountdownChange = countdownSeconds != self.lastRecordingCountdown
                 let didModeChange = isHandsFree != self.lastRecordingIsHandsFree
@@ -887,8 +889,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                 }
 
-                if didWaveformChange || didElapsedChange || didCountdownChange || didModeChange {
-                    self.lastWaveformLevelBucket = bucket
+                if didElapsedChange || didCountdownChange || didModeChange {
                     self.floatingPanel?.updateContent(
                         WaveformView(
                             audioLevel: level,
@@ -896,6 +897,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             countdownSeconds: countdownSeconds,
                             isHandsFree: isHandsFree,
                             isEditMode: coordinator.isEditSession,
+                            meter: self.recordingLevelMeter,
                             onStop: { [weak self] in
                                 self?.coordinator?.stopRecording()
                             }
@@ -927,7 +929,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopWaveformUpdates() {
         waveformUpdateTask?.cancel()
         waveformUpdateTask = nil
-        lastWaveformLevelBucket = -1
         lastRecordingCountdown = nil
         lastRecordingElapsedSeconds = nil
         lastRecordingTargetAppName = nil
