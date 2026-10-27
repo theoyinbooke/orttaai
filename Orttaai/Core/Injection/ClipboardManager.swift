@@ -33,12 +33,20 @@ final class ClipboardManager: ClipboardManaging {
     /// paste for 22 s. Data from apps on this Mac arrives well within this.
     nonisolated static let saveLimitMs = 1_000
 
+    private let pasteboard: NSPasteboard
     private let readItems: @Sendable () -> [SavedItem]
 
-    /// - Parameter readItems: reads the pasteboard's contents; tests pass a
-    ///   slow one.
-    init(readItems: @escaping @Sendable () -> [SavedItem] = { ClipboardManager.readItems(from: .general) }) {
-        self.readItems = readItems
+    /// - Parameters:
+    ///   - pasteboard: the pasteboard to manage. Tests pass a private one, so
+    ///     running them never touches the system clipboard.
+    ///   - readItems: reads the pasteboard's contents, all of `pasteboard`'s
+    ///     items unless given; tests pass a slow one.
+    init(pasteboard: NSPasteboard = .general, readItems: (@Sendable () -> [SavedItem])? = nil) {
+        self.pasteboard = pasteboard
+        // Read off the main thread by `save(giveUpAfterMs:)`, which a
+        // pasteboard allows even while this thread writes to it.
+        nonisolated(unsafe) let pasteboardToRead = pasteboard
+        self.readItems = readItems ?? { ClipboardManager.readItems(from: pasteboardToRead) }
     }
 
     func save() -> [SavedItem] {
@@ -90,7 +98,6 @@ final class ClipboardManager: ClipboardManaging {
     }
 
     func restore(_ savedItems: [SavedItem]) {
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
 
         guard !savedItems.isEmpty else { return }
@@ -108,16 +115,15 @@ final class ClipboardManager: ClipboardManaging {
     }
 
     func setString(_ string: String) {
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(string, forType: .string)
     }
 
     func getString() -> String? {
-        NSPasteboard.general.string(forType: .string)
+        pasteboard.string(forType: .string)
     }
 
     var changeCount: Int {
-        NSPasteboard.general.changeCount
+        pasteboard.changeCount
     }
 }
