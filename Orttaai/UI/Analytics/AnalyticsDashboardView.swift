@@ -474,6 +474,7 @@ nonisolated struct AppWordCount: Identifiable {
 struct AnalyticsDashboardView: View {
     let range: AnalyticsTimeRange
     @State private var viewModel: AnalyticsDashboardViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @MainActor
     init(range: AnalyticsTimeRange, viewModel: AnalyticsDashboardViewModel? = nil) {
@@ -484,15 +485,21 @@ struct AnalyticsDashboardView: View {
     var body: some View {
         GeometryReader { proxy in
             ScrollView(showsIndicators: false) {
-                AnalyticsDashboardContent(
-                    range: range,
-                    viewModel: viewModel,
-                    isCompact: proxy.size.width < 760
-                )
-                .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
-                .padding(.bottom, Spacing.lg)
+                // Drawn once the numbers, worked out in the background, are
+                // in: before them it read as an archive with nothing in it.
+                if viewModel.hasLoaded || viewModel.errorMessage != nil {
+                    AnalyticsDashboardContent(
+                        range: range,
+                        viewModel: viewModel,
+                        isCompact: proxy.size.width < 760
+                    )
+                    .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
+                    .padding(.bottom, Spacing.lg)
+                    .transition(reduceMotion ? .identity : .opacity)
+                }
             }
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: viewModel.hasLoaded)
         .onAppear {
             if !viewModel.hasLoaded {
                 viewModel.selectedRange = range
