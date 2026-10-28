@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.17.0", items: [
+            WhatsNewItem(
+                id: "1.17-light",
+                title: "Light and dark",
+                detail: "Orttaai now has a light look. It follows your Mac, or pick Light or Dark in Settings › General › Appearance.",
+                art: .symbol("circle.lefthalf.filled")
+            ),
+            WhatsNewItem(
+                id: "1.17-rail",
+                title: "A slim sidebar",
+                detail: "Collapse the sidebar and a slim column of icons keeps every section one click away.",
+                art: .symbol("sidebar.left")
+            ),
+            WhatsNewItem(
+                id: "1.17-look",
+                title: "A fresh look",
+                detail: "Analytics, Settings, Coach and more have rounder cards and a calmer layout. Home stays just as it was.",
+                art: .symbol("rectangle.on.rectangle")
+            ),
+        ]),
         WhatsNewRelease(version: "1.16.0", items: [
             WhatsNewItem(
                 id: "1.16-coach",
