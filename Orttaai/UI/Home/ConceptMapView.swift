@@ -220,15 +220,8 @@ struct ConceptMapView: View {
         }
         // Fills the rest of the page; the page itself doesn't scroll.
         .frame(minHeight: 400, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .fill(Color.Orttaai.bgSecondary)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous)
-                .stroke(Color.Orttaai.border, lineWidth: BorderWidth.standard)
-        )
+        .cardClip()
+        .dashboardCard()
     }
 
     // MARK: - Side panel

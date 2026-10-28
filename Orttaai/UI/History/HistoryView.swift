@@ -830,7 +830,7 @@ private struct CreateSnippetSheet: View {
                 .frame(minHeight: 150)
                 .padding(Spacing.md)
                 .background(Color.Orttaai.bgSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card))
+                .cardClip()
             }
 
             HStack {

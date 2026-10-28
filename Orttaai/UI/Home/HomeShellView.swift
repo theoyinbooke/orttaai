@@ -34,6 +34,8 @@ struct HomeShellView: View {
                     }
                     content(compactOverview: compactOverview)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Home keeps its classic cards; every other section is rounded.
+                        .environment(\.cardShape, navigation.selectedSection == .overview ? .classic : .rounded)
                 }
                 .background(Color.Orttaai.bgPrimary)
                 .modifier(SolidHeaderScrollEdge())

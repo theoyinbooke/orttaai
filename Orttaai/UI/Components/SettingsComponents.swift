@@ -20,13 +20,15 @@ extension View {
     /// Standard padding for the scrolling body of a settings page, aligned
     /// with the page title's leading edge; content fills the window's width
     /// like every other page.
+    /// A centred column, so a setting's control stays near its name on a
+    /// wide window.
     func settingsPageLayout() -> some View {
         self
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: WorkspaceLayout.settingsColumnWidth, alignment: .leading)
             .padding(.horizontal, WorkspaceLayout.contentHorizontalPadding)
             .padding(.top, Spacing.lg)
             .padding(.bottom, WorkspaceLayout.contentBottomPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

@@ -19,6 +19,8 @@ enum WorkspaceLayout {
     static let contentTopPadding: CGFloat = Spacing.lg
     static let contentHorizontalPadding: CGFloat = Spacing.xxl
     static let contentBottomPadding: CGFloat = Spacing.xxl
+    /// Settings, Model and About read as one centred column.
+    static let settingsColumnWidth: CGFloat = 880
     static let sidebarHeaderTopPadding: CGFloat = 0
 
     static let contentInsets = EdgeInsets(
@@ -31,6 +33,8 @@ enum WorkspaceLayout {
 
 enum CornerRadius {
     static let card: CGFloat = 8
+    /// Cards outside Home, in Coach's style.
+    static let roundedCard: CGFloat = 20
     static let input: CGFloat = 6
     static let panel: CGFloat = 8
     static let button: CGFloat = 8

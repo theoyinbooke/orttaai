@@ -117,7 +117,7 @@ struct AboutView: View {
                 .padding(.vertical, Spacing.xs)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.card, style: .continuous))
+        .cardClip()
         .dashboardCard()
     }
 

@@ -659,7 +659,8 @@ struct AnalyticsDashboardContent: View {
                 value: viewModel.totalWords.formatted(),
                 detail: wordsDetail,
                 icon: "character.cursor.ibeam",
-                series: viewModel.trendPoints.map(\.words)
+                series: viewModel.trendPoints.map(\.words),
+                warm: true
             )
             summaryMetric(
                 title: "Sessions",
@@ -698,7 +699,8 @@ struct AnalyticsDashboardContent: View {
         value: String,
         detail: String,
         icon: String,
-        series: [Int]
+        series: [Int],
+        warm: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: 7) {
@@ -716,7 +718,7 @@ struct AnalyticsDashboardContent: View {
             HStack(alignment: .bottom, spacing: Spacing.sm) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(value)
-                        .font(.system(size: 26, weight: .semibold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.Orttaai.textPrimary)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -738,7 +740,7 @@ struct AnalyticsDashboardContent: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .dashboardCard()
+        .modifier(SummaryCardBackground(warm: warm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title): \(value), \(detail)")
     }
@@ -1377,5 +1379,18 @@ private struct DashboardBalancedGridLayout: Layout {
         }
 
         return heights
+    }
+}
+
+/// The range's headline number sits on the warm card; the rest on plain ones.
+private struct SummaryCardBackground: ViewModifier {
+    let warm: Bool
+
+    func body(content: Content) -> some View {
+        if warm {
+            content.warmCard()
+        } else {
+            content.dashboardCard()
+        }
     }
 }
