@@ -233,7 +233,7 @@ struct MilestoneShareSheet: View {
                     )
                 Text(option.title)
                     .font(.system(size: 12, weight: selected ? .bold : .medium))
-                    .foregroundStyle(selected ? Color(hex: "E8B45A") : Color(hex: "C7C7CC"))
+                    .foregroundStyle(selected ? Color.orttaai(light: "8A5A0F", dark: "E8B45A") : Color.orttaai(light: "4A4642", dark: "C7C7CC"))
                     .lineLimit(1)
             }
             .frame(width: 78)
@@ -257,10 +257,10 @@ struct MilestoneShareSheet: View {
             Button(action: action) {
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(edge == .trailing ? Color(hex: "E8B45A") : Color.Orttaai.textPrimary)
+                    .foregroundStyle(edge == .trailing ? Color.orttaai(light: "8A5A0F", dark: "E8B45A") : Color.Orttaai.textPrimary)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(Color.Orttaai.bgSecondary))
-                    .overlay(Circle().strokeBorder(edge == .trailing ? Color.Orttaai.accent : Color(hex: "48484A"), lineWidth: 1))
+                    .overlay(Circle().strokeBorder(edge == .trailing ? Color.Orttaai.accent : Color.orttaai(light: "D8D1C6", dark: "48484A"), lineWidth: 1))
                     .shadow(color: .black.opacity(0.4), radius: 8, y: 6)
                     .contentShape(Circle())
             }
@@ -275,7 +275,7 @@ struct MilestoneShareSheet: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 12, weight: selected ? .bold : .medium))
-                .foregroundStyle(selected ? Color(hex: "E8B45A") : Color(hex: "C7C7CC"))
+                .foregroundStyle(selected ? Color.orttaai(light: "8A5A0F", dark: "E8B45A") : Color.orttaai(light: "4A4642", dark: "C7C7CC"))
                 .padding(.horizontal, 14)
                 .frame(height: 34)
                 .background(Capsule().fill(selected ? Color.Orttaai.accent.opacity(0.14) : .clear))
