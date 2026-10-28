@@ -15,7 +15,10 @@ struct CoachWelcomeView: View {
     /// Read so the checkboxes redraw as soon as a choice is saved.
     @AppStorage(CoachPreferences.overridesKey) private var overridesJSON = ""
     @State private var step = 1
-    private let steps = 3
+    @State private var installed: [String]?
+    @State private var checkedModels = false
+    @AppStorage(CoachPreferences.personasKey) private var personasJSON = ""
+    private let steps = 5
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +28,8 @@ struct CoachWelcomeView: View {
                     switch step {
                     case 1: found(snapshot)
                     case 2: apps(snapshot)
+                    case 3: pickCoach
+                    case 4: models
                     default: firstShape(snapshot)
                     }
                 } else {
@@ -75,6 +80,10 @@ struct CoachWelcomeView: View {
                     .buttonStyle(CoachSecondaryButtonStyle())
             }
             Spacer()
+            if step == 4, installed?.isEmpty != false {
+                Button("Start without them") { withAnimation { step += 1 } }
+                    .buttonStyle(CoachSecondaryButtonStyle())
+            }
             if step < steps {
                 Button(step == 1 ? "Show me" : "Continue") { withAnimation { step += 1 } }
                     .buttonStyle(CoachPrimaryButtonStyle())
@@ -192,6 +201,126 @@ struct CoachWelcomeView: View {
             }
         }
         .frame(maxHeight: .infinity)
+    }
+
+    private var pickCoach: some View {
+        _ = personasJSON
+        let chosen = CoachPreferences.persona(for: .ai)
+        return VStack(alignment: .leading, spacing: 30) {
+            HStack(alignment: .bottom) {
+                Text("Who should coach you?")
+                    .font(CoachStyle.display(46))
+                    .foregroundStyle(CoachStyle.ink)
+                Spacer()
+                Text("You can mix them later")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color(hex: "C9C5BF"))
+            }
+            HStack(spacing: 14) {
+                ForEach(CoachPersona.allCases) { persona in
+                    let on = persona == chosen
+                    Button {
+                        for mode in CoachMode.allCases { CoachPreferences.setPersona(persona, for: mode) }
+                    } label: {
+                        VStack(spacing: 12) {
+                            CoachPersonaGlyph(persona: persona, size: 76)
+                            Text(persona.name)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(CoachStyle.ink)
+                            Text(persona.trait)
+                                .font(.system(size: 13))
+                                .foregroundStyle(CoachStyle.ink2)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.vertical, 24)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity)
+                        .coachSurface(on ? CoachStyle.warm : Color(hex: "1D1C1F"), border: on ? Color.Orttaai.accent.opacity(0.6) : CoachStyle.line)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            Text("“\(chosen.sample)”")
+                .font(.system(size: 19))
+                .foregroundStyle(CoachStyle.ink2)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private var models: some View {
+        let setup = CoachModels.current()
+        return VStack(alignment: .leading, spacing: 26) {
+            HStack(alignment: .bottom) {
+                Text("Give Coach its voice.")
+                    .font(CoachStyle.display(46))
+                    .foregroundStyle(CoachStyle.ink)
+                Spacer()
+                Label("On \(setup.provider.displayName), on this Mac", systemImage: "lock")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color(hex: "C9C5BF"))
+            }
+            VStack(spacing: 12) {
+                modelRow("Coach", model: setup.coachModel, icon: "text.bubble")
+                modelRow("Judge", model: setup.judgeModel, icon: "checkmark.circle")
+                HStack(spacing: 16) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.Orttaai.accent)
+                        .frame(width: 40)
+                    Text("Hearing you")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(CoachStyle.ink)
+                    Spacer()
+                    Text("Same as dictation")
+                        .font(.system(size: 14))
+                        .foregroundStyle(CoachStyle.gain)
+                }
+                .padding(.horizontal, 22)
+                .frame(height: 64)
+                .coachSurface(Color(hex: "1D1C1F"))
+            }
+            Text(installed == nil && checkedModels
+                 ? "Start Ollama or LM Studio for judging and notes. Counting works without them."
+                 : "Change these any time in Cast › Models.")
+                .font(.system(size: 16))
+                .foregroundStyle(Color(hex: "C9C5BF"))
+        }
+        .frame(maxHeight: .infinity)
+        .task {
+            installed = await CoachModels.installed()
+            checkedModels = true
+        }
+    }
+
+    private func modelRow(_ job: String, model: String, icon: String) -> some View {
+        let status: (String, Color) = {
+            guard checkedModels else { return ("Checking…", CoachStyle.ink3) }
+            guard let installed else { return ("Server not running", CoachStyle.warmInk) }
+            return installed.contains(model) ? ("Installed", CoachStyle.gain) : ("Not installed", CoachStyle.warmInk)
+        }()
+        return HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundStyle(Color.Orttaai.accent)
+                .frame(width: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(job)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(CoachStyle.ink)
+                Text(model)
+                    .font(.system(size: 14))
+                    .foregroundStyle(CoachStyle.ink3)
+            }
+            Spacer()
+            Text(status.0)
+                .font(.system(size: 14))
+                .foregroundStyle(status.1)
+        }
+        .padding(.horizontal, 22)
+        .frame(height: 64)
+        .coachSurface(Color(hex: "1D1C1F"))
     }
 
     private func firstShape(_ snapshot: CoachSnapshot) -> some View {

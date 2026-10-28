@@ -130,58 +130,61 @@ struct CoachTodayView: View {
 
     private var rightColumn: some View {
         VStack(spacing: 16) {
-            if let habit = snapshot.habits.first {
+            todaysRepCard
+            weekCard
+            if let habit = snapshot.habits.first, snapshot.caught == nil {
                 habitCard(habit)
             } else {
-                focusCard
+                caughtCard
             }
-            weekCard
-            caughtCard
         }
     }
 
-    @ViewBuilder
-    private var focusCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if let pick = snapshot.focus {
-                HStack(spacing: 6) {
-                    CoachEyebrow(text: "This week's focus")
-                    Text("· " + CoachFormat.modeLabel(pick.mode))
-                        .font(CoachStyle.label)
-                        .foregroundStyle(Color(hex: "C9B79B"))
-                }
-                Text(pick.measure.habitTitle)
-                    .font(CoachStyle.display(28))
+    private var todaysRepCard: some View {
+        let skill = snapshot.todaysSkill
+        let persona = CoachPreferences.persona(for: skill.track.mode ?? snapshot.busiestMode)
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 6) {
+                CoachEyebrow(text: "Today's rep")
+                Text("· \(skill.track.title) · \(snapshot.todaysKind.title)")
+                    .font(CoachStyle.label)
+                    .foregroundStyle(Color(hex: "C9B79B"))
+            }
+            HStack(alignment: .top, spacing: 14) {
+                CoachPersonaGlyph(persona: persona, size: 44)
+                Text("“\(CoachCopy.repIntro(persona, skill: skill, kind: snapshot.todaysKind))”")
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(CoachStyle.ink)
-                Text(CoachCopy.focusLine(pick, summary: snapshot.shape(for: pick.mode).nowSummary))
-                    .font(.system(size: 16))
-                    .foregroundStyle(CoachStyle.ink2)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                HStack(spacing: 12) {
-                    Text(pick.measure.hitTitle)
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(skill.title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(CoachStyle.ink)
+                    Text(skill.why)
                         .font(CoachStyle.label)
                         .foregroundStyle(Color(hex: "C9B79B"))
-                    Spacer(minLength: 8)
-                    Button("Start this habit") {
-                        center.startHabit(pick)
-                        onShowProof()
-                    }
-                    .buttonStyle(CoachPrimaryButtonStyle())
+                        .lineLimit(1)
                 }
-            } else {
-                CoachEyebrow(text: "This week's focus")
-                Text("Nothing stands out yet.")
-                    .font(CoachStyle.display(28))
-                    .foregroundStyle(CoachStyle.ink)
-                Text("Keep dictating as usual. Coach picks a focus once it has enough to go on.")
-                    .font(.system(size: 16))
-                    .foregroundStyle(CoachStyle.ink2)
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
+                Button {
+                    Task { await center.beginRep(skill, kind: snapshot.todaysKind, spoken: true) }
+                } label: {
+                    Label("Speak it", systemImage: "mic")
+                }
+                .buttonStyle(CoachPrimaryButtonStyle())
+                if !skill.speakOnly {
+                    Button("Type it") {
+                        Task { await center.beginRep(skill, kind: snapshot.todaysKind, spoken: false) }
+                    }
+                    .buttonStyle(CoachSecondaryButtonStyle())
+                }
             }
         }
         .padding(26)
-        .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
         .coachSurface(CoachStyle.warm, border: CoachStyle.warmBorder)
     }
 
@@ -196,7 +199,7 @@ struct CoachTodayView: View {
                 Spacer()
                 CoachTag(text: verdict.status.title, color: verdict.status.color)
             }
-            Text(state.measure.habitTitle)
+            Text(state.title)
                 .font(CoachStyle.display(28))
                 .foregroundStyle(CoachStyle.ink)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -249,10 +252,10 @@ struct CoachTodayView: View {
                     .font(CoachStyle.label)
                     .foregroundStyle(CoachStyle.ink3)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(snapshot.week.filter(\.dictated).count)")
+                    Text("\(snapshot.repsThisWeek)")
                         .font(CoachStyle.display(26))
                         .foregroundStyle(CoachStyle.ink)
-                    Text("days dictated")
+                    Text(snapshot.repsThisWeek == 1 ? "rep" : "reps")
                         .font(.system(size: 14))
                         .foregroundStyle(CoachStyle.ink3)
                 }
@@ -260,11 +263,12 @@ struct CoachTodayView: View {
             .frame(width: 130, alignment: .leading)
             HStack {
                 ForEach(snapshot.week) { day in
+                    let practised = snapshot.repDays.contains(day.date)
                     VStack(spacing: 6) {
                         ZStack {
                             Circle()
                                 .stroke(
-                                    day.dictated ? Color.Orttaai.accent : Color.white.opacity(day.isFuture ? 0.06 : 0.10),
+                                    practised ? Color.Orttaai.accent : day.dictated ? Color.Orttaai.accent.opacity(0.3) : Color.white.opacity(day.isFuture ? 0.06 : 0.10),
                                     style: StrokeStyle(lineWidth: 5, dash: day.isFuture ? [3, 5] : [])
                                 )
                         }
@@ -275,7 +279,7 @@ struct CoachTodayView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(day.label): \(day.dictated ? "dictated" : "no dictation")")
+                    .accessibilityLabel("\(day.label): \(practised ? "practised" : day.dictated ? "dictated, no rep" : "nothing yet")")
                 }
             }
         }
@@ -360,21 +364,16 @@ enum CoachCopy {
         return "Holding steady over 4 weeks"
     }
 
-    static func focusLine(_ pick: CoachFocusPick, summary s: CoachSummary) -> String {
-        func one(_ x: Double) -> String { String(format: "%.1f", x) }
-        switch pick.measure {
-        case .fillers:
-            return "You say um or uh about \(one(s.umUhRate)) times every 100 words. A silent pause reads better, and Orttaai writes nothing for it."
-        case .phrases:
-            return "Filler phrases turn up \(one(s.phraseRate)) times every 100 words. Let the pause do the work."
-        case .pace:
-            return "Your fastest quarter runs above \(s.fastPace ?? s.pace ?? 0) words a minute. Names and numbers come out cleaner nearer 140."
-        case .sentences:
-            return "Half your sentences run past \(s.medianSentence ?? 0) words, and one ran to \(s.longestSentence ?? 0). Shorter ones give Polish clear places to stop."
-        case .repeats:
-            return "You say a word twice about \(one(s.repeatRate)) times every 100 words. Start each sentence a beat slower."
-        case .clarity:
-            return "Polish rewrites \(Int((s.polishFixShare * 100).rounded()))% of what you say here. Say it the way you want it written."
+    /// The coach introducing today's rep, in its own way.
+    static func repIntro(_ persona: CoachPersona, skill: CoachSkill, kind: CoachRepKind) -> String {
+        let what = skill.title.prefix(1).lowercased() + skill.title.dropFirst()
+        let redo = kind == .redo
+        switch persona {
+        case .mentor: return redo ? "Let's take one of yours and work on \(what)." : "Today, let's work on \(what)."
+        case .editor: return "Today: \(what)."
+        case .socratic: return "What would change if you focused on \(what) today?"
+        case .sergeant: return redo ? "One of yours, redone. Focus: \(what)." : "Today's drill: \(what). No excuses."
+        case .peer: return redo ? "Want to redo one of yours? Let's try \(what)." : "Quick one today: \(what)."
         }
     }
 

@@ -137,7 +137,7 @@ private struct FeaturedHabitCard: View {
         .padding(26)
         .coachSurface()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(state.measure.habitTitle), \(v.status.title)")
+        .accessibilityLabel("\(state.title), \(v.status.title)")
     }
 
     private var headline: some View {
@@ -145,7 +145,7 @@ private struct FeaturedHabitCard: View {
         return VStack(alignment: .leading, spacing: 10) {
             CoachTag(text: v.status.title, color: v.status.color)
             VStack(alignment: .leading, spacing: 2) {
-                Text(state.measure.habitTitle)
+                Text(state.title)
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(CoachStyle.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -180,7 +180,7 @@ private struct FeaturedHabitCard: View {
             dotRow(title: "\(v.before.count) dictations before", hits: v.before, total: HabitJudge.window, warm: false)
             dotRow(title: v.after.isEmpty ? "Since you started" : "\(v.after.count) since you started", hits: v.after, total: HabitJudge.window, warm: true)
             HStack(spacing: 16) {
-                key(Color.Orttaai.accent, state.measure.hitTitle)
+                key(Color.Orttaai.accent, state.hitTitle)
                 key(Color.white.opacity(0.14), "Not this time")
             }
         }
@@ -260,7 +260,7 @@ private struct HabitCard: View {
         let v = state.verdict
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(state.measure.habitTitle)
+                Text(state.title)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(CoachStyle.ink)
                 Spacer()
@@ -270,14 +270,14 @@ private struct HabitCard: View {
                 .font(CoachStyle.label)
                 .foregroundStyle(CoachStyle.ink3)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(CoachFormat.figure(v.beforeValue, state.measure))
+                Text(state.figure(v.beforeValue))
                     .font(CoachStyle.display(22))
                     .foregroundStyle(CoachStyle.muted)
                 Text("→").foregroundStyle(CoachStyle.ink3)
-                Text(CoachFormat.figure(v.afterValue, state.measure))
+                Text(state.figure(v.afterValue))
                     .font(CoachStyle.display(40))
                     .foregroundStyle(CoachStyle.ink)
-                Text(state.measure.unit)
+                Text(state.unit)
                     .font(CoachStyle.label)
                     .foregroundStyle(CoachStyle.ink3)
             }

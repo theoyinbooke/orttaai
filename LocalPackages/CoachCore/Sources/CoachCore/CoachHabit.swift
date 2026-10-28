@@ -61,15 +61,35 @@ public enum HabitJudge {
         samples: [HabitSample],
         seed: UInt64 = 0x0C0AC4
     ) -> HabitVerdict {
+        verdict(
+            startedAt: startedAt,
+            samples: samples,
+            isHit: { measure.isHit($0.measures) },
+            value: { measure.value(of: $0.measures) },
+            controls: CoachMeasure.allCases.filter { $0 != measure },
+            seed: seed
+        )
+    }
+
+    /// Any notion of met: `isHit` is nil when a dictation can't be told,
+    /// and `controls` are the measures nobody practised.
+    public static func verdict(
+        startedAt: Date,
+        samples: [HabitSample],
+        isHit: (HabitSample) -> Bool?,
+        value: (HabitSample) -> Double?,
+        controls: [CoachMeasure],
+        seed: UInt64 = 0x0C0AC4
+    ) -> HabitVerdict {
         let sorted = samples.sorted { $0.createdAt < $1.createdAt }
-        let readable = sorted.filter { measure.value(of: $0.measures) != nil }
+        let readable = sorted.filter { isHit($0) != nil }
         let beforeSamples = Array(readable.filter { $0.createdAt < startedAt }.suffix(window))
         let sinceSamples = readable.filter { $0.createdAt >= startedAt }
         let afterSamples = Array(sinceSamples.suffix(window))
 
-        let before = beforeSamples.map { measure.isHit($0.measures) ?? false }
-        let after = afterSamples.map { measure.isHit($0.measures) ?? false }
-        let best = sinceSamples.reversed().first { ($0.measures.words >= 12) && (measure.isHit($0.measures) ?? false) }
+        let before = beforeSamples.map { isHit($0) ?? false }
+        let after = afterSamples.map { isHit($0) ?? false }
+        let best = sinceSamples.reversed().first { $0.measures.words >= 12 && isHit($0) == true }
 
         var verdict = HabitVerdict(
             status: .watching,
@@ -78,8 +98,8 @@ public enum HabitJudge {
             sinceCount: sinceSamples.count,
             beforeShare: share(before),
             afterShare: share(after),
-            beforeValue: mean(beforeSamples.compactMap { measure.value(of: $0.measures) }),
-            afterValue: mean(afterSamples.compactMap { measure.value(of: $0.measures) }),
+            beforeValue: mean(beforeSamples.compactMap(value)),
+            afterValue: mean(afterSamples.compactMap(value)),
             controlDrift: nil,
             bestExampleID: best?.id,
             stillNeeded: max(0, window - sinceSamples.count)
@@ -90,7 +110,7 @@ public enum HabitJudge {
             return verdict
         }
 
-        verdict.controlDrift = controlDrift(excluding: measure, before: beforeSamples, after: afterSamples, all: sorted)
+        verdict.controlDrift = controlDrift(controls: controls, before: beforeSamples, after: afterSamples, all: sorted)
         let change = afterShare - beforeShare
         let (low, _) = bootstrapInterval(before: before, after: after, seed: seed)
         let beatsDrift = change > (verdict.controlDrift ?? 0)
@@ -100,7 +120,7 @@ public enum HabitJudge {
 
     /// The other measures' change in share over the same stretches of time.
     static func controlDrift(
-        excluding measure: CoachMeasure,
+        controls: [CoachMeasure],
         before: [HabitSample],
         after: [HabitSample],
         all: [HabitSample]
@@ -110,7 +130,7 @@ public enum HabitJudge {
         let beforeSpan = all.filter { $0.createdAt >= beforeStart && $0.createdAt <= beforeEnd }
         let afterSpan = all.filter { $0.createdAt >= afterStart && $0.createdAt <= afterEnd }
         var changes: [Double] = []
-        for other in CoachMeasure.allCases where other != measure {
+        for other in controls {
             let b = beforeSpan.compactMap { other.isHit($0.measures) }
             let a = afterSpan.compactMap { other.isHit($0.measures) }
             guard b.count >= minimumBaseline, a.count >= minimumBaseline,

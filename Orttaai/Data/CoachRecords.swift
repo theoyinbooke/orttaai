@@ -282,3 +282,144 @@ nonisolated extension DatabaseManager {
 private nonisolated func coachPlaceholders(_ count: Int) -> String {
     "(" + Array(repeating: "?", count: max(1, count)).joined(separator: ",") + ")"
 }
+
+/// A practice rep, as kept: numbers and check results, never what was said.
+nonisolated struct CoachRepRecord: Codable, Equatable, Identifiable, FetchableRecord, MutablePersistableRecord {
+    var id: Int64?
+    var skillID: String
+    var kind: String
+    var spoken: Bool
+    var createdAt: Date
+    var score: Double?
+    /// Whether the skill's own check was met; nil when it couldn't be told.
+    var skillMet: Bool?
+    var durationMs: Int
+    var words: Int
+    /// JSON of the rep's `[CheckResult]`.
+    var checks: String
+    var persona: String
+
+    static let databaseTableName = "coach_rep"
+
+    var skill: CoachSkill? { CoachSkill.skill(id: skillID) }
+
+    var checkResults: [CheckResult] {
+        (try? JSONDecoder().decode([CheckResult].self, from: Data(checks.utf8))) ?? []
+    }
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
+nonisolated extension DatabaseManager {
+    @discardableResult
+    func saveCoachRep(_ rep: CoachRepRecord) throws -> CoachRepRecord {
+        try dbQueue.write { db in
+            var saved = rep
+            try saved.insert(db)
+            return saved
+        }
+    }
+
+    func fetchCoachReps() throws -> [CoachRepRecord] {
+        try dbQueue.read { db in
+            try CoachRepRecord.order(Column("createdAt").asc).fetchAll(db)
+        }
+    }
+}
+
+/// What a habit tracks: a counted measure, or a judged question.
+nonisolated enum CoachHabitTarget: Equatable, Sendable {
+    case measure(CoachMeasure)
+    case question(CoachQuestion)
+
+    /// As kept in `coach_habit.measure`: a measure's name, or "q:" and the question's.
+    var stored: String {
+        switch self {
+        case .measure(let m): return m.rawValue
+        case .question(let q): return "q:" + q.rawValue
+        }
+    }
+
+    init?(stored: String) {
+        if stored.hasPrefix("q:") {
+            guard let q = CoachQuestion(rawValue: String(stored.dropFirst(2))) else { return nil }
+            self = .question(q)
+        } else {
+            guard let m = CoachMeasure(rawValue: stored) else { return nil }
+            self = .measure(m)
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .measure(let m): return m.habitTitle
+        case .question(let q):
+            return CoachSkill.all.first { $0.check == .judged(q) }?.title ?? q.label
+        }
+    }
+
+    var hitTitle: String {
+        switch self {
+        case .measure(let m): return m.hitTitle
+        case .question(let q): return q.label
+        }
+    }
+}
+
+extension CoachHabitRecord {
+    var target: CoachHabitTarget? { CoachHabitTarget(stored: measure) }
+}
+
+nonisolated extension DatabaseManager {
+    @discardableResult
+    func startCoachHabit(target: CoachHabitTarget, mode: CoachMode?, at date: Date = Date()) throws -> CoachHabitRecord {
+        try dbQueue.write { db in
+            var habit = CoachHabitRecord(id: nil, measure: target.stored, mode: mode?.rawValue, startedAt: date, endedAt: nil)
+            try habit.insert(db)
+            return habit
+        }
+    }
+
+    /// Yes or not, by dictation, for one question and model.
+    func fetchCoachJudgements(question: CoachQuestion, model: String) throws -> [Int64: Bool] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT transcriptionId, answer FROM coach_judgement WHERE question = ? AND model = ?",
+                arguments: [question.rawValue, model]
+            )
+            var result: [Int64: Bool] = [:]
+            for row in rows {
+                let id: Int64 = row["transcriptionId"]
+                let answer: String = row["answer"]
+                result[id] = answer == JudgeAnswer.yes.rawValue
+            }
+            return result
+        }
+    }
+
+    func saveCoachJudgement(transcriptionId: Int64, question: CoachQuestion, model: String, answer: JudgeAnswer, confidence: Double, at date: Date = Date()) throws {
+        try dbQueue.write { db in
+            guard try Bool.fetchOne(db, sql: "SELECT 1 FROM transcription WHERE id = ?", arguments: [transcriptionId]) == true else { return }
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO coach_judgement (transcriptionId, question, model, answer, confidence, judgedAt) VALUES (?, ?, ?, ?, ?, ?)",
+                arguments: [transcriptionId, question.rawValue, model, answer.rawValue, confidence, date]
+            )
+        }
+    }
+
+    func countCoachJudgements(since date: Date) throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM coach_judgement WHERE judgedAt >= ?", arguments: [date]) ?? 0
+        }
+    }
+
+    /// A dictation's text, for the judge. Read live; never kept by Coach.
+    func fetchCoachText(id: Int64) throws -> String? {
+        try dbQueue.read { db in
+            try String.fetchOne(db, sql: "SELECT text FROM transcription WHERE id = ?", arguments: [id])
+        }
+    }
+}

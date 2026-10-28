@@ -394,6 +394,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptionService = transcription
             injectionService = injection
             coordinator = coord
+            CoachPracticeSession.recorder = coord
             if let traceLog {
                 coord.recordingEndSink = { traceLog.record($0) }
             }

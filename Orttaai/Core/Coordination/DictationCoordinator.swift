@@ -70,6 +70,10 @@ final class DictationCoordinator {
     /// True while the edit shortcut's selection capture is in flight (before
     /// recording starts) so no other session can slip in underneath it.
     private(set) var isCapturingEditSelection = false
+    /// True while Coach records a practice rep on the dictation microphone;
+    /// dictation waits until it's done.
+    private(set) var isPracticeRecording = false
+    private var practiceStartedAt: Date?
 
     private let audioService: any AudioCapturing
     private let transcriptionService: any Transcribing
@@ -398,6 +402,10 @@ final class DictationCoordinator {
     ) {
         guard case .idle = state else {
             Logger.dictation.info("Ignoring startRecording; not idle (state: \(String(describing: self.state)))")
+            return
+        }
+        guard !isPracticeRecording else {
+            Logger.dictation.info("Ignoring startRecording; a Coach practice rep is recording")
             return
         }
 
@@ -1258,6 +1266,82 @@ final class DictationCoordinator {
             try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
             guard let self = self, case .error = self.state else { return }
             self.state = .idle
+        }
+    }
+}
+
+// MARK: - Coach practice
+
+/// What Coach heard in a practice rep: the transcript before and after
+/// Polish, and how long it took to say.
+struct CoachHeard: Sendable, Equatable {
+    var raw: String
+    var polished: String
+    var durationMs: Int
+}
+
+extension DictationCoordinator {
+    var canStartPractice: Bool {
+        guard case .idle = state else { return false }
+        return !isPracticeRecording && !isCapturingEditSelection
+    }
+
+    /// Records a rep on the dictation microphone. Nothing is pasted and
+    /// nothing goes to History.
+    func startPracticeRecording() throws {
+        guard canStartPractice else { throw OrttaaiError.transcriptionFailed(underlying: CoachPracticeError.busy) }
+        try audioService.startCapture(deviceID: settings.selectedInputDeviceID)
+        isPracticeRecording = true
+        practiceStartedAt = Date()
+    }
+
+    /// How loud the last tenth of a second was, 0 to 1, for the meter.
+    func practiceLevel() -> Float {
+        guard isPracticeRecording else { return 0 }
+        let recent = audioService.currentSamplesSnapshot(maxSamples: 1_600)
+        guard !recent.isEmpty else { return 0 }
+        let rms = sqrt(recent.reduce(0) { $0 + $1 * $1 } / Float(recent.count))
+        return min(1, rms * 8)
+    }
+
+    /// Stops the rep and transcribes it with the dictation engine and Polish.
+    func finishPracticeRecording() async throws -> CoachHeard {
+        guard isPracticeRecording else { throw OrttaaiError.transcriptionFailed(underlying: CoachPracticeError.notRecording) }
+        let samples = audioService.stopCapture()
+        isPracticeRecording = false
+        practiceStartedAt = nil
+        let durationMs = Int(Double(samples.count) / 16.0)
+        guard samples.count >= 8_000 else { throw OrttaaiError.transcriptionFailed(underlying: CoachPracticeError.tooShort) }
+
+        await syncTranscriptionSettings()
+        try await ensureTranscriptionModelLoaded()
+        await transcriptionService.setVocabularyBias(terms: sessionVocabularyBiasTerms())
+        await transcriptionService.setWordBoostVocabulary(sessionWordBoostTerms())
+        let raw = try await transcriptionService.transcribe(audioSamples: samples)
+        let output = try await textProcessor.process(
+            TextProcessorInput(rawTranscript: raw, targetApp: "Orttaai Coach", mode: .raw, deferPolish: false)
+        )
+        return CoachHeard(raw: raw, polished: output.text, durationMs: durationMs)
+    }
+
+    func cancelPracticeRecording() {
+        guard isPracticeRecording else { return }
+        _ = audioService.stopCapture()
+        isPracticeRecording = false
+        practiceStartedAt = nil
+    }
+}
+
+enum CoachPracticeError: LocalizedError {
+    case busy
+    case notRecording
+    case tooShort
+
+    var errorDescription: String? {
+        switch self {
+        case .busy: return "Dictation is busy. Try again in a moment."
+        case .notRecording: return "Nothing was recording."
+        case .tooShort: return "That was too short to hear. Try again."
         }
     }
 }

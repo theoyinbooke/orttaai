@@ -708,6 +708,42 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v23_coach_reps") { db in
+            // Practice reps: the skill, how it was done and how it scored,
+            // check by check. Never the words said. Local; never synced.
+            try db.create(table: "coach_rep") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("skillID", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("spoken", .boolean).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("score", .double)
+                t.column("skillMet", .boolean)
+                t.column("durationMs", .integer).notNull()
+                t.column("words", .integer).notNull()
+                t.column("checks", .text).notNull()
+                t.column("persona", .text).notNull()
+            }
+            try db.create(index: "idx_coach_rep_skill", on: "coach_rep", columns: ["skillID", "createdAt"])
+        }
+
+        migrator.registerMigration("v24_coach_judgements") { db in
+            // The judge's answers about real dictations, for habits on
+            // judged skills: one per dictation, question and model, never
+            // any text. Deleted with the dictation. Local; never synced.
+            try db.create(table: "coach_judgement") { t in
+                t.column("transcriptionId", .integer)
+                    .notNull()
+                    .references("transcription", onDelete: .cascade)
+                t.column("question", .text).notNull()
+                t.column("model", .text).notNull()
+                t.column("answer", .text).notNull()
+                t.column("confidence", .double).notNull()
+                t.column("judgedAt", .datetime).notNull()
+                t.primaryKey(["transcriptionId", "question", "model"])
+            }
+        }
+
         return migrator
     }
 
@@ -1103,6 +1139,7 @@ final class DatabaseManager {
             try db.execute(sql: "DELETE FROM learning_suggestion")
             try db.execute(sql: "DELETE FROM writing_insight_snapshot")
             try db.execute(sql: "DELETE FROM coach_habit")
+            try db.execute(sql: "DELETE FROM coach_rep")
         }
         NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
         requestCloudSyncIfEnabled()

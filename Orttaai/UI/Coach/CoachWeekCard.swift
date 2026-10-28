@@ -62,7 +62,7 @@ struct CoachWeekCard: View {
 
     private var headline: Text {
         if let habit = snapshot.headlineHabit, let share = habit.verdict.afterShare {
-            return Text("I \(Self.phrase(for: habit.measure)) in ")
+            return Text("I \(Self.phrase(for: habit)) in ")
                 + Text(CoachFormat.percent(share)).foregroundColor(Color.Orttaai.accent)
                 + Text(" of my recent dictations.")
         }
@@ -72,7 +72,10 @@ struct CoachWeekCard: View {
             + Text(" this week.")
     }
 
-    static func phrase(for measure: CoachMeasure) -> String {
+    static func phrase(for habit: CoachHabitState) -> String {
+        guard let measure = habit.measure else {
+            return "met \"\(habit.title.lowercased())\""
+        }
         switch measure {
         case .fillers: return "kept ums and uhs down"
         case .phrases: return "kept filler phrases out"

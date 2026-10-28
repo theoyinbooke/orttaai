@@ -9,21 +9,30 @@ import SwiftUI
 
 enum CoachTab: String, CaseIterable, Identifiable {
     case today
+    case path
+    case studio
     case proof
+    case cast
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .today: return "Today"
+        case .path: return "Path"
+        case .studio: return "Studio"
         case .proof: return "Proof"
+        case .cast: return "Cast"
         }
     }
 
     var icon: String {
         switch self {
         case .today: return "sun.max"
+        case .path: return "point.topleft.down.to.point.bottomright.curvepath"
+        case .studio: return "mic"
         case .proof: return "chart.line.uptrend.xyaxis"
+        case .cast: return "person.2"
         }
     }
 }
@@ -36,14 +45,23 @@ struct CoachShellView: View {
     @State private var sharingWeek = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            CoachRail(navigation: navigation)
-            ZStack(alignment: .bottom) {
-                page
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if center.isEnabled, firstRunDone {
-                    CoachTabBar(selection: $tab)
-                        .padding(.bottom, 22)
+        Group {
+            if let scene = center.activeScene {
+                CoachSceneView(session: scene)
+            } else if let session = center.activeSession {
+                // A rep is a focus mode: no rail, no tabs.
+                CoachSessionView(session: session)
+            } else {
+                HStack(spacing: 0) {
+                    CoachRail(navigation: navigation)
+                    ZStack(alignment: .bottom) {
+                        page
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if center.isEnabled, firstRunDone {
+                            CoachTabBar(selection: $tab)
+                                .padding(.bottom, 22)
+                        }
+                    }
                 }
             }
         }
@@ -67,8 +85,14 @@ struct CoachShellView: View {
             switch tab {
             case .today:
                 CoachTodayView(snapshot: snapshot, onShowProof: { tab = .proof }, onShareWeek: { sharingWeek = true })
+            case .path:
+                CoachPathView(snapshot: snapshot)
+            case .studio:
+                CoachStudioView(snapshot: snapshot)
             case .proof:
                 CoachProofView(snapshot: snapshot)
+            case .cast:
+                CoachCastView(snapshot: snapshot)
             }
         } else {
             CoachLoadingView()
@@ -139,7 +163,7 @@ struct CoachTabBar: View {
                     Label(tab.title, systemImage: tab.icon)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(selected ? Color(hex: "1B1917") : CoachStyle.ink2)
-                        .padding(.horizontal, 18)
+                        .padding(.horizontal, 16)
                         .frame(height: 44)
                         .background(Capsule().fill(selected ? Color.Orttaai.accent : .clear))
                         .contentShape(Capsule())

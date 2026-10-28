@@ -183,3 +183,136 @@ model is in.
 Models, Studio, Reveal, Scene, Path, Cast, the Models page, judged axes,
 personalities, voice, iCloud sync of Coach data, and Orttakey adopting
 CoachCore.
+
+# Phase 2: practice, coaches and models
+
+Status: **built** on `feat/coach`, 2026-10-28, not committed. CoachCore's 36
+tests pass and every app test target compiles; the app-hosted tests could not
+run that night (see Testing note at the end).
+
+## Goal
+
+Practice one skill at a time, by voice or by typing, and get an honest score
+straight after: counted measures plus a local judge answering one yes/no
+question at a time, and a note in the voice of the coach you chose.
+
+Done means:
+
+- **Path**: four tracks (Prompting AI, Messages to people, Delivery,
+  Explaining), each a path of skills. A skill is mastered after three reps
+  that score 4 or more with its own check met; mastered skills not practised
+  for 7 days come up for review.
+- **Studio**: a focus mode with Speak and Type. Rep types: redo one of your
+  own dictations, a drill with a constraint, and a 60-second brief. Speaking
+  uses dictation's own microphone, engine and Polish, but nothing is pasted
+  anywhere or saved to History, and dictation is held off while you practise.
+- **Reveal**: a 1–5 score against your usual for that skill, your words before
+  and after (for a redo), each check with the judge's answer and confidence,
+  the counted measures, and the coach's note, which can be read aloud. Then
+  Again, Make it a habit (Delivery skills, which map to a counted measure) or
+  Next rep.
+- **Cast**: five coaches (Mentor, Editor, Socratic, Drill sergeant, Peer),
+  one per way of talking. A coach changes the words, never the score.
+- **Models**: pick the coach model and the judge model from the models on
+  your local server (Ollama or LM Studio). Without one, reps are still scored
+  on the counted checks and the note comes from the coach's own lines.
+- **First run** gains its two remaining steps: pick a coach, and the models.
+- **Today** leads with today's rep; the week rings count reps.
+
+## Rules
+
+- **Score**: each check is worth 1 (yes or met), 0.5 (partly) or 0. The score
+  is 1 + 4 × points ÷ checks, to one decimal. Checks the judge couldn't answer
+  are left out, never guessed.
+- **The judge** gets one question per call with the attempt, and must answer
+  JSON `{"answer": "yes" | "partly" | "no", "confidence": 0–1}`. A reply that
+  doesn't parse leaves that check unanswered.
+- **The note** is at most 280 characters. Like Orttakey's CoachWriter, it is
+  rejected if it contains a number Coach didn't give the model, and the
+  coach's own line is used instead.
+- **Privacy**: reps keep numbers and check results only. The attempt's text
+  lives only on screen until you leave Reveal.
+- Everything runs on this Mac; the local-only AI guard still applies.
+
+## Not in phase 2
+
+Roleplay scenes and voice partners, judged axes on the voice shape,
+commitments on judged skills, Compare on my dictations, and iPhone sync of
+Coach.
+
+# Phase 3: scenes, judged habits, and a fair model choice
+
+Status: **built** on `feat/coach`, 2026-10-28, not committed, with the same
+testing caveat as phase 2.
+
+## Goal
+
+Practise with someone talking back, hold habits on any skill (not only the
+counted ones), and choose the judge on evidence from your own dictations.
+
+Done means:
+
+- **Scene**: roleplay with a partner played by the coach model. Each track
+  has scenes (an agent that asks what you left out, a client pushing for more
+  scope, a teammate you need a review from, a newcomer you explain to). The
+  partner replies in text, voice or both (a toggle), in the Mac's own voice.
+  Hands-free: when voice is on, the partner answers after you finish each turn.
+  A mood meter (pushing, weighing, agreed) moves with each reply, read from
+  the partner model's own JSON. Ending the scene scores your turns together on
+  the track's checks, plus whether you reached the scene's goal, and saves it
+  as a rep.
+- **Judged habits**: any skill can become a habit. For judged skills, Coach
+  asks the judge about your real dictations in that way of talking: the 20
+  before the habit started and each new one since, in the background, at most
+  40 a day, cached so a dictation is judged once per question and model.
+  Proof shows them like counted habits.
+- **Compare on my dictations**: Models › Compare runs each installed model as
+  judge on 20 of your recent dictations for one question, and shows how often
+  each agrees with the others and how long an answer takes, so the faster
+  model can be chosen when they agree.
+
+## Rules
+
+- The partner gets the scene's brief, your coach's style as a voice note,
+  and the conversation so far; it must answer JSON
+  `{"reply": "...", "mood": "pushing" | "weighing" | "agreed"}`. A reply
+  that doesn't parse is shown as text with the mood unchanged.
+- A scene ends when you end it, after 8 of your turns, or when the partner
+  agrees and you've had your say. Its score uses the same rule as reps; the
+  goal counts as one more check, judged.
+- Judged dictations are kept as answers and confidences keyed to the
+  dictation, deleted with it. No text is kept.
+- Background judging only runs while the server is up and Orttaai is idle,
+  and never more than 40 calls a day.
+
+## Not in phase 3, and why
+
+- **iPhone sync of Coach** needs new CloudKit record types in production and
+  matching changes in Orttakey. Deploying a schema is outward-facing, so it
+  waits for your go-ahead, and it's a change in two repos.
+- **A neural voice** (Ollama's Phonon or Kokoro) instead of the Mac's own
+  voice, once its local API can be verified on this Mac.
+
+## Testing note (2026-10-28)
+
+From about 02:35, test runs started by `xcodebuild test` hung before
+connecting. The test host stops in dyld's `open()` while it loads a library
+from the build folder on MyExtSSD. This happens only when Xcode's test daemon
+launches the host through launchd, and the committed phase 1 build hangs the
+same way, so the cause isn't Coach's code.
+
+Launching the built test host directly, with the same library paths and
+injected libraries the runner uses, runs the whole suite. Phases 2 and 3
+passed that way: 974 tests, 10 skipped, 0 failures. The recipe, with paths
+relative to the task's `-derivedDataPath`:
+
+```bash
+B=<derivedData>/Build/Products/Debug
+env XCTestBundlePath=Contents/PlugIns/OrttaaiTests.xctest \
+  DYLD_INSERT_LIBRARIES="/usr/lib/libRPAC.dylib:$B/Orttaai.app/Contents/Frameworks/libXCTestBundleInject.dylib:/Applications/Xcode.app/Contents/Developer/usr/lib/libMainThreadChecker.dylib" \
+  DYLD_LIBRARY_PATH="$B:/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib" \
+  DYLD_FRAMEWORK_PATH="$B:$B/PackageFrameworks:/Applications/Xcode.app/Contents/SharedFrameworks:/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks" \
+  "$B/Orttaai.app/Contents/MacOS/Orttaai" -ApplePersistenceIgnoreState YES
+```
+
+Build first with `xcodebuild ... build-for-testing`.
