@@ -215,6 +215,9 @@ private struct HomeSidebarRow: View {
     var count: Int = 0
     let action: () -> Void
 
+    /// A section that's still being shaped says so (Coach is in beta).
+    private var tag: String? { section == .coach ? "Beta" : nil }
+
     @State private var isHovering = false
 
     var body: some View {
@@ -229,6 +232,15 @@ private struct HomeSidebarRow: View {
                     .font(.Orttaai.bodyMedium)
                     .foregroundStyle(Color.Orttaai.textPrimary)
                     .lineLimit(1)
+
+                if let tag {
+                    Text(tag)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.Orttaai.accent)
+                        .padding(.horizontal, 6)
+                        .frame(height: 16)
+                        .overlay(Capsule().stroke(Color.Orttaai.accent.opacity(0.5), lineWidth: 1))
+                }
 
                 Spacer(minLength: 0)
 
@@ -253,7 +265,7 @@ private struct HomeSidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .accessibilityLabel(section.title)
+        .accessibilityLabel(tag.map { "\(section.title), \($0)" } ?? section.title)
         .accessibilityIdentifier("Sidebar-\(section.title)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

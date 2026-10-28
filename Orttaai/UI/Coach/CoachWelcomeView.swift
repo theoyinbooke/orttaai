@@ -71,7 +71,10 @@ struct CoachWelcomeView: View {
 
     private var header: some View {
         HStack {
-            CoachEyebrow(text: "Coach")
+            HStack(spacing: 8) {
+                CoachEyebrow(text: "Coach")
+                CoachTag(text: "Beta", color: Color.Orttaai.accent)
+            }
             Spacer()
             HStack(spacing: 8) {
                 ForEach(1...steps, id: \.self) { index in
