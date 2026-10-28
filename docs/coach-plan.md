@@ -338,6 +338,67 @@ Done means:
 
 A neural voice, iPhone sync, and preselecting the recommended models.
 
+# The judge check (2026-10-28)
+
+A live run showed the default judge, `gemma4:e2b`, answering no to almost
+everything, so every judged score would have been wrong. Now a model is only
+used as judge once it has passed Coach's judge check.
+
+- **Examples**: `CoachCalibration.examples`, four dictations per question
+  (two clearly yes, two clearly no), 52 in all. Bump `CoachCalibration.version`
+  whenever they change so every model is graded again.
+- **Pass**: at least 80% right (partly earns half), at least 70% on the yes
+  examples *and* on the no examples, and an answer to at least 90% of them.
+  A model that says the same thing to everything can't pass.
+- **Choice**: grades are kept per model (`coachJudgeGrades`). Unless the person
+  picked, both the judge and the coach use the best model that passed, then the
+  fastest; with none, the insights model, untrusted.
+- **Gate**: `CoachModels.judge` answers nil for a judge that hasn't passed, so
+  reps, scenes, judged habits and judged axes fall back to counted checks.
+  Grading and Compare ask models directly (`CoachModels.ask`).
+- **When**: the judge in use is checked the first time it's seen; Models has
+  Check my models for the rest, and first run offers it when the judge fails.
+
+On this Mac's Ollama: gemma4:26b 98% (0.2 s), nimble 94% (0.4 s) passed;
+gemma4:e2b 67% (said no too often), qwen3 1.7B and 0.6B and smollm2 said yes
+to everything.
+
+# Scenes as conversation (2026-10-28)
+
+A spoken scene felt like filling in a form: press, talk, press, wait for
+Polish, wait for the whole JSON reply, wait for the voice. The model was never
+the slow part. Now:
+
+- **Scene partner** is its own model job (`coachPartnerModel`, Cast › Models),
+  falling back to the coach model. A quick one feels most like talking:
+  Nemotron 3.5 Bolt E4B has its first sentence ready in 0.05 s once warm
+  (gemma4:26b 0.16 s); cold it's 2.4 s (gemma 8 s), so the scene warms the
+  model and the partner's voice while it opens.
+- **The reply streams** as a chat (`CoachPartnerPrompt.chat`), shown as it's
+  written, and `SentenceStream` hands each finished sentence to `CoachVoice`,
+  which makes the next sentence's audio while the last one plays. The mood is
+  a separate quick JSON question that never holds up the reply.
+- **Hands-free** (on by default): the microphone opens when the partner stops,
+  and `TurnDetector` ends your turn after 0.8 s of quiet once you've spoken.
+  It learns the room's level first and gives up after 12 s of silence. Space
+  or the mic cuts the partner off.
+- **Raw words** go to the partner: a scene turn skips Polish. Scoring at the
+  end still reads what you said.
+
+## Setting Coach up (2026-10-28)
+
+The first time Coach opens without its models, a card in What's New's style
+walks through a scene in three pictures and ends on the setup:
+`CoachModelSetupCenter` recommends models for this Mac's memory (Bolt as
+scene partner everywhere; gemma4:26b as judge and coach with 48 GB or more,
+else Bolt for every job), downloads what's missing through Ollama's
+`/api/pull`, fetches Ola's voice, runs the judge check on the recommended
+judge, and sets the jobs (partner fixed, coach and judge Automatic). Without
+Ollama it offers to open it, or its download page. "Not now" or Done keeps it
+from opening by itself again; Cast › Models › Set up models opens it on the
+setup page, and the welcome's model step shows the same list. Models itself
+is one card: a searchable dropdown per job.
+
 ## Testing note (2026-10-28)
 
 From about 02:35, test runs started by `xcodebuild test` hung before
@@ -353,7 +414,8 @@ relative to the task's `-derivedDataPath`:
 
 ```bash
 B=<derivedData>/Build/Products/Debug
-env XCTestBundlePath=Contents/PlugIns/OrttaaiTests.xctest \
+env CFFIXED_USER_HOME=<task folder>/test-home \
+  XCTestBundlePath=Contents/PlugIns/OrttaaiTests.xctest \
   DYLD_INSERT_LIBRARIES="/usr/lib/libRPAC.dylib:$B/Orttaai.app/Contents/Frameworks/libXCTestBundleInject.dylib:/Applications/Xcode.app/Contents/Developer/usr/lib/libMainThreadChecker.dylib" \
   DYLD_LIBRARY_PATH="$B:/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib" \
   DYLD_FRAMEWORK_PATH="$B:$B/PackageFrameworks:/Applications/Xcode.app/Contents/SharedFrameworks:/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks" \
@@ -361,3 +423,9 @@ env XCTestBundlePath=Contents/PlugIns/OrttaaiTests.xctest \
 ```
 
 Build first with `xcodebuild ... build-for-testing`.
+
+`CFFIXED_USER_HOME` gives the run a throwaway home with its own `Documents`
+and preferences. Without it, the host reads the real `~/Documents` model
+folder, and macOS asks for Documents access over and over: it can't keep an
+Allow for a host launched this way. Don't rebuild into the folder of an app
+that's still running, either; quit it first.

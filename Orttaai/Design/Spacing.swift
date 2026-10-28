@@ -43,8 +43,9 @@ enum BorderWidth {
 
 enum WindowSize {
     static let setup = CGSize(width: 600, height: 750)
-    /// Wide enough for every page's header and filters without resizing.
-    static let home = CGSize(width: 1200, height: 760)
+    /// Wide enough for every page's header and filters without resizing, and
+    /// tall enough that Coach's floating tab bar clears the Today page.
+    static let home = CGSize(width: 1200, height: 800)
     static let settings = CGSize(width: 920, height: 720)
     static let history = CGSize(width: 480, height: 600)
     static let historyMin = CGSize(width: 480, height: 300)

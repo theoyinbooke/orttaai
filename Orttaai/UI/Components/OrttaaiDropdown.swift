@@ -7,16 +7,23 @@ import SwiftUI
 /// (which renders native macOS chrome for both the trigger and the popup). Both
 /// the closed field and the open option list use the app's design tokens: a
 /// bordered `bgSecondary` trigger and a themed popover list with hover and
-/// accent-selected rows.
+/// accent-selected rows. Options can carry a detail line, and a long list
+/// can be searched.
 struct OrttaaiDropdown<Value: Hashable>: View {
     struct Option: Identifiable {
         let value: Value
         let label: String
+        /// A second line under the label, such as a model's grade.
+        var detail: String?
+        /// Draws the detail in the warning colour.
+        var warns = false
         var id: Value { value }
 
-        init(_ value: Value, _ label: String) {
+        init(_ value: Value, _ label: String, detail: String? = nil, warns: Bool = false) {
             self.value = value
             self.label = label
+            self.detail = detail
+            self.warns = warns
         }
     }
 
@@ -26,8 +33,13 @@ struct OrttaaiDropdown<Value: Hashable>: View {
     var width: CGFloat?
     /// Shown when the current selection isn't in `options`.
     var placeholder: String
+    /// Shown on the closed field in place of the option's label.
+    var triggerLabel: String?
+    /// When set, the open list has a search field with this prompt.
+    var searchPrompt: String?
 
     @State private var isOpen = false
+    @State private var query = ""
     @State private var isHovered = false
     /// The field's width, so the list drops down exactly as wide as it.
     @State private var triggerWidth: CGFloat = 0
@@ -36,16 +48,26 @@ struct OrttaaiDropdown<Value: Hashable>: View {
         selection: Binding<Value>,
         options: [Option],
         width: CGFloat? = nil,
-        placeholder: String = "Select"
+        placeholder: String = "Select",
+        triggerLabel: String? = nil,
+        searchPrompt: String? = nil
     ) {
         self._selection = selection
         self.options = options
         self.width = width
         self.placeholder = placeholder
+        self.triggerLabel = triggerLabel
+        self.searchPrompt = searchPrompt
     }
 
     private var selectedLabel: String {
-        options.first { $0.value == selection }?.label ?? placeholder
+        triggerLabel ?? options.first { $0.value == selection }?.label ?? placeholder
+    }
+
+    private var shownOptions: [Option] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return options }
+        return options.filter { $0.label.localizedCaseInsensitiveContains(text) }
     }
 
     var body: some View {
@@ -58,8 +80,26 @@ struct OrttaaiDropdown<Value: Hashable>: View {
         .pointingHandCursor()
         .onHover { isHovered = $0 }
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
-            optionList
-                .presentationBackground(Color.Orttaai.bgSecondary)
+            VStack(spacing: 0) {
+                if let searchPrompt {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.Orttaai.textSecondary)
+                        TextField(searchPrompt, text: $query)
+                            .textFieldStyle(.plain)
+                            .font(.Orttaai.body)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                    }
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.sm)
+                    Divider().overlay(Color.Orttaai.border)
+                }
+                optionList
+            }
+            .frame(width: max(200, width ?? triggerWidth))
+            .presentationBackground(Color.Orttaai.bgSecondary)
+            .onDisappear { query = "" }
         }
     }
 
@@ -103,25 +143,35 @@ struct OrttaaiDropdown<Value: Hashable>: View {
     private var optionList: some View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(options) { option in
+                ForEach(shownOptions) { option in
                     OptionRow(
                         label: option.label,
+                        detail: option.detail,
+                        warns: option.warns,
                         isSelected: option.value == selection
                     ) {
                         selection = option.value
                         isOpen = false
                     }
                 }
+                if shownOptions.isEmpty {
+                    Text("No matches")
+                        .font(.Orttaai.body)
+                        .foregroundStyle(Color.Orttaai.textSecondary)
+                        .padding(Spacing.sm)
+                }
             }
             .padding(Spacing.xs)
         }
         .frame(width: max(200, width ?? triggerWidth))
-        .frame(maxHeight: 320)
+        .frame(maxHeight: 360)
         .background(Color.Orttaai.bgSecondary)
     }
 
     private struct OptionRow: View {
         let label: String
+        var detail: String?
+        var warns = false
         let isSelected: Bool
         let action: () -> Void
         @State private var isHovered = false
@@ -129,11 +179,19 @@ struct OrttaaiDropdown<Value: Hashable>: View {
         var body: some View {
             Button(action: action) {
                 HStack(spacing: Spacing.sm) {
-                    Text(label)
-                        .font(.Orttaai.body)
-                        .foregroundStyle(Color.Orttaai.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(label)
+                            .font(.Orttaai.body)
+                            .foregroundStyle(Color.Orttaai.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if let detail {
+                            Text(detail)
+                                .font(.system(size: 11))
+                                .foregroundStyle(warns ? Color.Orttaai.warning : Color.Orttaai.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
 
                     Spacer(minLength: Spacing.sm)
 

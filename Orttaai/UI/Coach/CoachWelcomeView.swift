@@ -14,29 +14,31 @@ struct CoachWelcomeView: View {
     @ObservedObject private var center = CoachCenter.shared
     /// Read so the checkboxes redraw as soon as a choice is saved.
     @AppStorage(CoachPreferences.overridesKey) private var overridesJSON = ""
-    @State private var step = 1
+    @State private var step: Int
     @State private var installed: [String]?
-    @State private var checkedModels = false
     @AppStorage(CoachPreferences.personasKey) private var personasJSON = ""
     private let steps = 5
+
+    init(step: Int = 1, onDone: @escaping () -> Void) {
+        _step = State(initialValue: step)
+        self.onDone = onDone
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            Group {
-                if let snapshot = center.snapshot {
-                    switch step {
-                    case 1: found(snapshot)
-                    case 2: apps(snapshot)
-                    case 3: pickCoach
-                    case 4: models
-                    default: firstShape(snapshot)
-                    }
-                } else {
-                    CoachLoadingView()
+            // Centred when it fits; scrolls when the window is short. Without
+            // the fallback the window takes the step's height at its narrowest
+            // as its minimum, and lays it out far below a normal window.
+            ViewThatFits(in: .vertical) {
+                stepContent
+                    .frame(maxWidth: 1_100, maxHeight: .infinity)
+                ScrollView(showsIndicators: false) {
+                    stepContent
+                        .frame(maxWidth: 1_100)
+                        .padding(.vertical, 24)
                 }
             }
-            .frame(maxWidth: 1_100, maxHeight: .infinity)
             footer
         }
         .padding(.horizontal, 64)
@@ -49,6 +51,21 @@ struct CoachWelcomeView: View {
                 .frame(width: 680, height: 680)
                 .offset(x: 200, y: 80)
                 .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var stepContent: some View {
+        if let snapshot = center.snapshot {
+            switch step {
+            case 1: found(snapshot)
+            case 2: apps(snapshot)
+            case 3: pickCoach
+            case 4: models
+            default: firstShape(snapshot)
+            }
+        } else {
+            CoachLoadingView()
         }
     }
 
@@ -145,6 +162,18 @@ struct CoachWelcomeView: View {
         _ = overridesJSON
         let overrides = CoachPreferences.overrides
         let listed = snapshot.apps.filter { !$0.key.isEmpty }
+        let groups = CoachMode.allCases.map { mode in
+            (mode, listed.filter { app in
+                let rule = CoachPreferences.rule(for: app, overrides: overrides)
+                let home = rule == .off ? CoachAppCatalog.builtInMode(bundleID: app.bundleID, appName: app.appName) : rule.mode
+                return home == mode
+            })
+        }
+        // Every card gets the same list height: the longest list, up to a
+        // cap past which it scrolls.
+        let rowHeight: CGFloat = 38
+        let longest = groups.map(\.1.count).max() ?? 0
+        let listHeight = min(max(CGFloat(longest) * rowHeight, rowHeight * 3), 380)
         return VStack(alignment: .leading, spacing: 26) {
             HStack(alignment: .bottom) {
                 Text("Choose what Coach may read.")
@@ -156,24 +185,19 @@ struct CoachWelcomeView: View {
                     .foregroundStyle(Color(hex: "C9C5BF"))
             }
             HStack(alignment: .top, spacing: 16) {
-                ForEach(CoachMode.allCases) { mode in
-                    let members = listed.filter { app in
-                        let rule = CoachPreferences.rule(for: app, overrides: overrides)
-                        let home = rule == .off ? CoachAppCatalog.builtInMode(bundleID: app.bundleID, appName: app.appName) : rule.mode
-                        return home == mode
-                    }
+                ForEach(groups, id: \.0) { mode, members in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(mode.title)
                             .font(CoachStyle.label)
                             .foregroundStyle(CoachStyle.ink3)
                             .padding(.bottom, 6)
-                        if members.isEmpty {
-                            Text("None yet")
-                                .font(.system(size: 14))
-                                .foregroundStyle(CoachStyle.muted)
-                        }
                         ScrollView(showsIndicators: false) {
                             VStack(alignment: .leading, spacing: 2) {
+                                if members.isEmpty {
+                                    Text("None yet")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(CoachStyle.muted)
+                                }
                                 ForEach(members) { app in
                                     Toggle(isOn: Binding(
                                         get: { CoachPreferences.rule(for: app, overrides: CoachPreferences.overrides) != .off },
@@ -188,11 +212,12 @@ struct CoachWelcomeView: View {
                                             .lineLimit(1)
                                     }
                                     .toggleStyle(.checkbox)
-                                    .frame(minHeight: 36)
+                                    .frame(height: rowHeight - 2)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(maxHeight: 300)
+                        .frame(height: listHeight)
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -250,77 +275,22 @@ struct CoachWelcomeView: View {
     }
 
     private var models: some View {
-        let setup = CoachModels.current()
-        return VStack(alignment: .leading, spacing: 26) {
+        VStack(alignment: .leading, spacing: 26) {
             HStack(alignment: .bottom) {
                 Text("Give Coach its voice.")
                     .font(CoachStyle.display(46))
                     .foregroundStyle(CoachStyle.ink)
                 Spacer()
-                Label("On \(setup.provider.displayName), on this Mac", systemImage: "lock")
+                Text("Change these any time in Cast › Models.")
                     .font(.system(size: 15))
                     .foregroundStyle(Color(hex: "C9C5BF"))
             }
-            VStack(spacing: 12) {
-                modelRow("Coach", model: setup.coachModel, icon: "text.bubble")
-                modelRow("Judge", model: setup.judgeModel, icon: "checkmark.circle")
-                HStack(spacing: 16) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.Orttaai.accent)
-                        .frame(width: 40)
-                    Text("Hearing you")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(CoachStyle.ink)
-                    Spacer()
-                    Text("Same as dictation")
-                        .font(.system(size: 14))
-                        .foregroundStyle(CoachStyle.gain)
-                }
-                .padding(.horizontal, 22)
-                .frame(height: 64)
-                .coachSurface(Color(hex: "1D1C1F"))
-            }
-            Text(installed == nil && checkedModels
-                 ? "Start Ollama or LM Studio for judging and notes. Counting works without them."
-                 : "Change these any time in Cast › Models.")
-                .font(.system(size: 16))
-                .foregroundStyle(Color(hex: "C9C5BF"))
+            CoachModelSetupList()
         }
         .frame(maxHeight: .infinity)
-        .task {
-            installed = await CoachModels.installed()
-            checkedModels = true
-        }
-    }
-
-    private func modelRow(_ job: String, model: String, icon: String) -> some View {
-        let status: (String, Color) = {
-            guard checkedModels else { return ("Checking…", CoachStyle.ink3) }
-            guard let installed else { return ("Server not running", CoachStyle.warmInk) }
-            return installed.contains(model) ? ("Installed", CoachStyle.gain) : ("Not installed", CoachStyle.warmInk)
-        }()
-        return HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundStyle(Color.Orttaai.accent)
-                .frame(width: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(job)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(CoachStyle.ink)
-                Text(model)
-                    .font(.system(size: 14))
-                    .foregroundStyle(CoachStyle.ink3)
-            }
-            Spacer()
-            Text(status.0)
-                .font(.system(size: 14))
-                .foregroundStyle(status.1)
-        }
-        .padding(.horizontal, 22)
-        .frame(height: 64)
-        .coachSurface(Color(hex: "1D1C1F"))
+        .task { installed = await CoachModels.installed() }
+        // Seen here, so it doesn't pop up again the moment the welcome ends.
+        .onDisappear { UserDefaults.standard.set(true, forKey: CoachPreferences.modelSetupSeenKey) }
     }
 
     private func firstShape(_ snapshot: CoachSnapshot) -> some View {

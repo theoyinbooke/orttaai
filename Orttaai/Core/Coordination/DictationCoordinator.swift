@@ -1304,8 +1304,19 @@ extension DictationCoordinator {
         return min(1, rms * 8)
     }
 
-    /// Stops the rep and transcribes it with the dictation engine and Polish.
-    func finishPracticeRecording() async throws -> CoachHeard {
+    /// Loads the speech model ahead of the first turn, so finishing it is quick.
+    func preparePractice() async {
+        await syncTranscriptionSettings()
+        do {
+            try await ensureTranscriptionModelLoaded()
+        } catch {
+            Logger.model.info("Coach couldn't load the speech model ahead: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Stops the rep and transcribes it with the dictation engine, and Polish
+    /// unless `polish` is false (a scene turn, where a quick reply matters more).
+    func finishPracticeRecording(polish: Bool = true) async throws -> CoachHeard {
         guard isPracticeRecording else { throw OrttaaiError.transcriptionFailed(underlying: CoachPracticeError.notRecording) }
         let samples = audioService.stopCapture()
         isPracticeRecording = false
@@ -1317,9 +1328,21 @@ extension DictationCoordinator {
         try await ensureTranscriptionModelLoaded()
         await transcriptionService.setVocabularyBias(terms: sessionVocabularyBiasTerms())
         await transcriptionService.setWordBoostVocabulary(sessionWordBoostTerms())
-        let raw = try await transcriptionService.transcribe(audioSamples: samples)
+        let raw: String
+        do {
+            raw = try await transcriptionService.transcribe(audioSamples: samples)
+        } catch {
+            // A sound with no words in it: nothing was said, not a failure.
+            if let nsError = error.orttaaiUnderlying, nsError.domain == "com.orttaai", nsError.code == -1 {
+                throw OrttaaiError.transcriptionFailed(underlying: CoachPracticeError.nothingHeard)
+            }
+            throw error
+        }
+        guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw OrttaaiError.transcriptionFailed(underlying: CoachPracticeError.nothingHeard)
+        }
         let output = try await textProcessor.process(
-            TextProcessorInput(rawTranscript: raw, targetApp: "Orttaai Coach", mode: .raw, deferPolish: false)
+            TextProcessorInput(rawTranscript: raw, targetApp: "Orttaai Coach", mode: .raw, deferPolish: !polish)
         )
         return CoachHeard(raw: raw, polished: output.text, durationMs: durationMs)
     }
@@ -1336,12 +1359,22 @@ enum CoachPracticeError: LocalizedError {
     case busy
     case notRecording
     case tooShort
+    case nothingHeard
 
     var errorDescription: String? {
         switch self {
         case .busy: return "Dictation is busy. Try again in a moment."
         case .notRecording: return "Nothing was recording."
         case .tooShort: return "That was too short to hear. Try again."
+        case .nothingHeard: return "No words came through. Try again."
         }
+    }
+}
+
+private extension Error {
+    /// The error inside an `OrttaaiError.transcriptionFailed`.
+    var orttaaiUnderlying: NSError? {
+        guard let error = self as? OrttaaiError, case .transcriptionFailed(let underlying) = error else { return nil }
+        return underlying as NSError
     }
 }

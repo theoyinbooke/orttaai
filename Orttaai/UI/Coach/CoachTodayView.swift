@@ -60,7 +60,8 @@ struct CoachTodayView: View {
             ZStack {
                 VoiceShapeView(shape: shape)
                     .frame(height: 400)
-                if !shape.isComplete, !shape.waitsOnJudge {
+                // Only on an empty shape, where it can't sit on the lines.
+                if shape.nowAxes.isEmpty {
                     VStack(spacing: 2) {
                         Text("\(recent)")
                             .font(CoachStyle.display(40))
@@ -77,7 +78,7 @@ struct CoachTodayView: View {
                     legend("4 weeks ago", dashed: true)
                 }
                 Spacer(minLength: 8)
-                Text(CoachCopy.insight(shape))
+                Text(CoachCopy.insight(shape, recent: recent, judge: center.judgeState))
                     .font(.system(size: 13))
                     .foregroundStyle(CoachStyle.ink)
                     .multilineTextAlignment(.trailing)
@@ -357,12 +358,32 @@ enum CoachCopy {
         }
     }
 
-    static func insight(_ shape: CoachShape) -> String {
-        if shape.waitsOnJudge { return "Your local model is judging the rest, a few a day." }
-        if !shape.isComplete { return "Keep dictating; your shape fills in." }
+    static func insight(_ shape: CoachShape, recent: Int, judge: CoachJudgeState) -> String {
+        if shape.waitsOnJudge { return judgeLine(judge) }
+        if !shape.isComplete {
+            if recent < CoachSnapshot.fullShapeDictations {
+                return "\(recent) of \(CoachSnapshot.fullShapeDictations) dictations so far; your shape fills in."
+            }
+            let waiting = shape.axes.filter { shape.nowAxes[$0] == nil && !$0.isJudged }.map(\.title)
+            if !waiting.isEmpty {
+                return "\(ListFormatter.localizedString(byJoining: waiting)) needs a few more dictations."
+            }
+            return judgeLine(judge)
+        }
         if let gain = shape.biggestGain { return "\(gain.title) grew most in 4 weeks" }
         if !shape.thenIsComplete { return "Four weeks from now, you'll see how it moved" }
         return "Holding steady over 4 weeks"
+    }
+
+    /// Why the judged points aren't drawn yet.
+    static func judgeLine(_ judge: CoachJudgeState) -> String {
+        switch judge {
+        case .noServer: return "Start Ollama or LM Studio to judge the rest."
+        case .notInstalled(let model): return "\(model) isn't installed. Pick a judge in Cast › Models."
+        case .checking(let model, _, _): return "Checking whether \(model) can judge fairly…"
+        case .failed(let grade): return "\(grade.model) didn't pass the judge check. Try another in Cast › Models."
+        case .passed, .unknown: return "Your local model is judging the rest, a few a day."
+        }
     }
 
     /// The coach introducing today's rep, in its own way.

@@ -44,6 +44,7 @@ struct CoachShellView: View {
     @State private var tab: CoachTab = .today
     @State private var sharingWeek = false
     @State private var showingMonth = false
+    @AppStorage(CoachPreferences.modelSetupSeenKey) private var modelSetupSeen = false
 
     var body: some View {
         Group {
@@ -73,8 +74,21 @@ struct CoachShellView: View {
                 CoachWeekShareSheet(snapshot: snapshot)
             }
         }
-        .task { await center.refresh() }
+        .overlay { CoachSetupHost() }
+        .task {
+            await center.refresh()
+            await offerModelSetup()
+        }
+        .onChange(of: firstRunDone) { _, _ in Task { await offerModelSetup() } }
         .onChange(of: tab) { _, _ in showingMonth = false }
+    }
+
+    /// The first time Coach opens without its models, it offers to set them up.
+    private func offerModelSetup() async {
+        guard center.isEnabled, firstRunDone, !modelSetupSeen else { return }
+        let setup = CoachModelSetupCenter.shared
+        await setup.refresh()
+        if !setup.isSetUp { setup.present() }
     }
 
     @ViewBuilder

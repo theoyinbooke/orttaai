@@ -5,6 +5,7 @@
 // local models that judge and write.
 
 import CoachCore
+import Combine
 import SwiftUI
 
 struct CoachCastView: View {
@@ -160,12 +161,17 @@ struct CoachModelsView: View {
 
     @AppStorage(CoachPreferences.coachModelKey) private var coachModel = ""
     @AppStorage(CoachPreferences.judgeModelKey) private var judgeModel = ""
+    @AppStorage(CoachPreferences.partnerModelKey) private var partnerModel = ""
     @AppStorage(CoachPreferences.readAloudKey) private var readAloud = false
     @State private var installed: [String]?
     @State private var loading = true
     @State private var comparing: String?
     @State private var comparison: [CoachModelComparison] = []
     @State private var comparedQuestion: CoachQuestion?
+    @ObservedObject private var center = CoachCenter.shared
+    @ObservedObject private var naturalVoice = CoachNaturalVoice.shared
+    /// Read so grades redraw as soon as one is saved.
+    @AppStorage(CoachPreferences.judgeGradesKey) private var gradesData = Data()
 
     var body: some View {
         let setup = CoachModels.current()
@@ -175,6 +181,8 @@ struct CoachModelsView: View {
                     text: loading ? "Checking \(setup.provider.displayName)…" : installed == nil ? "\(setup.provider.displayName) isn't running" : "\(setup.provider.displayName) connected",
                     color: installed == nil ? CoachStyle.warmInk : CoachStyle.gain
                 )
+                Button("Set up models") { CoachModelSetupCenter.shared.present(atSetup: true) }
+                    .buttonStyle(CoachSecondaryButtonStyle())
                 Button("Back to coaches", action: onBack)
                     .buttonStyle(CoachSecondaryButtonStyle())
             }
@@ -187,16 +195,39 @@ struct CoachModelsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .coachSurface(CoachStyle.warm, border: CoachStyle.warmBorder)
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 20) {
-                    jobCard(title: "Coach", info: "Writes the note after each rep, in your coach's voice. Only numbers Coach counted may appear in it.", current: setup.coachModel, selection: $coachModel, allowSame: false)
-                    jobCard(title: "Judge", info: "Answers one yes or no question per check, with how sure it is. A small model is enough.", current: setup.judgeModel, selection: $judgeModel, allowSame: true)
-                }
-                VStack(spacing: 20) {
-                    jobCard(title: "Coach", info: "Writes the note after each rep, in your coach's voice.", current: setup.coachModel, selection: $coachModel, allowSame: false)
-                    jobCard(title: "Judge", info: "Answers one yes or no question per check.", current: setup.judgeModel, selection: $judgeModel, allowSame: true)
-                }
+            VStack(spacing: 0) {
+                jobRow(
+                    title: "Coach",
+                    icon: "text.bubble",
+                    summary: "Writes your note after each rep",
+                    info: "Writes the note after each rep, in your coach's voice. Only numbers Coach counted may appear in a note.",
+                    current: setup.coachModel,
+                    selection: $coachModel
+                )
+                Divider().overlay(CoachStyle.line)
+                jobRow(
+                    title: "Judge",
+                    icon: "checkmark.seal",
+                    summary: judgeSummary(setup.judgeModel),
+                    info: "Answers one yes or no question per check, with how sure it is. It's only used once it has passed the judge check.",
+                    current: setup.judgeModel,
+                    selection: $judgeModel
+                )
+                Divider().overlay(CoachStyle.line)
+                jobRow(
+                    title: "Scene partner",
+                    icon: "bubble.left.and.bubble.right",
+                    summary: "Plays the people in scenes",
+                    info: "Plays the people in scenes and answers while you wait, so a quick model feels most like talking. Its reply is spoken as it's written.",
+                    current: setup.sceneModel,
+                    selection: $partnerModel,
+                    automatic: "Same as Coach"
+                )
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .coachSurface()
+            judgeCheckCard
             compareCard
             VStack(spacing: 0) {
                 HStack {
@@ -205,6 +236,8 @@ struct CoachModelsView: View {
                     OrttaaiSwitch(title: "Read the note aloud", isOn: $readAloud)
                 }
                 .frame(minHeight: 44)
+                Divider().overlay(CoachStyle.line)
+                naturalVoiceRow
                 Divider().overlay(CoachStyle.line)
                 HStack {
                     SettingsLabel(title: "Hearing you", info: "Practice uses the same speech engine and Polish as your dictation.")
@@ -224,33 +257,182 @@ struct CoachModelsView: View {
             installed = await CoachModels.installed()
             loading = false
         }
+        .onReceive(CoachModelSetupCenter.shared.$presenting.dropFirst()) { showing in
+            if !showing { Task { installed = await CoachModels.installed() } }
+        }
     }
 
-    private func jobCard(title: String, info: String, current: String, selection: Binding<String>, allowSame: Bool) -> some View {
-        let options = installedOptions(including: current)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(CoachStyle.ink)
-                CoachInfoButton(title: title, text: info)
-                Spacer()
+    /// One job: what it does, and a dropdown of the models on the server.
+    private func jobRow(
+        title: String,
+        icon: String,
+        summary: String,
+        info: String,
+        current: String,
+        selection: Binding<String>,
+        automatic: String? = nil
+    ) -> some View {
+        _ = gradesData
+        let best = CoachPreferences.bestPassingJudge?.model
+        let automaticDetail = automatic ?? (best == nil ? "No model has passed yet" : "Best that passed the judge check")
+        let options = [OrttaaiDropdown<String>.Option("", "Automatic", detail: automaticDetail)]
+            + installedOptions(including: current).map { model in
+                let detail = detail(for: model)
+                return OrttaaiDropdown<String>.Option(model, model, detail: detail, warns: detail == "Not installed" || detail?.hasPrefix("Failed") == true)
             }
-            if allowSame {
-                optionRow("Same as coach", detail: nil, selected: selection.wrappedValue.isEmpty) { selection.wrappedValue = "" }
+        return HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(Color.Orttaai.accent)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(CoachStyle.ink)
+                    CoachInfoButton(title: title, text: info)
+                }
+                Text(summary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(summary.hasPrefix("Failed") || summary.hasPrefix("Not checked") ? CoachStyle.warmInk : CoachStyle.ink3)
             }
-            ForEach(options, id: \.self) { model in
-                let chosen = allowSame ? selection.wrappedValue == model : (selection.wrappedValue.isEmpty ? model == current : selection.wrappedValue == model)
-                optionRow(model, detail: detail(for: model), selected: chosen) { selection.wrappedValue = model }
-            }
+            Spacer(minLength: 16)
+            OrttaaiDropdown(
+                selection: selection,
+                options: options,
+                width: 340,
+                triggerLabel: selection.wrappedValue.isEmpty ? "Automatic · \(current)" : current,
+                searchPrompt: "Search models"
+            )
+            .accessibilityLabel("\(title) model")
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .coachSurface()
+        .frame(minHeight: 66)
+    }
+
+    private func judgeSummary(_ model: String) -> String {
+        _ = gradesData
+        guard let grade = CoachPreferences.judgeGrade(for: model) else { return "Not checked yet: run the judge check" }
+        return grade.passes
+            ? "Scores your reps · passed the judge check at \(Int((grade.accuracy * 100).rounded()))%"
+            : "Failed the judge check, so judged checks are off"
     }
 
     private var chatModels: [String] {
         (installed ?? []).filter { !$0.lowercased().contains("embed") }
+    }
+
+    /// Grades each model on dictations whose answers are plain, so a judge
+    /// that says the same thing to everything never gets used.
+    private var judgeCheckCard: some View {
+        _ = gradesData
+        let grades = CoachPreferences.judgeGrades.values
+            .filter(\.isCurrent)
+            .sorted { ($0.passes ? 1 : 0, $0.accuracy) > ($1.passes ? 1 : 0, $1.accuracy) }
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Text("Judge check")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(CoachStyle.ink)
+                CoachInfoButton(
+                    title: "Judge check",
+                    text: "Each model answers \(CoachCalibration.examples.count) questions about dictations whose answer is plain: half clearly do the thing, half clearly don't. A model passes at \(Int(JudgeGrade.passAccuracy * 100))% right, and only if it gets both kinds right, so one that always says no can't pass. Only a model that passed is used as judge."
+                )
+                Spacer()
+                if case .checking(let model, let done, let total) = center.judgeState {
+                    ProgressView(value: Double(done), total: Double(max(total, 1)))
+                        .frame(width: 90)
+                    Text("Checking \(model) · \(done) of \(total)")
+                        .font(CoachStyle.label)
+                        .foregroundStyle(CoachStyle.ink3)
+                } else {
+                    Button(grades.isEmpty ? "Check my models" : "Check again") {
+                        Task { await center.checkJudges(chatModels) }
+                    }
+                    .buttonStyle(CoachSecondaryButtonStyle())
+                    .disabled(chatModels.isEmpty)
+                }
+            }
+            if grades.isEmpty {
+                Text(chatModels.isEmpty ? "Needs a model on your server." : "Each model takes a few seconds, longer the first time it loads.")
+                    .font(CoachStyle.label)
+                    .foregroundStyle(CoachStyle.ink3)
+            }
+            ForEach(grades, id: \.model) { grade in
+                HStack(spacing: 16) {
+                    Text(grade.model)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(CoachStyle.ink)
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(Int((grade.accuracy * 100).rounded()))% right")
+                        .font(.system(size: 14))
+                        .foregroundStyle(CoachStyle.ink2)
+                    Text(grade.msPerAnswer.map { $0 < 1_000 ? "\($0) ms" : String(format: "%.1f s", Double($0) / 1_000) } ?? "–")
+                        .font(.system(size: 14))
+                        .foregroundStyle(CoachStyle.ink3)
+                        .frame(width: 70, alignment: .trailing)
+                    CoachTag(text: grade.passes ? "Passed" : "Failed", color: grade.passes ? CoachStyle.gain : CoachStyle.warmInk)
+                        .help(grade.passes ? "Right on the yes and the no examples alike." : Self.whyFailed(grade))
+                    Button(judgeModel == grade.model ? "Judging" : "Use as judge") { judgeModel = grade.model }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(grade.passes ? Color.Orttaai.accent : CoachStyle.muted)
+                        .disabled(!grade.passes || judgeModel == grade.model)
+                        .frame(width: 90, alignment: .trailing)
+                }
+                .frame(minHeight: 36)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(20)
+        .coachSurface()
+    }
+
+    /// Scene partners in natural voices of their own, once the voice model
+    /// is downloaded; until then they use the Mac's own voice.
+    private var naturalVoiceRow: some View {
+        HStack(spacing: 12) {
+            SettingsLabel(
+                title: "Natural voices",
+                info: "Scene partners speak in natural voices of their own, made on this Mac by Pocket TTS from Kyutai. Ola is the first. The voice model downloads once (\(CoachNaturalVoice.downloadSize)) into your model folder; until then they use the Mac's own voice."
+            )
+            Spacer()
+            switch naturalVoice.state {
+            case .notInstalled:
+                Button("Download · \(CoachNaturalVoice.downloadSize)") { Task { await naturalVoice.install() } }
+                    .buttonStyle(CoachSecondaryButtonStyle())
+            case .downloading(let fraction):
+                ProgressView(value: fraction)
+                    .frame(width: 120)
+                Text("\(Int((fraction * 100).rounded()))%")
+                    .font(.system(size: 14))
+                    .foregroundStyle(CoachStyle.ink2)
+                    .frame(width: 44, alignment: .trailing)
+            case .ready:
+                Text("Ready")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(CoachStyle.gain)
+                Button("Remove") { naturalVoice.remove() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(CoachStyle.ink3)
+            case .failed(let message):
+                Text("Didn't work")
+                    .font(.system(size: 14))
+                    .foregroundStyle(CoachStyle.warmInk)
+                    .help(message)
+                Button("Try again") { Task { await naturalVoice.install() } }
+                    .buttonStyle(CoachSecondaryButtonStyle())
+            }
+        }
+        .frame(minHeight: 52)
+    }
+
+    static func whyFailed(_ grade: JudgeGrade) -> String {
+        if Double(grade.answered) < Double(grade.total) * 0.9 { return "It didn't answer often enough." }
+        if grade.noRecall < JudgeGrade.passRecall { return "It said yes too often, even when the answer was plainly no." }
+        if grade.yesRecall < JudgeGrade.passRecall { return "It said no too often, even when the answer was plainly yes." }
+        return "It got too many wrong."
     }
 
     private var compareCard: some View {
@@ -334,34 +516,10 @@ struct CoachModelsView: View {
 
     private func detail(for model: String) -> String? {
         guard let installed else { return nil }
-        return installed.contains(model) ? (model == CoachModels.insightsModel ? "Installed · also used by Insights" : "Installed") : "Not installed"
-    }
-
-    private func optionRow(_ title: String, detail: String?, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle().stroke(selected ? Color.Orttaai.accent : Color.white.opacity(0.28), lineWidth: 2).frame(width: 20, height: 20)
-                    if selected { Circle().fill(Color.Orttaai.accent).frame(width: 10, height: 10) }
-                }
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(CoachStyle.ink)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let detail {
-                    Text(detail)
-                        .font(CoachStyle.label)
-                        .foregroundStyle(detail == "Not installed" ? CoachStyle.warmInk : CoachStyle.ink3)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 46)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(selected ? CoachStyle.warm : Color(hex: "1D1C1F")))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(selected ? Color.Orttaai.accent.opacity(0.5) : CoachStyle.line, lineWidth: 1))
-            .contentShape(Rectangle())
+        guard installed.contains(model) else { return "Not installed" }
+        if let grade = CoachPreferences.judgeGrade(for: model) {
+            return "\(grade.passes ? "Passed" : "Failed") the judge check · \(Int((grade.accuracy * 100).rounded()))%"
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        return model == CoachModels.insightsModel ? "Not checked · also used by Insights" : "Not checked"
     }
 }

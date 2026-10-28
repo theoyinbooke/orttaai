@@ -11,6 +11,21 @@ import Foundation
 import GRDB
 import os
 
+/// Whether Coach has a judge it can trust.
+enum CoachJudgeState: Equatable {
+    case unknown
+    case noServer
+    case notInstalled(String)
+    case checking(model: String, done: Int, total: Int)
+    case passed(JudgeGrade)
+    case failed(JudgeGrade)
+
+    var isTrusted: Bool {
+        if case .passed = self { return true }
+        return false
+    }
+}
+
 @MainActor
 final class CoachCenter: ObservableObject {
     static let shared = CoachCenter()
@@ -23,6 +38,10 @@ final class CoachCenter: ObservableObject {
 
     /// A roleplay scene in progress, shown full screen.
     @Published private(set) var activeScene: CoachSceneSession?
+
+    /// The judge in use, and whether it passed the judge check.
+    @Published private(set) var judgeState: CoachJudgeState = .unknown
+    private var isCheckingJudges = false
 
     /// The last three weeks of counted dictations, for picking redos.
     fileprivate(set) var recentInputs: [CoachInput] = []
@@ -268,12 +287,59 @@ final class CoachCenter: ObservableObject {
             Logger.database.error("Coach evaluation failed: \(error.localizedDescription)")
         }
         hasLoaded = true
+        // A first judge check takes a while; the snapshot doesn't wait for it.
+        Task { [weak self] in await self?.refreshJudgeState() }
         judgeInBackground()
 
         if needsAnotherPass {
             needsAnotherPass = false
             await evaluate()
         }
+    }
+}
+
+// MARK: - The judge check
+
+extension CoachCenter {
+    /// Works out the judge's state, and checks the judge in use the first
+    /// time it's seen with these examples.
+    func refreshJudgeState() async {
+        guard !isCheckingJudges else { return }
+        let setup = CoachModels.current()
+        guard let installed = await CoachModels.installed(setup) else {
+            judgeState = .noServer
+            return
+        }
+        guard installed.contains(setup.judgeModel) else {
+            judgeState = .notInstalled(setup.judgeModel)
+            return
+        }
+        if let grade = CoachPreferences.judgeGrade(for: setup.judgeModel) {
+            judgeState = grade.passes ? .passed(grade) : .failed(grade)
+        } else {
+            await checkJudges([setup.judgeModel])
+        }
+    }
+
+    /// Grades each model in turn on the judge check, keeping every grade.
+    /// Unless the person chose models, the best that passes is used next.
+    func checkJudges(_ models: [String]) async {
+        guard !isCheckingJudges, !models.isEmpty else { return }
+        isCheckingJudges = true
+        let setup = CoachModels.current()
+        for model in models {
+            judgeState = .checking(model: model, done: 0, total: CoachCalibration.examples.count)
+            let grade = await CoachModels.grade(model: model, setup: setup) { done, total in
+                Task { @MainActor [weak self] in
+                    guard let self, case .checking(let current, _, _) = self.judgeState, current == model else { return }
+                    self.judgeState = .checking(model: model, done: done, total: total)
+                }
+            }
+            CoachPreferences.saveJudgeGrade(grade)
+        }
+        isCheckingJudges = false
+        await refreshJudgeState()
+        scheduleRefresh()
     }
 }
 
@@ -299,7 +365,8 @@ extension CoachCenter {
             let setup = CoachModels.current()
             var asked = 0
             defer { Task { @MainActor [weak self] in self?.finishJudgingPass(asked: asked) } }
-            guard await CoachModels.installed(setup)?.contains(setup.judgeModel) == true else { return }
+            guard CoachModels.judgeTrusted(setup),
+                  await CoachModels.installed(setup)?.contains(setup.judgeModel) == true else { return }
             let dayStart = Calendar.current.startOfDay(for: Date())
             let budget = min(10, 40 - ((try? database.countCoachJudgements(since: dayStart)) ?? 40))
             guard budget > 0 else { return }

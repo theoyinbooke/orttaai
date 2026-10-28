@@ -76,8 +76,14 @@ struct CoachStudioView: View {
         .coachSurface(CoachStyle.warm, border: CoachStyle.warmBorder)
     }
 
+    /// Every scene card is the same size: one line each for the title, the
+    /// partner and the goal. The full text is in the tooltip and VoiceOver.
     private func sceneTile(_ scene: CoachScene) -> some View {
-        Button {
+        let role = scene.partnerRole.prefix(1).lowercased() + scene.partnerRole.dropFirst()
+        let partner = "\(scene.partnerName), \(role)"
+        // The card shows who they are; how they are is in the tooltip.
+        let shortPartner = "\(scene.partnerName), \(role.split(separator: ",").first.map(String.init) ?? role)"
+        return Button {
             center.beginScene(scene)
         } label: {
             HStack(alignment: .top, spacing: 16) {
@@ -90,14 +96,16 @@ struct CoachStudioView: View {
                     Text(scene.title)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(CoachStyle.ink)
-                    Text("\(scene.partnerName), \(scene.partnerRole.prefix(1).lowercased() + scene.partnerRole.dropFirst())")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text(shortPartner)
                         .font(CoachStyle.label)
                         .foregroundStyle(CoachStyle.ink3)
                         .lineLimit(1)
                     Text(scene.goal)
                         .font(.system(size: 13))
                         .foregroundStyle(CoachStyle.ink2)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .padding(.top, 4)
                 }
                 Spacer(minLength: 0)
@@ -111,7 +119,8 @@ struct CoachStudioView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Scene: \(scene.title), with \(scene.partnerName)")
+        .help("\(scene.title) — \(partner). \(scene.goal)")
+        .accessibilityLabel("Scene: \(scene.title), with \(partner). Goal: \(scene.goal)")
     }
 
     private func trackTile(_ track: CoachTrack) -> some View {
@@ -190,7 +199,15 @@ struct CoachSessionView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .ready, .recording:
-                    doing
+                    // Scrolls when the window is short; otherwise the window
+                    // takes the rep's height at its narrowest as its minimum
+                    // and lays it out far below the screen.
+                    ViewThatFits(in: .vertical) {
+                        doing
+                        ScrollView(showsIndicators: false) {
+                            doing.padding(.vertical, 24)
+                        }
+                    }
                 }
             }
         }

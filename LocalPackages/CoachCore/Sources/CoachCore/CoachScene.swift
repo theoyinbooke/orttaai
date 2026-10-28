@@ -38,7 +38,7 @@ public struct CoachScene: Sendable, Identifiable, Hashable {
     public let partnerBrief: String
     /// What the partner says first.
     public let opening: String
-    /// The goal, as shown.
+    /// The goal, as shown: short enough for one line on a scene card.
     public let goal: String
     /// The goal, as the judge is asked about it at the end.
     public let goalQuestion: String
@@ -55,15 +55,15 @@ public struct CoachScene: Sendable, Identifiable, Hashable {
             partnerName: "Atlas", partnerRole: "An AI coding agent",
             partnerBrief: "You are Atlas, an AI coding agent about to start work. Ask one short question about whatever the speaker left out: the task, where it lives, a constraint, or how you'll know it's done. Once nothing important is missing, say you'll start, briefly.",
             opening: "Ready when you are. What should I work on?",
-            goal: "Give it the task, the context and the finish line",
+            goal: "Task, context and finish line",
             goalQuestion: "Did the speaker give the agent a clear task, the context it needs, and how to know it's done?"
         ),
         CoachScene(
             id: "scope-push", track: .messages, title: "Push back on scope, kindly",
-            partnerName: "Tolu", partnerRole: "A client, friendly and in a hurry",
-            partnerBrief: "You are Tolu, a friendly client in a hurry who wants two extra features, a team calendar and a PDF export, by Friday. Push back once or twice. Agree only when you're offered a realistic choice warmly.",
+            partnerName: "Ola", partnerRole: "A client in Lagos, friendly and in a hurry",
+            partnerBrief: "You are Ola, a friendly client in Lagos who is in a hurry and wants two extra features, a team calendar and a PDF export, by Friday. Push back once or twice. Agree only when you're offered a realistic choice warmly.",
             opening: "Can we also get the team calendar and the PDF export in by Friday? The board wants both.",
-            goal: "Keep Friday realistic, offer a choice, stay warm",
+            goal: "Keep Friday, offer a choice",
             goalQuestion: "Did the speaker keep the deadline realistic while offering the client a real choice, kindly?"
         ),
         CoachScene(
@@ -87,7 +87,7 @@ public struct CoachScene: Sendable, Identifiable, Hashable {
             partnerName: "Sam", partnerRole: "Joined the team today",
             partnerBrief: "You are Sam, who joined the team today and is curious. Ask about whatever you didn't follow, one question at a time. Agree once you could explain it to someone else.",
             opening: "I just joined. What does your team actually do?",
-            goal: "Explain it so Sam could tell someone else",
+            goal: "Clear enough for Sam to retell",
             goalQuestion: "Would a newcomer understand the main point from what the speaker said?"
         ),
     ]

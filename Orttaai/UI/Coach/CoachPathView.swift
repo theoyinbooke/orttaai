@@ -20,9 +20,8 @@ struct CoachPathView: View {
         let current = snapshot.currentSkill(in: track)
         let skill = track.skills.first { $0.id == selected } ?? current
         CoachPage(eyebrow: "Path", title: track.title) {
-            EmptyView()
-        } content: {
             trackTabs
+        } content: {
             journey(track, current: current, selected: skill)
                 .frame(height: 280)
             ViewThatFits(in: .horizontal) {
@@ -38,8 +37,9 @@ struct CoachPathView: View {
         }
     }
 
+    /// The tracks, on the title row's right.
     private var trackTabs: some View {
-        HStack(spacing: 32) {
+        HStack(spacing: 24) {
             ForEach(CoachTrack.allCases) { item in
                 let on = item == currentTrack
                 Button {
@@ -48,13 +48,14 @@ struct CoachPathView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(item.title)
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(on ? CoachStyle.ink : CoachStyle.ink3)
                         Text(snapshot.masteredCount(in: item) == 0 ? "Start here" : "Level \(snapshot.level(of: item)) · \(snapshot.masteredCount(in: item)) of \(item.skills.count)")
-                            .font(CoachStyle.label)
+                            .font(.system(size: 12))
                             .foregroundStyle(CoachStyle.ink3)
                     }
-                    .padding(.bottom, 10)
+                    .fixedSize()
+                    .padding(.bottom, 8)
                     .overlay(alignment: .bottom) {
                         Rectangle().fill(on ? Color.Orttaai.accent : .clear).frame(height: 2)
                     }
@@ -63,9 +64,7 @@ struct CoachPathView: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
-            Spacer(minLength: 0)
         }
-        .overlay(alignment: .bottom) { Rectangle().fill(CoachStyle.line).frame(height: 1) }
     }
 
     // MARK: Journey

@@ -20,7 +20,8 @@ struct SceneTests {
             SceneTurn(speaker: .partner, text: scene.opening),
             SceneTurn(speaker: .you, text: "By Friday I can do one of them properly."),
         ])
-        #expect(prompt.contains("Tolu: \(scene.opening)"))
+        #expect(scene.partnerName == "Ola")
+        #expect(prompt.contains("\(scene.partnerName): \(scene.opening)"))
         #expect(prompt.contains("Them: By Friday I can do one of them properly."))
         #expect(prompt.hasPrefix(scene.partnerBrief))
     }

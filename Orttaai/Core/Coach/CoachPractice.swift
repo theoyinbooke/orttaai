@@ -133,7 +133,8 @@ final class CoachPracticeSession: ObservableObject {
                     self.level = recorder.practiceLevel()
                     self.elapsed = Date().timeIntervalSince(started)
                     if self.elapsed >= Double(self.plan.kind.timeLimitSeconds) {
-                        await self.finishRecording()
+                        // Its own task: finishing cancels this one.
+                        Task { await self.finishRecording() }
                         return
                     }
                 }
@@ -187,8 +188,10 @@ final class CoachPracticeSession: ObservableObject {
         }
         let plan = self.plan
         let setup = CoachModels.current()
+        // Judged checks only with a judge that passed the judge check.
         let judgeAvailable = plan.skill.checks.contains { if case .judged = $0 { return true } else { return false } }
-            ? await CoachModels.installed(setup)?.isEmpty == false
+            && CoachModels.judgeTrusted(setup)
+            ? await CoachModels.installed(setup)?.contains(setup.judgeModel) == true
             : false
 
         var results: [CheckResult] = []
@@ -306,21 +309,89 @@ final class CoachPracticeSession: ObservableObject {
     }
 }
 
-/// Reads the coach's words aloud with the Mac's own voice, on this Mac.
+/// Speaks Coach's words on this Mac: a partner's natural voice when it has
+/// one, else the Mac's own.
 @MainActor
 final class CoachVoice {
     static let shared = CoachVoice()
     private let synthesizer = AVSpeechSynthesizer()
+    private var player: AVAudioPlayer?
+    private var speaking: Task<Void, Never>?
 
-    func speak(_ text: String) {
-        synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
-        synthesizer.speak(utterance)
+    var isSpeaking: Bool { speaking != nil }
+
+    /// Says it in the speaker's own natural voice when there is one and it's
+    /// installed, else in the Mac's own voice.
+    func speak(_ text: String, as speaker: String? = nil) {
+        stop()
+        let (sentences, continuation) = AsyncStream<String>.makeStream()
+        continuation.yield(text)
+        continuation.finish()
+        speaking = Task { [weak self] in
+            guard let self else { return }
+            await self.say(sentences, as: speaker)
+        }
+    }
+
+    /// Speaks sentences as they arrive, making each one's audio while the one
+    /// before plays, and returns once the last has been heard or `stop()` is
+    /// called.
+    func speak(sentences: AsyncStream<String>, as speaker: String?) async {
+        stop()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.say(sentences, as: speaker)
+        }
+        speaking = task
+        await task.value
     }
 
     func stop() {
+        speaking?.cancel()
+        speaking = nil
+        player?.stop()
+        player = nil
         synthesizer.stopSpeaking(at: .immediate)
+    }
+
+    private func say(_ sentences: AsyncStream<String>, as speaker: String?) async {
+        defer { if !Task.isCancelled { speaking = nil } }
+        let natural = speaker.map { CoachNaturalVoice.shared.canSpeak(as: $0) } ?? false
+        var playing: Task<Void, Never>?
+        for await sentence in sentences {
+            guard !Task.isCancelled else { break }
+            if natural, let speaker {
+                let audio = await CoachNaturalVoice.shared.speech(sentence, as: speaker)
+                await playing?.value
+                guard !Task.isCancelled else { break }
+                if let audio, let next = try? AVAudioPlayer(data: audio) {
+                    player = next
+                    next.play()
+                    playing = Task { await Self.waitUntilDone { next.isPlaying } }
+                    continue
+                }
+            }
+            await playing?.value
+            guard !Task.isCancelled else { break }
+            speakWithMacVoice(sentence)
+            let synthesizer = self.synthesizer
+            playing = Task { await Self.waitUntilDone { synthesizer.isSpeaking } }
+        }
+        await playing?.value
+    }
+
+    private static func waitUntilDone(_ busy: @escaping () -> Bool) async {
+        // Give playback a moment to start before asking whether it's over.
+        try? await Task.sleep(for: .milliseconds(60))
+        while busy(), !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+    }
+
+    private func speakWithMacVoice(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
+        synthesizer.speak(utterance)
     }
 }
 

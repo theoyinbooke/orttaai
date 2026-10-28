@@ -18,6 +18,11 @@ nonisolated enum CoachPreferences {
     static let coachModelKey = "coachModel"
     static let judgeModelKey = "coachJudgeModel"
     static let readAloudKey = "coachReadAloud"
+    static let judgeGradesKey = "coachJudgeGrades"
+    static let partnerModelKey = "coachPartnerModel"
+    static let handsFreeKey = "coachHandsFree"
+    /// Model setup was finished or put off, so it doesn't open by itself again.
+    static let modelSetupSeenKey = "coachModelSetupSeen"
 
     static var isEnabled: Bool {
         UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
@@ -74,9 +79,43 @@ nonisolated enum CoachPreferences {
         NotificationCenter.default.post(name: .coachPreferencesDidChange, object: nil)
     }
 
+    /// In a spoken scene, your turn starts when the partner stops talking
+    /// and ends when you pause, with no button.
+    static var handsFree: Bool {
+        UserDefaults.standard.object(forKey: handsFreeKey) as? Bool ?? true
+    }
+
     /// Whether the coach's note is read aloud after a rep.
     static var readsAloud: Bool {
         UserDefaults.standard.object(forKey: readAloudKey) as? Bool ?? false
+    }
+
+    /// How each model did on Coach's judge check, by model name.
+    static var judgeGrades: [String: JudgeGrade] {
+        guard let data = UserDefaults.standard.data(forKey: judgeGradesKey),
+              let grades = try? JSONDecoder().decode([String: JudgeGrade].self, from: data) else { return [:] }
+        return grades
+    }
+
+    /// A model's grade against the examples in use now.
+    static func judgeGrade(for model: String) -> JudgeGrade? {
+        judgeGrades[model].flatMap { $0.isCurrent ? $0 : nil }
+    }
+
+    static func saveJudgeGrade(_ grade: JudgeGrade) {
+        var all = judgeGrades
+        all[grade.model] = grade
+        if let data = try? JSONEncoder().encode(all) {
+            UserDefaults.standard.set(data, forKey: judgeGradesKey)
+        }
+        NotificationCenter.default.post(name: .coachPreferencesDidChange, object: nil)
+    }
+
+    /// The most accurate model that passed, then the fastest.
+    static var bestPassingJudge: JudgeGrade? {
+        judgeGrades.values
+            .filter { $0.isCurrent && $0.passes }
+            .max { ($0.accuracy, -($0.msPerAnswer ?? .max)) < ($1.accuracy, -($1.msPerAnswer ?? .max)) }
     }
 
     /// The rule in force for an app: the person's choice, else the table.

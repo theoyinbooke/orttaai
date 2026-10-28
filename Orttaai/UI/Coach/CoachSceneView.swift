@@ -2,7 +2,9 @@
 // Orttaai
 //
 // A scene, full screen: the partner with a mood that moves, the goal, the
-// conversation as subtitles, and your turn by voice or by typing.
+// conversation as subtitles (the partner's reply appears as it's written),
+// and your turn by voice or by typing. Hands-free, the microphone opens when
+// the partner stops; speaking or pressing Space cuts in.
 
 import CoachCore
 import SwiftUI
@@ -160,7 +162,7 @@ struct CoachSceneView: View {
                     .foregroundStyle(CoachStyle.ink3)
             }
             VStack(spacing: 10) {
-                Text("\(session.scene.partnerName) is \(session.mood.title.lowercased())")
+                Text(moodLine)
                     .font(.system(size: 14))
                     .foregroundStyle(Color(hex: "C4DAF5"))
                 HStack(spacing: 6) {
@@ -183,6 +185,15 @@ struct CoachSceneView: View {
         .padding(24)
         .frame(maxWidth: .infinity)
         .coachSurface(Color(hex: "1A1D22"), border: Color(hex: "78AAE6").opacity(0.22))
+    }
+
+    private var moodLine: String {
+        let name = session.scene.partnerName
+        switch session.mood {
+        case .pushing: return "\(name) is pushing"
+        case .weighing: return "\(name) is weighing it"
+        case .agreed: return "\(name) agrees"
+        }
     }
 
     private var goalCard: some View {
@@ -211,7 +222,10 @@ struct CoachSceneView: View {
                         turnView(turn, latest: latest)
                             .id(turn.id)
                     }
-                    if session.phase == .thinking {
+                    if let live = session.liveReply, !live.isEmpty {
+                        liveView(live)
+                            .id("live")
+                    } else if session.phase == .thinking {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
                             Text("\(session.scene.partnerName) is thinking…")
@@ -228,6 +242,21 @@ struct CoachSceneView: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
+            .onChange(of: session.liveReply == nil) { _, streaming in
+                if !streaming { proxy.scrollTo("live", anchor: .bottom) }
+            }
+        }
+    }
+
+    private func liveView(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(session.scene.partnerName)
+                .font(CoachStyle.label)
+                .foregroundStyle(Color(hex: "C4DAF5"))
+            Text("“\(text)”")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(CoachStyle.ink)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -248,7 +277,7 @@ struct CoachSceneView: View {
                 }
                 if session.replyMode.speaks {
                     Button {
-                        CoachVoice.shared.speak(turn.text)
+                        CoachVoice.shared.speak(turn.text, as: session.scene.partnerName)
                     } label: {
                         Label("Hear again", systemImage: "play.fill")
                             .font(.system(size: 13, weight: .semibold))
@@ -259,6 +288,7 @@ struct CoachSceneView: View {
                             .overlay(Capsule().stroke(Color(hex: "78AAE6").opacity(0.35), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .disabled(session.phase != .talking)
                 }
             }
         case .you:
@@ -320,11 +350,21 @@ struct CoachSceneView: View {
                 .buttonStyle(.plain)
                 .disabled(!(ready || recording))
                 .keyboardShortcut(.space, modifiers: [])
-                .accessibilityLabel(recording ? "Finish your turn" : "Talk")
-                Text(recording ? "Listening. Press again when you're done." : ready ? "Your turn. Press to talk, or the space bar." : "\(session.scene.partnerName) is answering…")
+                .accessibilityLabel(recording ? "Finish your turn" : session.partnerSpeaking ? "Cut in" : "Talk")
+                Text(status(recording: recording, ready: ready))
                     .font(.system(size: 15))
-                    .foregroundStyle(CoachStyle.ink2)
+                    .foregroundStyle(ready && session.notice != nil ? CoachStyle.warmInk : CoachStyle.ink2)
+                    .lineLimit(2)
+                    .help(session.notice ?? "")
                 Spacer(minLength: 0)
+                Toggle(isOn: $session.handsFree) {
+                    Text("Hands-free")
+                        .font(CoachStyle.label)
+                        .foregroundStyle(CoachStyle.ink2)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Your turn starts when \(session.scene.partnerName) stops, and ends when you pause.")
                 endButton
             }
             .padding(.horizontal, 16)
@@ -332,6 +372,17 @@ struct CoachSceneView: View {
             .background(Capsule().fill(Color(hex: "1D1C1F")))
             .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
+    }
+
+    private func status(recording: Bool, ready: Bool) -> String {
+        let name = session.scene.partnerName
+        if recording {
+            return session.handsFree ? "Listening. Pause when you're done." : "Listening. Press again when you're done."
+        }
+        if session.partnerSpeaking { return "\(name) is speaking. Press Space to cut in." }
+        if ready, let notice = session.notice { return notice }
+        if ready { return "Your turn. Press to talk, or the space bar." }
+        return "\(name) is answering…"
     }
 
     private var endButton: some View {

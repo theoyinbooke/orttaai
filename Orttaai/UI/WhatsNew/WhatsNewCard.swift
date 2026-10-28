@@ -146,7 +146,7 @@ struct WhatsNewCard: View {
     }
 }
 
-private struct WhatsNewPrimaryButtonStyle: ButtonStyle {
+struct WhatsNewPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .bold))
@@ -170,20 +170,7 @@ struct WhatsNewArtView: View {
     var transition: AnyTransition = .opacity
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(hex: "2B2A2E"), Color(hex: "1C1C1E")], startPoint: .top, endPoint: .bottom)
-            RadialGradient(
-                colors: [Color.Orttaai.accent.opacity(0.28), .clear],
-                center: .center, startRadius: 4, endRadius: 190
-            )
-            DotGrid()
-                .opacity(0.5)
-            scene
-                .id(sceneID)
-                .transition(transition)
-        }
-        .clipped()
-        .accessibilityHidden(true)
+        WhatsNewArtPanel(sceneID: sceneID, transition: transition) { scene }
     }
 
     @ViewBuilder
@@ -194,6 +181,31 @@ struct WhatsNewArtView: View {
         case .updates: UpdatesScene()
         case .symbol(let name): SymbolScene(symbol: name)
         }
+    }
+}
+
+/// The dark panel with an amber glow and a dot grid that pictures sit on,
+/// for What's New and for other cards in its style.
+struct WhatsNewArtPanel<Scene: View>: View {
+    var sceneID = ""
+    var transition: AnyTransition = .opacity
+    @ViewBuilder let scene: () -> Scene
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(hex: "2B2A2E"), Color(hex: "1C1C1E")], startPoint: .top, endPoint: .bottom)
+            RadialGradient(
+                colors: [Color.Orttaai.accent.opacity(0.28), .clear],
+                center: .center, startRadius: 4, endRadius: 190
+            )
+            DotGrid()
+                .opacity(0.5)
+            scene()
+                .id(sceneID)
+                .transition(transition)
+        }
+        .clipped()
+        .accessibilityHidden(true)
     }
 }
 

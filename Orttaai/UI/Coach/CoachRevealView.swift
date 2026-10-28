@@ -143,7 +143,7 @@ struct CoachRevealView: View {
                 CoachInfoButton(
                     title: "How it was scored",
                     text: result.judgeModel.map { "Counted checks are exact. The others were each asked as one yes or no question of \($0) on this Mac, with how sure it was. Your coach doesn't change the score." }
-                        ?? "Only the counted checks ran. Start your local model server (Ollama or LM Studio) to judge the rest."
+                        ?? "Only the counted checks ran. The rest need a local model (Ollama or LM Studio) that has passed the judge check in Cast › Models."
                 )
                 Spacer()
             }
