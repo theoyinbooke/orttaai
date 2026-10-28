@@ -680,6 +680,34 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v22_coach") { db in
+            // What Coach counted in each dictation: numbers only, never any
+            // text. Deleting a dictation deletes its counts. Local to this
+            // Mac; never synced.
+            try db.create(table: "coach_metric") { t in
+                t.column("transcriptionId", .integer)
+                    .primaryKey()
+                    .references("transcription", onDelete: .cascade)
+                t.column("metricsVersion", .integer).notNull()
+                t.column("words", .integer).notNull()
+                t.column("umUh", .integer).notNull()
+                t.column("phraseFillers", .integer).notNull()
+                t.column("wpm", .integer)
+                t.column("sentenceLengths", .text).notNull()
+                t.column("repeats", .integer).notNull()
+                t.column("polishChangeRatio", .double)
+                t.column("rawKnown", .boolean).notNull()
+            }
+            // Habits the person started. A NULL mode is every way of talking.
+            try db.create(table: "coach_habit") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("measure", .text).notNull()
+                t.column("mode", .text)
+                t.column("startedAt", .datetime).notNull()
+                t.column("endedAt", .datetime)
+            }
+        }
+
         return migrator
     }
 
@@ -1074,6 +1102,7 @@ final class DatabaseManager {
             try db.execute(sql: "DELETE FROM snippet_entry")
             try db.execute(sql: "DELETE FROM learning_suggestion")
             try db.execute(sql: "DELETE FROM writing_insight_snapshot")
+            try db.execute(sql: "DELETE FROM coach_habit")
         }
         NotificationCenter.default.post(name: .personalMemoryDidChange, object: nil)
         requestCloudSyncIfEnabled()

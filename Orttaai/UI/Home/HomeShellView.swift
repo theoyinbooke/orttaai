@@ -49,9 +49,16 @@ struct HomeShellView: View {
         .background(Color.Orttaai.bgPrimary)
         .onAppear {
             requestSyncIfShowingHome()
+            if navigation.selectedSection == .coach { columnVisibility = .detailOnly }
         }
         .onChange(of: navigation.selectedSection) { oldValue, newValue in
             guard oldValue != newValue else { return }
+            // Coach brings its own slim rail; the sidebar steps aside.
+            if newValue == .coach {
+                columnVisibility = .detailOnly
+            } else if oldValue == .coach {
+                columnVisibility = .all
+            }
             if newValue == .overview {
                 requestSyncIfShowingHome()
             }
@@ -86,6 +93,8 @@ struct HomeShellView: View {
             AnalyticsView()
         case .milestones:
             MilestonesView(shareSubject: $navigation.milestoneShareSubject)
+        case .coach:
+            CoachShellView(navigation: navigation)
         case .settings:
             HomeSettingsWorkspaceView()
         case .model:
@@ -114,7 +123,7 @@ private struct HomeSidebarView: View {
     @StateObject private var pendingSuggestions = PendingSuggestionCount()
     let onRunSetup: () -> Void
 
-    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics, .milestones]
+    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics, .milestones, .coach]
     private let systemSections: [HomeSection] = [.model, .settings, .about]
 
     var body: some View {

@@ -277,6 +277,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         center.start(database: database)
+        CoachCenter.shared.start(database: database)
     }
 
     private func configureUpdater() {

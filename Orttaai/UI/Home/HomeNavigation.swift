@@ -11,6 +11,7 @@ enum HomeSection: String, CaseIterable, Identifiable, Hashable {
     case memory
     case analytics
     case milestones
+    case coach
     case model
     case settings
     case about
@@ -25,6 +26,7 @@ enum HomeSection: String, CaseIterable, Identifiable, Hashable {
         case .memory: return "Memory"
         case .analytics: return "Analytics"
         case .milestones: return "Milestones"
+        case .coach: return "Coach"
         case .settings: return "Settings"
         case .model: return "Model"
         case .about: return "About"
@@ -39,6 +41,7 @@ enum HomeSection: String, CaseIterable, Identifiable, Hashable {
         case .memory: return "text.book.closed"
         case .analytics: return "chart.bar.xaxis"
         case .milestones: return "rosette"
+        case .coach: return "scope"
         case .settings: return "gearshape"
         case .model: return "cpu"
         case .about: return "info.circle"
