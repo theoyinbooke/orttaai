@@ -123,8 +123,8 @@ private struct HomeSidebarView: View {
     @StateObject private var pendingSuggestions = PendingSuggestionCount()
     let onRunSetup: () -> Void
 
-    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics, .milestones, .coach]
-    private let systemSections: [HomeSection] = [.model, .settings, .about]
+    private let workspaceSections: [HomeSection] = [.overview, .chatAI, .graph, .analytics, .milestones, .coach]
+    private let systemSections: [HomeSection] = [.memory, .model, .settings, .about]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -136,8 +136,7 @@ private struct HomeSidebarView: View {
                     ForEach(workspaceSections) { section in
                         HomeSidebarRow(
                             section: section,
-                            isSelected: selection == section,
-                            count: section == .memory ? pendingSuggestions.count : 0
+                            isSelected: selection == section
                         ) {
                             selection = section
                         }
@@ -148,7 +147,8 @@ private struct HomeSidebarView: View {
                     ForEach(systemSections) { section in
                         HomeSidebarRow(
                             section: section,
-                            isSelected: selection == section
+                            isSelected: selection == section,
+                            count: section == .memory ? pendingSuggestions.count : 0
                         ) {
                             selection = section
                         }

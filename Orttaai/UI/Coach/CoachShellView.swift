@@ -110,7 +110,7 @@ struct CoachShellView: View {
 struct CoachRail: View {
     @ObservedObject var navigation: HomeNavigationState
 
-    private let sections: [HomeSection] = [.overview, .chatAI, .graph, .memory, .analytics, .milestones, .coach]
+    private let sections: [HomeSection] = [.overview, .chatAI, .graph, .analytics, .milestones, .coach, .memory]
 
     var body: some View {
         VStack(spacing: 6) {
