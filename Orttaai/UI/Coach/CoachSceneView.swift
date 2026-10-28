@@ -60,7 +60,7 @@ struct CoachSceneView: View {
                 .offset(x: -80, y: 80)
                 .accessibilityHidden(true)
         }
-        .background(Color(hex: "111214"))
+        .background(Color.orttaai(light: "F5F3F0", dark: "111214"))
         .onExitCommand { center.endScene() }
     }
 
@@ -77,8 +77,8 @@ struct CoachSceneView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(CoachStyle.ink)
                     .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.white.opacity(0.05)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    .background(Circle().fill(CoachStyle.wash(0.05)))
+                    .overlay(Circle().stroke(CoachStyle.wash(0.14), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Leave the scene")
@@ -102,7 +102,7 @@ struct CoachSceneView: View {
                     } label: {
                         Text(mode.title)
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(on ? Color(hex: "1B1917") : CoachStyle.ink2)
+                            .foregroundStyle(on ? Color.orttaai(light: "FFFFFF", dark: "1B1917") : CoachStyle.ink2)
                             .padding(.horizontal, 16)
                             .frame(height: 36)
                             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Color.Orttaai.accent : .clear))
@@ -113,7 +113,7 @@ struct CoachSceneView: View {
                 }
             }
             .padding(4)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(CoachStyle.wash(0.05)))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(session.scene.partnerName) replies in")
         }
@@ -130,7 +130,7 @@ struct CoachSceneView: View {
                     CoachPersonaGlyph(persona: session.persona, size: 24)
                     Text("\(session.persona.name) is listening. Notes when the scene ends.")
                         .font(CoachStyle.label)
-                        .foregroundStyle(Color(hex: "C9C5BF"))
+                        .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C9C5BF"))
                 }
             }
             .frame(width: 320)
@@ -147,7 +147,7 @@ struct CoachSceneView: View {
             ZStack {
                 Circle().stroke(Color(hex: "78AAE6").opacity(0.3), lineWidth: 1).frame(width: 150, height: 150)
                 Circle().stroke(Color(hex: "78AAE6").opacity(0.45), lineWidth: 1).frame(width: 122, height: 122)
-                Circle().fill(Color(hex: "3E5F82")).frame(width: 94, height: 94)
+                Circle().fill(Color.orttaai(light: "C9DBF0", dark: "3E5F82")).frame(width: 94, height: 94)
                 Text(String(session.scene.partnerName.prefix(1)))
                     .font(CoachStyle.display(40))
                     .foregroundStyle(CoachStyle.ink)
@@ -165,12 +165,12 @@ struct CoachSceneView: View {
             VStack(spacing: 10) {
                 Text(moodLine)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color(hex: "C4DAF5"))
+                    .foregroundStyle(Color.orttaai(light: "2F5A8A", dark: "C4DAF5"))
                 HStack(spacing: 6) {
                     ForEach(PartnerMood.allCases, id: \.self) { mood in
                         VStack(spacing: 6) {
                             Capsule()
-                                .fill(mood.step <= session.mood.step ? Color(hex: "9CC0EA") : Color.white.opacity(0.10))
+                                .fill(mood.step <= session.mood.step ? Color.orttaai(light: "4F7DB5", dark: "9CC0EA") : CoachStyle.wash(0.10))
                                 .frame(height: 6)
                             Text(mood.title)
                                 .font(.system(size: 12, weight: mood == session.mood ? .semibold : .regular))
@@ -185,7 +185,7 @@ struct CoachSceneView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
-        .coachSurface(Color(hex: "1A1D22"), border: Color(hex: "78AAE6").opacity(0.22))
+        .coachSurface(Color.orttaai(light: "EEF3FA", dark: "1A1D22"), border: Color(hex: "78AAE6").opacity(0.22))
     }
 
     private var moodLine: String {
@@ -211,7 +211,7 @@ struct CoachSceneView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .coachSurface(Color(hex: "1D1C1F"))
+        .coachSurface(Color.orttaai(light: "FFFFFF", dark: "1D1C1F"))
     }
 
     private var conversation: some View {
@@ -253,7 +253,7 @@ struct CoachSceneView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(session.scene.partnerName)
                 .font(CoachStyle.label)
-                .foregroundStyle(Color(hex: "C4DAF5"))
+                .foregroundStyle(Color.orttaai(light: "2F5A8A", dark: "C4DAF5"))
             Text("“\(text)”")
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(CoachStyle.ink)
@@ -268,7 +268,7 @@ struct CoachSceneView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(session.scene.partnerName)
                     .font(CoachStyle.label)
-                    .foregroundStyle(Color(hex: "C4DAF5"))
+                    .foregroundStyle(Color.orttaai(light: "2F5A8A", dark: "C4DAF5"))
                 if session.replyMode != .voice || latest {
                     Text(latest ? "“\(turn.text)”" : turn.text)
                         .font(.system(size: latest ? 28 : 18, weight: latest ? .medium : .regular))
@@ -282,7 +282,7 @@ struct CoachSceneView: View {
                     } label: {
                         Label("Hear again", systemImage: "play.fill")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color(hex: "C4DAF5"))
+                            .foregroundStyle(Color.orttaai(light: "2F5A8A", dark: "C4DAF5"))
                             .padding(.horizontal, 14)
                             .frame(height: 32)
                             .background(Capsule().fill(Color(hex: "78AAE6").opacity(0.10)))
@@ -299,7 +299,7 @@ struct CoachSceneView: View {
                     .foregroundStyle(CoachStyle.warmInk)
                 Text(turn.text)
                     .font(.system(size: 18))
-                    .foregroundStyle(Color(hex: "F0DDBF"))
+                    .foregroundStyle(Color.orttaai(light: "6B4A12", dark: "F0DDBF"))
                     .multilineTextAlignment(.trailing)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -330,8 +330,8 @@ struct CoachSceneView: View {
             .padding(.leading, 22)
             .padding(.trailing, 10)
             .frame(height: 68)
-            .background(Capsule().fill(Color(hex: "1D1C1F")))
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .background(Capsule().fill(Color.orttaai(light: "FFFFFF", dark: "1D1C1F")))
+            .overlay(Capsule().stroke(CoachStyle.wash(0.08), lineWidth: 1))
         } else {
             HStack(spacing: 16) {
                 Button {
@@ -345,7 +345,7 @@ struct CoachSceneView: View {
                 } label: {
                     Image(systemName: recording ? "stop.fill" : "mic.fill")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Color(hex: "1B1917"))
+                        .foregroundStyle(Color.orttaai(light: "FFFFFF", dark: "1B1917"))
                         .frame(width: 60, height: 60)
                         .background(Circle().fill(Color.Orttaai.accent))
                         .overlay(Circle().stroke(Color.Orttaai.accent.opacity(0.4), lineWidth: 6 + CGFloat(session.level) * 10))
@@ -372,8 +372,8 @@ struct CoachSceneView: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 92)
-            .background(Capsule().fill(Color(hex: "1D1C1F")))
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .background(Capsule().fill(Color.orttaai(light: "FFFFFF", dark: "1D1C1F")))
+            .overlay(Capsule().stroke(CoachStyle.wash(0.08), lineWidth: 1))
         }
     }
 

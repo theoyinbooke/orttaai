@@ -130,7 +130,7 @@ struct CoachCastView: View {
                         .foregroundStyle(CoachStyle.ink)
                         .padding(.horizontal, 12)
                         .frame(height: 30)
-                        .background(Capsule().fill(Color.white.opacity(0.07)))
+                        .background(Capsule().fill(CoachStyle.wash(0.07)))
                 }
                 .buttonStyle(.plain)
             }

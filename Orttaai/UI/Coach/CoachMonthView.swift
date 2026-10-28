@@ -96,8 +96,8 @@ struct CoachMonthView: View {
             }
         }
         .padding(4)
-        .background(Capsule().fill(Color.white.opacity(0.06)))
-        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .background(Capsule().fill(CoachStyle.wash(0.06)))
+        .overlay(Capsule().stroke(CoachStyle.wash(0.12), lineWidth: 1))
     }
 
     private func stepButton(_ icon: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -215,7 +215,7 @@ struct CoachMonthView: View {
                 } label: {
                     Text(CoachFormat.modeLabel(item))
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selected ? Color(hex: "1B1917") : CoachStyle.ink2)
+                        .foregroundStyle(selected ? Color.orttaai(light: "FFFFFF", dark: "1B1917") : CoachStyle.ink2)
                         .padding(.horizontal, 12)
                         .frame(height: 30)
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(selected ? Color.Orttaai.accent : .clear))
@@ -226,7 +226,7 @@ struct CoachMonthView: View {
             }
         }
         .padding(4)
-        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color(hex: "18171A")))
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.orttaai(light: "F1ECE4", dark: "18171A")))
     }
 
     @ViewBuilder

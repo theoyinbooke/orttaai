@@ -61,7 +61,7 @@ struct CoachSetupCard: View {
                 Text(eyebrow)
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.9)
-                    .foregroundStyle(Color(hex: "E8B45A"))
+                    .foregroundStyle(Color.orttaai(light: "8A5A0F", dark: "E8B45A"))
                 Group {
                     Text(title)
                         .font(.system(size: 22, weight: .bold))
@@ -74,7 +74,7 @@ struct CoachSetupCard: View {
                     } else {
                         Text(detail)
                             .font(.system(size: 14))
-                            .foregroundStyle(Color(hex: "C7C7CC"))
+                            .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C7C7CC"))
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 8)
@@ -94,7 +94,7 @@ struct CoachSetupCard: View {
         }
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color(hex: "232325"))
+        .background(Color.orttaai(light: "FFFFFF", dark: "232325"))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -163,7 +163,7 @@ struct CoachSetupCard: View {
                 .foregroundStyle(Color.Orttaai.textPrimary)
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(Color.black.opacity(0.35)))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                .overlay(Circle().strokeBorder(CoachStyle.wash(0.08), lineWidth: 1))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -179,7 +179,7 @@ struct CoachSetupCard: View {
             HStack(spacing: 5) {
                 ForEach(Page.allCases, id: \.self) { dot in
                     Capsule()
-                        .fill(dot == page ? Color.Orttaai.accent : Color(hex: "48484A"))
+                        .fill(dot == page ? Color.Orttaai.accent : Color.orttaai(light: "D8D1C6", dark: "48484A"))
                         .frame(width: dot == page ? 16 : 6, height: 6)
                         .onTapGesture { index = dot.rawValue }
                 }
@@ -364,7 +364,7 @@ struct CoachModelSetupList: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: compact ? 12 : 18, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                .strokeBorder(CoachStyle.wash(0.06), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
     }
@@ -408,10 +408,10 @@ private struct CoachSetupTalkScene: View {
                         .strokeBorder(Color(hex: "78AAE6").opacity(size == 74 ? 0.45 : 0.22), lineWidth: 1)
                         .frame(width: CGFloat(size), height: CGFloat(size))
                 }
-                Circle().fill(Color(hex: "3E5F82")).frame(width: 56, height: 56)
+                Circle().fill(Color.orttaai(light: "C9DBF0", dark: "3E5F82")).frame(width: 56, height: 56)
                 Text("O")
                     .font(.system(size: 26, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color(hex: "F5F3F0"))
+                    .foregroundStyle(Color.orttaai(light: "1F3F66", dark: "F5F3F0"))
             }
             VStack(alignment: .leading, spacing: 10) {
                 bubble("Can we also get the PDF export in by Friday?", partner: true)
@@ -427,7 +427,7 @@ private struct CoachSetupTalkScene: View {
     private func bubble(_ text: String, partner: Bool) -> some View {
         Text(text)
             .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(partner ? Color(hex: "E3EDF9") : Color(hex: "F0DDBF"))
+            .foregroundStyle(partner ? Color.orttaai(light: "1F3F66", dark: "E3EDF9") : Color.orttaai(light: "6B4A12", dark: "F0DDBF"))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
@@ -448,7 +448,7 @@ private struct Waveform: View {
         HStack(spacing: 2.5) {
             ForEach(Array(Self.heights.enumerated()), id: \.offset) { _, height in
                 Capsule()
-                    .fill(Color(hex: "9CC0EA"))
+                    .fill(Color.orttaai(light: "4F7DB5", dark: "9CC0EA"))
                     .frame(width: 2.5, height: height)
             }
         }
@@ -464,7 +464,7 @@ private struct CoachSetupTurnScene: View {
             HStack(alignment: .center, spacing: 3) {
                 ForEach(Array(Self.levels.enumerated()), id: \.offset) { index, level in
                     Capsule()
-                        .fill(index < 11 ? Color.Orttaai.accent : Color.white.opacity(0.18))
+                        .fill(index < 11 ? Color.Orttaai.accent : CoachStyle.wash(0.18))
                         .frame(width: 5, height: level)
                 }
                 Text("pause")
@@ -488,13 +488,13 @@ private struct CoachSetupTurnScene: View {
                     .foregroundStyle(Color.Orttaai.textSecondary)
                     .padding(.horizontal, 7)
                     .frame(height: 20)
-                    .background(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                    .background(RoundedRectangle(cornerRadius: 5).strokeBorder(CoachStyle.wash(0.2), lineWidth: 1))
             }
             .padding(.leading, 6)
             .padding(.trailing, 14)
             .frame(height: 46)
-            .background(Capsule().fill(Color(hex: "2C2C2F")))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .background(Capsule().fill(Color.orttaai(light: "FFFFFF", dark: "2C2C2F")))
+            .overlay(Capsule().strokeBorder(CoachStyle.wash(0.08), lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 10, y: 6)
         }
     }
@@ -532,13 +532,13 @@ private struct CoachSetupLocalScene: View {
                 .foregroundStyle(Color.Orttaai.textSecondary)
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color(hex: "F5F3F0").opacity(0.8), lineWidth: 2)
+                    .strokeBorder(Color.Orttaai.textPrimary.opacity(0.8), lineWidth: 2)
                     .frame(width: 92, height: 62)
                 Image(systemName: "lock.fill")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Color.Orttaai.accent)
                 Capsule()
-                    .fill(Color(hex: "F5F3F0").opacity(0.8))
+                    .fill(Color.Orttaai.textPrimary.opacity(0.8))
                     .frame(width: 112, height: 5)
                     .offset(y: 36)
             }
@@ -559,7 +559,7 @@ private struct CoachSetupProgressScene: View {
                     .strokeBorder(Color.Orttaai.accent.opacity(0.16), lineWidth: 1)
                     .frame(width: CGFloat(size), height: CGFloat(size))
             }
-            Circle().stroke(Color(hex: "3A3A3C"), lineWidth: 7)
+            Circle().stroke(Color.orttaai(light: "E2DCD2", dark: "3A3A3C"), lineWidth: 7)
                 .frame(width: 92, height: 92)
             Circle()
                 .trim(from: 0, to: done ? 1 : (progress ?? (working ? 0.08 : 0)))

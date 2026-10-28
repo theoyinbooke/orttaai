@@ -97,7 +97,7 @@ struct CoachTodayView: View {
                 } label: {
                     Text(item.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selected ? Color(hex: "1B1917") : CoachStyle.ink2)
+                        .foregroundStyle(selected ? Color.orttaai(light: "FFFFFF", dark: "1B1917") : CoachStyle.ink2)
                         .padding(.horizontal, 12)
                         .frame(height: 32)
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(selected ? Color.Orttaai.accent : .clear))
@@ -108,7 +108,7 @@ struct CoachTodayView: View {
             }
         }
         .padding(4)
-        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color(hex: "18171A")))
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.orttaai(light: "F1ECE4", dark: "18171A")))
     }
 
     private func legend(_ title: String, dashed: Bool) -> some View {
@@ -149,7 +149,7 @@ struct CoachTodayView: View {
                 CoachEyebrow(text: "Today's rep")
                 Text("· \(skill.track.title) · \(snapshot.todaysKind.title)")
                     .font(CoachStyle.label)
-                    .foregroundStyle(Color(hex: "C9B79B"))
+                    .foregroundStyle(Color.orttaai(light: "6B5532", dark: "C9B79B"))
             }
             HStack(alignment: .top, spacing: 14) {
                 CoachPersonaGlyph(persona: persona, size: 44)
@@ -166,7 +166,7 @@ struct CoachTodayView: View {
                         .foregroundStyle(CoachStyle.ink)
                     Text(skill.why)
                         .font(CoachStyle.label)
-                        .foregroundStyle(Color(hex: "C9B79B"))
+                        .foregroundStyle(Color.orttaai(light: "6B5532", dark: "C9B79B"))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
@@ -196,7 +196,7 @@ struct CoachTodayView: View {
                 CoachEyebrow(text: "Your habit")
                 Text("· " + CoachFormat.modeLabel(state.mode))
                     .font(CoachStyle.label)
-                    .foregroundStyle(Color(hex: "C9B79B"))
+                    .foregroundStyle(Color.orttaai(light: "6B5532", dark: "C9B79B"))
                 Spacer()
                 CoachTag(text: verdict.status.title, color: verdict.status.color)
             }
@@ -220,11 +220,11 @@ struct CoachTodayView: View {
                 ForEach(0..<HabitJudge.window, id: \.self) { index in
                     if index < verdict.after.count {
                         Circle()
-                            .fill(verdict.after[index] ? Color.Orttaai.accent : Color.white.opacity(0.14))
+                            .fill(verdict.after[index] ? Color.Orttaai.accent : CoachStyle.wash(0.14))
                             .frame(width: 12, height: 12)
                     } else {
                         Circle()
-                            .stroke(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                            .stroke(CoachStyle.wash(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                             .frame(width: 12, height: 12)
                     }
                 }
@@ -235,7 +235,7 @@ struct CoachTodayView: View {
             HStack {
                 Text(CoachCopy.progressLine(verdict))
                     .font(CoachStyle.label)
-                    .foregroundStyle(Color(hex: "C9B79B"))
+                    .foregroundStyle(Color.orttaai(light: "6B5532", dark: "C9B79B"))
                 Spacer(minLength: 8)
                 Button("See proof", action: onShowProof)
                     .buttonStyle(CoachPrimaryButtonStyle())
@@ -269,7 +269,7 @@ struct CoachTodayView: View {
                         ZStack {
                             Circle()
                                 .stroke(
-                                    practised ? Color.Orttaai.accent : day.dictated ? Color.Orttaai.accent.opacity(0.3) : Color.white.opacity(day.isFuture ? 0.06 : 0.10),
+                                    practised ? Color.Orttaai.accent : day.dictated ? Color.Orttaai.accent.opacity(0.3) : CoachStyle.wash(day.isFuture ? 0.08 : 0.14),
                                     style: StrokeStyle(lineWidth: 5, dash: day.isFuture ? [3, 5] : [])
                                 )
                         }
@@ -342,7 +342,7 @@ struct CoachTodayView: View {
             .padding(.vertical, 20)
             .overlay(
                 RoundedRectangle(cornerRadius: CoachStyle.radius, style: .continuous)
-                    .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                    .stroke(CoachStyle.wash(0.14), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
             )
         }
     }

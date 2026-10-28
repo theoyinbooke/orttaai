@@ -32,7 +32,7 @@ struct VoiceShapeView: View {
             ZStack {
                 Canvas { context, _ in
                     for ring in [1.0, 2.0 / 3.0, 1.0 / 3.0] {
-                        context.stroke(polygon(Array(repeating: ring, count: axes.count), center, radius), with: .color(.white.opacity(ring == 1 ? 0.09 : 0.05)), lineWidth: 1)
+                        context.stroke(polygon(Array(repeating: ring, count: axes.count), center, radius), with: .color(CoachStyle.wash(ring == 1 ? 0.12 : 0.06)), lineWidth: 1)
                     }
                     // The outline from before, or the sides of it that are known.
                     let ghost = StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [4, 5])
@@ -61,7 +61,7 @@ struct VoiceShapeView: View {
                             context.fill(Path(ellipseIn: CGRect(x: p.x - 9, y: p.y - 9, width: 18, height: 18)), with: .color(Color.Orttaai.accent.opacity(0.2)))
                             context.fill(dot, with: .color(Color.Orttaai.accent))
                         } else {
-                            context.fill(dot, with: .color(.white.opacity(0.18)))
+                            context.fill(dot, with: .color(CoachStyle.wash(0.18)))
                         }
                     }
                 }

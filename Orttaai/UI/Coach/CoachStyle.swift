@@ -4,24 +4,36 @@
 // Coach's look: Orttaai's tokens on a deeper ground, 24 pt surfaces and
 // rounded display numbers, so it reads as a space of its own.
 
+import AppKit
 import CoachCore
 import SwiftUI
 
 enum CoachStyle {
-    static let ground = Color(hex: "161517")
+    static let ground = Color.orttaai(light: "F5F3F0", dark: "161517")
+    /// Coach's rail is dark in both looks, like the main sidebar.
     static let rail = Color(hex: "121113")
-    static let surface = Color(hex: "222124")
-    static let surfaceRaised = Color(hex: "2A292C")
+    static let surface = Color.orttaai(light: "FFFFFF", dark: "222124")
+    static let surfaceRaised = Color.orttaai(light: "F3EEE6", dark: "2A292C")
     /// The warm surface for the one thing to do now.
-    static let warm = Color(hex: "2A241C")
+    static let warm = Color.orttaai(light: "FBF0DD", dark: "2A241C")
     static let warmBorder = Color.Orttaai.accent.opacity(0.32)
-    static let line = Color.white.opacity(0.07)
-    static let ink = Color(hex: "F4F1EC")
-    static let ink2 = Color(hex: "D9D5CF")
-    static let ink3 = Color(hex: "A29E99")
-    static let muted = Color(hex: "8F8B86")
-    static let gain = Color(hex: "86D7A0")
-    static let warmInk = Color(hex: "E8B062")
+    static let line = wash(0.07)
+    static let ink = Color.orttaai(light: "1C1C1E", dark: "F4F1EC")
+    static let ink2 = Color.orttaai(light: "3F3B37", dark: "D9D5CF")
+    static let ink3 = Color.orttaai(light: "5E5A55", dark: "A29E99")
+    static let muted = Color.orttaai(light: "6B665F", dark: "8F8B86")
+    static let gain = Color.orttaai(light: "2F7A4A", dark: "86D7A0")
+    static let warmInk = Color.orttaai(light: "8A5A0F", dark: "E8B062")
+
+    /// A see-through tint for edges, tracks and quiet fills: white on the
+    /// dark look, a soft black on the light one.
+    static func wash(_ opacity: Double) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor.white.withAlphaComponent(opacity)
+                : NSColor.black.withAlphaComponent(opacity * 0.9)
+        })
+    }
     static let radius: CGFloat = 24
 
     static func display(_ size: CGFloat) -> Font {
@@ -59,7 +71,7 @@ struct CoachPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: compact ? 13 : 14, weight: .semibold))
-            .foregroundStyle(Color(hex: "1B1917"))
+            .foregroundStyle(Color.orttaai(light: "FFFFFF", dark: "1B1917"))
             .padding(.horizontal, compact ? 16 : 20)
             .frame(height: compact ? 32 : 44)
             .background(Capsule().fill(Color.Orttaai.accent.opacity(configuration.isPressed ? 0.8 : 1)))
@@ -77,8 +89,8 @@ struct CoachSecondaryButtonStyle: ButtonStyle {
             .foregroundStyle(CoachStyle.ink)
             .padding(.horizontal, compact ? 14 : 18)
             .frame(height: compact ? 32 : 44)
-            .background(Capsule().fill(Color.white.opacity(configuration.isPressed ? 0.12 : 0.06)))
-            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+            .background(Capsule().fill(CoachStyle.wash(configuration.isPressed ? 0.12 : 0.06)))
+            .overlay(Capsule().stroke(CoachStyle.wash(0.12), lineWidth: 1))
             .contentShape(Capsule())
     }
 }

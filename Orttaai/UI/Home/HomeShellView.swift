@@ -43,6 +43,10 @@ struct HomeShellView: View {
                 }
                 .background(Color.Orttaai.bgPrimary)
                 .modifier(SolidHeaderScrollEdge())
+                // The title strip takes the page's own colour, so it never
+                // shows as a band in either look.
+                .toolbarBackground(navigation.selectedSection == .coach ? CoachStyle.ground : Color.Orttaai.bgPrimary, for: .windowToolbar)
+                .toolbarBackground(.visible, for: .windowToolbar)
                 .environment(\.workspaceSidebarToggle) {
                     setSidebarCollapsed(columnVisibility != .detailOnly)
                 }

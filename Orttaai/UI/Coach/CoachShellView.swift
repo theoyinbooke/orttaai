@@ -56,6 +56,7 @@ struct CoachShellView: View {
             } else {
                 HStack(spacing: 0) {
                     SectionRail(navigation: navigation, look: .coach)
+                        .environment(\.colorScheme, .dark)
                     ZStack(alignment: .bottom) {
                         page
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -68,7 +69,6 @@ struct CoachShellView: View {
             }
         }
         .background(CoachStyle.ground)
-        .preferredColorScheme(.dark)
         .sheet(isPresented: $sharingWeek) {
             if let snapshot = center.snapshot {
                 CoachWeekShareSheet(snapshot: snapshot)
@@ -133,7 +133,7 @@ struct CoachTabBar: View {
                 } label: {
                     Label(tab.title, systemImage: tab.icon)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(selected ? Color(hex: "1B1917") : CoachStyle.ink2)
+                        .foregroundStyle(selected ? Color.orttaai(light: "FFFFFF", dark: "1B1917") : CoachStyle.ink2)
                         .padding(.horizontal, 16)
                         .frame(height: 44)
                         .background(Capsule().fill(selected ? Color.Orttaai.accent : .clear))
@@ -157,7 +157,7 @@ private struct CoachGlass: ViewModifier {
         } else {
             content
                 .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().stroke(CoachStyle.wash(0.12), lineWidth: 1))
         }
     }
 }

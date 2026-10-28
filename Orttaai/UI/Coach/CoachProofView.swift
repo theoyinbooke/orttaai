@@ -74,7 +74,7 @@ struct CoachProofView: View {
                     HStack(spacing: 6) {
                         ForEach(0..<10, id: \.self) { _ in
                             Circle()
-                                .stroke(Color.white.opacity(0.22), style: StrokeStyle(lineWidth: 1.2, dash: [2.5, 2.5]))
+                                .stroke(CoachStyle.wash(0.22), style: StrokeStyle(lineWidth: 1.2, dash: [2.5, 2.5]))
                                 .frame(width: 11, height: 11)
                         }
                     }
@@ -193,7 +193,7 @@ private struct FeaturedHabitCard: View {
             dotRow(title: v.after.isEmpty ? "Since you started" : "\(v.after.count) since you started", hits: v.after, total: HabitJudge.window, warm: true)
             HStack(spacing: 16) {
                 key(Color.Orttaai.accent, state.hitTitle)
-                key(Color.white.opacity(0.14), "Not this time")
+                key(CoachStyle.wash(0.14), "Not this time")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -208,11 +208,11 @@ private struct FeaturedHabitCard: View {
                 ForEach(0..<total, id: \.self) { index in
                     if index < hits.count {
                         Circle()
-                            .fill(hits[index] ? Color.Orttaai.accent : Color.white.opacity(0.14))
+                            .fill(hits[index] ? Color.Orttaai.accent : CoachStyle.wash(0.14))
                             .frame(width: 14, height: 14)
                     } else {
                         Circle()
-                            .stroke(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                            .stroke(CoachStyle.wash(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                             .frame(width: 14, height: 14)
                     }
                 }
@@ -254,7 +254,7 @@ private struct FeaturedHabitCard: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(hex: "1B1A1D")))
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.orttaai(light: "F7F3EC", dark: "1B1A1D")))
     }
 
     private func exampleLabel(_ quote: CoachQuote) -> String {
@@ -295,7 +295,7 @@ private struct HabitCard: View {
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.08))
+                    Capsule().fill(CoachStyle.wash(0.08))
                     Capsule()
                         .fill(Color.Orttaai.accent)
                         .frame(width: proxy.size.width * Double(min(v.sinceCount, HabitJudge.window)) / Double(HabitJudge.window))

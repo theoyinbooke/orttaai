@@ -95,7 +95,7 @@ struct CoachPathView: View {
                     path.move(to: CGPoint(x: reached, y: y))
                     path.addLine(to: CGPoint(x: last, y: y))
                 }
-                .stroke(Color.white.opacity(0.16), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 7]))
+                .stroke(CoachStyle.wash(0.16), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 7]))
                 Path { path in
                     path.move(to: CGPoint(x: first, y: y))
                     path.addLine(to: CGPoint(x: reached, y: y))
@@ -121,15 +121,15 @@ struct CoachPathView: View {
                         .shadow(color: Color.Orttaai.accent.opacity(0.35), radius: 10, y: 5)
                     Text("\(number)")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(Color(hex: "1B1917"))
+                        .foregroundStyle(Color.orttaai(light: "FFFFFF", dark: "1B1917"))
                 } else if mastered {
                     Circle().fill(Color.Orttaai.accent).frame(width: size, height: size)
                     Image(systemName: "checkmark")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Color(hex: "1B1917"))
+                        .foregroundStyle(Color.orttaai(light: "FFFFFF", dark: "1B1917"))
                 } else {
                     Circle().fill(CoachStyle.ground).frame(width: size, height: size)
-                    Circle().stroke(Color.white.opacity(0.22), lineWidth: 2).frame(width: size, height: size)
+                    Circle().stroke(CoachStyle.wash(0.22), lineWidth: 2).frame(width: size, height: size)
                     Text("\(number)")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(CoachStyle.ink2)
@@ -139,7 +139,7 @@ struct CoachPathView: View {
                 }
                 if due {
                     Circle()
-                        .fill(Color(hex: "F0C27A"))
+                        .fill(Color.orttaai(light: "8A5A0F", dark: "F0C27A"))
                         .frame(width: 10, height: 10)
                         .overlay(Circle().stroke(CoachStyle.ground, lineWidth: 2))
                         .offset(x: size / 2 - 3, y: -size / 2 + 3)
@@ -168,7 +168,7 @@ struct CoachPathView: View {
             } else if snapshot.progress(skill).reviewDue(now: snapshot.builtAt) {
                 Text("Review due")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color(hex: "F0C27A"))
+                    .foregroundStyle(Color.orttaai(light: "8A5A0F", dark: "F0C27A"))
             }
         }
         .padding(.horizontal, 6)
@@ -204,7 +204,7 @@ struct CoachPathView: View {
         HStack(spacing: 6) {
             ForEach(0..<CoachScore.repsToMaster, id: \.self) { index in
                 Circle()
-                    .fill(index < progress.strongReps ? Color.Orttaai.accent : Color.white.opacity(0.12))
+                    .fill(index < progress.strongReps ? Color.Orttaai.accent : CoachStyle.wash(0.12))
                     .frame(width: 10, height: 10)
             }
             Text(progress.mastered ? "Mastered" : "\(min(progress.strongReps, CoachScore.repsToMaster)) of \(CoachScore.repsToMaster) strong reps")

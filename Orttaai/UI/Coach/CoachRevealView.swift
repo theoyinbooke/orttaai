@@ -84,7 +84,7 @@ struct CoachRevealView: View {
             } label: {
                 Image(systemName: "play.fill")
                     .font(.system(size: 16))
-                    .foregroundStyle(Color(hex: "1B1917"))
+                    .foregroundStyle(Color.orttaai(light: "FFFFFF", dark: "1B1917"))
                     .frame(width: 50, height: 50)
                     .background(Circle().fill(Color.Orttaai.accent))
             }
@@ -122,14 +122,14 @@ struct CoachRevealView: View {
                 .foregroundStyle(warm ? CoachStyle.warmInk : CoachStyle.ink3)
             Text("“\(text)”")
                 .font(.system(size: 17))
-                .foregroundStyle(warm ? CoachStyle.ink : Color(hex: "B9B5AF"))
+                .foregroundStyle(warm ? CoachStyle.ink : Color.orttaai(light: "5E5A55", dark: "B9B5AF"))
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .coachSurface(Color(hex: "1D1C1F"), border: warm ? CoachStyle.warmBorder : CoachStyle.line)
+        .coachSurface(Color.orttaai(light: "FFFFFF", dark: "1D1C1F"), border: warm ? CoachStyle.warmBorder : CoachStyle.line)
     }
 
     // MARK: Checks
@@ -203,7 +203,7 @@ struct CoachRevealView: View {
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.08))
+                    Capsule().fill(CoachStyle.wash(0.08))
                     Capsule().fill(color).frame(width: proxy.size.width * fill)
                 }
             }

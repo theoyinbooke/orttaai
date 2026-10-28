@@ -54,7 +54,7 @@ struct CoachStudioView: View {
                     CoachEyebrow(text: "Today's rep")
                     Text("· \(skill.track.title) · \(snapshot.todaysKind.title)")
                         .font(CoachStyle.label)
-                        .foregroundStyle(Color(hex: "C9B79B"))
+                        .foregroundStyle(Color.orttaai(light: "6B5532", dark: "C9B79B"))
                         .lineLimit(1)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -104,7 +104,7 @@ struct CoachStudioView: View {
                     .font(CoachStyle.display(18))
                     .foregroundStyle(CoachStyle.ink)
                     .frame(width: 38, height: 38)
-                    .background(Circle().fill(Color(hex: "3E5F82")))
+                    .background(Circle().fill(Color.orttaai(light: "C9DBF0", dark: "3E5F82")))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(scene.title)
                         .font(.system(size: 15, weight: .semibold))
@@ -151,7 +151,7 @@ struct CoachStudioView: View {
             HStack(spacing: 6) {
                 ForEach(0..<CoachScore.repsToMaster, id: \.self) { index in
                     Circle()
-                        .fill(index < progress.strongReps ? Color.Orttaai.accent : Color.white.opacity(0.12))
+                        .fill(index < progress.strongReps ? Color.Orttaai.accent : CoachStyle.wash(0.12))
                         .frame(width: 7, height: 7)
                 }
                 if let usual = progress.usual {
@@ -237,7 +237,7 @@ struct CoachSessionView: View {
                 .offset(y: 60)
                 .accessibilityHidden(true)
         }
-        .background(Color(hex: "121113"))
+        .background(Color.orttaai(light: "F5F3F0", dark: "121113"))
         .onExitCommand { center.endRep() }
     }
 
@@ -248,8 +248,8 @@ struct CoachSessionView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(CoachStyle.ink)
                     .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.white.opacity(0.05)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                    .background(Circle().fill(CoachStyle.wash(0.05)))
+                    .overlay(Circle().stroke(CoachStyle.wash(0.14), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Leave the studio")
@@ -264,8 +264,8 @@ struct CoachSessionView: View {
                     modeButton("Type", on: !session.spoken) { session.spoken = false }
                 }
                 .padding(4)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(CoachStyle.wash(0.05)))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(CoachStyle.wash(0.08), lineWidth: 1))
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }
@@ -276,7 +276,7 @@ struct CoachSessionView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(on ? Color(hex: "1B1917") : CoachStyle.ink2)
+                .foregroundStyle(on ? Color.orttaai(light: "FFFFFF", dark: "1B1917") : CoachStyle.ink2)
                 .padding(.horizontal, 18)
                 .frame(height: 36)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Color.Orttaai.accent : .clear))
@@ -308,7 +308,7 @@ struct CoachSessionView: View {
                     .foregroundStyle(CoachStyle.ink3)
                 Text("“\(source.text)”")
                     .font(.system(size: 17))
-                    .foregroundStyle(Color(hex: "B9B5AF"))
+                    .foregroundStyle(Color.orttaai(light: "5E5A55", dark: "B9B5AF"))
                     .multilineTextAlignment(.center)
                     .lineLimit(4)
             }
@@ -342,7 +342,7 @@ struct CoachSessionView: View {
                 }
             } label: {
                 ZStack {
-                    Circle().stroke(Color.white.opacity(0.07), lineWidth: 4).frame(width: 280, height: 280)
+                    Circle().stroke(CoachStyle.wash(0.07), lineWidth: 4).frame(width: 280, height: 280)
                     if recording {
                         Circle()
                             .trim(from: 0, to: min(1, session.elapsed / limit))
@@ -357,7 +357,7 @@ struct CoachSessionView: View {
                     Circle().fill(Color.Orttaai.accent).frame(width: 140, height: 140)
                     Image(systemName: recording ? "stop.fill" : "mic.fill")
                         .font(.system(size: 40, weight: .medium))
-                        .foregroundStyle(Color(hex: "1B1917"))
+                        .foregroundStyle(Color.orttaai(light: "FFFFFF", dark: "1B1917"))
                 }
                 .animation(.easeOut(duration: 0.08), value: session.level)
                 .contentShape(Circle())
@@ -399,8 +399,8 @@ struct CoachSessionView: View {
                 .scrollContentBackground(.hidden)
                 .padding(24)
                 .frame(maxWidth: 860, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color(hex: "1D1C1F")))
-                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color.orttaai(light: "FFFFFF", dark: "1D1C1F")))
+                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(CoachStyle.wash(0.10), lineWidth: 1))
                 .accessibilityLabel("Your attempt")
             HStack(spacing: 16) {
                 Text("Typed reps score what you wrote. Speak it to also hear your pace.")
@@ -421,8 +421,8 @@ struct CoachSessionView: View {
             .lineLimit(1)
             .padding(.horizontal, 14)
             .frame(height: 32)
-            .background(Capsule().fill(Color.white.opacity(0.06)))
-            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+            .background(Capsule().fill(CoachStyle.wash(0.06)))
+            .overlay(Capsule().stroke(CoachStyle.wash(0.10), lineWidth: 1))
     }
 
     private func timeText(_ seconds: Double) -> String {

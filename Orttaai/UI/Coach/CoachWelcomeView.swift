@@ -79,7 +79,7 @@ struct CoachWelcomeView: View {
             HStack(spacing: 8) {
                 ForEach(1...steps, id: \.self) { index in
                     Capsule()
-                        .fill(index <= step ? Color.Orttaai.accent : Color.white.opacity(0.16))
+                        .fill(index <= step ? Color.Orttaai.accent : CoachStyle.wash(0.16))
                         .frame(width: index == step ? 28 : 8, height: 8)
                 }
             }
@@ -129,7 +129,7 @@ struct CoachWelcomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text("No quizzes. It starts from the dictations already on this Mac.")
                     .font(.system(size: 19))
-                    .foregroundStyle(Color(hex: "C9C5BF"))
+                    .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C9C5BF"))
             }
             VStack(alignment: .leading, spacing: 26) {
                 bigStat(total.formatted(), sinceLine(snapshot.apps))
@@ -185,7 +185,7 @@ struct CoachWelcomeView: View {
                 Spacer()
                 Label("Stays on this Mac", systemImage: "lock")
                     .font(.system(size: 15))
-                    .foregroundStyle(Color(hex: "C9C5BF"))
+                    .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C9C5BF"))
             }
             HStack(alignment: .top, spacing: 16) {
                 ForEach(groups, id: \.0) { mode, members in
@@ -224,7 +224,7 @@ struct CoachWelcomeView: View {
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .coachSurface(Color(hex: "1D1C1F"))
+                    .coachSurface(Color.orttaai(light: "FFFFFF", dark: "1D1C1F"))
                 }
             }
         }
@@ -242,7 +242,7 @@ struct CoachWelcomeView: View {
                 Spacer()
                 Text("You can mix them later")
                     .font(.system(size: 15))
-                    .foregroundStyle(Color(hex: "C9C5BF"))
+                    .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C9C5BF"))
             }
             HStack(spacing: 14) {
                 ForEach(CoachPersona.allCases) { persona in
@@ -263,7 +263,7 @@ struct CoachWelcomeView: View {
                         .padding(.vertical, 24)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity)
-                        .coachSurface(on ? CoachStyle.warm : Color(hex: "1D1C1F"), border: on ? Color.Orttaai.accent.opacity(0.6) : CoachStyle.line)
+                        .coachSurface(on ? CoachStyle.warm : Color.orttaai(light: "FFFFFF", dark: "1D1C1F"), border: on ? Color.Orttaai.accent.opacity(0.6) : CoachStyle.line)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -286,7 +286,7 @@ struct CoachWelcomeView: View {
                 Spacer()
                 Text("Change these any time in Cast › Models.")
                     .font(.system(size: 15))
-                    .foregroundStyle(Color(hex: "C9C5BF"))
+                    .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C9C5BF"))
             }
             CoachModelSetupList()
         }
@@ -321,7 +321,7 @@ struct CoachWelcomeView: View {
                 }
                 Text(shape.isComplete ? "It sharpens as you keep dictating." : "Keep dictating as usual; the rest fills in on its own.")
                     .font(.system(size: 19))
-                    .foregroundStyle(Color(hex: "C9C5BF"))
+                    .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C9C5BF"))
             }
             VoiceShapeView(shape: shape, showsThen: false)
                 .frame(width: 440, height: 440)
