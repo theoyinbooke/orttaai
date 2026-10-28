@@ -2593,8 +2593,9 @@ final class DatabaseManager {
 
     /// What the milestone engine reads: dictations only (not edit
     /// commands), as counts and times, plus when each active dictionary
-    /// entry was added.
-    func fetchMilestoneInputs() throws -> (dictations: [MilestoneDictation], dictionaryEntryDates: [Date]) {
+    /// entry was added. It reads every dictation's text, so it runs off the
+    /// main actor.
+    nonisolated func fetchMilestoneInputs() throws -> (dictations: [MilestoneDictation], dictionaryEntryDates: [Date]) {
         let editKind = Transcription.editEntryKind
         return try dbQueue.read { db in
             let rows = try Row.fetchAll(

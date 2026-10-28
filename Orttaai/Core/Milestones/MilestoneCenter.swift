@@ -20,9 +20,9 @@ enum MilestoneBadgeState: Equatable {
 }
 
 /// Keeps the badges in step with the history. It watches for new dictations,
-/// replays the history off the main thread, stores any badge newly earned,
-/// and tells the app which ones still need celebrating. Unlocks are stored,
-/// so deleting history never takes a badge back.
+/// reads and replays the history off the main thread, stores any badge
+/// newly earned, and tells the app which ones still need celebrating.
+/// Unlocks are stored, so deleting history never takes a badge back.
 @MainActor
 final class MilestoneCenter: ObservableObject {
     static let shared = MilestoneCenter()
@@ -154,13 +154,15 @@ final class MilestoneCenter: ObservableObject {
         isEvaluating = true
         defer { isEvaluating = false }
 
-        // The database lives on the main actor; only the replay, which
-        // walks the whole history, runs off it.
+        // Reading the history and replaying it run off the main actor. The
+        // read alone, every dictation's text with its words counted, took
+        // about 80 ms on the main thread right after each dictation was
+        // saved, and held up typing that dictation in.
         let outcome: Outcome?
         do {
-            let inputs = try database.fetchMilestoneInputs()
-            let result = await Task.detached(priority: .utility) {
-                MilestoneStats.compute(
+            let result = try await Task.detached(priority: .utility) {
+                let inputs = try database.fetchMilestoneInputs()
+                return MilestoneStats.compute(
                     dictations: inputs.dictations,
                     dictionaryEntryDates: inputs.dictionaryEntryDates
                 )
