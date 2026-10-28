@@ -194,3 +194,34 @@ struct PolicyTests {
         #expect(ConflictPolicy.decide(local: tombstone, remote: word(6, deleted: false)) == .keepLocal)
     }
 }
+
+@Suite("Coach in the Mac's summary")
+struct CoachDigestTests {
+    private func summary(coach: CoachDigestPayload?) -> MacSummaryPayload {
+        MacSummaryPayload(
+            publisherDeviceID: DeviceID.make(), publisherName: "Mac", asOf: Date(timeIntervalSince1970: 1_800_000_000),
+            timeZoneIdentifier: "UTC", coverage: [:], totals: DeviceTotals(), perDevice: [:], recentDays: [], topApps: [],
+            coach: coach
+        )
+    }
+
+    @Test func aSummaryCarriesCoachBothWays() throws {
+        let coach = CoachDigestPayload(
+            shapes: [.init(mode: "Talking to AI", dictations: 42, axes: [.init(title: "Clarity", now: 0.7, before: 0.5)])],
+            habits: [.init(title: "Fewer ums", mode: nil, status: .working, since: 20, window: 20, beforeShare: 0.4, sinceShare: 0.7)],
+            tracks: [.init(title: "Prompting AI", level: 2, mastered: 1, skills: 6, current: "Give the context it needs")],
+            repsThisWeek: 3
+        )
+        let decoded = try PayloadCoder.decode(MacSummaryPayload.self, from: try PayloadCoder.encode(summary(coach: coach)))
+        #expect(decoded.coach == coach)
+    }
+
+    @Test func aSummaryFromBeforeCoachStillDecodes() throws {
+        // What a Mac without Coach sends: no coach key at all.
+        var json = try JSONSerialization.jsonObject(with: try PayloadCoder.encode(summary(coach: nil))) as! [String: Any]
+        json.removeValue(forKey: "coach")
+        let decoded = try PayloadCoder.decode(MacSummaryPayload.self, from: try JSONSerialization.data(withJSONObject: json))
+        #expect(decoded.coach == nil)
+        #expect(decoded.publisherName == "Mac")
+    }
+}

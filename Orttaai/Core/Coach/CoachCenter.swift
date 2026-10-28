@@ -240,6 +240,7 @@ final class CoachCenter: ObservableObject {
         guard let database else { return }
         guard CoachPreferences.isEnabled else {
             hasLoaded = true
+            CoachDigest.update(nil)
             return
         }
         if isEvaluating {
@@ -283,6 +284,8 @@ final class CoachCenter: ObservableObject {
             recentInputs = built.1
             shapeSamples = built.2
             if built.0 != snapshot { snapshot = built.0 }
+            // The phone sees it with the Mac's next summary.
+            CoachDigest.update(CoachDigest.make(from: built.0))
         } catch {
             Logger.database.error("Coach evaluation failed: \(error.localizedDescription)")
         }

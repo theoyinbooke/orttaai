@@ -242,6 +242,9 @@ public struct MacSummaryPayload: Codable, Hashable, Sendable {
     /// The last 30 days, oldest first.
     public var recentDays: [DayCount]
     public var topApps: [AppCount]
+    /// Coach on this Mac. Nil when Coach is off, and from Macs older than
+    /// Coach; phones older than it ignore the field.
+    public var coach: CoachDigestPayload?
 
     public init(
         publisherDeviceID: String,
@@ -252,7 +255,8 @@ public struct MacSummaryPayload: Codable, Hashable, Sendable {
         totals: DeviceTotals,
         perDevice: [String: DeviceTotals],
         recentDays: [DayCount],
-        topApps: [AppCount]
+        topApps: [AppCount],
+        coach: CoachDigestPayload? = nil
     ) {
         self.publisherDeviceID = publisherDeviceID
         self.publisherName = publisherName
@@ -263,6 +267,97 @@ public struct MacSummaryPayload: Codable, Hashable, Sendable {
         self.perDevice = perDevice
         self.recentDays = recentDays
         self.topApps = topApps
+        self.coach = coach
+    }
+}
+
+/// Coach on a Mac, for the phone to show: names and numbers only, never
+/// anything that was said.
+public struct CoachDigestPayload: Codable, Hashable, Sendable {
+    /// One side of a way of talking's voice shape, 0 to 1.
+    public struct Axis: Codable, Hashable, Sendable {
+        public var title: String
+        /// The last 28 days.
+        public var now: Double?
+        /// The 28 days before.
+        public var before: Double?
+
+        public init(title: String, now: Double?, before: Double?) {
+            self.title = title
+            self.now = now
+            self.before = before
+        }
+    }
+
+    /// A way of talking (to AI, to people, on the page).
+    public struct Shape: Codable, Hashable, Sendable {
+        public var mode: String
+        /// Dictations in the last 28 days.
+        public var dictations: Int
+        public var axes: [Axis]
+
+        public init(mode: String, dictations: Int, axes: [Axis]) {
+            self.mode = mode
+            self.dictations = dictations
+            self.axes = axes
+        }
+    }
+
+    public struct Habit: Codable, Hashable, Sendable {
+        public enum Status: String, Codable, Hashable, Sendable {
+            case watching
+            case working
+            case notMoving
+        }
+
+        public var title: String
+        public var mode: String?
+        public var status: Status
+        /// Dictations since it started, out of `window`.
+        public var since: Int
+        public var window: Int
+        /// How often the habit was met, 0 to 1, before it started and since.
+        public var beforeShare: Double?
+        public var sinceShare: Double?
+
+        public init(title: String, mode: String?, status: Status, since: Int, window: Int, beforeShare: Double?, sinceShare: Double?) {
+            self.title = title
+            self.mode = mode
+            self.status = status
+            self.since = since
+            self.window = window
+            self.beforeShare = beforeShare
+            self.sinceShare = sinceShare
+        }
+    }
+
+    public struct Track: Codable, Hashable, Sendable {
+        public var title: String
+        public var level: Int
+        public var mastered: Int
+        public var skills: Int
+        /// The skill you're on.
+        public var current: String
+
+        public init(title: String, level: Int, mastered: Int, skills: Int, current: String) {
+            self.title = title
+            self.level = level
+            self.mastered = mastered
+            self.skills = skills
+            self.current = current
+        }
+    }
+
+    public var shapes: [Shape]
+    public var habits: [Habit]
+    public var tracks: [Track]
+    public var repsThisWeek: Int
+
+    public init(shapes: [Shape], habits: [Habit], tracks: [Track], repsThisWeek: Int) {
+        self.shapes = shapes
+        self.habits = habits
+        self.tracks = tracks
+        self.repsThisWeek = repsThisWeek
     }
 }
 

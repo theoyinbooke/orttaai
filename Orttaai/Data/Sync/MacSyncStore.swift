@@ -716,7 +716,8 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
             totals: all,
             perDevice: perDevice,
             recentDays: recentDays,
-            topApps: apps.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.prefix(5).map { AppCount(name: $0.key, dictations: $0.value) }
+            topApps: apps.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.prefix(5).map { AppCount(name: $0.key, dictations: $0.value) },
+            coach: CoachDigest.latest
         )
     }
 

@@ -8,6 +8,7 @@
 
 import CoachCore
 import GRDB
+import OrttaaiSyncCore
 import XCTest
 @testable import Orttaai
 
@@ -147,6 +148,17 @@ final class CoachTests: XCTestCase {
         let state = try XCTUnwrap(snapshot.habits.first)
         XCTAssertEqual(state.verdict.beforeShare, 0)
         XCTAssertEqual(state.verdict.afterShare, 1)
+
+        // What the phone gets: names and numbers, nothing said.
+        let digest = CoachDigest.make(from: snapshot)
+        let habit = try XCTUnwrap(digest.habits.first)
+        XCTAssertEqual(habit.mode, CoachMode.people.title)
+        XCTAssertEqual(habit.sinceShare, 1)
+        XCTAssertEqual(habit.window, HabitJudge.window)
+        XCTAssertEqual(digest.tracks.count, CoachTrack.allCases.count)
+        XCTAssertEqual(Set(digest.shapes.map(\.mode)), [CoachMode.people.title, CoachMode.ai.title])
+        let encoded = String(decoding: try PayloadCoder.encode(digest), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("review the notes"), "No dictation text leaves in the digest")
         XCTAssertEqual(state.verdict.status, .working)
         XCTAssertNotNil(state.example)
         XCTAssertEqual(snapshot.caught?.measure, .fillers)
