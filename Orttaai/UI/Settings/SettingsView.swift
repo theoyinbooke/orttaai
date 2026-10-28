@@ -40,6 +40,5 @@ struct SettingsView: View {
         }
         .frame(width: WindowSize.settings.width, height: WindowSize.settings.height)
         .environment(\.workspaceHeaderInToolbar, false)
-        .preferredColorScheme(.dark)
     }
 }

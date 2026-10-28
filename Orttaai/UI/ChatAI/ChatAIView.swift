@@ -1851,7 +1851,7 @@ struct ChatAIView: View {
                 .background(
                     // Solid, since the conversation now passes behind it.
                     UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14, style: .continuous)
-                        .fill(Color(hex: "252527"))
+                        .fill(Color.orttaai(light: "EFEAE2", dark: "252527"))
                 )
                 .overlay(
                     UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14, style: .continuous)

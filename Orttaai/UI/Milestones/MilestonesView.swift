@@ -151,7 +151,7 @@ struct MilestonesView: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color(hex: "232325"))
+            .fill(Color.orttaai(light: "FFFFFF", dark: "232325"))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Color.Orttaai.border, lineWidth: BorderWidth.standard)
@@ -169,7 +169,7 @@ struct MilestonesView: View {
                 } label: {
                     Text("\(option.rawValue) \(count(for: option))")
                         .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                        .foregroundStyle(selected ? Color(hex: "E8B45A") : Color(hex: "C7C7CC"))
+                        .foregroundStyle(selected ? Color.orttaai(light: "8A5A0F", dark: "E8B45A") : Color.orttaai(light: "5E5A55", dark: "C7C7CC"))
                         .padding(.horizontal, 14)
                         .frame(height: 30)
                         .background(
@@ -238,11 +238,11 @@ private struct MilestoneBadgeCell: View {
             .frame(maxWidth: .infinity, minHeight: 168)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isHovered && state.isUnlocked ? Color(hex: "29292C") : Color(hex: "212123"))
+                    .fill(isHovered && state.isUnlocked ? Color.orttaai(light: "FBF7F0", dark: "29292C") : Color.orttaai(light: "FFFFFF", dark: "212123"))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(isHovered && state.isUnlocked ? Color.Orttaai.accent.opacity(0.5) : Color(hex: "2E2E30"), lineWidth: 1)
+                    .strokeBorder(isHovered && state.isUnlocked ? Color.Orttaai.accent.opacity(0.5) : Color.orttaai(light: "E2DCD2", dark: "2E2E30"), lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -269,8 +269,8 @@ private struct MilestoneBadgeCell: View {
     private var statusColor: Color {
         switch state {
         case .unlocked: return Color.Orttaai.textSecondary
-        case .inProgress: return Color(hex: "E8B45A")
-        case .locked: return Color(hex: "8E8E93")
+        case .inProgress: return Color.orttaai(light: "8A5A0F", dark: "E8B45A")
+        case .locked: return Color.orttaai(light: "6B665F", dark: "8E8E93")
         }
     }
 }

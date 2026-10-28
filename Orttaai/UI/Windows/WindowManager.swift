@@ -130,7 +130,6 @@ final class WindowManager {
             defer: false
         )
         window.title = title
-        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = NSColor.Orttaai.bgPrimary
         if integratedTitlebar {
             window.titleVisibility = .hidden

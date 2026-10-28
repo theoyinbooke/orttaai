@@ -61,6 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         AppResetService.handleLaunchArguments()
+        AppAppearance.apply()
 
         // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)

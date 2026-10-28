@@ -11,12 +11,29 @@ struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showProcessingEstimate") private var showProcessingEstimate = true
     @AppStorage("celebrateMilestones") private var celebrateMilestones = true
+    @AppStorage(AppAppearance.key) private var appearance = AppAppearance.system.rawValue
     @State private var showClearConfirmation = false
     @State private var showResetConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             SettingsCard("App") {
+                SettingsRow(
+                    title: "Appearance",
+                    info: "Light, dark, or whichever the Mac is set to. The recording pill stays dark either way."
+                ) {
+                    OrttaaiSegmentedControl(
+                        title: "Appearance",
+                        selection: $appearance,
+                        options: AppAppearance.allCases.map { .init($0.rawValue, $0.title) }
+                    )
+                }
+                .onChange(of: appearance) { _, newValue in
+                    AppAppearance.apply(AppAppearance(rawValue: newValue) ?? .system)
+                }
+
+                SettingsDivider()
+
                 SettingsToggleRow(
                     title: "Launch at Login",
                     info: "Starts Orttaai when you log in to your Mac so dictation is always ready.",

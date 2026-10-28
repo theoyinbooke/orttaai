@@ -48,7 +48,7 @@ struct WhatsNewCard: View {
                 Text("WHAT'S NEW IN \(release.version)")
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.9)
-                    .foregroundStyle(Color(hex: "E8B45A"))
+                    .foregroundStyle(Color.orttaai(light: "8A5A0F", dark: "E8B45A"))
                 Group {
                     Text(item.title)
                         .font(.system(size: 22, weight: .bold))
@@ -57,7 +57,7 @@ struct WhatsNewCard: View {
                         .accessibilityAddTraits(.isHeader)
                     Text(item.detail)
                         .font(.system(size: 14))
-                        .foregroundStyle(Color(hex: "C7C7CC"))
+                        .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C7C7CC"))
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 8)
@@ -74,7 +74,7 @@ struct WhatsNewCard: View {
             .frame(height: 210, alignment: .top)
         }
         .frame(width: 420)
-        .background(Color(hex: "232325"))
+        .background(Color.orttaai(light: "FFFFFF", dark: "232325"))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -117,7 +117,7 @@ struct WhatsNewCard: View {
                 HStack(spacing: 5) {
                     ForEach(items.indices, id: \.self) { dot in
                         Capsule()
-                            .fill(dot == index ? Color.Orttaai.accent : Color(hex: "48484A"))
+                            .fill(dot == index ? Color.Orttaai.accent : Color.orttaai(light: "D8D1C6", dark: "48484A"))
                             .frame(width: dot == index ? 16 : 6, height: 6)
                     }
                 }
@@ -193,7 +193,7 @@ struct WhatsNewArtPanel<Scene: View>: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Color(hex: "2B2A2E"), Color(hex: "1C1C1E")], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Color.orttaai(light: "FBF6EE", dark: "2B2A2E"), Color.orttaai(light: "F1EADF", dark: "1C1C1E")], startPoint: .top, endPoint: .bottom)
             RadialGradient(
                 colors: [Color.Orttaai.accent.opacity(0.28), .clear],
                 center: .center, startRadius: 4, endRadius: 190
@@ -210,7 +210,10 @@ struct WhatsNewArtPanel<Scene: View>: View {
 }
 
 private struct DotGrid: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
+        let dot: Color = colorScheme == .dark ? .white : Color(hex: "6B5A43")
         Canvas { context, size in
             let spacing: CGFloat = 16
             var y: CGFloat = spacing / 2
@@ -223,7 +226,7 @@ private struct DotGrid: View {
                     let fade = max(0, 1 - (dx * dx + dy * dy) * 0.8)
                     context.fill(
                         Path(ellipseIn: CGRect(x: x - 0.8, y: y - 0.8, width: 1.6, height: 1.6)),
-                        with: .color(.white.opacity(0.10 * fade))
+                        with: .color(dot.opacity(0.10 * fade))
                     )
                     x += spacing
                 }
@@ -289,11 +292,11 @@ private struct LearningScene: View {
                     .foregroundStyle(Color.Orttaai.textPrimary)
                 Text("Review")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color(hex: "E8B45A"))
+                    .foregroundStyle(Color.orttaai(light: "8A5A0F", dark: "E8B45A"))
             }
             .padding(.horizontal, 14)
             .frame(height: 34)
-            .background(Capsule().fill(Color(hex: "2C2C2F")))
+            .background(Capsule().fill(Color.orttaai(light: "FFFFFF", dark: "2C2C2F")))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 10, y: 6)
         }
@@ -308,7 +311,7 @@ private struct LearningScene: View {
             .frame(height: 44)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(struck ? Color(hex: "242426") : Color.Orttaai.accent.opacity(0.16))
+                    .fill(struck ? Color.orttaai(light: "F1ECE4", dark: "242426") : Color.Orttaai.accent.opacity(0.16))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -322,7 +325,7 @@ private struct UpdatesScene: View {
     var body: some View {
         HStack(spacing: 22) {
             ZStack {
-                Circle().stroke(Color(hex: "3A3A3C"), lineWidth: 7)
+                Circle().stroke(Color.orttaai(light: "E2DCD2", dark: "3A3A3C"), lineWidth: 7)
                 Circle()
                     .trim(from: 0, to: 0.72)
                     .stroke(Color.Orttaai.accent, style: StrokeStyle(lineWidth: 7, lineCap: .round))

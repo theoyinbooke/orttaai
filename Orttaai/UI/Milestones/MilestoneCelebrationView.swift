@@ -75,7 +75,7 @@ struct MilestoneCelebrationCard: View {
             Text("MILESTONE UNLOCKED")
                 .font(.system(size: 12, weight: .bold))
                 .tracking(1)
-                .foregroundStyle(Color(hex: "E8B45A"))
+                .foregroundStyle(Color.orttaai(light: "8A5A0F", dark: "E8B45A"))
                 .padding(.top, 2)
             Text(badge.name)
                 .font(.system(size: 30, weight: .heavy))
@@ -84,7 +84,7 @@ struct MilestoneCelebrationCard: View {
                 .accessibilityAddTraits(.isHeader)
             Text(line)
                 .font(.system(size: 15))
-                .foregroundStyle(Color(hex: "C7C7CC"))
+                .foregroundStyle(Color.orttaai(light: "4A4642", dark: "C7C7CC"))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -107,7 +107,7 @@ struct MilestoneCelebrationCard: View {
                     .buttonStyle(.plain)
                     .pointingHandCursor()
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color(hex: "E8B45A"))
+                    .foregroundStyle(Color.orttaai(light: "8A5A0F", dark: "E8B45A"))
                 Spacer()
                 if total > 1 {
                     Text("\(position) of \(total) new")
@@ -116,7 +116,7 @@ struct MilestoneCelebrationCard: View {
                     HStack(spacing: 4) {
                         ForEach(0..<min(total, 8), id: \.self) { index in
                             Capsule()
-                                .fill(index == position - 1 ? Color.Orttaai.accent : Color(hex: "48484A"))
+                                .fill(index == position - 1 ? Color.Orttaai.accent : Color.orttaai(light: "D8D1C6", dark: "48484A"))
                                 .frame(width: index == position - 1 ? 16 : 6, height: 6)
                         }
                     }
@@ -142,7 +142,7 @@ struct MilestoneCelebrationCard: View {
         .frame(width: 440)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(hex: "232325"))
+                .fill(Color.orttaai(light: "FFFFFF", dark: "232325"))
                 .overlay(
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .strokeBorder(Color.Orttaai.bgTertiary, lineWidth: 1)
