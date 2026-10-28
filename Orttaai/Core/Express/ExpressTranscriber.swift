@@ -12,6 +12,9 @@ protocol ExpressBackend: Actor {
     /// The cleaned transcript. Numbers are formatted by the caller, once the
     /// whole dictation's text is together.
     func transcribe(_ audioSamples: [Float]) async throws -> String
+    /// The same, for a recording still in progress: the Word Boost scores
+    /// prepared for it are kept for a later decode, as the speaker may go on.
+    func transcribe(_ audioSamples: [Float], keepingPreparedScores: Bool) async throws -> String
     /// Installs the Word Boost vocabulary for later decodes and returns how
     /// many terms it will use: 0 when the list is empty or Word Boost's model
     /// is not loaded.
@@ -24,6 +27,9 @@ protocol ExpressBackend: Actor {
 }
 
 extension ExpressBackend {
+    func transcribe(_ audioSamples: [Float], keepingPreparedScores: Bool) async throws -> String {
+        try await transcribe(audioSamples)
+    }
     func prepareWordBoost(_ audioPrefix: [Float]) async {}
     func discardPreparedWordBoost() async {}
 }
@@ -171,11 +177,15 @@ actor ExpressTranscriber: ExpressBackend {
     }
 
     func transcribe(_ audioSamples: [Float]) async throws -> String {
+        try await transcribe(audioSamples, keepingPreparedScores: false)
+    }
+
+    func transcribe(_ audioSamples: [Float], keepingPreparedScores: Bool) async throws -> String {
         isTranscribing = true
         defer {
             isTranscribing = false
-            // A recording's scores are used once.
-            scoredChunks = [:]
+            // A finished recording's scores are used once.
+            if !keepingPreparedScores { scoredChunks = [:] }
         }
         await preparing?.value
 

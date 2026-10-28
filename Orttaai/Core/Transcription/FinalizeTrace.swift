@@ -31,6 +31,9 @@ nonisolated enum FinalizePath: Sendable, Equatable {
     /// Express live segments were unusable (a segment failed or the tail did
     /// not decode), so the whole recording was decoded in one pass.
     case expressSegmentFallback
+    /// Express decoded the whole recording when the speaker went quiet, and
+    /// only silence followed, so that decode was used.
+    case expressEarlyDecode
 }
 
 nonisolated enum FinalizeFallbackReason: Sendable, Equatable {
@@ -106,6 +109,8 @@ nonisolated extension FinalizeTrace: Encodable {
             try container.encode("express_segments", forKey: .path)
         case .expressSegmentFallback:
             try container.encode("express_segment_fallback", forKey: .path)
+        case .expressEarlyDecode:
+            try container.encode("express_early_decode", forKey: .path)
         case .wholeFallback(let reason):
             try container.encode("whole_fallback", forKey: .path)
             switch reason {

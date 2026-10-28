@@ -39,6 +39,11 @@
 //                                 (for fluid-speech-mini: the Word Boost vocabulary)
 //   ORTTAAI_ASR_EVAL_EXPRESS_SEGMENTS 1 for fluid-speech-mini's live segments
 //                                 on the live path (whole stays one decode)
+//   ORTTAAI_ASR_EVAL_TRAILING_SILENCE_MS  quiet appended to every recording,
+//                                 both paths, as a speaker leaves before
+//                                 letting go of the key (1300 was the median
+//                                 on this Mac in October 2026): the item's
+//                                 quietest 100 ms frame, repeated
 //   ORTTAAI_ASR_EVAL_MODEL_ROOT   a storage base laid out like WhisperKit's (models/argmaxinc/whisperkit-coreml/<variant>,
 //                                 models/openai/whisper-*); loads from there instead of scanning ~/Documents, the custom
 //                                 storage folder and the caches, so the eval never triggers a macOS folder-access prompt
@@ -115,6 +120,7 @@ final class ASREvalRunnerTests: XCTestCase {
         let modelName = env["ORTTAAI_ASR_EVAL_MODEL"] ?? "openai_whisper-large-v3"
         let presetName = env["ORTTAAI_ASR_EVAL_PRESET"] ?? "balanced"
         let speedup = Double(env["ORTTAAI_ASR_EVAL_SPEEDUP"] ?? "4") ?? 4
+        let trailingSilenceMs = Int(env["ORTTAAI_ASR_EVAL_TRAILING_SILENCE_MS"] ?? "0") ?? 0
         let paths = env["ORTTAAI_ASR_EVAL_PATHS"] ?? "both"
         let biasEnabled = env["ORTTAAI_ASR_EVAL_BIAS"] == "1"
         let rulesEnabled = env["ORTTAAI_ASR_EVAL_RULES"] == "1"
@@ -187,7 +193,10 @@ final class ASREvalRunnerTests: XCTestCase {
         var results: [ItemResult] = []
 
         for (index, item) in items.enumerated() {
-            let samples = try Self.loadFloat32WAV(url: corpusDir.appendingPathComponent(item.wav))
+            var samples = try Self.loadFloat32WAV(url: corpusDir.appendingPathComponent(item.wav))
+            if trailingSilenceMs > 0 {
+                samples += Self.roomTone(from: samples, sampleCount: trailingSilenceMs * manifest.sample_rate / 1_000)
+            }
             var whole: PathResult?
             var live: PathResult?
             var finalizeTrace: FinalizeTrace?
@@ -278,6 +287,26 @@ final class ASREvalRunnerTests: XCTestCase {
         } catch {
             return PathResult(text: "", ms: Int((CFAbsoluteTimeGetCurrent() - start) * 1000), error: "\(error)")
         }
+    }
+
+    /// The recording's quietest 100 ms frame, repeated for `sampleCount`
+    /// samples: the room as the mic heard it, for the quiet a speaker leaves
+    /// before letting go of the key.
+    static func roomTone(from samples: [Float], sampleCount: Int) -> [Float] {
+        let frame = TranscriptionService.energyFrameSampleCount
+        guard samples.count >= frame else { return [Float](repeating: 0, count: sampleCount) }
+        var quietest = 0
+        var lowest = Float.greatestFiniteMagnitude
+        var start = 0
+        while start + frame <= samples.count {
+            let rms = TranscriptionService.frameRMS(samples[start..<start + frame])
+            if rms < lowest {
+                lowest = rms
+                quietest = start
+            }
+            start += frame
+        }
+        return (0..<sampleCount).map { samples[quietest + $0 % frame] }
     }
 
     /// Minimal RIFF parser for the mono Float32 16 kHz WAVs the corpus

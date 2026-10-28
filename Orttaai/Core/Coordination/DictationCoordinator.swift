@@ -1095,8 +1095,7 @@ final class DictationCoordinator {
 
             while !Task.isCancelled {
                 // Copies only the audio the live session will read: the
-                // uncommitted Whisper clip, or the recording once per Express
-                // Word Boost chunk.
+                // uncommitted Whisper clip, or what Express hasn't received.
                 let captured = self.audioService.capturedSampleCount
                 if let start = await self.transcriptionService.liveAudioSnapshotStart(capturedSampleCount: captured) {
                     let audio = start == 0

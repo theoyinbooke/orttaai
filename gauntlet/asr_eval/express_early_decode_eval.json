@@ -1,0 +1,34 @@
+{
+  "evaluated_at": "2026-10-28",
+  "task": "Express decodes the whole recording as soon as the speaker has been quiet for 0.5 s, and that decode stands in for the one at key release when only silence follows it",
+  "runner": "OrttaaiTests/Eval/ASREvalRunnerTests with ORTTAAI_ASR_EVAL_MODEL=fluid-speech-mini ORTTAAI_ASR_EVAL_BIAS=1 ORTTAAI_ASR_EVAL_TRAILING_SILENCE_MS=1300 (each recording's quietest 100 ms frame repeated after it, both paths), Debug, Apple M-series Mac Studio",
+  "why": [
+    "Every Express dictation on this Mac since 2026-10-24 (242 of 242) finalized with express_whole_decode: about 250 ms of decoding after the key came up.",
+    "Live segments stay off while Word Boost has dictionary words. Rechecked with them on (realistic, Word Boost): name recall 0.90 -> 0.85, two names decoded differently inside a segment's window ('Folasade' -> 'folociday', 'Yemisi' -> 'the mse'); real voice identical.",
+    "This Mac's push-to-talk dictations ended with a median 1.3 s of silence before the key came up (at least 0.3 s in 237 of 239, at least 1 s in 180), hands-free pill stops 2.3 s: time enough for the whole decode."
+  ],
+  "results": {
+    "realistic_bias": {
+      "items": 36,
+      "whole": {"aggregate_wer": 0.0239, "total_errors": 49, "hard_vocab_recall_strict": 0.9, "latency_ms_p50": 278.0, "latency_ms_p90": 2330},
+      "early": {"aggregate_wer": 0.0229, "total_errors": 47, "hard_vocab_recall_strict": 0.9, "latency_ms_p50": 54.0, "latency_ms_p90": 1263},
+      "finalize_paths": {"express_early_decode": 22, "express_whole_decode": 8, "no_text_noise_only": 6},
+      "early_decode_finalize_ms_p50": 1.0,
+      "fallbacks": "noisy-long-02..08 (room noise 0.005-0.012 RMS, at or above the dead-silence floor, so speech after the pause can't be ruled out) and soft-last-05",
+      "identical_text": 33,
+      "differing": ["soft-last-02", "soft-last-03", "soft-last-06"]
+    },
+    "real_bias": {
+      "items": 50,
+      "whole": {"aggregate_wer": 0.0791, "total_errors": 59, "hard_vocab_recall_strict": 0.8246, "latency_ms_p50": 287.5, "latency_ms_p90": 369},
+      "early": {"aggregate_wer": 0.0791, "total_errors": 59, "hard_vocab_recall_strict": 0.807, "latency_ms_p50": 1.0, "latency_ms_p90": 2},
+      "finalize_paths": {"express_early_decode": 50},
+      "identical_text": 43,
+      "differences_whole_to_early": ["appcast -> upcast", "wait -> waits", "bugs -> bucks", "soviet -> survey", "40, 12 -> forty, twelve", "two in punctuation only"]
+    }
+  },
+  "notes": [
+    "The early decode ends about 0.5 s after the last word; the decode at key release had 1.3 s of room sound after it. That changes how the last moments are heard, both ways: on real voice the same 59 errors, one name fewer (whole decode with no trailing quiet, round 1 of express_live_segments_eval rerun on 2026-10-28, also had recall 0.807); on realistic two errors fewer, all three changed items with a soft last word.",
+    "Shipped on, for the whole-decode path (live segments unchanged)."
+  ]
+}

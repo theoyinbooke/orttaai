@@ -303,39 +303,117 @@ final class ExpressRoutingTests: XCTestCase {
         XCTAssertEqual(decodes, [audio.count])
     }
 
-    func testExpressAsksForAudioOnlyWhenAWordBoostChunkCompletes() async throws {
+    func testExpressCopiesOnlyTheAudioRecordedSinceTheLastPoll() async throws {
         let backend = FakeExpressBackend(text: "Ship it on Friday.")
         let service = makeService(base: try makeInstalledBase(), backend: backend)
-        let chunk = WordBoostChunks.chunkSampleCount
-        let stride = WordBoostChunks.strideSampleCount
 
         // No live session: nothing to copy.
-        var start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk)
+        var start = await service.liveAudioSnapshotStart(capturedSampleCount: 16_000)
         XCTAssertNil(start, "no live session yet")
 
         try await service.loadModel(named: ExpressEngine.modelID)
         await service.beginLiveTranscriptionSession()
-        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk)
-        XCTAssertNil(start, "without Word Boost terms Express needs no audio until key release")
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: 16_000)
+        XCTAssertEqual(start, 0)
+        await service.processLiveAudio(speech(seconds: 1), startingAt: 0)
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: 16_000)
+        XCTAssertNil(start, "nothing new since the last poll")
+        start = await service.liveAudioSnapshotStart(capturedSampleCount: 20_000)
+        XCTAssertEqual(start, 16_000, "only the audio recorded since")
+    }
 
+    // MARK: - Decoding when the speaker goes quiet
+
+    /// Feeds a recording the way the live loop does, 250 ms at a time.
+    private func feed(_ recording: [Float], to service: TranscriptionService) async {
+        var fed = 0
+        while fed < recording.count {
+            fed = min(recording.count, fed + 4_000)
+            if let start = await service.liveAudioSnapshotStart(capturedSampleCount: fed) {
+                await service.processLiveAudio(Array(recording[start..<fed]), startingAt: start)
+            }
+        }
+    }
+
+    /// Early decodes run as tasks of their own: waits until the backend has
+    /// been handed `count` decodes, so a test's scripted answers keep order.
+    private func waitForDecodes(_ count: Int, on backend: ScriptedExpressBackend) async throws {
+        for _ in 0..<200 where await backend.sampleCounts.count < count {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
+
+    func testTheDecodeStartedWhenTheSpeakerWentQuietIsUsedAtKeyRelease() async throws {
+        let backend = ScriptedExpressBackend(["Ship it on Friday."])
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
         await service.setWordBoostVocabulary([WordBoostTerm(text: "Olanrewaju", aliases: [])])
-        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk - 1)
-        XCTAssertNil(start)
-        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk)
-        XCTAssertEqual(start, 0, "Word Boost chunks are scored on the whole recording")
+        await service.beginLiveTranscriptionSession()
+        let recorded = speech(seconds: 5) + silence(seconds: 1.5)
 
-        await service.processLiveAudioSnapshot(speech(seconds: 15))
-        while await !(backend.preparedSampleCounts.count == 1) {
-            await Task.yield()
-        }
-        for _ in 0..<50 {
-            if await service.liveAudioSnapshotStart(capturedSampleCount: chunk + stride - 1) == nil { break }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk + stride - 1)
-        XCTAssertNil(start, "the first chunk was already sent")
-        start = await service.liveAudioSnapshotStart(capturedSampleCount: chunk + stride)
-        XCTAssertEqual(start, 0, "the second chunk is complete")
+        await feed(recorded, to: service)
+        try await waitForDecodes(1, on: backend)
+        let (text, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: recorded)
+
+        XCTAssertEqual(text, "Ship it on Friday.")
+        XCTAssertEqual(trace.path, .expressEarlyDecode)
+        let calls = await backend.sampleCounts
+        XCTAssertEqual(calls.count, 1, "decoded once, while the speaker was quiet")
+        XCTAssertGreaterThanOrEqual(calls[0], 16_000 * 11 / 2, "after half a second of quiet")
+        XCTAssertLessThan(calls[0], recorded.count)
+    }
+
+    func testSpeakingAgainAfterAPauseDecodesTheWholeRecording() async throws {
+        let backend = ScriptedExpressBackend(["Ship it.", "Ship it on Friday."])
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.beginLiveTranscriptionSession()
+        let recorded = speech(seconds: 3) + silence(seconds: 1) + speech(seconds: 2)
+
+        await feed(recorded, to: service)
+        try await waitForDecodes(1, on: backend)
+        let (text, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: recorded)
+
+        XCTAssertEqual(text, "Ship it on Friday.")
+        XCTAssertEqual(trace.path, .expressWholeDecode)
+        let calls = await backend.sampleCounts
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls.last, recorded.count)
+    }
+
+    func testEachNewPauseStartsAnotherDecodeAndTheLastOneIsUsed() async throws {
+        let backend = ScriptedExpressBackend(["Ship it on Friday."])
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.beginLiveTranscriptionSession()
+        let recorded = speech(seconds: 3) + silence(seconds: 1) + speech(seconds: 2) + silence(seconds: 1)
+
+        await feed(recorded, to: service)
+        try await waitForDecodes(2, on: backend)
+        let (text, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: recorded)
+
+        XCTAssertEqual(text, "Ship it on Friday.")
+        XCTAssertEqual(trace.path, .expressEarlyDecode)
+        let calls = await backend.sampleCounts
+        XCTAssertEqual(calls.count, 2, "one decode per pause, none at key release")
+    }
+
+    func testAFaintLastWordAfterTheEarlyDecodeIsNotLost() async throws {
+        let backend = ScriptedExpressBackend(["Ship it", "Ship it now."])
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.beginLiveTranscriptionSession()
+        // A soft word, above dead silence but below the speech threshold,
+        // just before the key comes up.
+        let faint = (0..<8_000).map { 0.012 * sin(Float($0) * 0.05) }
+        let recorded = speech(seconds: 3) + silence(seconds: 1) + faint + silence(seconds: 0.2)
+
+        await feed(recorded, to: service)
+        try await waitForDecodes(1, on: backend)
+        let (text, trace) = try await service.finalizeLiveTranscriptionDetailed(audioSamples: recorded)
+
+        XCTAssertEqual(text, "Ship it now.")
+        XCTAssertEqual(trace.path, .expressWholeDecode)
     }
 
     func testRecordingSendsNothingToPrepareWithoutWordBoostTerms() async throws {

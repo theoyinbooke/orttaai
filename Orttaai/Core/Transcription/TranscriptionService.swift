@@ -108,6 +108,9 @@ actor TranscriptionService: Transcribing {
         var expressSegmentFailed = false
         /// Express segments stitched into `committedTexts`' single entry.
         var expressSegmentCount = 0
+        /// Express's whole decode started when the speaker went quiet, and
+        /// how much of the recording it covers.
+        var expressEarlyDecode: (coveredSampleCount: Int, task: Task<String?, Never>)?
     }
 
     private static let liveTranscriptionMinSampleCount = 16_000 * 2
@@ -154,6 +157,14 @@ actor TranscriptionService: Transcribing {
     /// Words searched for a seam at each end of an overlap: 5 s of audio
     /// holds about 15 spoken words.
     static let expressStitchSearchWordCount = 30
+    /// Express decodes the whole recording once the speaker has been quiet
+    /// this long after speaking, so the decode is done, or under way, when
+    /// the key comes up. In October 2026 this Mac's dictations ended with a
+    /// median 1.3 s of silence before the key was released, at least 0.5 s
+    /// in 234 of 239.
+    static let expressEarlyDecodeSilenceSampleCount = transcriptionSampleRate / 2
+    /// The latest audio searched for that pause.
+    static let expressPauseProbeSampleCount = transcriptionSampleRate * 3
     /// Pause commits below this length risk hallucinated decodes; skip them.
     static let pauseCommitMinClipSampleCount = liveTranscriptionMinSampleCount
     /// WhisperKit only starts a decode window while more than `windowClipTime`
@@ -177,6 +188,9 @@ actor TranscriptionService: Transcribing {
     /// Terms the loaded Express backend is boosting (0 without Word Boost).
     private(set) var wordBoostTermCount = 0
     private var expressLiveSegmentsEnabled = false
+    /// The recording so far, for Express's whole decode: fed only what is new
+    /// at each poll, so a decode can start as soon as the speaker pauses.
+    private var expressRecording: [Float] = []
     private var loadedModelIDValue: String?
     /// The model load in progress. Concurrent requests for the same model
     /// (warm-up and the first finalization) share it instead of loading twice.
@@ -453,6 +467,7 @@ actor TranscriptionService: Transcribing {
     func beginLiveTranscriptionSession() {
         cancelLiveTranscriptionSession()
         liveSession = LiveTranscriptionSession()
+        expressRecording = []
         // Word Boost checks a whole recording more reliably than one segment
         // at a time (a dictionary word near a cut can be missed), so a
         // recording with dictionary words keeps the whole decode.
@@ -471,23 +486,20 @@ actor TranscriptionService: Transcribing {
 
     /// Whisper's live clips only read audio after the committed clips, so a
     /// poll copies at most one uncommitted clip, and nothing while a commit
-    /// is in flight. Express only needs the whole recording when it has
-    /// completed a new Word Boost chunk, about every 13 s.
+    /// is in flight. Express's whole decode keeps its own copy of the
+    /// recording, so each poll copies only what was recorded since the last.
     func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? {
-        guard let session = liveSession, session.commitTask == nil else { return nil }
+        guard let session = liveSession else { return nil }
+        if expressBackend != nil, !session.expressSegments {
+            return capturedSampleCount > expressRecording.count ? expressRecording.count : nil
+        }
+        guard session.commitTask == nil else { return nil }
         if expressBackend != nil {
-            if session.expressSegments {
-                guard !session.expressSegmentFailed,
-                      capturedSampleCount - session.committedSampleCount
-                        >= Self.expressSegmentSnapshotSampleCount + Self.expressSegmentLookaheadSampleCount
-                else { return nil }
-                return max(0, session.committedSampleCount - Self.expressSegmentContextSampleCount)
-            }
-            guard wordBoostTermCount > 0,
-                  let completeEnd = WordBoostChunks.completeChunks(inPrefixOf: capturedSampleCount).last?.upperBound,
-                  completeEnd > session.committedSampleCount
+            guard !session.expressSegmentFailed,
+                  capturedSampleCount - session.committedSampleCount
+                    >= Self.expressSegmentSnapshotSampleCount + Self.expressSegmentLookaheadSampleCount
             else { return nil }
-            return 0
+            return max(0, session.committedSampleCount - Self.expressSegmentContextSampleCount)
         }
         guard whisperKit != nil, capturedSampleCount > session.committedSampleCount else { return nil }
         return session.committedSampleCount
@@ -503,8 +515,7 @@ actor TranscriptionService: Transcribing {
                 commitExpressSegment(audio, startingAt: start, backend: expressBackend)
                 return
             }
-            guard start == 0 else { return }
-            prepareExpressWordBoost(audio, backend: expressBackend)
+            receiveExpressAudio(audio, startingAt: start, backend: expressBackend)
             return
         }
         guard whisperKit != nil else { return }
@@ -585,10 +596,43 @@ actor TranscriptionService: Transcribing {
         return result
     }
 
-    /// Express decodes the whole recording at the end, but Word Boost scores
-    /// each 15 s chunk as soon as the recording completes it, so a long
-    /// recording leaves only its last chunk to score after key release. The
-    /// session's committed sample count marks how far chunks were requested.
+    /// Adds what was recorded since the last poll to Express's copy of the
+    /// recording, then scores any Word Boost chunk it completes and starts
+    /// the whole decode if the speaker has paused.
+    private func receiveExpressAudio(_ audio: [Float], startingAt start: Int, backend: any ExpressBackend) {
+        let received = expressRecording.count
+        guard liveSession != nil, start <= received, start + audio.count > received else { return }
+        expressRecording.append(contentsOf: audio[(received - start)...])
+        prepareExpressWordBoost(expressRecording, backend: backend)
+        startExpressEarlyDecodeAtPause(backend: backend)
+    }
+
+    /// Starts the whole decode once the speaker has been quiet for half a
+    /// second after new speech, while they're still holding the key. It
+    /// stands in for the decode at key release when only silence follows it
+    /// (`finalizeExpress`); if they speak again, the next pause starts
+    /// another. Pauses are found as for Whisper's pause commits.
+    private func startExpressEarlyDecodeAtPause(backend: any ExpressBackend) {
+        guard var session = liveSession else { return }
+        let recorded = expressRecording.count
+        let probeStart = max(0, recorded - Self.expressPauseProbeSampleCount)
+        let probe = expressRecording[probeStart...]
+        guard Self.containsSpeechEnergy(probe),
+              let speechEnd = Self.lastSpeechSampleIndex(in: probe, threshold: Self.pauseEnergyThreshold(in: probe)),
+              recorded - (probeStart + speechEnd) >= Self.expressEarlyDecodeSilenceSampleCount,
+              probeStart + speechEnd > session.expressEarlyDecode?.coveredSampleCount ?? 0
+        else { return }
+        let audio = expressRecording
+        session.expressEarlyDecode = (recorded, Task {
+            try? await backend.transcribe(audio, keepingPreparedScores: true)
+        })
+        liveSession = session
+    }
+
+    /// Word Boost scores each 15 s chunk as soon as the recording completes
+    /// it, so a long recording leaves only its last chunk to score after key
+    /// release. The session's committed sample count marks how far chunks
+    /// were requested.
     private func prepareExpressWordBoost(_ audioSamples: [Float], backend: any ExpressBackend) {
         guard wordBoostTermCount > 0, var session = liveSession, session.commitTask == nil else { return }
         guard let completeEnd = WordBoostChunks.completeChunks(inPrefixOf: audioSamples.count).last?.upperBound,
@@ -690,12 +734,16 @@ actor TranscriptionService: Transcribing {
     }
 
     /// Express has no live clips: the whole recording is decoded once, which
-    /// costs less than WhisperKit's tail decode alone.
+    /// costs less than WhisperKit's tail decode alone. When the speaker went
+    /// quiet before letting go, that decode already started then.
     private func finalizeExpress(
         audioSamples: [Float],
         backend: any ExpressBackend
     ) async throws -> (text: String, trace: FinalizeTrace) {
-        defer { liveSession = nil }
+        defer {
+            liveSession = nil
+            expressRecording = []
+        }
         let clock = ContinuousClock()
         let started = clock.now
         // Chunks still being scored, or a segment still decoding, are part
@@ -717,6 +765,22 @@ actor TranscriptionService: Transcribing {
             trace.path = session.committedTexts.isEmpty && !session.expressSegmentFailed
                 ? .expressWholeDecode
                 : .expressSegmentFallback
+        }
+        // The decode started at the speaker's last pause is this one, when
+        // nothing but silence followed it.
+        if let early = liveSession?.expressEarlyDecode,
+           Self.speculativeCoverageIsSufficient(coveredSampleCount: early.coveredSampleCount, audioSamples: audioSamples) {
+            let awaitStarted = clock.now
+            let decoded = await early.task.value
+            trace.msAwaitingSpeculative = Self.milliseconds(since: awaitStarted, on: clock)
+            if let decoded,
+               case let text = Self.normalizedTranscriptionText(ExpressNumberFormatter.format(decoded)), !text.isEmpty,
+               (try? Self.rejectNonSpeechArtifact(text, audioSamples: audioSamples)) != nil {
+                await backend.discardPreparedWordBoost()
+                trace.path = .expressEarlyDecode
+                trace.msTotal = Self.milliseconds(since: started, on: clock)
+                return (text, trace)
+            }
         }
         let decodeStarted = clock.now
         let text = try await expressTranscript(audioSamples: audioSamples, backend: backend)
@@ -994,10 +1058,12 @@ actor TranscriptionService: Transcribing {
     func cancelLiveTranscriptionSession() {
         liveSession?.commitTask?.cancel()
         liveSession?.speculativeTask?.cancel()
+        liveSession?.expressEarlyDecode?.task.cancel()
         if liveSession != nil, let expressBackend {
             Task { await expressBackend.discardPreparedWordBoost() }
         }
         liveSession = nil
+        expressRecording = []
     }
 
     func unloadModel() {
