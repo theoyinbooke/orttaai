@@ -334,7 +334,10 @@ final class TextInjectionService: TextInjecting {
                 // pasteboard asynchronously. Give it a real focus-settling
                 // window before sending the single, non-duplicating paste.
                 try? await Task.sleep(nanoseconds: 120_000_000) // 120ms
-            } else if activationMs > 0 {
+            } else if !wasInFront || attempt == 2 {
+                // Only when focus moved. Activating an app already in front
+                // often takes 1-4 ms, which added this pause to about half of
+                // all pastes, with no focus to transfer.
                 try? await Task.sleep(nanoseconds: 30_000_000) // 30ms
             }
             if attempt == 1 { settleMs = stepMs() }
