@@ -55,7 +55,7 @@ struct CoachShellView: View {
                 CoachSessionView(session: session)
             } else {
                 HStack(spacing: 0) {
-                    CoachRail(navigation: navigation)
+                    SectionRail(navigation: navigation, look: .coach)
                     ZStack(alignment: .bottom) {
                         page
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -117,55 +117,6 @@ struct CoachShellView: View {
         } else {
             CoachLoadingView()
         }
-    }
-}
-
-/// Orttaai's sections as icons, so the rest of the app is one click away.
-struct CoachRail: View {
-    @ObservedObject var navigation: HomeNavigationState
-
-    private let sections: [HomeSection] = [.overview, .chatAI, .graph, .analytics, .milestones, .coach, .memory]
-
-    var body: some View {
-        VStack(spacing: 6) {
-            OrttaaiBrandMark()
-                .frame(width: 26, height: 22)
-                .padding(.top, 18)
-                .padding(.bottom, 18)
-            ForEach(sections) { section in
-                railButton(section)
-            }
-            Spacer(minLength: 0)
-            railButton(.settings)
-                .padding(.bottom, 18)
-        }
-        .frame(width: 64)
-        .frame(maxHeight: .infinity)
-        .background(CoachStyle.rail)
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(Color.white.opacity(0.05)).frame(width: 1)
-        }
-    }
-
-    private func railButton(_ section: HomeSection) -> some View {
-        let selected = navigation.selectedSection == section
-        return Button {
-            navigation.selectedSection = section
-        } label: {
-            Image(systemName: section.icon)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(selected ? Color.Orttaai.accent : CoachStyle.muted)
-                .frame(width: 44, height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(selected ? Color.Orttaai.accent.opacity(0.16) : .clear)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(section.title)
-        .accessibilityLabel(section.title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

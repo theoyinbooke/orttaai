@@ -7,6 +7,8 @@ import SwiftUI
 struct HomeShellView: View {
     @ObservedObject var navigation: HomeNavigationState
     @ObservedObject var appUpdates = AppUpdateService.shared
+    /// The person collapsed the sidebar; a slim rail of icons takes its place.
+    @AppStorage("sidebarCollapsed") private var sidebarCollapsed = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     let onRunSetup: () -> Void
@@ -24,15 +26,20 @@ struct HomeShellView: View {
                 .toolbar(removing: .sidebarToggle)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
             } detail: {
-                content(compactOverview: compactOverview)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.Orttaai.bgPrimary)
-                    .modifier(SolidHeaderScrollEdge())
-                    .environment(\.workspaceSidebarToggle) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-                        }
+                HStack(spacing: 0) {
+                    // Coach draws its own rail.
+                    if columnVisibility == .detailOnly, navigation.selectedSection != .coach {
+                        SectionRail(navigation: navigation, look: .app) { setSidebarCollapsed(false) }
+                            .transition(.move(edge: .leading).combined(with: .opacity))
                     }
+                    content(compactOverview: compactOverview)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .background(Color.Orttaai.bgPrimary)
+                .modifier(SolidHeaderScrollEdge())
+                .environment(\.workspaceSidebarToggle) {
+                    setSidebarCollapsed(columnVisibility != .detailOnly)
+                }
             }
             .navigationSplitViewStyle(.balanced)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -49,7 +56,7 @@ struct HomeShellView: View {
         .background(Color.Orttaai.bgPrimary)
         .onAppear {
             requestSyncIfShowingHome()
-            if navigation.selectedSection == .coach { columnVisibility = .detailOnly }
+            if navigation.selectedSection == .coach || sidebarCollapsed { columnVisibility = .detailOnly }
         }
         .onChange(of: navigation.selectedSection) { oldValue, newValue in
             guard oldValue != newValue else { return }
@@ -57,11 +64,18 @@ struct HomeShellView: View {
             if newValue == .coach {
                 columnVisibility = .detailOnly
             } else if oldValue == .coach {
-                columnVisibility = .all
+                columnVisibility = sidebarCollapsed ? .detailOnly : .all
             }
             if newValue == .overview {
                 requestSyncIfShowingHome()
             }
+        }
+    }
+
+    private func setSidebarCollapsed(_ collapsed: Bool) {
+        sidebarCollapsed = collapsed
+        withAnimation(.easeInOut(duration: 0.2)) {
+            columnVisibility = collapsed ? .detailOnly : .all
         }
     }
 
