@@ -947,7 +947,7 @@ struct AnalyticsDashboardContent: View {
         // One scale for all three, so their bars compare.
         let scale = max(1, [
             health.processingP95Ms, health.averageProcessingMs,
-            health.transcriptionP95Ms, health.injectionP95Ms,
+            health.transcriptionP95Ms, health.textProcessingP95Ms, health.injectionP95Ms,
         ].compactMap { $0 }.max() ?? 1)
 
         return VStack(alignment: .leading, spacing: Spacing.md) {
@@ -960,7 +960,7 @@ struct AnalyticsDashboardContent: View {
 
                 if hasData {
                     // Always this Mac's speed: say so once other devices dictate too.
-                    Text("\(viewModel.availableDeviceFilters.count > 2 ? "This Mac · " : "")\(health.sampleCount == 1 ? "1 dictation" : "\(health.sampleCount.formatted()) dictations") · \(ModelManager.formatDisplayName(health.currentModelId))")
+                    Text("\(viewModel.availableDeviceFilters.count > 2 ? "This Mac · " : "")\(health.sampleCount == 1 ? "Last dictation" : "Last \(health.sampleCount.formatted()) dictations") · \(ModelManager.formatDisplayName(health.currentModelId))")
                         .font(.Orttaai.caption)
                         .foregroundStyle(Color.Orttaai.textTertiary)
                         .lineLimit(1)
@@ -995,6 +995,14 @@ struct AnalyticsDashboardContent: View {
                         p95: health.transcriptionP95Ms,
                         scale: scale,
                         color: Color.Orttaai.accent.opacity(0.7)
+                    )
+                    latencyColumn(
+                        "Rules & polish",
+                        average: health.averageTextProcessingMs,
+                        p50: health.textProcessingP50Ms,
+                        p95: health.textProcessingP95Ms,
+                        scale: scale,
+                        color: Color.Orttaai.textTertiary.opacity(0.6)
                     )
                     latencyColumn(
                         "Insert",

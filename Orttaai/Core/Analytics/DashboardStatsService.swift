@@ -5,6 +5,10 @@ import Foundation
 import GRDB
 
 nonisolated final class DashboardStatsService {
+    /// Performance reads this many of this Mac's latest dictations: a change
+    /// shows within a day of dictating, where the last 7 days took a week.
+    static let performanceSampleCount = 50
+
     private let databaseManager: DatabaseManager
     private let calendar: Calendar
     private let nowProvider: () -> Date
@@ -77,7 +81,7 @@ nonisolated final class DashboardStatsService {
         let trend30d = makeTrendPoints(from: thirtyDayRecords, startDay: thirtyDayStart, dayCount: 30)
         let topApps30d = makeTopApps(from: thirtyDayRecords, limit: 4)
         let performance = makePerformance(
-            from: unfilteredWeekRecords,
+            from: try databaseManager.fetchRecent(limit: Self.performanceSampleCount * 4),
             modelSourceRecords: unfilteredRecentRecords,
             currentModelId: currentModelId
         )
@@ -198,6 +202,8 @@ nonisolated final class DashboardStatsService {
             .map { $0 }
     }
 
+    /// `records` are the newest first; the latest `performanceSampleCount`
+    /// made on this Mac are measured.
     private func makePerformance(
         from records: [Transcription],
         modelSourceRecords: [Transcription],
@@ -207,13 +213,14 @@ nonisolated final class DashboardStatsService {
         // synced in from another Mac reflect its hardware, and the model a row
         // ran under can differ from the currently selected model without making
         // the sample any less representative of this machine's latency.
-        let deviceScopedRecords = recordsForCurrentDevice(in: records)
+        let deviceScopedRecords = Array(recordsForCurrentDevice(in: records).prefix(Self.performanceSampleCount))
         let modelId = resolvedModelId(
             currentModelId: currentModelId,
             records: recordsForCurrentDevice(in: modelSourceRecords)
         )
         let processingValues = deviceScopedRecords.map { max(0, $0.processingDurationMs) }
         let transcriptionValues = deviceScopedRecords.compactMap(\.transcriptionDurationMs)
+        let textProcessingValues = deviceScopedRecords.compactMap(\.textProcessingDurationMs)
         let injectionValues = deviceScopedRecords.compactMap(\.injectionDurationMs)
 
         let avgProcessing = averageLatency(from: processingValues)
@@ -222,10 +229,14 @@ nonisolated final class DashboardStatsService {
         let avgTranscription = averageLatency(from: transcriptionValues)
         let transcriptionP50 = percentileLatency(from: transcriptionValues, percentile: 0.50)
         let transcriptionP95 = percentileLatency(from: transcriptionValues, percentile: 0.95)
+        let avgTextProcessing = averageLatency(from: textProcessingValues)
+        let textProcessingP50 = percentileLatency(from: textProcessingValues, percentile: 0.50)
+        let textProcessingP95 = percentileLatency(from: textProcessingValues, percentile: 0.95)
         let avgInjection = averageLatency(from: injectionValues)
         let injectionP50 = percentileLatency(from: injectionValues, percentile: 0.50)
         let injectionP95 = percentileLatency(from: injectionValues, percentile: 0.95)
-        let level = performanceLevel(for: avgProcessing)
+        // By the typical dictation: one stuck paste mustn't mark Orttaai slow.
+        let level = performanceLevel(for: processingP50)
 
         return DashboardPerformanceHealth(
             level: level,
@@ -236,6 +247,9 @@ nonisolated final class DashboardStatsService {
             averageTranscriptionMs: avgTranscription,
             transcriptionP50Ms: transcriptionP50,
             transcriptionP95Ms: transcriptionP95,
+            averageTextProcessingMs: avgTextProcessing,
+            textProcessingP50Ms: textProcessingP50,
+            textProcessingP95Ms: textProcessingP95,
             averageInjectionMs: avgInjection,
             injectionP50Ms: injectionP50,
             injectionP95Ms: injectionP95,
@@ -299,12 +313,12 @@ nonisolated final class DashboardStatsService {
         records.filter { devices.isThisMac($0) }
     }
 
-    private func performanceLevel(for averageProcessingMs: Int?) -> DashboardPerformanceLevel {
-        guard let averageProcessingMs else { return .noData }
-        if averageProcessingMs < 1_200 {
+    private func performanceLevel(for processingMs: Int?) -> DashboardPerformanceLevel {
+        guard let processingMs else { return .noData }
+        if processingMs < 1_200 {
             return .fast
         }
-        if averageProcessingMs < 3_000 {
+        if processingMs < 3_000 {
             return .normal
         }
         return .slow

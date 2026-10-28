@@ -4,8 +4,10 @@
 import SwiftUI
 
 /// How long a dictation takes after you stop speaking, and where that time
-/// goes: one bar split into transcription, insertion and everything else
-/// (dictionary, formatting, polish), with the engine underneath.
+/// goes: one bar split into transcription, rules and polish (dictionary,
+/// formatting, Polish), and insertion, with the engine underneath. Typical
+/// (median) times of the latest dictations, so a change shows within a day
+/// and one slow dictation doesn't skew it.
 struct PerformanceHealthCard: View {
     let health: DashboardPerformanceHealth
 
@@ -32,7 +34,7 @@ struct PerformanceHealthCard: View {
                     .background(levelColor.opacity(0.15), in: Capsule())
             }
 
-            if let total = health.averageProcessingMs {
+            if let total = health.processingP50Ms {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                         Text("\(total)")
@@ -43,11 +45,11 @@ struct PerformanceHealthCard: View {
                             .font(.Orttaai.body)
                             .foregroundStyle(Color.Orttaai.textSecondary)
                         Spacer()
-                        Text(health.sampleCount == 1 ? "1 dictation" : "\(health.sampleCount) dictations")
+                        Text(health.sampleCount == 1 ? "Last dictation" : "Last \(health.sampleCount) dictations")
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                     }
-                    breakdownBar(total: total)
+                    breakdownBar
                     legend
                 }
             } else {
@@ -79,26 +81,25 @@ struct PerformanceHealthCard: View {
         .dashboardCard()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "Performance \(levelLabel). \(statusDescription) Pipeline \(summary(health.averageProcessingMs)). Transcription \(summary(health.averageTranscriptionMs)). Insertion \(summary(health.averageInjectionMs)). Current model \(modelDisplayName)."
+            "Performance \(levelLabel). \(statusDescription) Pipeline \(summary(health.processingP50Ms)). Transcription \(summary(health.transcriptionP50Ms)). Rules and polish \(summary(health.textProcessingP50Ms)). Insertion \(summary(health.injectionP50Ms)). Current model \(modelDisplayName)."
         )
     }
 
     // MARK: - Breakdown
 
-    private func segments(total: Int) -> [Segment] {
-        let transcribe = health.averageTranscriptionMs ?? 0
-        let inject = health.averageInjectionMs ?? 0
-        let other = max(0, total - transcribe - inject)
-        return [
-            Segment(id: "transcribe", label: "Transcribe", ms: transcribe, p95: health.transcriptionP95Ms, color: Color.Orttaai.accent),
-            Segment(id: "inject", label: "Insert", ms: inject, p95: health.injectionP95Ms, color: Color.Orttaai.accent.opacity(0.45)),
-            Segment(id: "other", label: "Rules & polish", ms: other, p95: nil, color: Color.Orttaai.textTertiary.opacity(0.6)),
+    /// Each stage's own typical time, in the order a dictation goes through
+    /// them. Medians of the parts needn't add up to the median total.
+    private var segments: [Segment] {
+        [
+            Segment(id: "transcribe", label: "Transcribe", ms: health.transcriptionP50Ms ?? 0, p95: health.transcriptionP95Ms, color: Color.Orttaai.accent),
+            Segment(id: "polish", label: "Rules & polish", ms: health.textProcessingP50Ms ?? 0, p95: health.textProcessingP95Ms, color: Color.Orttaai.textTertiary.opacity(0.6)),
+            Segment(id: "inject", label: "Insert", ms: health.injectionP50Ms ?? 0, p95: health.injectionP95Ms, color: Color.Orttaai.accent.opacity(0.45)),
         ].filter { $0.ms > 0 }
     }
 
-    private func breakdownBar(total: Int) -> some View {
+    private var breakdownBar: some View {
         GeometryReader { geometry in
-            let parts = segments(total: total)
+            let parts = segments
             let sum = max(1, parts.reduce(0) { $0 + $1.ms })
             let gaps = CGFloat(max(0, parts.count - 1)) * 2
             HStack(spacing: 2) {
@@ -115,7 +116,7 @@ struct PerformanceHealthCard: View {
 
     private var legend: some View {
         HStack(spacing: Spacing.md) {
-            ForEach(segments(total: health.averageProcessingMs ?? 0)) { part in
+            ForEach(segments) { part in
                 HStack(spacing: 5) {
                     Circle()
                         .fill(part.color)
@@ -128,7 +129,7 @@ struct PerformanceHealthCard: View {
                         .foregroundStyle(Color.Orttaai.textPrimary)
                         .monospacedDigit()
                 }
-                .help(part.p95.map { "\(part.label): \(part.ms) ms on average, \($0) ms at worst (p95)" } ?? "\(part.label): \(part.ms) ms on average")
+                .help(part.p95.map { "\(part.label): typically \(part.ms) ms, \($0) ms in the slowest 1 in 20" } ?? "\(part.label): typically \(part.ms) ms")
             }
         }
         .lineLimit(1)
@@ -166,8 +167,8 @@ struct PerformanceHealthCard: View {
 
     // MARK: - Wording
 
-    private func summary(_ average: Int?) -> String {
-        average.map { "average \($0) milliseconds" } ?? "no data"
+    private func summary(_ typical: Int?) -> String {
+        typical.map { "typically \($0) milliseconds" } ?? "no data"
     }
 
     private var levelLabel: String {
@@ -189,7 +190,7 @@ struct PerformanceHealthCard: View {
     }
 
     private var statusDescription: String {
-        health.sampleCount == 0 ? "No performance samples yet." : "Averages from recent dictations."
+        health.sampleCount == 0 ? "No performance samples yet." : "Typical times of the last \(health.sampleCount) dictations."
     }
 
     /// The model's family name ("Whisper Large V3 Turbo"), not its build ID;

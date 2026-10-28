@@ -41,6 +41,10 @@ nonisolated enum DashboardPerformanceLevel {
     case slow
 }
 
+/// How long this Mac's latest dictations took, from key release to the text
+/// in place (`DashboardStatsService.performanceSampleCount` of them), and
+/// each stage's share: transcription, text processing (rules, dictionary
+/// and Polish), then insertion.
 nonisolated struct DashboardPerformanceHealth {
     let level: DashboardPerformanceLevel
     let sampleCount: Int
@@ -50,6 +54,9 @@ nonisolated struct DashboardPerformanceHealth {
     let averageTranscriptionMs: Int?
     let transcriptionP50Ms: Int?
     let transcriptionP95Ms: Int?
+    let averageTextProcessingMs: Int?
+    let textProcessingP50Ms: Int?
+    let textProcessingP95Ms: Int?
     let averageInjectionMs: Int?
     let injectionP50Ms: Int?
     let injectionP95Ms: Int?
@@ -105,6 +112,9 @@ nonisolated extension DashboardPerformanceHealth {
         averageTranscriptionMs: nil,
         transcriptionP50Ms: nil,
         transcriptionP95Ms: nil,
+        averageTextProcessingMs: nil,
+        textProcessingP50Ms: nil,
+        textProcessingP95Ms: nil,
         averageInjectionMs: nil,
         injectionP50Ms: nil,
         injectionP95Ms: nil,

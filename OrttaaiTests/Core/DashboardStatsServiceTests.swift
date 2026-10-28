@@ -125,10 +125,29 @@ final class DashboardStatsServiceTests: XCTestCase {
         payload = try service.load(currentModelId: nil)
         XCTAssertEqual(payload.performance.level, .normal)
 
-        // slow (>=3000ms)
+        // slow (>=3000ms), by the typical dictation
+        try save(text: "a b c", dayOffset: 0, recordingMs: 1_000, processingMs: 6_500)
+        payload = try service.load(currentModelId: nil)
+        XCTAssertEqual(payload.performance.level, .normal, "one slow dictation doesn't make Orttaai slow")
         try save(text: "a b c", dayOffset: 0, recordingMs: 1_000, processingMs: 6_500)
         payload = try service.load(currentModelId: nil)
         XCTAssertEqual(payload.performance.level, .slow)
+    }
+
+    func testPerformanceMeasuresOnlyTheLatestDictations() throws {
+        for _ in 0..<10 {
+            try save(text: "a b c", dayOffset: -2, recordingMs: 1_000, processingMs: 5_000)
+        }
+        for _ in 0..<DashboardStatsService.performanceSampleCount {
+            try save(text: "a b c", dayOffset: 0, recordingMs: 1_000, processingMs: 700)
+        }
+
+        let payload = try service.load(currentModelId: nil)
+
+        XCTAssertEqual(payload.performance.sampleCount, DashboardStatsService.performanceSampleCount)
+        XCTAssertEqual(payload.performance.processingP50Ms, 700)
+        XCTAssertEqual(payload.performance.processingP95Ms, 700, "the older, slower ones aren't counted")
+        XCTAssertEqual(payload.performance.level, .fast)
     }
 
     func testPerformanceTelemetryAveragesUseRecordedStageData() throws {
@@ -163,6 +182,7 @@ final class DashboardStatsServiceTests: XCTestCase {
 
         let payload = try service.load(currentModelId: nil)
         XCTAssertEqual(payload.performance.averageTranscriptionMs, 800)
+        XCTAssertEqual(payload.performance.averageTextProcessingMs, 10)
         XCTAssertEqual(payload.performance.averageInjectionMs, 88)
         XCTAssertEqual(payload.performance.processingP50Ms, 1_400)
         XCTAssertEqual(payload.performance.processingP95Ms, 1_490)
