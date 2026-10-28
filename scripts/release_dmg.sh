@@ -129,6 +129,7 @@ esac
 require_cmd xcodebuild
 require_cmd xcrun
 require_cmd hdiutil
+require_cmd python3
 require_cmd codesign
 require_cmd spctl
 require_cmd security
@@ -205,10 +206,7 @@ EXPORT_OPTIONS_PLIST="$ARTIFACT_ROOT/ExportOptions.plist"
 DMG_PATH="$ARTIFACT_ROOT/${APP_NAME}-${VERSION}.dmg"
 APP_PATH="$EXPORT_PATH/${APP_NAME}.app"
 ARCHIVED_APP_PATH="$ARCHIVE_PATH/Products/Applications/${APP_NAME}.app"
-DMG_STAGING_PATH="$ARTIFACT_ROOT/dmg-root"
-DMG_RW_PATH="$ARTIFACT_ROOT/${APP_NAME}-${VERSION}-rw.dmg"
 DMG_BACKGROUND_SOURCE="$ARTIFACT_ROOT/dmg-background-source.png"
-DMG_BACKGROUND_IN_DMG=".background/background.png"
 DMG_VOLUME_ICON_SOURCE=""
 
 rm -rf "$ARTIFACT_ROOT"
@@ -296,17 +294,11 @@ codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 echo "==> Skipping Gatekeeper app assessment pre-notarization"
 
 echo "==> Creating DMG"
-rm -rf "$DMG_STAGING_PATH"
-mkdir -p "$DMG_STAGING_PATH"
-ditto "$APP_PATH" "$DMG_STAGING_PATH/${APP_NAME}.app"
-ln -sfn /Applications "$DMG_STAGING_PATH/Applications"
-
 # Optional polished Finder background.
+DMG_BACKGROUND=""
 if [[ -f "Orttaai/Resources/dmg-background.png" ]]; then
-  mkdir -p "$DMG_STAGING_PATH/.background"
-  ditto "Orttaai/Resources/dmg-background.png" "$DMG_STAGING_PATH/$DMG_BACKGROUND_IN_DMG"
+  DMG_BACKGROUND="Orttaai/Resources/dmg-background.png"
 elif [[ -f "scripts/generate_dmg_background.swift" ]]; then
-  mkdir -p "$DMG_STAGING_PATH/.background"
   if ! swift "scripts/generate_dmg_background.swift" \
     --output "$DMG_BACKGROUND_SOURCE" \
     --app-path "$APP_PATH" \
@@ -314,107 +306,18 @@ elif [[ -f "scripts/generate_dmg_background.swift" ]]; then
     --theme "$DMG_THEME"; then
     echo "Warning: could not generate DMG background; continuing without a custom background."
   elif [[ -f "$DMG_BACKGROUND_SOURCE" ]]; then
-    ditto "$DMG_BACKGROUND_SOURCE" "$DMG_STAGING_PATH/$DMG_BACKGROUND_IN_DMG"
+    DMG_BACKGROUND="$DMG_BACKGROUND_SOURCE"
   fi
 fi
 
-rm -f "$DMG_RW_PATH" "$DMG_PATH"
-hdiutil create \
-  -volname "$APP_NAME" \
-  -srcfolder "$DMG_STAGING_PATH" \
-  -ov \
-  -format UDRW \
-  "$DMG_RW_PATH"
-
-ATTACHED_DEVICE=""
-MOUNT_PATH=""
-cleanup_mount() {
-  if [[ -n "$ATTACHED_DEVICE" ]]; then
-    hdiutil detach "$ATTACHED_DEVICE" -quiet >/dev/null 2>&1 || hdiutil detach "$ATTACHED_DEVICE" -force -quiet >/dev/null 2>&1 || true
-    ATTACHED_DEVICE=""
-  fi
-}
-trap cleanup_mount EXIT
-
-ATTACH_OUTPUT="$(hdiutil attach "$DMG_RW_PATH" -readwrite -noverify -noautoopen)"
-ATTACHED_DEVICE="$(printf '%s\n' "$ATTACH_OUTPUT" | awk '/\/Volumes\// {print $1; exit}')"
-MOUNT_PATH="$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' '/\/Volumes\// {print $NF; exit}')"
-
-if [[ -z "$ATTACHED_DEVICE" || -z "$MOUNT_PATH" ]]; then
-  echo "Failed to mount temporary DMG for layout customization." >&2
-  exit 1
-fi
-
-if command -v osascript >/dev/null 2>&1; then
-  echo "==> Applying polished DMG window layout"
-  BG_SCRIPT_LINE=""
-  if [[ -f "$MOUNT_PATH/$DMG_BACKGROUND_IN_DMG" ]]; then
-    BG_SCRIPT_LINE='set background picture of viewOptions to file ".background:background.png"'
-  fi
-
-  if ! osascript <<EOF
-tell application "Finder"
-  activate
-  tell disk "$APP_NAME"
-    open
-    -- Style immediately: any delay before this leaves Finder's default
-    -- small-icon view visible on the build machine.
-    set current view of container window to icon view
-    set toolbar visible of container window to false
-    set statusbar visible of container window to false
-    set bounds of container window to {100, 100, 860, 540}
-    set viewOptions to the icon view options of container window
-    set arrangement of viewOptions to not arranged
-    set icon size of viewOptions to 152
-    set text size of viewOptions to 14
-    $BG_SCRIPT_LINE
-    set position of item "$APP_NAME.app" of container window to {190, 220}
-    set position of item "Applications" of container window to {570, 220}
-    delay 1
-    close
-    delay 1
-    open
-    update without registering applications
-    delay 3
-    close
-  end tell
-end tell
-EOF
-  then
-    echo "Warning: could not apply Finder window customization; continuing with standard DMG layout."
-  fi
-else
-  echo "Warning: osascript not available; skipping polished DMG layout."
-fi
-
-if [[ -n "$DMG_VOLUME_ICON_SOURCE" && -f "$DMG_VOLUME_ICON_SOURCE" ]]; then
-  ditto "$DMG_VOLUME_ICON_SOURCE" "$MOUNT_PATH/.VolumeIcon.icns"
-  chflags hidden "$MOUNT_PATH/.VolumeIcon.icns" >/dev/null 2>&1 || true
-
-  SETFILE_BIN=""
-  if command -v SetFile >/dev/null 2>&1; then
-    SETFILE_BIN="$(command -v SetFile)"
-  else
-    SETFILE_BIN="$(xcrun --find SetFile 2>/dev/null || true)"
-  fi
-
-  if [[ -n "$SETFILE_BIN" ]]; then
-    "$SETFILE_BIN" -a C "$MOUNT_PATH" >/dev/null 2>&1 || true
-  else
-    echo "Warning: SetFile tool not found; DMG may show generic volume icon."
-  fi
-fi
-
-if [[ -d "$MOUNT_PATH/.background" ]]; then
-  chflags hidden "$MOUNT_PATH/.background" >/dev/null 2>&1 || true
-fi
-
-sync
-cleanup_mount
-trap - EXIT
-
-hdiutil convert "$DMG_RW_PATH" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH"
-rm -f "$DMG_RW_PATH" "$DMG_BACKGROUND_SOURCE"
+scripts/make_dmg.sh \
+  --app "$APP_PATH" \
+  --output "$DMG_PATH" \
+  --volume-name "$APP_NAME" \
+  --work-dir "$ARTIFACT_ROOT" \
+  ${DMG_BACKGROUND:+--background "$DMG_BACKGROUND"} \
+  ${DMG_VOLUME_ICON_SOURCE:+--volume-icon "$DMG_VOLUME_ICON_SOURCE"}
+rm -f "$DMG_BACKGROUND_SOURCE"
 
 echo "==> Signing DMG"
 codesign --sign "$DEVELOPER_ID_SHA" --timestamp "$DMG_PATH"
@@ -424,7 +327,6 @@ codesign --verify --verbose=2 "$DMG_PATH"
 # TCC will index, creating duplicate Spotlight entries and stale permission records.
 # Preserve the release archive for distribution diagnostics and recovery.
 echo "==> Cleaning intermediate app bundles (prevents stale Spotlight/TCC entries)"
-rm -rf "$DMG_STAGING_PATH"
 rm -rf "$EXPORT_PATH"
 
 if [[ "$SKIP_NOTARIZE" -eq 0 ]]; then

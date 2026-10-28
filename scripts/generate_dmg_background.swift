@@ -77,7 +77,6 @@ func color(hex: String, alpha: CGFloat = 1.0) -> NSColor {
 struct Palette {
     let backgroundTop: NSColor
     let backgroundBottom: NSColor
-    let wordmark: NSColor
     let arrow: NSColor
 
     static func forTheme(_ theme: String) -> Palette {
@@ -87,14 +86,12 @@ struct Palette {
             return Palette(
                 backgroundTop: color(hex: "26241F"),
                 backgroundBottom: color(hex: "1C1C1E"),
-                wordmark: color(hex: "F5F3F0"),
                 arrow: color(hex: "D4952A")
             )
         }
         return Palette(
             backgroundTop: color(hex: "FBF7F0"),
             backgroundBottom: color(hex: "F3E4C9"),
-            wordmark: color(hex: "3A342A"),
             arrow: color(hex: "C88920")
         )
     }
@@ -177,17 +174,8 @@ do {
     NSGradient(starting: palette.backgroundTop, ending: palette.backgroundBottom)?
         .draw(in: rect, angle: -90)
 
-    // Finder's draggable app icon carries the logo; the backdrop only needs a title.
-    let titleInset: CGFloat = 28
-    let wordmarkAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 20, weight: .semibold),
-        .foregroundColor: palette.wordmark
-    ]
-    let wordmarkSize = options.appName.size(withAttributes: wordmarkAttributes)
-    options.appName.draw(
-        at: NSPoint(x: titleInset, y: canvasSize.height - titleInset - wordmarkSize.height),
-        withAttributes: wordmarkAttributes
-    )
+    // No wordmark: Finder's title bar already names the disk, and the
+    // draggable app icon carries the logo.
 
     // Icons sit at Finder coords (190, 220) and (570, 220) with 152pt icons;
     // in Cocoa coords their centers are at y = 440 - 220 = 220.
