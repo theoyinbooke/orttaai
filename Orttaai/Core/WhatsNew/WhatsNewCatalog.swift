@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.16.0", items: [
+            WhatsNewItem(
+                id: "1.16-coach",
+                title: "Meet Coach, in beta",
+                detail: "Coach reads how you already dictate, shows the shape of your voice, and gives you short reps to practise one habit at a time.",
+                art: .symbol("scope")
+            ),
+            WhatsNewItem(
+                id: "1.16-scenes",
+                title: "Talk it through",
+                detail: "Scenes are conversations: the other person answers out loud in a natural voice, and your turn ends when you pause.",
+                art: .symbol("bubble.left.and.bubble.right.fill")
+            ),
+            WhatsNewItem(
+                id: "1.16-proof",
+                title: "Prove a habit stuck",
+                detail: "Start a habit and keep dictating as usual. Coach compares before and after, and only calls it working when it beats the drift.",
+                art: .symbol("chart.line.uptrend.xyaxis")
+            ),
+        ]),
         WhatsNewRelease(version: "1.15.3", items: [
             WhatsNewItem(
                 id: "1.15.3-speed",
