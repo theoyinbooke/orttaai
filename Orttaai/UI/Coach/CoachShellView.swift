@@ -43,6 +43,7 @@ struct CoachShellView: View {
     @AppStorage(CoachPreferences.firstRunDoneKey) private var firstRunDone = false
     @State private var tab: CoachTab = .today
     @State private var sharingWeek = false
+    @State private var showingMonth = false
 
     var body: some View {
         Group {
@@ -73,6 +74,7 @@ struct CoachShellView: View {
             }
         }
         .task { await center.refresh() }
+        .onChange(of: tab) { _, _ in showingMonth = false }
     }
 
     @ViewBuilder
@@ -90,7 +92,11 @@ struct CoachShellView: View {
             case .studio:
                 CoachStudioView(snapshot: snapshot)
             case .proof:
-                CoachProofView(snapshot: snapshot)
+                if showingMonth {
+                    CoachMonthView { showingMonth = false }
+                } else {
+                    CoachProofView(snapshot: snapshot) { showingMonth = true }
+                }
             case .cast:
                 CoachCastView(snapshot: snapshot)
             }

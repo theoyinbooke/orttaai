@@ -52,15 +52,15 @@ struct CoachTodayView: View {
                     .foregroundStyle(CoachStyle.ink)
                 CoachInfoButton(
                     title: "Your voice",
-                    text: "Six things Coach counts in your last 28 days of dictation, from 0 at the centre to best at the edge. The dashed outline is the 28 days before. Each point needs 8 dictations."
+                    text: "Six things about your last 28 days of dictation in this way of talking, from 0 at the centre to best at the edge. The dashed outline is the 28 days before. Points marked with a bubble are judged by your local model, a few dictations a day; the rest are counted. Each point needs 8 dictations."
                 )
                 Spacer()
             }
             lensPicker
             ZStack {
-                VoiceShapeView(now: shape.now, then: shape.then)
+                VoiceShapeView(shape: shape)
                     .frame(height: 400)
-                if !shape.isComplete {
+                if !shape.isComplete, !shape.waitsOnJudge {
                     VStack(spacing: 2) {
                         Text("\(recent)")
                             .font(CoachStyle.display(40))
@@ -73,7 +73,7 @@ struct CoachTodayView: View {
             }
             HStack(spacing: 16) {
                 legend("Now", dashed: false)
-                if shape.then.count == CoachMeasure.allCases.count {
+                if !shape.thenAxes.isEmpty {
                     legend("4 weeks ago", dashed: true)
                 }
                 Spacer(minLength: 8)
@@ -358,9 +358,10 @@ enum CoachCopy {
     }
 
     static func insight(_ shape: CoachShape) -> String {
+        if shape.waitsOnJudge { return "Your local model is judging the rest, a few a day." }
         if !shape.isComplete { return "Keep dictating; your shape fills in." }
-        if let gain = shape.biggestGain { return "\(gain.axisTitle) grew most in 4 weeks" }
-        if shape.then.count < CoachMeasure.allCases.count { return "Four weeks from now, you'll see how it moved" }
+        if let gain = shape.biggestGain { return "\(gain.title) grew most in 4 weeks" }
+        if !shape.thenIsComplete { return "Four weeks from now, you'll see how it moved" }
         return "Holding steady over 4 weeks"
     }
 

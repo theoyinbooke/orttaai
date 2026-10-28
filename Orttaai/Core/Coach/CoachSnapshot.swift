@@ -140,6 +140,7 @@ nonisolated enum CoachSnapshotBuilder {
         overrides: [String: CoachAppRule],
         reps: [CoachRepRecord] = [],
         judgements: [CoachQuestion: [Int64: Bool]] = [:],
+        axisJudgements: [CoachQuestion: [Int64: Double]] = [:],
         quotes: ([Int64]) -> [Int64: CoachQuote],
         now: Date = Date(),
         calendar: Calendar = .current
@@ -151,7 +152,7 @@ nonisolated enum CoachSnapshotBuilder {
 
         var shapes: [CoachMode: CoachShape] = [:]
         for mode in CoachMode.shaped {
-            shapes[mode] = CoachShape.make(dated, mode: mode, now: now, calendar: calendar)
+            shapes[mode] = CoachShape.make(dated, mode: mode, now: now, judgements: axisJudgements, calendar: calendar)
         }
         let allShape = CoachShape.make(dated, mode: nil, now: now, calendar: calendar)
 
@@ -190,23 +191,7 @@ nonisolated enum CoachSnapshotBuilder {
         for habit in active {
             guard let target = habit.target else { continue }
             let mode = habit.coachMode
-            let samples = dated
-                .filter { mode == nil || $0.mode == mode }
-                .map { HabitSample(id: $0.id, createdAt: $0.createdAt, measures: $0.measures) }
-            let verdict: HabitVerdict
-            switch target {
-            case .measure(let measure):
-                verdict = HabitJudge.verdict(measure: measure, startedAt: habit.startedAt, samples: samples)
-            case .question(let question):
-                let answers = judgements[question] ?? [:]
-                verdict = HabitJudge.verdict(
-                    startedAt: habit.startedAt,
-                    samples: samples,
-                    isHit: { answers[$0.id] },
-                    value: { answers[$0.id].map { $0 ? 1 : 0 } },
-                    controls: CoachMeasure.allCases
-                )
-            }
+            let verdict = habitVerdict(habit, target: target, dated: dated, judgements: judgements)
             states.append(CoachHabitState(habit: habit, target: target, mode: mode, verdict: verdict, example: nil))
         }
 
@@ -285,6 +270,32 @@ nonisolated enum CoachSnapshotBuilder {
         let hasSource = CoachRepPlanner.redoSource(skill: skill, inputs: inputs, overrides: overrides, now: now) != nil
         snapshot.todaysKind = hasSource ? .redo : .drill
         return snapshot
+    }
+
+    /// A habit judged on the dictations in its way of talking.
+    static func habitVerdict(
+        _ habit: CoachHabitRecord,
+        target: CoachHabitTarget,
+        dated: [DatedMeasures],
+        judgements: [CoachQuestion: [Int64: Bool]]
+    ) -> HabitVerdict {
+        let mode = habit.coachMode
+        let samples = dated
+            .filter { mode == nil || $0.mode == mode }
+            .map { HabitSample(id: $0.id, createdAt: $0.createdAt, measures: $0.measures) }
+        switch target {
+        case .measure(let measure):
+            return HabitJudge.verdict(measure: measure, startedAt: habit.startedAt, samples: samples)
+        case .question(let question):
+            let answers = judgements[question] ?? [:]
+            return HabitJudge.verdict(
+                startedAt: habit.startedAt,
+                samples: samples,
+                isHit: { answers[$0.id] },
+                value: { answers[$0.id].map { $0 ? 1 : 0 } },
+                controls: CoachMeasure.allCases
+            )
+        }
     }
 
     /// Needs across the ways of talking, most needed first, one per

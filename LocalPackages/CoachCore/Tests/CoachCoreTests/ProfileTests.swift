@@ -79,14 +79,14 @@ struct ProfileTests {
         for day in 0..<10 {
             let recent = now.addingTimeInterval(-Double(day) * 86_400)
             let older = now.addingTimeInterval(-Double(day + 30) * 86_400)
-            samples.append(DatedMeasures(id: Int64(day), createdAt: recent, mode: .ai, measures: measures(words: 100, umUh: 1)))
-            samples.append(DatedMeasures(id: Int64(day + 100), createdAt: older, mode: .ai, measures: measures(words: 100, umUh: 4)))
+            samples.append(DatedMeasures(id: Int64(day), createdAt: recent, mode: .writing, measures: measures(words: 100, umUh: 1)))
+            samples.append(DatedMeasures(id: Int64(day + 100), createdAt: older, mode: .writing, measures: measures(words: 100, umUh: 4)))
             samples.append(DatedMeasures(id: Int64(day + 200), createdAt: recent, mode: .people, measures: measures(words: 100, umUh: 5)))
         }
-        let ai = CoachShape.make(samples, mode: .ai, now: now)
+        let ai = CoachShape.make(samples, mode: .writing, now: now)
         #expect(abs(ai.now[.fillers]! - 0.8) < 0.0001)
         #expect(abs(ai.then[.fillers]! - 0.2) < 0.0001)
-        #expect(ai.biggestGain == .fillers)
+        #expect(ai.biggestGain == .measure(.fillers))
         let people = CoachShape.make(samples, mode: .people, now: now)
         #expect(people.then[.fillers] == nil)
         #expect(people.biggestGain == nil)

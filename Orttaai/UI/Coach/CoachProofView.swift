@@ -10,27 +10,17 @@ import SwiftUI
 
 struct CoachProofView: View {
     let snapshot: CoachSnapshot
+    var onShowMonth: () -> Void = {}
     @ObservedObject private var center = CoachCenter.shared
 
     var body: some View {
         CoachPage(eyebrow: "Proof", title: "In the wild") {
-            if let drift = snapshot.habits.compactMap(\.verdict.controlDrift).first {
-                HStack(spacing: 8) {
-                    Text("Skills you didn't practise moved")
-                        .font(.system(size: 14))
-                        .foregroundStyle(CoachStyle.ink2)
-                    Text(CoachFormat.points(drift))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(CoachStyle.ink)
-                    CoachInfoButton(
-                        title: "A fair test",
-                        text: "Over the same dictations, Coach checks the measures you weren't working on. A habit only counts as working when it moved more than they did."
-                    )
+            HStack(spacing: 12) {
+                drift
+                Button(action: onShowMonth) {
+                    Label("Your month", systemImage: "calendar")
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 40)
-                .background(Capsule().fill(CoachStyle.surface))
-                .overlay(Capsule().stroke(CoachStyle.line, lineWidth: 1))
+                .buttonStyle(CoachSecondaryButtonStyle())
             }
         } content: {
             if let featured = snapshot.habits.first {
@@ -52,6 +42,28 @@ struct CoachProofView: View {
                     suggestionSection(title: "Picked from your dictations", picks: snapshot.suggestions)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var drift: some View {
+        if let drift = snapshot.habits.compactMap(\.verdict.controlDrift).first {
+            HStack(spacing: 8) {
+                Text("Skills you didn't practise moved")
+                    .font(.system(size: 14))
+                    .foregroundStyle(CoachStyle.ink2)
+                Text(CoachFormat.points(drift))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(CoachStyle.ink)
+                CoachInfoButton(
+                    title: "A fair test",
+                    text: "Over the same dictations, Coach checks the measures you weren't working on. A habit only counts as working when it moved more than they did."
+                )
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 40)
+            .background(Capsule().fill(CoachStyle.surface))
+            .overlay(Capsule().stroke(CoachStyle.line, lineWidth: 1))
         }
     }
 

@@ -350,7 +350,7 @@ struct CoachWelcomeView: View {
                     .font(.system(size: 19))
                     .foregroundStyle(Color(hex: "C9C5BF"))
             }
-            VoiceShapeView(now: shape.now, then: [:])
+            VoiceShapeView(shape: shape, showsThen: false)
                 .frame(width: 440, height: 440)
         }
         .frame(maxHeight: .infinity)

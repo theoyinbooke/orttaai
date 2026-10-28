@@ -400,6 +400,26 @@ nonisolated extension DatabaseManager {
         }
     }
 
+    /// Every answer from one model as points (yes 1, partly 0.5, no 0), by
+    /// question and dictation, for the judged axes of the voice shape.
+    func fetchCoachJudgementScores(model: String) throws -> [CoachQuestion: [Int64: Double]] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT transcriptionId, question, answer FROM coach_judgement WHERE model = ?",
+                arguments: [model]
+            )
+            var result: [CoachQuestion: [Int64: Double]] = [:]
+            for row in rows {
+                let raw: String = row["question"]
+                let answer: String = row["answer"]
+                guard let question = CoachQuestion(rawValue: raw), let points = JudgeAnswer(rawValue: answer)?.points else { continue }
+                result[question, default: [:]][row["transcriptionId"]] = points
+            }
+            return result
+        }
+    }
+
     func saveCoachJudgement(transcriptionId: Int64, question: CoachQuestion, model: String, answer: JudgeAnswer, confidence: Double, at date: Date = Date()) throws {
         try dbQueue.write { db in
             guard try Bool.fetchOne(db, sql: "SELECT 1 FROM transcription WHERE id = ?", arguments: [transcriptionId]) == true else { return }

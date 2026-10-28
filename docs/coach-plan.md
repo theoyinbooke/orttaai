@@ -293,6 +293,51 @@ Done means:
 - **A neural voice** (Ollama's Phonon or Kokoro) instead of the Mac's own
   voice, once its local API can be verified on this Mac.
 
+# Phase 4: judged axes and the monthly report
+
+Status: **built** on `feat/coach`, 2026-10-28.
+
+## Goal
+
+Make the voice shape say how well you brief and ask, not just how cleanly
+you speak, and give each month a report you can look back on and share.
+
+Done means:
+
+- **Judged axes.** Each way of talking has the six axes from the design,
+  four judged by the local model and two counted:
+
+  | Way of talking | Judged | Counted |
+  |---|---|---|
+  | Talking to AI | Task first, Context, Finish line, One ask | Said it clearly, Steady pace |
+  | Talking to people | Ask first, When and why, Tone | Short sentences, Said it clearly, Steady pace |
+  | Thinking and writing | Point first, One idea, Summary, Plain words | Fewer fillers, Short sentences |
+
+  The All lens keeps the six counted axes, so it compares across ways of
+  talking. A judged axis is the average answer (yes 1, partly 0.5, no 0) over
+  the dictations judged in the window, and like a counted axis it needs 8.
+  Focus picks and Delivery stay on the counted measures.
+- **Judging for the shape** shares the background budget: habits first, then
+  up to 12 dictations per judged axis in the last 28 days, then the 28 before.
+  The busiest way of talking goes first, and axes take turns so they fill
+  evenly. That is still at most 10 a pass and 40 a day, and only while the
+  judge model is installed and Coach is idle. Answers are cached per
+  dictation, question and model, as for habits.
+- **Your month.** The Proof header opens a report for the calendar month,
+  and you can step back to any earlier month you dictated in. It shows:
+  - dictations, words, days dictated, and reps done that month;
+  - the voice shape for the month over the month before, in any lens;
+  - what moved: every axis with a change of 3 points or more, gains first;
+  - practice: reps by track, skills mastered that month, and the best rep;
+  - habits that ran that month, with where they stand;
+  - the month's best moment: a dictation that met that month's top gain.
+- **Monthly card.** The portrait share card, with numbers only and never
+  anything you said, like the weekly card.
+
+## Not in phase 4
+
+A neural voice, iPhone sync, and preselecting the recommended models.
+
 ## Testing note (2026-10-28)
 
 From about 02:35, test runs started by `xcodebuild test` hung before

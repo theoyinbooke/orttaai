@@ -33,7 +33,7 @@ struct CoachWeekCard: View {
                 .font(.system(size: 76, weight: .semibold, design: .rounded))
                 .foregroundStyle(CoachStyle.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            VoiceShapeView(now: shape.now, then: shape.then, labelFont: .system(size: 20, weight: .semibold))
+            VoiceShapeView(shape: shape, labelFont: .system(size: 20, weight: .semibold))
                 .frame(width: 600, height: 600)
                 .frame(maxWidth: .infinity)
             HStack(spacing: 24) {
@@ -97,20 +97,28 @@ struct CoachWeekCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    @MainActor
-    static func pngData(for snapshot: CoachSnapshot) -> Data? {
-        let renderer = ImageRenderer(content: CoachWeekCard(snapshot: snapshot))
-        renderer.scale = 1
-        renderer.proposedSize = ProposedViewSize(size)
-        guard let cgImage = renderer.cgImage else { return nil }
-        return NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
-    }
 }
 
 /// Preview the weekly card, then save, copy or share it.
 struct CoachWeekShareSheet: View {
     let snapshot: CoachSnapshot
+
+    var body: some View {
+        CoachCardShareSheet(
+            title: "Share this week",
+            fileName: "Orttaai-Coach-week-\(snapshot.builtAt.formatted(.iso8601.year().month().day())).png",
+            size: CoachWeekCard.size,
+            card: CoachWeekCard(snapshot: snapshot)
+        )
+    }
+}
+
+/// Preview a Coach card, then save, copy or share it as a PNG.
+struct CoachCardShareSheet<Card: View>: View {
+    let title: String
+    let fileName: String
+    let size: CGSize
+    let card: Card
     @Environment(\.dismiss) private var dismiss
     @State private var feedback: String?
     @State private var anchor = CoachShareAnchor()
@@ -118,18 +126,18 @@ struct CoachWeekShareSheet: View {
     var body: some View {
         VStack(spacing: 18) {
             HStack {
-                Text("Share this week")
+                Text(title)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(CoachStyle.ink)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
-            CoachWeekCard(snapshot: snapshot)
+            card
                 .scaleEffect(0.36, anchor: .topLeading)
-                .frame(width: CoachWeekCard.size.width * 0.36, height: CoachWeekCard.size.height * 0.36, alignment: .topLeading)
+                .frame(width: size.width * 0.36, height: size.height * 0.36, alignment: .topLeading)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityLabel("Weekly card preview")
+                .accessibilityLabel("Card preview")
             HStack(spacing: 10) {
                 Button("Save image…", action: save)
                 Button("Copy", action: copy)
@@ -149,12 +157,16 @@ struct CoachWeekShareSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    private var fileName: String {
-        "Orttaai-Coach-week-\(snapshot.builtAt.formatted(.iso8601.year().month().day())).png"
+    private func pngData() -> Data? {
+        let renderer = ImageRenderer(content: card)
+        renderer.scale = 1
+        renderer.proposedSize = ProposedViewSize(size)
+        guard let cgImage = renderer.cgImage else { return nil }
+        return NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
     }
 
     private func save() {
-        guard let data = CoachWeekCard.pngData(for: snapshot) else { return feedback = "Couldn't draw the card." }
+        guard let data = pngData() else { return feedback = "Couldn't draw the card." }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = fileName
@@ -168,14 +180,14 @@ struct CoachWeekShareSheet: View {
     }
 
     private func copy() {
-        guard let data = CoachWeekCard.pngData(for: snapshot), let image = NSImage(data: data) else { return feedback = "Couldn't draw the card." }
+        guard let data = pngData(), let image = NSImage(data: data) else { return feedback = "Couldn't draw the card." }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])
         feedback = "Copied. Paste it into a post or a message."
     }
 
     private func share() {
-        guard let data = CoachWeekCard.pngData(for: snapshot) else { return feedback = "Couldn't draw the card." }
+        guard let data = pngData() else { return feedback = "Couldn't draw the card." }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("OrttaaiShare", isDirectory: true)
         let url = folder.appendingPathComponent(fileName)
         do {

@@ -26,6 +26,8 @@ final class CoachCenter: ObservableObject {
 
     /// The last three weeks of counted dictations, for picking redos.
     fileprivate(set) var recentInputs: [CoachInput] = []
+    /// The two shape windows of dictations, by way of talking, for judging.
+    fileprivate var shapeSamples: [DatedMeasures] = []
     fileprivate var isJudging = false
 
     private var database: DatabaseManager?
@@ -183,6 +185,27 @@ final class CoachCenter: ObservableObject {
         activeScene = nil
     }
 
+    // MARK: Month report
+
+    /// The report for the calendar month holding `date`, worked out off the
+    /// main thread from the stored counts, reps and answers.
+    func monthReport(for date: Date) async -> CoachMonthReport? {
+        guard let database else { return nil }
+        let overrides = CoachPreferences.overrides
+        let judgeModel = CoachModels.current().judgeModel
+        return try? await Task.detached(priority: .userInitiated) {
+            CoachMonthReportBuilder.build(
+                month: date,
+                inputs: try database.fetchCoachInputs(),
+                habits: try database.fetchCoachHabits(),
+                reps: try database.fetchCoachReps(),
+                scores: try database.fetchCoachJudgementScores(model: judgeModel),
+                overrides: overrides,
+                quotes: { ids in (try? database.fetchCoachQuotes(ids: ids)) ?? [:] }
+            )
+        }.value
+    }
+
     // MARK: Evaluation
 
     fileprivate func scheduleRefresh(after delay: Duration = .milliseconds(600)) {
@@ -217,12 +240,8 @@ final class CoachCenter: ObservableObject {
                 let habits = try database.fetchCoachHabits()
                 let apps = try database.fetchCoachApps()
                 let reps = try database.fetchCoachReps()
-                var judgements: [CoachQuestion: [Int64: Bool]] = [:]
-                for habit in habits where habit.endedAt == nil {
-                    if case .question(let q)? = habit.target {
-                        judgements[q] = try database.fetchCoachJudgements(question: q, model: judgeModel)
-                    }
-                }
+                let scores = try database.fetchCoachJudgementScores(model: judgeModel)
+                let judgements = scores.mapValues { $0.mapValues { $0 == JudgeAnswer.yes.points } }
                 let snapshot = CoachSnapshotBuilder.build(
                     inputs: inputs,
                     habits: habits,
@@ -230,18 +249,26 @@ final class CoachCenter: ObservableObject {
                     overrides: overrides,
                     reps: reps,
                     judgements: judgements,
+                    axisJudgements: scores,
                     quotes: { ids in (try? database.fetchCoachQuotes(ids: ids)) ?? [:] }
                 )
                 let since = Date().addingTimeInterval(-21 * 86_400)
-                return (snapshot, inputs.filter { $0.createdAt >= since })
+                let shapeStart = Date().addingTimeInterval(-Double(CoachShape.days * 2 + 1) * 86_400)
+                let samples: [DatedMeasures] = inputs.compactMap { input in
+                    guard input.createdAt >= shapeStart,
+                          let mode = CoachAppCatalog.mode(bundleID: input.bundleID, appName: input.appName, overrides: overrides) else { return nil }
+                    return DatedMeasures(id: input.id, createdAt: input.createdAt, mode: mode, measures: input.measures)
+                }
+                return (snapshot, inputs.filter { $0.createdAt >= since }, samples)
             }.value
             recentInputs = built.1
+            shapeSamples = built.2
             if built.0 != snapshot { snapshot = built.0 }
         } catch {
             Logger.database.error("Coach evaluation failed: \(error.localizedDescription)")
         }
         hasLoaded = true
-        judgeHabitsInBackground()
+        judgeInBackground()
 
         if needsAnotherPass {
             needsAnotherPass = false
@@ -250,19 +277,21 @@ final class CoachCenter: ObservableObject {
     }
 }
 
-// MARK: - Judged habits
+// MARK: - Background judging
 
 extension CoachCenter {
-    /// Asks the judge about real dictations for habits on judged skills: the
-    /// 20 before each started and every one since. At most 10 a pass and 40
-    /// a day, only while the server is up, each answer cached.
-    func judgeHabitsInBackground() {
+    /// Asks the judge about real dictations: first for habits on judged
+    /// skills (the 20 before each started and every one since), then to fill
+    /// the judged axes of the voice shape. At most 10 a pass and 40 a day,
+    /// only while the server is up and Coach is idle, each answer cached.
+    func judgeInBackground() {
         guard !isJudging, let database, let snapshot, activeSession == nil, activeScene == nil else { return }
         let judged = snapshot.habits.compactMap { state -> (CoachQuestion, CoachMode?, Date)? in
             if case .question(let q) = state.target { return (q, state.mode, state.habit.startedAt) }
             return nil
         }
-        guard !judged.isEmpty else { return }
+        let samples = shapeSamples
+        let modes = CoachMode.shaped.sorted { (snapshot.recentByMode[$0] ?? 0) > (snapshot.recentByMode[$1] ?? 0) }
         let overrides = CoachPreferences.overrides
         let inputs = recentInputs
         isJudging = true
@@ -274,24 +303,30 @@ extension CoachCenter {
             let dayStart = Calendar.current.startOfDay(for: Date())
             let budget = min(10, 40 - ((try? database.countCoachJudgements(since: dayStart)) ?? 40))
             guard budget > 0 else { return }
+            let known = (try? database.fetchCoachJudgementScores(model: setup.judgeModel)) ?? [:]
+
+            var queue: [(question: CoachQuestion, id: Int64)] = []
             for (question, mode, startedAt) in judged {
-                let known = (try? database.fetchCoachJudgements(question: question, model: setup.judgeModel)) ?? [:]
                 let inMode = inputs.filter { input in
-                    guard input.measures.words >= 8,
+                    guard input.measures.words >= CoachShapeJudging.minimumWords,
                           let m = CoachAppCatalog.mode(bundleID: input.bundleID, appName: input.appName, overrides: overrides) else { return false }
                     return mode == nil || m == mode
                 }
                 let before = inMode.filter { $0.createdAt < startedAt }.suffix(HabitJudge.window)
                 let since = inMode.filter { $0.createdAt >= startedAt }
                 // Newest first since the start, then the baseline.
-                let wanted = (Array(since.reversed()) + Array(before.reversed())).filter { known[$0.id] == nil }
-                for input in wanted {
-                    guard asked < budget else { return }
-                    guard let text = try? database.fetchCoachText(id: input.id),
-                          let verdict = await CoachModels.judge(question, text: text, context: nil, setup: setup) else { continue }
-                    try? database.saveCoachJudgement(transcriptionId: input.id, question: question, model: setup.judgeModel, answer: verdict.answer, confidence: verdict.confidence)
-                    asked += 1
-                }
+                queue += (Array(since.reversed()) + Array(before.reversed())).map { (question, $0.id) }
+            }
+            queue += CoachShapeJudging.queue(samples, modes: modes, known: known, now: Date())
+
+            var seen: Set<String> = []
+            for item in queue where known[item.question]?[item.id] == nil {
+                guard asked < budget else { return }
+                guard seen.insert("\(item.question.rawValue)-\(item.id)").inserted,
+                      let text = try? database.fetchCoachText(id: item.id),
+                      let verdict = await CoachModels.judge(item.question, text: text, context: nil, setup: setup) else { continue }
+                try? database.saveCoachJudgement(transcriptionId: item.id, question: item.question, model: setup.judgeModel, answer: verdict.answer, confidence: verdict.confidence)
+                asked += 1
             }
         }
     }
