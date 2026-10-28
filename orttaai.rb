@@ -1,6 +1,6 @@
 cask "orttaai" do
-  version "1.15.2"
-  sha256 "714770ce953ca102b0592d10ff7624621f600f3ea2a3f641b2dcfccbd826bb6a"
+  version "1.15.3"
+  sha256 "8235d4ad8fc45bd57bef474132242352b8e6997eea48f9fc368e3033e4809ee7"
 
   url "https://github.com/theoyinbooke/orttaai/releases/download/v#{version}/Orttaai-#{version}.dmg"
   name "Orttaai"
