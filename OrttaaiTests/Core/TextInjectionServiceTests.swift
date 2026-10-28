@@ -647,6 +647,111 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.restoreCount, 0, "Failure must leave the transcript on the clipboard")
         XCTAssertEqual(clipboard.setStrings.last, "Hello world")
     }
+
+    // MARK: An app that isn't in front
+
+    /// A running app to stand for the target. Whether it's in front is
+    /// scripted, so nothing on screen moves.
+    private func standInApp() throws -> NSRunningApplication {
+        guard let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first else {
+            throw XCTSkip("Needs Finder running")
+        }
+        return finder
+    }
+
+    private func makeService(inFront: @escaping () -> Bool, returnTimeoutMs: Int = 2_000) -> TextInjectionService {
+        let service = TextInjectionService(
+            clipboard: clipboard,
+            inspector: inspector,
+            keyPoster: keyPoster,
+            unverifiedPastePolicy: { _ in .assumeDeliveredAndRestoreClipboard },
+            isInFront: { _ in inFront() },
+            requestFront: { _ in },
+            returnTimeoutMs: returnTimeoutMs
+        )
+        service.lowLatencyModeEnabled = true
+        return service
+    }
+
+    func testPasteWaitsForItsAppToComeBackToTheFront() async throws {
+        let app = try standInApp()
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        keyPoster.onPasteChord = { [inspector] _ in
+            inspector?.simulatedFieldValue = "Hello world"
+        }
+        let back = Date().addingTimeInterval(0.3)
+        let service = makeService(inFront: { Date() >= back })
+
+        let result = await service.inject(text: "Hello world", targetApp: app)
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(keyPoster.pasteChordCount, 1)
+        XCTAssertGreaterThanOrEqual(service.lastInjectionTelemetry?.appActivationMs ?? 0, 250)
+    }
+
+    func testPasteNeverGoesToTheAppInFrontWhenItsAppStaysAway() async throws {
+        let app = try standInApp()
+        inspector.detailsResult = normalDetails()
+        let service = makeService(inFront: { false }, returnTimeoutMs: 200)
+
+        let result = await service.inject(text: "Hello world", targetApp: app)
+
+        XCTAssertEqual(result, .failedAllMethods)
+        XCTAssertEqual(keyPoster.pasteChordCount, 0)
+        XCTAssertEqual(clipboard.stringToReturn, "Hello world", "Left on the clipboard to paste by hand")
+        XCTAssertEqual(service.lastInjectionTelemetry?.method, .failed)
+    }
+
+    func testSomethingCopiedWhileWaitingGoesBackAfterThePaste() async throws {
+        final class Copy { var made = false }
+        let app = try standInApp()
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        var pasted: String?
+        keyPoster.onPasteChord = { [inspector, clipboard] _ in
+            pasted = clipboard?.stringToReturn
+            inspector?.simulatedFieldValue = "Hello world"
+        }
+        clipboard.restoredStringToReturn = "Copied while waiting"
+        let copy = Copy()
+        let back = Date().addingTimeInterval(0.3)
+        let service = makeService(inFront: { [clipboard] in
+            // Copied once, while the app is away.
+            if !copy.made {
+                copy.made = true
+                clipboard?.stringToReturn = "Copied while waiting"
+                clipboard?.changeCount += 1
+            }
+            return Date() >= back
+        })
+
+        let result = await service.inject(text: "Hello world", targetApp: app)
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(pasted, "Hello world", "The transcript, not the newer copy, is pasted")
+        XCTAssertEqual(clipboard.saveCount, 2, "The newer copy is saved too")
+        XCTAssertEqual(clipboard.stringToReturn, "Copied while waiting", "and put back after the paste")
+    }
+
+    func testFieldThatTurnedSecureWhileWaitingIsNotTypedInto() async throws {
+        let app = try standInApp()
+        inspector.detailsResult = normalDetails()
+        clipboard.restoredStringToReturn = "Previous clipboard"
+        let back = Date().addingTimeInterval(0.3)
+        let service = makeService(inFront: { [inspector] in
+            let isBack = Date() >= back
+            // Coming back, the person is in a password field.
+            if isBack { inspector?.detailsResult = secureDetails() }
+            return isBack
+        })
+
+        let result = await service.inject(text: "Hello world", targetApp: app)
+
+        XCTAssertEqual(result, .blockedSecureField)
+        XCTAssertEqual(keyPoster.pasteChordCount, 0)
+        XCTAssertEqual(clipboard.stringToReturn, "Previous clipboard", "The clipboard is put back")
+    }
 }
 
 // MARK: - AX timeout policy

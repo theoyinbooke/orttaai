@@ -99,6 +99,11 @@ final class TextInjectionService: TextInjecting {
     private let inspector: any AccessibilityInspecting
     private let keyPoster: any KeyEventPosting
     private let unverifiedPastePolicyProvider: (String?) -> UnverifiedPastePolicy
+    /// Whether an app is the one in front, and asking it to come forward;
+    /// seams for tests, which can't move real apps.
+    private let isInFront: (NSRunningApplication) -> Bool
+    private let requestFront: (NSRunningApplication) -> Void
+    private let returnTimeoutMs: Int
     private(set) var lastInjectionTelemetry: InjectionTelemetry?
     var lowLatencyModeEnabled: Bool = false
     private var adaptiveTimingByApp: [String: AdaptiveInjectionTiming] = [:]
@@ -117,6 +122,15 @@ final class TextInjectionService: TextInjecting {
     /// Codex read the clipboard within 115 ms of the paste, about 40 ms
     /// typically.
     static let codexPasteBudgetMs = 150
+    /// How long a paste waits for its app to come back to the front after
+    /// something else took it while the dictation was processed. Since
+    /// macOS 14 an app that isn't in front itself (Orttaai lives in the menu
+    /// bar) can't bring another one forward: in 60 days to October 2026, none
+    /// of the 26 apps Orttaai asked to come forward did, and each paste
+    /// failed. In the latest, a system alert held the front and ChatGPT came
+    /// back 3 s after the paste gave up.
+    static let targetReturnTimeoutMs = 8_000
+    static let targetReturnPollMs = 50
 
     init(
         clipboard: any ClipboardManaging = ClipboardManager(),
@@ -124,12 +138,18 @@ final class TextInjectionService: TextInjecting {
         keyPoster: any KeyEventPosting = CGKeyEventPoster(),
         unverifiedPastePolicy: @escaping (String?) -> UnverifiedPastePolicy = {
             TextInjectionService.unverifiedPastePolicy(targetBundleID: $0)
-        }
+        },
+        isInFront: @escaping (NSRunningApplication) -> Bool = { $0.isActive },
+        requestFront: @escaping (NSRunningApplication) -> Void = { _ = $0.activate() },
+        returnTimeoutMs: Int = TextInjectionService.targetReturnTimeoutMs
     ) {
         self.clipboard = clipboard
         self.inspector = inspector
         self.keyPoster = keyPoster
         self.unverifiedPastePolicyProvider = unverifiedPastePolicy
+        self.isInFront = isInFront
+        self.requestFront = requestFront
+        self.returnTimeoutMs = returnTimeoutMs
     }
 
     // MARK: - Secure-field policy (pure decision logic)
@@ -262,14 +282,14 @@ final class TextInjectionService: TextInjecting {
         let secureCheckMs = stepMs()
 
         // Step 2: Save current pasteboard, then stage the transcript on it.
-        let saved = await clipboard.save(giveUpAfterMs: ClipboardManager.saveLimitMs)
+        var saved = await clipboard.save(giveUpAfterMs: ClipboardManager.saveLimitMs)
         if saved == nil {
             Logger.injection.warning(
                 "Saving the clipboard took over \(ClipboardManager.saveLimitMs) ms; pasting without it, so the transcript stays on the clipboard"
             )
         }
         clipboard.setString(text)
-        let stagedClipboardChangeCount = clipboard.changeCount
+        var stagedClipboardChangeCount = clipboard.changeCount
         let clipboardSaveMs = stepMs()
 
         // Step 4: Activate the target app so the paste goes to it, not Orttaai.
@@ -277,19 +297,42 @@ final class TextInjectionService: TextInjecting {
         let targetBundleID = appToActivate?.bundleIdentifier
         let unverifiedPolicy = unverifiedPastePolicyProvider(targetBundleID)
         let timingProfile = adaptiveTiming(for: appKey, textLength: text.count)
-        let wasInFront = appToActivate?.isActive ?? true
+        let wasInFront = appToActivate.map(isInFront) ?? true
         var activationMs = await activateTargetAppIfNeeded(
             appToActivate,
             timeoutMs: timingProfile.activationTimeoutMs
         )
+        var returnWaitMs = 0
 
         if let app = appToActivate, app.bundleIdentifier != Bundle.main.bundleIdentifier {
-            Logger.injection.info("Target app active: \(app.isActive), bundle: \(app.bundleIdentifier ?? "?")")
-            guard app.isActive else {
+            let inFront = isInFront(app)
+            Logger.injection.info("Target app active: \(inFront), bundle: \(app.bundleIdentifier ?? "?")")
+            if !inFront {
+                // Something else took the front while this dictation was
+                // processed, and the app can't be brought back: wait for it.
+                returnWaitMs = await waitForReturn(of: app)
+                if isInFront(app) {
+                    // Meanwhile another field may have been focused, or
+                    // something else copied: check the field again, and stage
+                    // the transcript again over the newer copy, which goes
+                    // back afterwards instead.
+                    if Self.assessSecureField(inspector.focusedElementDetails(processIdentifier: targetPid)) == .blocked {
+                        restoreClipboardIfUnchanged(saved, expectedChangeCount: stagedClipboardChangeCount)
+                        Logger.injection.info("Blocked: focused element is a secure text field")
+                        return .blockedSecureField
+                    }
+                    if clipboard.changeCount != stagedClipboardChangeCount {
+                        saved = await clipboard.save(giveUpAfterMs: ClipboardManager.saveLimitMs)
+                        clipboard.setString(text)
+                        stagedClipboardChangeCount = clipboard.changeCount
+                    }
+                }
+            }
+            guard isInFront(app) else {
                 let injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
                 clipboard.setString(text)
                 lastInjectionTelemetry = InjectionTelemetry(
-                    appActivationMs: activationMs,
+                    appActivationMs: activationMs + returnWaitMs,
                     clipboardRestoreDelayMs: 0,
                     totalInjectionMs: injectionMs,
                     targetBundleID: targetBundleID,
@@ -367,7 +410,7 @@ final class TextInjectionService: TextInjecting {
             let delay = resolvedRestoreDelayMs(
                 for: timingProfile,
                 activationMs: activationMs,
-                activationSucceeded: appToActivate?.isActive ?? true
+                activationSucceeded: appToActivate.map(isInFront) ?? true
             )
             restoreDelayMs += delay
             let delivery = await awaitPasteDelivery(
@@ -399,7 +442,7 @@ final class TextInjectionService: TextInjecting {
             }
         }
 
-        let activationSucceeded = appToActivate?.isActive ?? true
+        let activationSucceeded = appToActivate.map(isInFront) ?? true
         updateAdaptiveTiming(
             for: appKey,
             activationMs: activationMs,
@@ -420,7 +463,7 @@ final class TextInjectionService: TextInjecting {
             // restore the old pasteboard) so the user can paste manually.
             clipboard.setString(text)
             lastInjectionTelemetry = InjectionTelemetry(
-                appActivationMs: activationMs,
+                appActivationMs: activationMs + returnWaitMs,
                 clipboardRestoreDelayMs: pasteWaitMs,
                 totalInjectionMs: injectionMs,
                 targetBundleID: appToActivate?.bundleIdentifier,
@@ -443,7 +486,7 @@ final class TextInjectionService: TextInjecting {
                 expectedChangeCount: stagedClipboardChangeCount
             )
             lastInjectionTelemetry = InjectionTelemetry(
-                appActivationMs: activationMs,
+                appActivationMs: activationMs + returnWaitMs,
                 clipboardRestoreDelayMs: pasteWaitMs,
                 totalInjectionMs: injectionMs,
                 targetBundleID: targetBundleID,
@@ -465,7 +508,7 @@ final class TextInjectionService: TextInjecting {
         )
 
         lastInjectionTelemetry = InjectionTelemetry(
-            appActivationMs: activationMs,
+            appActivationMs: activationMs + returnWaitMs,
             clipboardRestoreDelayMs: pasteWaitMs,
             totalInjectionMs: injectionMs,
             targetBundleID: targetBundleID,
@@ -572,8 +615,8 @@ final class TextInjectionService: TextInjecting {
         }
 
         let start = CFAbsoluteTimeGetCurrent()
-        _ = app.activate()
-        if app.isActive {
+        requestFront(app)
+        if isInFront(app) {
             return Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
         }
 
@@ -581,12 +624,30 @@ final class TextInjectionService: TextInjecting {
         let timeoutNs = UInt64(max(0, timeoutMs)) * 1_000_000
         var elapsedNs: UInt64 = 0
 
-        while elapsedNs < timeoutNs, !app.isActive {
+        while elapsedNs < timeoutNs, !isInFront(app) {
             try? await Task.sleep(nanoseconds: pollIntervalNs)
             elapsedNs += pollIntervalNs
         }
 
         return Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+    }
+
+    /// Waits up to `returnTimeoutMs` for `app` to come back to the front,
+    /// and returns how long it waited.
+    private func waitForReturn(of app: NSRunningApplication) async -> Int {
+        let start = CFAbsoluteTimeGetCurrent()
+        func waitedMs() -> Int { Int((CFAbsoluteTimeGetCurrent() - start) * 1000) }
+        let bundleID = app.bundleIdentifier ?? "?"
+        Logger.injection.notice("\(bundleID, privacy: .public) isn't in front; waiting for it to come back")
+        while !isInFront(app), !app.isTerminated, waitedMs() < returnTimeoutMs {
+            try? await Task.sleep(nanoseconds: UInt64(Self.targetReturnPollMs) * 1_000_000)
+        }
+        let waited = waitedMs()
+        let cameBack = isInFront(app)
+        Logger.injection.notice(
+            "\(bundleID, privacy: .public) \(cameBack ? "came back" : "didn't come back", privacy: .public) after \(waited) ms"
+        )
+        return waited
     }
 
     private func adaptiveKey(for app: NSRunningApplication?) -> String {
