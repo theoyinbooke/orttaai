@@ -142,6 +142,8 @@ struct CoachCastView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(persona.name), \(persona.trait)")
         .accessibilityAddTraits(on ? .isSelected : [])
+        // The card is one button to VoiceOver, so Hear is offered as an action.
+        .accessibilityAction(named: "Hear a sample") { CoachVoice.shared.speak(persona.sample) }
     }
 
     private func modelLabel(_ job: String, _ model: String) -> some View {
@@ -394,12 +396,12 @@ struct CoachModelsView: View {
         HStack(spacing: 12) {
             SettingsLabel(
                 title: "Natural voices",
-                info: "Scene partners speak in natural voices of their own, made on this Mac by Pocket TTS from Kyutai. Ola is the first. The voice model downloads once (\(CoachNaturalVoice.downloadSize)) into your model folder; until then they use the Mac's own voice."
+                info: "Every scene partner speaks in a natural voice of its own, made on this Mac: Ola's by Pocket TTS from Kyutai, the others' by Phonon from Gradium. The voice models download once (\(naturalVoice.downloadSize)) into your model folder; until then partners use the Mac's own voice."
             )
             Spacer()
             switch naturalVoice.state {
             case .notInstalled:
-                Button("Download · \(CoachNaturalVoice.downloadSize)") { Task { await naturalVoice.install() } }
+                Button("Download · \(naturalVoice.downloadSize)") { Task { await naturalVoice.install() } }
                     .buttonStyle(CoachSecondaryButtonStyle())
             case .downloading(let fraction):
                 ProgressView(value: fraction)

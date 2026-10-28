@@ -157,12 +157,15 @@ public struct TurnDetector: Sendable {
     public var patience: TimeInterval
     private let calibration: TimeInterval = 0.3
     private var startedAt: TimeInterval?
+    private var patienceFrom: TimeInterval?
     private var floorSamples: [Float] = []
     private var threshold: Float = 0.08
     private var lastLoud: TimeInterval?
     private var loudSince: TimeInterval?
     private var done = false
     public private(set) var heardSpeech = false
+    /// When the speech that counted began, so the quiet before it can be left out.
+    public private(set) var speechStartedAt: TimeInterval?
 
     /// - Parameters:
     ///   - pause: Quiet that ends a turn once you've spoken.
@@ -170,6 +173,13 @@ public struct TurnDetector: Sendable {
     public init(pause: TimeInterval = 0.8, patience: TimeInterval = 12) {
         self.pause = pause
         self.patience = patience
+    }
+
+    /// Starts the wait for you to speak afresh from `time`: listening began
+    /// while the partner was still talking, and the wait counts from when
+    /// they stop.
+    public mutating func restartPatience(at time: TimeInterval) {
+        patienceFrom = time
     }
 
     /// One level reading, 0 to 1, at `time` seconds.
@@ -190,6 +200,7 @@ public struct TurnDetector: Sendable {
             // A short click isn't speech; a fifth of a second of sound is.
             if !heardSpeech, let since = loudSince, time - since >= 0.2 {
                 heardSpeech = true
+                speechStartedAt = since
                 return .started
             }
         } else {
@@ -199,7 +210,7 @@ public struct TurnDetector: Sendable {
             done = true
             return .ended
         }
-        if !heardSpeech, elapsed >= patience {
+        if !heardSpeech, time - (patienceFrom ?? startedAt ?? time) >= patience {
             done = true
             return .gaveUp
         }

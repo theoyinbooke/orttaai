@@ -50,8 +50,13 @@ struct AboutView: View {
         AboutCredit(name: "llama.cpp", detail: "Runs S1-mini on this Mac, MIT License", systemImage: "cpu"),
         AboutCredit(
             name: "Pocket TTS",
-            detail: "Coach's natural voices by Kyutai, CC BY 4.0, Core ML conversion by FluidInference",
+            detail: "Ola's natural voice in Coach, by Kyutai, CC BY 4.0, Core ML conversion by FluidInference",
             systemImage: "waveform.badge.mic"
+        ),
+        AboutCredit(
+            name: "Phonon 31M",
+            detail: "The other scene partners' voices in Coach, by Gradium, Apache 2.0, Core ML conversion by FluidInference",
+            systemImage: "waveform"
         ),
         AboutCredit(name: "GRDB.swift", detail: "SQLite database toolkit", systemImage: "cylinder"),
         AboutCredit(name: "Sparkle", detail: "Auto-update framework", systemImage: "arrow.down.circle"),

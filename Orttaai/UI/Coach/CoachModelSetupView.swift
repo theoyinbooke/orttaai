@@ -131,7 +131,7 @@ struct CoachSetupCard: View {
         case .talk:
             return "Scenes are now a conversation. Ola, a client in Lagos, answers out loud in her own voice, sentence by sentence as she thinks."
         case .handsFree:
-            return "The microphone opens when Ola stops, and your turn ends when you pause. Press Space to cut in. When the scene ends, your coach scores how it went."
+            return "The microphone opens when Ola stops, and your turn ends when you pause. To cut in, press Space, or with headphones on just start talking. Your coach scores the scene at the end."
         case .local:
             return "A quick model plays the people in scenes, so replies come in a blink. A careful one judges your reps and writes your notes. They run in Ollama, and nothing leaves this Mac."
         case .setUp:
@@ -241,7 +241,7 @@ struct CoachModelSetupList: View {
                     detail: model.jobs.joined(separator: " · ")
                 ) { modelStatus(model) }
             }
-            row(icon: "waveform", title: "Ola's voice", detail: "Natural voice for scenes · \(CoachNaturalVoice.downloadSize)") {
+            row(icon: "waveform", title: "Natural voices", detail: "A voice for each scene partner · \(voice.downloadSize)") {
                 voiceStatus
             }
             if case .failed(let message) = setup.step {

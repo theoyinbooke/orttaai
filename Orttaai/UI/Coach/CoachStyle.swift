@@ -53,24 +53,30 @@ struct CoachEyebrow: View {
 }
 
 struct CoachPrimaryButtonStyle: ButtonStyle {
+    /// Smaller, for buttons inside a card.
+    var compact = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: compact ? 13 : 14, weight: .semibold))
             .foregroundStyle(Color(hex: "1B1917"))
-            .padding(.horizontal, 20)
-            .frame(height: 44)
+            .padding(.horizontal, compact ? 16 : 20)
+            .frame(height: compact ? 32 : 44)
             .background(Capsule().fill(Color.Orttaai.accent.opacity(configuration.isPressed ? 0.8 : 1)))
             .contentShape(Capsule())
     }
 }
 
 struct CoachSecondaryButtonStyle: ButtonStyle {
+    /// Smaller, for buttons inside a card.
+    var compact = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: compact ? 13 : 14, weight: .semibold))
             .foregroundStyle(CoachStyle.ink)
-            .padding(.horizontal, 18)
-            .frame(height: 44)
+            .padding(.horizontal, compact ? 14 : 18)
+            .frame(height: compact ? 32 : 44)
             .background(Capsule().fill(Color.white.opacity(configuration.isPressed ? 0.12 : 0.06)))
             .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             .contentShape(Capsule())

@@ -1,7 +1,7 @@
 // CoachPathView.swift
 // Orttaai
 //
-// Each track as a journey: mastered skills lit, the current one glowing,
+// Each track as a row of steps: mastered skills lit, the current one glowing,
 // reviews flagged, and the reps for whichever skill you pick.
 
 import CoachCore
@@ -23,7 +23,6 @@ struct CoachPathView: View {
             trackTabs
         } content: {
             journey(track, current: current, selected: skill)
-                .frame(height: 280)
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 20) {
                     repsCard(skill).frame(minWidth: 520, idealWidth: 720, maxWidth: .infinity)
@@ -50,7 +49,7 @@ struct CoachPathView: View {
                         Text(item.title)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(on ? CoachStyle.ink : CoachStyle.ink3)
-                        Text(snapshot.masteredCount(in: item) == 0 ? "Start here" : "Level \(snapshot.level(of: item)) · \(snapshot.masteredCount(in: item)) of \(item.skills.count)")
+                        Text(snapshot.masteredCount(in: item) == 0 ? "\(item.skills.count) skills" : "Level \(snapshot.level(of: item)) · \(snapshot.masteredCount(in: item)) of \(item.skills.count)")
                             .font(.system(size: 12))
                             .foregroundStyle(CoachStyle.ink3)
                     }
@@ -69,113 +68,110 @@ struct CoachPathView: View {
 
     // MARK: Journey
 
+    private static let node: CGFloat = 40
+
+    /// The skills in order on one line: the part behind you solid, the part
+    /// ahead dotted, each name under its step.
     private func journey(_ track: CoachTrack, current: CoachSkill, selected: CoachSkill) -> some View {
         let skills = track.skills
         let currentIndex = skills.firstIndex(of: current) ?? 0
-        return GeometryReader { proxy in
-            let points = nodePoints(count: skills.count, size: proxy.size)
-            ZStack(alignment: .topLeading) {
-                Path { path in
-                    guard let first = points.first else { return }
-                    path.move(to: first)
-                    for index in 1..<max(1, currentIndex + 1) where index < points.count {
-                        curve(&path, from: points[index - 1], to: points[index])
-                    }
-                }
-                .stroke(Color.Orttaai.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                Path { path in
-                    guard currentIndex < points.count else { return }
-                    path.move(to: points[currentIndex])
-                    for index in (currentIndex + 1)..<max(currentIndex + 1, points.count) {
-                        curve(&path, from: points[index - 1], to: points[index])
-                    }
-                }
-                .stroke(Color.white.opacity(0.16), style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [2, 10]))
-                ForEach(Array(skills.enumerated()), id: \.element.id) { index, skill in
+        return HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(skills.enumerated()), id: \.element.id) { index, skill in
+                VStack(spacing: 10) {
                     node(skill, number: index + 1, isCurrent: skill == current, isSelected: skill == selected)
-                        .position(points[index])
                     label(skill, isCurrent: skill == current)
-                        .position(x: points[index].x, y: points[index].y + (index.isMultiple(of: 2) ? 58 : -60))
                 }
+                .frame(maxWidth: .infinity)
             }
         }
-    }
-
-    private func nodePoints(count: Int, size: CGSize) -> [CGPoint] {
-        guard count > 0 else { return [] }
-        let inset: CGFloat = 70
-        let step = count > 1 ? (size.width - inset * 2) / CGFloat(count - 1) : 0
-        return (0..<count).map { index in
-            CGPoint(x: inset + step * CGFloat(index), y: index.isMultiple(of: 2) ? size.height * 0.62 : size.height * 0.36)
+        .background(alignment: .top) {
+            GeometryReader { proxy in
+                let step = proxy.size.width / CGFloat(max(skills.count, 1))
+                let y = Self.node / 2 + 6
+                let first = step / 2
+                let reached = first + step * CGFloat(currentIndex)
+                let last = first + step * CGFloat(skills.count - 1)
+                Path { path in
+                    path.move(to: CGPoint(x: reached, y: y))
+                    path.addLine(to: CGPoint(x: last, y: y))
+                }
+                .stroke(Color.white.opacity(0.16), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 7]))
+                Path { path in
+                    path.move(to: CGPoint(x: first, y: y))
+                    path.addLine(to: CGPoint(x: reached, y: y))
+                }
+                .stroke(Color.Orttaai.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            }
         }
-    }
-
-    private func curve(_ path: inout Path, from a: CGPoint, to b: CGPoint) {
-        let midX = (a.x + b.x) / 2
-        path.addCurve(to: b, control1: CGPoint(x: midX, y: a.y), control2: CGPoint(x: midX, y: b.y))
+        .padding(.vertical, 6)
     }
 
     private func node(_ skill: CoachSkill, number: Int, isCurrent: Bool, isSelected: Bool) -> some View {
         let progress = snapshot.progress(skill)
         let mastered = progress.mastered
         let due = progress.reviewDue(now: snapshot.builtAt)
+        let size = Self.node
         return Button {
             selected = skill.id
         } label: {
             ZStack {
                 if isCurrent {
-                    Circle().stroke(Color.Orttaai.accent.opacity(0.25), lineWidth: 1).frame(width: 112, height: 112)
-                    Circle().stroke(Color.Orttaai.accent.opacity(0.45), lineWidth: 1).frame(width: 92, height: 92)
-                    Circle().fill(Color.Orttaai.accent).frame(width: 70, height: 70)
-                        .shadow(color: Color.Orttaai.accent.opacity(0.35), radius: 14, y: 8)
+                    Circle().stroke(Color.Orttaai.accent.opacity(0.35), lineWidth: 1).frame(width: size + 12, height: size + 12)
+                    Circle().fill(Color.Orttaai.accent).frame(width: size, height: size)
+                        .shadow(color: Color.Orttaai.accent.opacity(0.35), radius: 10, y: 5)
                     Text("\(number)")
-                        .font(CoachStyle.display(26))
-                        .foregroundStyle(Color(hex: "1B1917"))
-                } else if mastered {
-                    Circle().fill(Color.Orttaai.accent).frame(width: 46, height: 46)
-                    Image(systemName: "checkmark")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(Color(hex: "1B1917"))
+                } else if mastered {
+                    Circle().fill(Color.Orttaai.accent).frame(width: size, height: size)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color(hex: "1B1917"))
                 } else {
-                    Circle().fill(Color(hex: "1C1B1E")).frame(width: 46, height: 46)
-                    Circle().stroke(Color.white.opacity(0.22), lineWidth: 2).frame(width: 46, height: 46)
+                    Circle().fill(CoachStyle.ground).frame(width: size, height: size)
+                    Circle().stroke(Color.white.opacity(0.22), lineWidth: 2).frame(width: size, height: size)
                     Text("\(number)")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(CoachStyle.ink2)
                 }
                 if isSelected && !isCurrent {
-                    Circle().stroke(CoachStyle.ink, lineWidth: 2).frame(width: 56, height: 56)
+                    Circle().stroke(CoachStyle.ink, lineWidth: 2).frame(width: size + 8, height: size + 8)
                 }
                 if due {
-                    Text("Review")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color(hex: "F0C27A"))
-                        .padding(.horizontal, 7)
-                        .frame(height: 20)
-                        .background(Capsule().fill(Color(hex: "3A3122")))
-                        .overlay(Capsule().stroke(Color.Orttaai.accent.opacity(0.4), lineWidth: 1))
-                        .offset(x: 30, y: -30)
+                    Circle()
+                        .fill(Color(hex: "F0C27A"))
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(CoachStyle.ground, lineWidth: 2))
+                        .offset(x: size / 2 - 3, y: -size / 2 + 3)
                 }
             }
-            .frame(width: 112, height: 112)
+            .frame(width: size + 12, height: size + 12)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(skill.title)\(mastered ? ", mastered" : "")\(isCurrent ? ", you are here" : "")")
+        .help(due ? "\(skill.title) · due for a review" : skill.title)
+        .accessibilityLabel("\(skill.title)\(mastered ? ", mastered" : "")\(due ? ", due for a review" : "")\(isCurrent ? ", you are here" : "")")
     }
 
     private func label(_ skill: CoachSkill, isCurrent: Bool) -> some View {
         VStack(spacing: 2) {
             Text(skill.title)
-                .font(.system(size: isCurrent ? 16 : 14, weight: .semibold))
+                .font(.system(size: 13, weight: isCurrent ? .semibold : .medium))
                 .foregroundStyle(isCurrent || snapshot.progress(skill).mastered ? CoachStyle.ink : CoachStyle.ink2)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             if isCurrent {
                 Text("You are here")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(CoachStyle.warmInk)
+            } else if snapshot.progress(skill).reviewDue(now: snapshot.builtAt) {
+                Text("Review due")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(hex: "F0C27A"))
             }
         }
-        .fixedSize()
+        .padding(.horizontal, 6)
         .accessibilityHidden(true)
     }
 

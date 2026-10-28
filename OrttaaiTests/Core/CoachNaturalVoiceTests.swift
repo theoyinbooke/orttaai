@@ -19,20 +19,39 @@ final class CoachNaturalVoiceTests: XCTestCase {
 
     func testEveryScenePartnerWithAVoiceIsInTheScenes() {
         let partners = Set(CoachScene.all.map { $0.partnerName.lowercased() })
-        for speaker in CoachNaturalVoice.voices.keys {
+        for speaker in Array(CoachNaturalVoice.voices.keys) + Array(CoachNaturalVoice.presetVoices.keys) {
             XCTAssertTrue(partners.contains(speaker), "\(speaker) isn't a scene partner")
+        }
+    }
+
+    func testEveryScenePartnerHasANaturalVoice() {
+        for scene in CoachScene.all {
+            let key = scene.partnerName.lowercased()
+            XCTAssertTrue(
+                CoachNaturalVoice.voices[key] != nil || CoachNaturalVoice.presetVoices[key] != nil,
+                "\(scene.partnerName) would speak in the Mac's voice"
+            )
+        }
+    }
+
+    func testPresetVoicesAreEnglishCatalogueVoices() {
+        for voice in CoachNaturalVoice.presetVoices.values {
+            XCTAssertTrue(voice.hasPrefix("en_us_") || voice.hasPrefix("en_gb_"), voice)
         }
     }
 
     func testOnlyPartnersWithAVoiceAndAnInstalledModelSpeakInIt() {
         let voice = CoachNaturalVoice.shared
+        // Atlas speaks in a Phonon voice, not a cloned one.
         XCTAssertNil(CoachNaturalVoice.voiceURL(for: "Atlas"))
         if voice.state == .ready {
             XCTAssertTrue(voice.canSpeak(as: "Ola"))
-        } else {
+            XCTAssertEqual(voice.canSpeak(as: "Atlas"), CoachNaturalVoice.presetsSupported)
+        } else if voice.state == .notInstalled, voice.downloadSize == "about 700 MB" {
             XCTAssertFalse(voice.canSpeak(as: "Ola"))
+            XCTAssertFalse(voice.canSpeak(as: "Atlas"))
         }
-        XCTAssertFalse(voice.canSpeak(as: "Atlas"))
+        XCTAssertFalse(voice.canSpeak(as: "Someone else"))
     }
 
     func testTheModelLivesInItsOwnFolderUnderTheModelFolder() {

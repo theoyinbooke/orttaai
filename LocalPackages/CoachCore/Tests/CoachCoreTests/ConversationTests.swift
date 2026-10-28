@@ -81,6 +81,7 @@ struct ConversationTests {
         #expect(events == [.started])
         run(0.02, for: 1.0)      // done
         #expect(events == [.started, .ended])
+        #expect(abs((detector.speechStartedAt ?? 0) - 0.5) < 0.05, "Speech began after the room's half second")
     }
 
     @Test func aClickIsntSpeechAndSilenceEventuallyGivesUp() {
@@ -94,6 +95,20 @@ struct ConversationTests {
         }
         #expect(!detector.heardSpeech)
         #expect(events.first == .gaveUp)
+    }
+
+    @Test func theWaitForYouCountsFromWhenThePartnerStops() {
+        var detector = TurnDetector(pause: 0.8, patience: 3)
+        var gaveUpAt: Double?
+        var time = 0.0
+        while time < 10 {
+            // The partner talks for the first 5 seconds.
+            if time < 5 { detector.restartPatience(at: time) }
+            if detector.feed(level: 0.02, at: time) == .gaveUp, gaveUpAt == nil { gaveUpAt = time }
+            time += 0.1
+        }
+        let at = try! #require(gaveUpAt)
+        #expect(at >= 7.8 && at <= 8.2, "3 seconds after the partner stopped, not after listening began")
     }
 
     @Test func aNoisyRoomRaisesTheBar() {

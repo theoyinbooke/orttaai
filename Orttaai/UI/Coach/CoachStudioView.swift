@@ -15,49 +15,61 @@ struct CoachStudioView: View {
         CoachPage(eyebrow: "Studio", title: "Practise") {
             EmptyView()
         } content: {
+            // Compact, so today's rep, every scene and every track fit in the
+            // window without scrolling.
             todaysRep
-            Text("Scenes")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(CoachStyle.ink)
-                .padding(.top, 6)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
-                ForEach(CoachScene.all) { scene in
-                    sceneTile(scene)
+            section("Scenes") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
+                    ForEach(CoachScene.all) { scene in
+                        sceneTile(scene)
+                    }
                 }
             }
-            Text("Where each track left off")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(CoachStyle.ink)
-                .padding(.top, 6)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 16)], spacing: 16) {
-                ForEach(CoachTrack.allCases) { track in
-                    trackTile(track)
+            section("Where each track left off") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
+                    ForEach(CoachTrack.allCases) { track in
+                        trackTile(track)
+                    }
                 }
             }
+        }
+    }
+
+    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(CoachStyle.ink)
+            content()
         }
     }
 
     private var todaysRep: some View {
         let skill = snapshot.todaysSkill
         let persona = CoachPreferences.persona(for: skill.track.mode ?? snapshot.busiestMode)
-        return HStack(alignment: .center, spacing: 24) {
-            CoachPersonaGlyph(persona: persona, size: 72)
-            VStack(alignment: .leading, spacing: 10) {
+        return HStack(alignment: .center, spacing: 18) {
+            CoachPersonaGlyph(persona: persona, size: 48)
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     CoachEyebrow(text: "Today's rep")
                     Text("· \(skill.track.title) · \(snapshot.todaysKind.title)")
                         .font(CoachStyle.label)
                         .foregroundStyle(Color(hex: "C9B79B"))
+                        .lineLimit(1)
                 }
-                Text(skill.title)
-                    .font(CoachStyle.display(30))
-                    .foregroundStyle(CoachStyle.ink)
-                Text(skill.why)
-                    .font(.system(size: 15))
-                    .foregroundStyle(CoachStyle.ink2)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(skill.title)
+                        .font(CoachStyle.display(24))
+                        .foregroundStyle(CoachStyle.ink)
+                        .layoutPriority(1)
+                    Text(skill.why)
+                        .font(.system(size: 14))
+                        .foregroundStyle(CoachStyle.ink2)
+                        .lineLimit(2)
+                }
             }
             Spacer(minLength: 12)
-            VStack(spacing: 10) {
+            HStack(spacing: 10) {
                 Button {
                     Task { await center.beginRep(skill, kind: snapshot.todaysKind, spoken: true) }
                 } label: {
@@ -72,7 +84,8 @@ struct CoachStudioView: View {
                 }
             }
         }
-        .padding(26)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 16)
         .coachSurface(CoachStyle.warm, border: CoachStyle.warmBorder)
     }
 
@@ -86,15 +99,15 @@ struct CoachStudioView: View {
         return Button {
             center.beginScene(scene)
         } label: {
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .center, spacing: 14) {
                 Text(String(scene.partnerName.prefix(1)))
-                    .font(CoachStyle.display(22))
+                    .font(CoachStyle.display(18))
                     .foregroundStyle(CoachStyle.ink)
-                    .frame(width: 48, height: 48)
+                    .frame(width: 38, height: 38)
                     .background(Circle().fill(Color(hex: "3E5F82")))
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(scene.title)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(CoachStyle.ink)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -106,14 +119,14 @@ struct CoachStudioView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(CoachStyle.ink2)
                         .lineLimit(1)
-                        .padding(.top, 4)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(CoachStyle.ink3)
             }
-            .padding(18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .coachSurface()
             .contentShape(Rectangle())
@@ -126,40 +139,42 @@ struct CoachStudioView: View {
     private func trackTile(_ track: CoachTrack) -> some View {
         let skill = snapshot.currentSkill(in: track)
         let progress = snapshot.progress(skill)
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 6) {
             Text(track.title)
-                .font(CoachStyle.label)
+                .font(.system(size: 12))
                 .foregroundStyle(CoachStyle.ink3)
             Text(skill.title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(CoachStyle.ink)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .help(skill.title)
             HStack(spacing: 6) {
                 ForEach(0..<CoachScore.repsToMaster, id: \.self) { index in
                     Circle()
                         .fill(index < progress.strongReps ? Color.Orttaai.accent : Color.white.opacity(0.12))
-                        .frame(width: 8, height: 8)
+                        .frame(width: 7, height: 7)
                 }
                 if let usual = progress.usual {
                     Text("usual \(String(format: "%.1f", usual))")
-                        .font(CoachStyle.label)
+                        .font(.system(size: 12))
                         .foregroundStyle(CoachStyle.ink3)
                 }
-            }
-            Spacer(minLength: 0)
-            HStack(spacing: 8) {
+                Spacer(minLength: 8)
                 Button("Speak") { Task { await center.beginRep(skill, kind: .drill, spoken: true) } }
-                    .buttonStyle(CoachSecondaryButtonStyle())
+                    .buttonStyle(CoachSecondaryButtonStyle(compact: true))
                 if !skill.speakOnly {
                     Button("Type") { Task { await center.beginRep(skill, kind: .drill, spoken: false) } }
-                        .buttonStyle(CoachSecondaryButtonStyle())
+                        .buttonStyle(CoachSecondaryButtonStyle(compact: true))
                 }
             }
+            .padding(.top, 4)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 170, alignment: .topLeading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .coachSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(track.title): \(skill.title), \(progress.strongReps) of \(CoachScore.repsToMaster) strong reps")
     }
 }
 

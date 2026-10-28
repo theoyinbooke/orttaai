@@ -1316,9 +1316,13 @@ extension DictationCoordinator {
 
     /// Stops the rep and transcribes it with the dictation engine, and Polish
     /// unless `polish` is false (a scene turn, where a quick reply matters more).
-    func finishPracticeRecording(polish: Bool = true) async throws -> CoachHeard {
+    /// `skippingFirst` seconds of quiet before you spoke are left out, so they
+    /// don't count towards the time you spoke.
+    func finishPracticeRecording(polish: Bool = true, skippingFirst skip: TimeInterval = 0) async throws -> CoachHeard {
         guard isPracticeRecording else { throw OrttaaiError.transcriptionFailed(underlying: CoachPracticeError.notRecording) }
-        let samples = audioService.stopCapture()
+        var samples = audioService.stopCapture()
+        let skipped = min(samples.count, Int(max(0, skip) * 16_000))
+        if skipped > 0 { samples.removeFirst(skipped) }
         isPracticeRecording = false
         practiceStartedAt = nil
         let durationMs = Int(Double(samples.count) / 16.0)

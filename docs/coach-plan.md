@@ -399,6 +399,25 @@ from opening by itself again; Cast › Models › Set up models opens it on the
 setup page, and the welcome's model step shows the same list. Models itself
 is one card: a searchable dropdown per job.
 
+## Polish pass (2026-10-28)
+
+- **A voice for every partner.** Ola keeps the cloned Pocket TTS voice; Atlas,
+  Dami, Priya and Sam speak in Phonon 31M voices by Gradium (Apache-2.0;
+  Preston, Easton, Delia and Juniper from its catalogue). Phonon needs
+  macOS 15; on 14 those four use the Mac's voice. One "Natural voices"
+  download covers both models (about 700 MB, or 175 MB on top of Ola's).
+- **Talking cuts in, on headphones.** When the output is Bluetooth or the
+  headphone jack (`AudioOutputRoute`), the mic opens while the partner is still
+  speaking and your first words stop them. On speakers the mic would hear the
+  partner, so it waits and Space cuts in. The wait for you to speak, and the
+  turn's time limit, count from when the partner stops; the quiet before you
+  spoke is trimmed from the turn.
+- **Turn timing in the log.** Each partner turn logs, from the end of yours:
+  heard, first word, first sentence, first sound and reply done.
+- **Setup tested against a stand-in Ollama** (`CoachModelSetupDownloadTests`):
+  each missing model is pulled once, progress comes through, and a refused
+  pull names the model and changes nothing.
+
 ## Testing note (2026-10-28)
 
 From about 02:35, test runs started by `xcodebuild test` hung before

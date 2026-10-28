@@ -4,7 +4,8 @@
 // A scene, full screen: the partner with a mood that moves, the goal, the
 // conversation as subtitles (the partner's reply appears as it's written),
 // and your turn by voice or by typing. Hands-free, the microphone opens when
-// the partner stops; speaking or pressing Space cuts in.
+// the partner stops, or while they speak if you're on headphones, so talking
+// cuts in; Space always does.
 
 import CoachCore
 import SwiftUI
@@ -334,7 +335,9 @@ struct CoachSceneView: View {
         } else {
             HStack(spacing: 16) {
                 Button {
-                    if recording {
+                    if session.partnerSpeaking {
+                        session.cutIn()
+                    } else if recording {
                         Task { await session.finishRecording() }
                     } else {
                         session.startRecording()
@@ -350,7 +353,7 @@ struct CoachSceneView: View {
                 .buttonStyle(.plain)
                 .disabled(!(ready || recording))
                 .keyboardShortcut(.space, modifiers: [])
-                .accessibilityLabel(recording ? "Finish your turn" : session.partnerSpeaking ? "Cut in" : "Talk")
+                .accessibilityLabel(session.partnerSpeaking ? "Cut in" : recording ? "Finish your turn" : "Talk")
                 Text(status(recording: recording, ready: ready))
                     .font(.system(size: 15))
                     .foregroundStyle(ready && session.notice != nil ? CoachStyle.warmInk : CoachStyle.ink2)
@@ -376,6 +379,7 @@ struct CoachSceneView: View {
 
     private func status(recording: Bool, ready: Bool) -> String {
         let name = session.scene.partnerName
+        if recording, session.partnerSpeaking { return "\(name) is speaking. Just talk to cut in." }
         if recording {
             return session.handsFree ? "Listening. Pause when you're done." : "Listening. Press again when you're done."
         }

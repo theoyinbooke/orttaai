@@ -68,6 +68,7 @@ final class CoachSceneSession: ObservableObject {
     /// Where the reply's sentences go to be spoken while it streams in.
     private var spoken: AsyncStream<String>.Continuation?
     private var cancelled = false
+    private var timing: TurnTiming?
     private let usual: Double?
     /// What was actually heard on each of your spoken turns, before Polish.
     private var heard: [UUID: String] = [:]
@@ -107,7 +108,9 @@ final class CoachSceneSession: ObservableObject {
         phase = .talking
         if replyMode.speaks {
             partnerSpeaking = true
-            await CoachVoice.shared.speak(sentences: Self.single(scene.opening), as: scene.partnerName)
+            let speech = Task { await CoachVoice.shared.speak(sentences: Self.single(scene.opening), as: scene.partnerName) }
+            listenOverPartner()
+            await speech.value
             partnerSpeaking = false
         }
         listenIfHandsFree()
@@ -128,17 +131,38 @@ final class CoachSceneSession: ObservableObject {
         startRecording()
     }
 
-    /// Starts your turn. While the partner is speaking, this cuts in.
-    func startRecording() {
+    /// With headphones on, the microphone opens while the partner is still
+    /// speaking, so you can cut in just by talking. On speakers it would hear
+    /// the partner, so it waits for them to stop.
+    private func listenOverPartner() {
+        guard handsFree, partnerSpeaking, replyMode != .text, phase == .talking, !cancelled, AudioOutputRoute.isPrivate else { return }
+        startRecording(overPartner: true)
+    }
+
+    /// Stops the partner mid-sentence and gives you the turn.
+    func cutIn() {
+        if partnerSpeaking {
+            CoachVoice.shared.stop()
+            partnerSpeaking = false
+        }
+        if phase == .talking { startRecording() }
+    }
+
+    /// Starts your turn. Over the partner, it listens without stopping them.
+    func startRecording(overPartner: Bool = false) {
         guard phase == .talking, let recorder = CoachPracticeSession.recorder else { return }
-        CoachVoice.shared.stop()
-        partnerSpeaking = false
+        if !overPartner {
+            CoachVoice.shared.stop()
+            partnerSpeaking = false
+        }
         notice = nil
         do {
             try recorder.startPracticeRecording()
             let started = Date()
             phase = .recording(started: started)
             detector = TurnDetector()
+            // The time limit counts from when the partner stops.
+            var limitFrom = 0.0
             meter = Task { @MainActor [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(80))
@@ -146,8 +170,16 @@ final class CoachSceneSession: ObservableObject {
                     let level = recorder.practiceLevel()
                     self.level = level
                     let elapsed = Date().timeIntervalSince(started)
+                    if self.partnerSpeaking {
+                        self.detector.restartPatience(at: elapsed)
+                        limitFrom = elapsed
+                    }
                     if self.handsFree {
                         switch self.detector.feed(level: level, at: elapsed) {
+                        case .started where self.partnerSpeaking:
+                            // You started talking: the partner gives way.
+                            CoachVoice.shared.stop()
+                            self.partnerSpeaking = false
                         case .ended:
                             // Its own task: finishing cancels this one, and
                             // would cancel the transcription with it.
@@ -163,7 +195,7 @@ final class CoachSceneSession: ObservableObject {
                             break
                         }
                     }
-                    if elapsed >= Double(CoachRepKind.scene.timeLimitSeconds) {
+                    if elapsed - limitFrom >= Double(CoachRepKind.scene.timeLimitSeconds) {
                         Task { await self.finishRecording() }
                         return
                     }
@@ -179,9 +211,13 @@ final class CoachSceneSession: ObservableObject {
         meter?.cancel()
         level = 0
         phase = .thinking
+        timing = TurnTiming()
         do {
             // The partner answers what you said; Polish would only slow it down.
-            let result = try await recorder.finishPracticeRecording(polish: false)
+            // The quiet before you spoke (a little margin kept) isn't your turn.
+            let skip = max(0, (detector.speechStartedAt ?? 0) - 0.4)
+            let result = try await recorder.finishPracticeRecording(polish: false, skippingFirst: skip)
+            timing?.mark(\.heard)
             let turn = SceneTurn(speaker: .you, text: result.polished, durationMs: result.durationMs)
             heard[turn.id] = result.raw
             turns.append(turn)
@@ -204,6 +240,8 @@ final class CoachSceneSession: ObservableObject {
         typed = ""
         turns.append(SceneTurn(speaker: .you, text: text))
         phase = .thinking
+        timing = TurnTiming()
+        timing?.mark(\.heard)
         await partnerTurn()
     }
 
@@ -220,7 +258,9 @@ final class CoachSceneSession: ObservableObject {
         liveReply = ""
         partnerSpeaking = speaks
         let speech: Task<Void, Never>? = speaks
-            ? Task { await CoachVoice.shared.speak(sentences: sentences, as: scene.partnerName) }
+            ? Task { [weak self] in
+                await CoachVoice.shared.speak(sentences: sentences, as: self?.scene.partnerName) { self?.timing?.mark(\.firstSound) }
+            }
             : nil
         let name = scene.partnerName
         let reply = await CoachModels.partnerReply(scene: scene, turns: turns, setup: setup) { text in
@@ -228,6 +268,7 @@ final class CoachSceneSession: ObservableObject {
                 self?.received(CoachPartnerPrompt.withoutName(text, partnerName: name))
             }
         }
+        timing?.mark(\.replyDone)
         if let reply {
             received(reply)
             if let rest = splitter.finish(reply) { say(rest) }
@@ -242,21 +283,29 @@ final class CoachSceneSession: ObservableObject {
         spoken = nil
         liveReply = nil
         phase = .talking
+        if reply != nil { listenOverPartner() }
         await speech?.value
         partnerSpeaking = false
+        if let timing {
+            Logger.dictation.info("Coach scene turn with \(setup.sceneModel, privacy: .public): \(timing.summary, privacy: .public)")
+            self.timing = nil
+        }
         if reply != nil { listenIfHandsFree() }
     }
 
     /// The reply so far: shown as it grows, and each finished sentence spoken.
     private func received(_ text: String) {
         guard let live = liveReply, text.count > live.count else { return }
+        timing?.mark(\.firstWord)
         liveReply = text
         for sentence in splitter.feed(text) { say(sentence) }
     }
 
     private func say(_ sentence: String) {
         let text = CoachPartnerPrompt.spoken(sentence)
-        if !text.isEmpty { spoken?.yield(text) }
+        guard !text.isEmpty else { return }
+        timing?.mark(\.firstSentence)
+        spoken?.yield(text)
     }
 
     // MARK: The end
@@ -352,5 +401,27 @@ final class CoachSceneSession: ObservableObject {
         meter?.cancel()
         if case .recording = phase { CoachPracticeSession.recorder?.cancelPracticeRecording() }
         level = 0
+    }
+}
+
+/// How long each step of a partner's turn took, counted from the end of
+/// yours, for the log.
+struct TurnTiming {
+    private let start = Date()
+    var heard: TimeInterval?
+    var firstWord: TimeInterval?
+    var firstSentence: TimeInterval?
+    var firstSound: TimeInterval?
+    var replyDone: TimeInterval?
+
+    /// Records a step the first time it happens.
+    mutating func mark(_ step: WritableKeyPath<TurnTiming, TimeInterval?>) {
+        if self[keyPath: step] == nil { self[keyPath: step] = Date().timeIntervalSince(start) }
+    }
+
+    var summary: String {
+        [("heard", heard), ("first word", firstWord), ("first sentence", firstSentence), ("first sound", firstSound), ("reply done", replyDone)]
+            .map { "\($0.0) \($0.1.map { String(format: "%.2f s", $0) } ?? "–")" }
+            .joined(separator: ", ")
     }
 }

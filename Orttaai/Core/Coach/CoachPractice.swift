@@ -335,12 +335,12 @@ final class CoachVoice {
 
     /// Speaks sentences as they arrive, making each one's audio while the one
     /// before plays, and returns once the last has been heard or `stop()` is
-    /// called.
-    func speak(sentences: AsyncStream<String>, as speaker: String?) async {
+    /// called. `onFirstSound` runs as the first sentence starts playing.
+    func speak(sentences: AsyncStream<String>, as speaker: String?, onFirstSound: (@MainActor () -> Void)? = nil) async {
         stop()
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.say(sentences, as: speaker)
+            await self.say(sentences, as: speaker, onFirstSound: onFirstSound)
         }
         speaking = task
         await task.value
@@ -354,10 +354,11 @@ final class CoachVoice {
         synthesizer.stopSpeaking(at: .immediate)
     }
 
-    private func say(_ sentences: AsyncStream<String>, as speaker: String?) async {
+    private func say(_ sentences: AsyncStream<String>, as speaker: String?, onFirstSound: (@MainActor () -> Void)? = nil) async {
         defer { if !Task.isCancelled { speaking = nil } }
         let natural = speaker.map { CoachNaturalVoice.shared.canSpeak(as: $0) } ?? false
         var playing: Task<Void, Never>?
+        var firstSound = onFirstSound
         for await sentence in sentences {
             guard !Task.isCancelled else { break }
             if natural, let speaker {
@@ -367,6 +368,8 @@ final class CoachVoice {
                 if let audio, let next = try? AVAudioPlayer(data: audio) {
                     player = next
                     next.play()
+                    firstSound?()
+                    firstSound = nil
                     playing = Task { await Self.waitUntilDone { next.isPlaying } }
                     continue
                 }
@@ -374,6 +377,8 @@ final class CoachVoice {
             await playing?.value
             guard !Task.isCancelled else { break }
             speakWithMacVoice(sentence)
+            firstSound?()
+            firstSound = nil
             let synthesizer = self.synthesizer
             playing = Task { await Self.waitUntilDone { synthesizer.isSpeaking } }
         }

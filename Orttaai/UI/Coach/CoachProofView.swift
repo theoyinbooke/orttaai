@@ -27,7 +27,7 @@ struct CoachProofView: View {
                 FeaturedHabitCard(state: featured) { center.endHabit(featured) }
                 let rest = Array(snapshot.habits.dropFirst())
                 if !rest.isEmpty {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 12)], spacing: 12) {
                         ForEach(rest) { state in
                             HabitCard(state: state) { center.endHabit(state) }
                         }
@@ -68,24 +68,24 @@ struct CoachProofView: View {
     }
 
     private var emptyHero: some View {
-        HStack(spacing: 48) {
-            VStack(spacing: 12) {
+        HStack(spacing: 32) {
+            VStack(spacing: 7) {
                 ForEach(0..<2, id: \.self) { _ in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         ForEach(0..<10, id: \.self) { _ in
                             Circle()
-                                .stroke(Color.white.opacity(0.22), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                                .frame(width: 16, height: 16)
+                                .stroke(Color.white.opacity(0.22), style: StrokeStyle(lineWidth: 1.2, dash: [2.5, 2.5]))
+                                .frame(width: 11, height: 11)
                         }
                     }
                 }
             }
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("No habits yet.")
-                    .font(CoachStyle.display(30))
+                    .font(CoachStyle.display(22))
                     .foregroundStyle(CoachStyle.ink)
-                HStack(spacing: 28) {
+                HStack(spacing: 22) {
                     step(1, "Pick a habit")
                     step(2, "Dictate as usual")
                     step(3, "See if it stuck")
@@ -93,30 +93,30 @@ struct CoachProofView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 40)
-        .padding(.vertical, 36)
+        .padding(.horizontal, 26)
+        .padding(.vertical, 20)
         .coachSurface()
     }
 
     private func step(_ number: Int, _ text: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Text("\(number)")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.Orttaai.accent)
-                .frame(width: 30, height: 30)
+                .frame(width: 24, height: 24)
                 .background(Circle().fill(Color.Orttaai.accent.opacity(0.16)))
             Text(text)
-                .font(.system(size: 15))
+                .font(.system(size: 14))
                 .foregroundStyle(CoachStyle.ink2)
         }
     }
 
     private func suggestionSection(title: String, picks: [CoachFocusPick]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(CoachStyle.ink)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
                 ForEach(Array(picks.enumerated()), id: \.element.id) { index, pick in
                     SuggestionCard(pick: pick, highlighted: index == 0 && snapshot.habits.isEmpty) {
                         center.startHabit(pick)
@@ -140,13 +140,13 @@ private struct FeaturedHabitCard: View {
                 example.frame(width: 300)
             }
             .frame(idealWidth: 1_000)
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 16) {
                 headline
                 dots
                 example
             }
         }
-        .padding(26)
+        .padding(20)
         .coachSurface()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(state.title), \(v.status.title)")
@@ -172,7 +172,7 @@ private struct FeaturedHabitCard: View {
                 Image(systemName: "arrow.right")
                     .foregroundStyle(CoachStyle.ink3)
                 Text(CoachFormat.percent(v.afterShare))
-                    .font(CoachStyle.display(52))
+                    .font(CoachStyle.display(30))
                     .foregroundStyle(v.status == .working ? CoachStyle.gain : CoachStyle.ink)
             }
             Text("\(v.sinceCount) dictations since \(state.habit.startedAt.formatted(.dateTime.month().day()))")
@@ -326,32 +326,35 @@ private struct SuggestionCard: View {
     let onStart: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(CoachFormat.modeLabel(pick.mode))
-                .font(CoachStyle.label)
+                .font(.system(size: 12))
                 .foregroundStyle(highlighted ? CoachStyle.warmInk : CoachStyle.ink3)
             Text(pick.measure.habitTitle)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(CoachStyle.ink)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(CoachFormat.figure(pick.figure, pick.measure))
-                    .font(CoachStyle.display(40))
+                    .font(CoachStyle.display(28))
                     .foregroundStyle(CoachStyle.ink)
                 Text(pick.measure.unit + " now")
-                    .font(CoachStyle.label)
+                    .font(.system(size: 12))
                     .foregroundStyle(CoachStyle.ink3)
+                    .lineLimit(1)
             }
-            if highlighted {
-                Button("Start this habit", action: onStart)
-                    .buttonStyle(CoachPrimaryButtonStyle())
-                    .frame(maxWidth: .infinity)
-            } else {
-                Button("Start this habit", action: onStart)
-                    .buttonStyle(CoachSecondaryButtonStyle())
-                    .frame(maxWidth: .infinity)
+            Group {
+                if highlighted {
+                    Button("Start this habit", action: onStart)
+                        .buttonStyle(CoachPrimaryButtonStyle(compact: true))
+                } else {
+                    Button("Start this habit", action: onStart)
+                        .buttonStyle(CoachSecondaryButtonStyle(compact: true))
+                }
             }
+            .padding(.top, 4)
         }
-        .padding(22)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .coachSurface(highlighted ? CoachStyle.warm : CoachStyle.surface, border: highlighted ? CoachStyle.warmBorder : CoachStyle.line)
     }
