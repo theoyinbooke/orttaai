@@ -239,6 +239,13 @@ final class TextInjectionService: TextInjecting {
     func inject(text: String, targetApp: NSRunningApplication? = nil) async -> InjectionResult {
         let injectionStart = CFAbsoluteTimeGetCurrent()
         lastInjectionTelemetry = nil
+        // Each step's time, for the timing line logged at the end.
+        var stepStart = injectionStart
+        func stepMs() -> Int {
+            let now = CFAbsoluteTimeGetCurrent()
+            defer { stepStart = now }
+            return Int((now - stepStart) * 1000)
+        }
 
         // Step 1: Check for a secure field before touching the clipboard.
         // Use the target app (captured at recording start) so we check
@@ -252,6 +259,7 @@ final class TextInjectionService: TextInjecting {
             Logger.injection.info("Blocked: focused element is a secure text field")
             return .blockedSecureField
         }
+        let secureCheckMs = stepMs()
 
         // Step 2: Save current pasteboard, then stage the transcript on it.
         let saved = await clipboard.save(giveUpAfterMs: ClipboardManager.saveLimitMs)
@@ -262,12 +270,14 @@ final class TextInjectionService: TextInjecting {
         }
         clipboard.setString(text)
         let stagedClipboardChangeCount = clipboard.changeCount
+        let clipboardSaveMs = stepMs()
 
         // Step 4: Activate the target app so the paste goes to it, not Orttaai.
         let appKey = adaptiveKey(for: appToActivate)
         let targetBundleID = appToActivate?.bundleIdentifier
         let unverifiedPolicy = unverifiedPastePolicyProvider(targetBundleID)
         let timingProfile = adaptiveTiming(for: appKey, textLength: text.count)
+        let wasInFront = appToActivate?.isActive ?? true
         var activationMs = await activateTargetAppIfNeeded(
             appToActivate,
             timeoutMs: timingProfile.activationTimeoutMs
@@ -295,7 +305,9 @@ final class TextInjectionService: TextInjecting {
 
         // Step 5: Snapshot the focused element's text so verification can
         // detect "nothing changed" after the synthetic paste.
+        let activationStepMs = stepMs()
         let preSnapshot = inspector.focusedElementTextSnapshot(processIdentifier: targetPid)
+        let snapshotMs = stepMs()
 
         // Step 6: Paste + bounded verification, with one activation+paste retry.
         var restoreDelayMs = 0
@@ -303,6 +315,7 @@ final class TextInjectionService: TextInjecting {
         var verdict: PasteVerificationOutcome = .failed
         var pasteAttempts = 0
         var method: InjectionMethod = .paste
+        var settleMs = 0
 
         for attempt in 1...2 {
             if attempt == 2 {
@@ -324,6 +337,7 @@ final class TextInjectionService: TextInjecting {
             } else if activationMs > 0 {
                 try? await Task.sleep(nanoseconds: 30_000_000) // 30ms
             }
+            if attempt == 1 { settleMs = stepMs() }
 
             keyPoster.postPasteChord()
             pasteAttempts += 1
@@ -391,6 +405,12 @@ final class TextInjectionService: TextInjecting {
         )
 
         let injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
+        // Numbers only, kept by the system log (notice level), for measuring
+        // where a paste's time goes: `log show --predicate 'subsystem ==
+        // "com.orttaai.app" AND category == "injection"'`.
+        Logger.injection.notice(
+            "Paste into \(targetBundleID ?? "?", privacy: .public): password check \(secureCheckMs) ms, clipboard save \(clipboardSaveMs) ms, activation \(activationStepMs) ms (\(wasInFront ? "already in front" : "brought to front", privacy: .public)), snapshot \(snapshotMs) ms, settle \(settleMs) ms, paste to confirmation \(pasteWaitMs) ms (\(String(describing: verdict), privacy: .public)), total \(injectionMs) ms"
+        )
 
         if verdict == .failed {
             // Honest failure: keep the transcript on the clipboard (do NOT
