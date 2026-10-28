@@ -25,11 +25,15 @@ struct HomeShellView: View {
                 )
                 .toolbar(removing: .sidebarToggle)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
+                // The sidebar stays dark in both looks; only the pages go light.
+                .environment(\.colorScheme, .dark)
+                .background(Color.orttaai(light: "1C1C1E", dark: "1C1C1E"), ignoresSafeAreaEdges: .all)
             } detail: {
                 HStack(spacing: 0) {
                     // Coach draws its own rail.
                     if columnVisibility == .detailOnly, navigation.selectedSection != .coach {
                         SectionRail(navigation: navigation, look: .app) { setSidebarCollapsed(false) }
+                            .environment(\.colorScheme, .dark)
                             .transition(.move(edge: .leading).combined(with: .opacity))
                     }
                     content(compactOverview: compactOverview)

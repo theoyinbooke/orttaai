@@ -67,7 +67,8 @@ struct SectionRail: View {
     }
 
     private var ground: Color {
-        look == .coach ? CoachStyle.rail : Color.Orttaai.bgSecondary.opacity(0.6)
+        // Solid, so it stays dark beside a light page.
+        look == .coach ? CoachStyle.rail : Color(hex: "252527")
     }
 
     private var muted: Color {
