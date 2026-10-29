@@ -40,9 +40,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let hasCompletedSetupKey = "hasCompletedSetup"
     private var isPushToTalkPressed = false
     private var isEditCommandPressed = false
+    private let rightOptionTapMonitor = RightOptionTapMonitor()
+    private var rightOptionRetryTask: Task<Void, Never>?
     private let recordingStartCue = NSSound.Name("Glass")
     private let recordingStopCue = NSSound.Name("Pop")
     private let errorCue = NSSound.Name("Funk")
+    private let handsFreeCue = NSSound.Name("Tink")
+    private var handsFreeCueSound: NSSound?
     private var activeCueSound: NSSound?
     private var isHomeWorkspaceAutoOpenEnabled: Bool {
         appState?.settings.homeWorkspaceAutoOpenEnabled ?? false
@@ -139,6 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let settings = self.appState?.settings else { return }
             self.statusBarMenu?.updatePolishMode(isOn: settings.localLLMPolishEnabled)
             self.floatingPanel?.handsFreeHintEnabled = settings.handsFreeModeEnabled
+            self.updateRightOptionListener()
         }
         floatingPanel?.handsFreeHintEnabled = state.settings.handsFreeModeEnabled
         statusBarMenu?.setHomePreviewMode(!isHomeWorkspaceAutoOpenEnabled)
@@ -204,6 +209,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
         KeyboardShortcuts.removeHandler(for: .editCommand)
+        rightOptionRetryTask?.cancel()
+        rightOptionTapMonitor.stop()
         stopWaveformUpdates()
         if let shortcutObserver {
             NotificationCenter.default.removeObserver(shortcutObserver)
@@ -522,6 +529,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Starts or stops the Right Option listener to match the setting. When
+    /// macOS refuses it for lack of Input Monitoring, keeps retrying quietly
+    /// so it starts the moment the permission is granted.
+    private func updateRightOptionListener() {
+        let wanted = runtimeServicesStarted && (appState?.settings.rightOptionDictationEnabled ?? false)
+        guard wanted else {
+            rightOptionRetryTask?.cancel()
+            rightOptionRetryTask = nil
+            rightOptionTapMonitor.stop()
+            return
+        }
+        guard !rightOptionTapMonitor.isRunning, rightOptionRetryTask == nil else { return }
+
+        rightOptionTapMonitor.onTap = { [weak self] in
+            self?.coordinator?.handleRightOptionTap()
+        }
+        if rightOptionTapMonitor.start() { return }
+
+        rightOptionRetryTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                if self.rightOptionTapMonitor.start() {
+                    self.rightOptionRetryTask = nil
+                    return
+                }
+            }
+        }
+    }
+
     private func observeSystemWake() {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -653,6 +690,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         startEditCommandShortcut()
         runtimeServicesStarted = true
+        updateRightOptionListener()
         floatingPanel?.show()
         warmUpModel()
         Task { @MainActor [weak self] in
@@ -769,6 +807,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let coordinator = coordinator else { return }
         coordinator.onStateChange = { [weak self] state, previousState in
             self?.handleStateChange(state, previousState: previousState)
+        }
+        coordinator.onTapPromotedToHandsFree = { [weak self] in
+            self?.playHandsFreeCue()
         }
         handleStateChange(coordinator.state, previousState: nil)
     }
@@ -987,6 +1028,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             break
         }
+    }
+
+    /// Says a tap took: the keys can be let go. Plays alongside the start
+    /// cue rather than cutting it off.
+    private func playHandsFreeCue() {
+        guard let sound = NSSound(named: handsFreeCue) else { return }
+        handsFreeCueSound?.stop()
+        handsFreeCueSound = sound
+        sound.volume = 0.35
+        sound.play()
     }
 
     private func playSoundCue(named cue: NSSound.Name, volume: Float) {

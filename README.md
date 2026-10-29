@@ -12,7 +12,7 @@ Giving you back your second hand. Press a hotkey, speak, and your words appear a
 
 ## Features
 
-- **Push-to-talk dictation** — Hold `Ctrl+Shift+Space`, speak, release. Text appears at your cursor.
+- **Push-to-talk dictation** — Hold `Ctrl+Shift+Space`, speak, release. Text appears at your cursor. Or tap it once to talk hands-free, and tap again to finish.
 - **100% on-device** — Uses WhisperKit for local speech recognition. No internet required. No data sent anywhere.
 - **Works everywhere** — Text injection via clipboard simulation works across 25+ apps including Safari, Chrome, VS Code, Slack, Notes, and more.
 - **Secure field detection** — Automatically blocks dictation into password fields. Your transcription is never stored when blocked.
@@ -96,9 +96,10 @@ These features are designed to stay local-first and work without sending your tr
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Shift+Space` | Push-to-talk (hold to record, release to transcribe) |
+| `Ctrl+Shift+Space` | Hold to record and release to transcribe, or tap to start hands-free and tap again to finish |
+| `Right Option` (optional) | Tap to start hands-free and tap again to finish. Turn it on in Settings › Dictation; it needs Input Monitoring |
 
-Shortcuts can be customized in Settings > General.
+Shortcuts can be customized in Settings › Dictation.
 
 ## Models
 

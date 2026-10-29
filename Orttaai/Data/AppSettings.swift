@@ -178,6 +178,10 @@ final class AppSettings: ObservableObject {
     /// Hands-free recordings get their own generous cap (seconds), separate
     /// from the push-to-talk max duration.
     @AppStorage("handsFreeMaxRecordingDuration") var handsFreeMaxRecordingDuration: Int = 600
+    /// Tap Right Option to start and tap again to stop. Off by default: it
+    /// needs Input Monitoring, and that permission belongs to this Mac, so
+    /// the setting isn't synced.
+    @AppStorage("rightOptionDictationEnabled") var rightOptionDictationEnabled: Bool = false
 
     // Voice edit commands (select text, speak an instruction, selection is
     // transformed in place). Rides the polish LLM provider/model; when no

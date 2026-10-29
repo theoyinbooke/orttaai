@@ -959,6 +959,122 @@ final class DictationCoordinatorTests: XCTestCase {
         coordinator.stopRecording()
     }
 
+    @MainActor
+    func testTapPlaysHandsFreeCueButHoldDoesNot() {
+        settings.handsFreeModeEnabled = true
+        var cues = 0
+        coordinator.onTapPromotedToHandsFree = { cues += 1 }
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.6)
+        coordinator.handleHotkeyUp()
+        XCTAssertEqual(cues, 0, "Releasing a hold doesn't switch to hands-free")
+
+        coordinator.handleHotkeyDown()
+        gestureNow.addTimeInterval(0.1)
+        coordinator.handleHotkeyUp()
+        XCTAssertEqual(cues, 1, "A tap confirms the switch once")
+        coordinator.stopRecording()
+
+        coordinator.startHandsFreeRecording()
+        XCTAssertEqual(cues, 1, "The mic button starts hands-free; there's nothing to confirm")
+        coordinator.stopRecording()
+    }
+
+    // MARK: - Right Option tap
+
+    @MainActor
+    func testRightOptionTapStartsHandsFree() {
+        settings.handsFreeModeEnabled = true
+        coordinator.handleRightOptionTap()
+
+        guard case .recording = coordinator.state else {
+            return XCTFail("A Right Option tap must start recording")
+        }
+        XCTAssertTrue(coordinator.isHandsFreeRecording)
+        coordinator.stopRecording()
+    }
+
+    @MainActor
+    func testRightOptionTogglesEvenWithHandsFreeSettingOff() {
+        settings.handsFreeModeEnabled = false
+        coordinator.handleRightOptionTap()
+        XCTAssertTrue(
+            coordinator.isHandsFreeRecording,
+            "The key has no hold, so it always toggles"
+        )
+        coordinator.handleRightOptionTap()
+        if case .recording = coordinator.state {
+            XCTFail("The second tap must stop the recording")
+        }
+    }
+
+    @MainActor
+    func testSecondRightOptionTapStopsAndTranscribes() async {
+        settings.handsFreeModeEnabled = true
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.handleRightOptionTap()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.handleRightOptionTap()
+
+        let becameIdle = await waitUntil { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle)
+        let transcribeCount = await transcriptionService.transcribeCallCount
+        XCTAssertEqual(transcribeCount, 1)
+    }
+
+    @MainActor
+    func testRightOptionTapStopsAPushToTalkRecording() {
+        settings.handsFreeModeEnabled = true
+        coordinator.handleHotkeyDown()
+        guard case .recording = coordinator.state else {
+            return XCTFail("Expected the shortcut to start recording")
+        }
+
+        coordinator.handleRightOptionTap()
+        if case .recording = coordinator.state {
+            XCTFail("Either key stops the dictation in progress")
+        }
+
+        gestureNow.addTimeInterval(1.0)
+        coordinator.handleHotkeyUp()
+        if case .recording = coordinator.state {
+            XCTFail("Letting go of the shortcut afterwards must not start anything")
+        }
+    }
+
+    @MainActor
+    func testRightOptionTapIgnoredWhileProcessing() async {
+        await transcriptionService.setTranscribeDelayNsForTest(1_500_000_000)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        guard case .processing = coordinator.state else {
+            return XCTFail("Expected processing state, got \(coordinator.state)")
+        }
+
+        coordinator.handleRightOptionTap()
+        guard case .processing = coordinator.state else {
+            return XCTFail("A tap while processing must be ignored, got \(coordinator.state)")
+        }
+
+        let becameIdle = await waitUntil(timeoutSeconds: 5) { self.coordinator.state == .idle }
+        XCTAssertTrue(becameIdle)
+    }
+
+    @MainActor
+    func testRightOptionTapFailsCleanlyWhenTheMicFails() {
+        audioService.shouldFail = true
+        coordinator.handleRightOptionTap()
+        guard case .error = coordinator.state else {
+            return XCTFail("Mic failure should land in error state")
+        }
+        XCTAssertFalse(coordinator.isHandsFreeRecording)
+    }
+
     // MARK: - Hands-free silence auto-stop
 
     @MainActor

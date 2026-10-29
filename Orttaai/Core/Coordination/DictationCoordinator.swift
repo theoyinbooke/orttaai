@@ -57,6 +57,9 @@ final class DictationCoordinator {
             onStateChange?(state, oldValue)
         }
     }
+    /// Called when a quick tap of a shortcut turns the recording hands-free,
+    /// so the app can confirm it with a sound.
+    var onTapPromotedToHandsFree: (() -> Void)?
     private(set) var countdownSeconds: Int?
     /// Mode of the recording in progress. Only meaningful while `state` is
     /// `.recording`; reset to `.pushToTalk` whenever a new recording starts.
@@ -249,10 +252,32 @@ final class DictationCoordinator {
         applyGestureAction(action)
     }
 
+    /// A tap of the Right Option key: the first starts a hands-free
+    /// recording, the next stops it and inserts the text. There's no hold on
+    /// this key, so it toggles whatever the hands-free setting says. Ignored
+    /// while an edit is recording or anything is still being processed.
+    func handleRightOptionTap() {
+        switch state {
+        case .idle:
+            startRecording()
+            promoteToHandsFree()
+
+        case .recording:
+            guard sessionKind == .dictation else { return }
+            hotkeyGesture.reset()
+            Logger.dictation.info("Recording stopped by Right Option tap")
+            stopRecording(reason: .hotkeyTapStop)
+
+        case .processing, .injecting, .error:
+            Logger.dictation.info("Ignoring Right Option tap; busy (state: \(String(describing: self.state)))")
+        }
+    }
+
     private func applyGestureAction(_ action: HotkeyGestureInterpreter.ReleaseAction) {
         switch action {
         case .promoteToHandsFree:
             promoteToHandsFree()
+            if isHandsFreeRecording { onTapPromotedToHandsFree?() }
         case .stopRecording:
             stopRecording(reason: .holdRelease)
         case .ignore:

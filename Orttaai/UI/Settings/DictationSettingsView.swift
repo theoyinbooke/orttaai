@@ -3,6 +3,7 @@
 
 import SwiftUI
 import KeyboardShortcuts
+import AppKit
 
 /// How recording starts and stops, plus the spoken language.
 struct DictationSettingsView: View {
@@ -11,6 +12,8 @@ struct DictationSettingsView: View {
     @AppStorage("handsFreeSilenceStopEnabled") private var handsFreeSilenceStopEnabled = true
     @AppStorage("handsFreeSilenceStopSeconds") private var handsFreeSilenceStopSeconds = 4.0
     @AppStorage("handsFreeMaxRecordingDuration") private var handsFreeMaxRecordingDuration = 600
+    @AppStorage("rightOptionDictationEnabled") private var rightOptionDictationEnabled = false
+    @State private var hasInputMonitoring = RightOptionTapMonitor.hasInputMonitoringAccess
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
     @AppStorage("lowLatencyModeEnabled") private var lowLatencyModeEnabled = false
     @State private var languageSwitchStatus: String?
@@ -38,6 +41,15 @@ struct DictationSettingsView: View {
             recordingCard
             languageCard
         }
+        .task(id: rightOptionDictationEnabled) {
+            // Watch for the permission while the key is on but not allowed,
+            // so the notice clears by itself once it's granted.
+            while rightOptionDictationEnabled, !Task.isCancelled {
+                hasInputMonitoring = RightOptionTapMonitor.hasInputMonitoringAccess
+                if hasInputMonitoring { break }
+                try? await Task.sleep(for: .seconds(1.5))
+            }
+        }
         .onChange(of: dictationLanguage) { _, newValue in
             if lowLatencyModeEnabled, newValue == "auto" {
                 dictationLanguage = "en"
@@ -56,6 +68,31 @@ struct DictationSettingsView: View {
                     : "Hold to dictate and release to insert."
             ) {
                 ShortcutRecorderField(name: .pushToTalk)
+            }
+
+            SettingsDivider()
+
+            SettingsToggleRow(
+                title: "Tap Right Option to Dictate",
+                info: "Tap the Right Option key once to start talking, and tap it again to insert the text. Typing ⌥ characters and ⌥ shortcuts still work as usual. Needs Input Monitoring.",
+                isOn: $rightOptionDictationEnabled
+            )
+
+            if rightOptionDictationEnabled, !hasInputMonitoring {
+                SettingsRow(title: "Input Monitoring") {
+                    Button("Allow…") {
+                        _ = CGRequestListenEventAccess()
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+                }
+
+                SettingsNotice(
+                    kind: .warning,
+                    message: "Turn on Orttaai under Privacy & Security › Input Monitoring. The key starts working as soon as it's allowed."
+                )
             }
 
             SettingsDivider()

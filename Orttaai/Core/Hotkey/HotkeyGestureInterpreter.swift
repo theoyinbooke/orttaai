@@ -16,8 +16,10 @@ import Foundation
 /// no wall-clock reads live here.
 struct HotkeyGestureInterpreter {
     /// A press-and-release shorter than this reads as a tap. Holding for this
-    /// long or longer keeps push-to-talk semantics (release = stop).
-    static let tapMaxDuration: TimeInterval = 0.35
+    /// long or longer keeps push-to-talk semantics (release = stop). It
+    /// matches the coordinator's minimum recording length: a hold any shorter
+    /// would be thrown away as too short, so a press that brief is a tap.
+    static let tapMaxDuration: TimeInterval = 0.5
 
     enum ReleaseAction: Equatable {
         /// Hold released: stop recording and finalize.

@@ -27,6 +27,14 @@ final class HotkeyGestureInterpreterTests: XCTestCase {
         XCTAssertEqual(action, .promoteToHandsFree, "A hold shorter than the threshold is, by definition, a tap")
     }
 
+    func testDeliberatePressShorterThanMinimumRecordingIsTap() {
+        // A 0.42s press used to read as a hold, stop at once, and be thrown
+        // away as shorter than the 0.5s minimum — the press did nothing.
+        interpreter.recordPress(at: 100.0)
+        let action = interpreter.evaluateRelease(at: 100.42, handsFreeEnabled: true)
+        XCTAssertEqual(action, .promoteToHandsFree)
+    }
+
     func testReleaseExactlyAtThresholdIsHold() {
         // Zero-based timestamps keep the subtraction exact in binary floating
         // point, so this genuinely exercises the `duration == threshold` edge.
