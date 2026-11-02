@@ -39,6 +39,20 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.18.1", items: [
+            WhatsNewItem(
+                id: "1.18.1-voice",
+                title: "Hands-free that hears you",
+                detail: "Auto-stop now listens for your voice, not loudness, so a soft voice or a quiet mic no longer cuts you off mid-sentence.",
+                art: .symbol("waveform")
+            ),
+            WhatsNewItem(
+                id: "1.18.1-bluetooth",
+                title: "Headset mics that keep going",
+                detail: "If a Bluetooth mic resets while you talk, Orttaai picks it back up and keeps what you said instead of dropping it.",
+                art: .symbol("headphones")
+            ),
+        ]),
         WhatsNewRelease(version: "1.18.0", items: [
             WhatsNewItem(
                 id: "1.18-right-option",
