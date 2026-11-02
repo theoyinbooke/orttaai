@@ -12,6 +12,8 @@ final class MockAudioCaptureService: AudioCapturing {
     var audioLevel: Float = 0
     var activeInputDeviceID: AudioDeviceID?
     var activeInputDeviceName: String? = "Test Mic"
+    var activeInputTransport: AudioInputTransport? = .builtIn
+    var captureRestartCount = 0
     var shouldFail = false
     var startCaptureError: Error = OrttaaiError.microphoneAccessDenied
     /// When set, every startCapture call from this (1-based) call number on
@@ -1380,6 +1382,48 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertTrue(stopped)
         XCTAssertEqual(recordedEnds.last?.reason, .capTimer)
         _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    func testCaptureCompletenessKeepsMostlyCompleteRecordings() {
+        typealias Coordinator = DictationCoordinator
+        XCTAssertEqual(Coordinator.captureCompleteness(sampleCount: 1_600_000, coverage: 0.95), .complete)
+        XCTAssertEqual(Coordinator.captureCompleteness(sampleCount: 1_600_000, coverage: 0.90), .complete)
+        XCTAssertEqual(
+            Coordinator.captureCompleteness(sampleCount: 1_000_000, coverage: 0.72), .partial,
+            "An 80-second dictation that lost a fifth of its audio is still worth keeping"
+        )
+        XCTAssertEqual(Coordinator.captureCompleteness(sampleCount: 48_000, coverage: 0.5), .partial)
+        XCTAssertEqual(Coordinator.captureCompleteness(sampleCount: 1_000_000, coverage: 0.49), .dropped)
+        XCTAssertEqual(
+            Coordinator.captureCompleteness(sampleCount: 47_999, coverage: 0.8), .dropped,
+            "Under three seconds of audio is fragments, not a dictation"
+        )
+    }
+
+    @MainActor
+    func testPartlyDroppedRecordingIsInsertedWithANotice() async {
+        // 3 s of audio over a 4 s recording: 75% arrived.
+        audioService.mockSamples = Array(repeating: 0.1, count: 48_000)
+        audioService.activeInputTransport = .bluetooth
+        audioService.captureRestartCount = 1
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
+        coordinator.stopRecording()
+
+        let noticeShown = await waitUntil {
+            if case .error(let message) = self.coordinator.state {
+                return message == "Some audio was lost. The rest was inserted."
+            }
+            return false
+        }
+        XCTAssertTrue(noticeShown, "Keeping a partial recording must say so")
+        XCTAssertEqual(injectionService.injectedTexts.count, 1, "What was heard is inserted, not thrown away")
+        let end = try? XCTUnwrap(recordedEnds.last)
+        XCTAssertEqual(end?.reason, .pillStop)
+        XCTAssertEqual(end?.captureCoverage ?? 0, 0.75, accuracy: 0.05)
+        XCTAssertEqual(end?.inputTransport, .bluetooth)
+        XCTAssertEqual(end?.captureRestarts, 1)
     }
 
     @MainActor

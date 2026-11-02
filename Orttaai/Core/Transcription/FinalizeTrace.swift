@@ -178,6 +178,13 @@ nonisolated struct RecordingEndTrace: Sendable, Equatable {
     var handsFreeArmed: Bool
     /// What counted as speech by the end (it adapts to the session).
     var speechThresholdRMS: Float = TranscriptionService.speechEnergyThreshold
+    /// Share of the expected audio that actually arrived (1 = all of it), nil
+    /// when the recording never reached that check.
+    var captureCoverage: Double?
+    /// How the microphone was connected: built_in, bluetooth, usb…
+    var inputTransport: AudioInputTransport?
+    /// Times capture stopped mid-recording and was brought back.
+    var captureRestarts: Int = 0
 }
 
 nonisolated extension RecordingEndTrace: Encodable {
@@ -191,6 +198,9 @@ nonisolated extension RecordingEndTrace: Encodable {
         case trailingSilenceMs = "trailing_silence_ms"
         case handsFreeArmed = "hands_free_armed"
         case speechThresholdRMS = "speech_threshold_rms"
+        case captureCoverage = "capture_coverage"
+        case inputTransport = "input_transport"
+        case captureRestarts = "capture_restarts"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -204,6 +214,9 @@ nonisolated extension RecordingEndTrace: Encodable {
         try container.encode(trailingSilenceMs, forKey: .trailingSilenceMs)
         try container.encode(handsFreeArmed, forKey: .handsFreeArmed)
         try container.encode(speechThresholdRMS, forKey: .speechThresholdRMS)
+        try container.encodeIfPresent(captureCoverage, forKey: .captureCoverage)
+        try container.encodeIfPresent(inputTransport?.rawValue, forKey: .inputTransport)
+        try container.encode(captureRestarts, forKey: .captureRestarts)
     }
 }
 

@@ -16,6 +16,16 @@ struct AudioSettingsView: View {
     @State private var audioResetMessage: String?
     @State private var audioResetSucceeded = true
 
+    /// The input Orttaai will record from is a Bluetooth headset: the chosen
+    /// device, or the Mac's default when System Default is selected.
+    private var usesBluetoothInput: Bool {
+        if let id = AudioDeviceID(selectedDeviceID), id != 0,
+           audioDeviceManager.devices.contains(where: { $0.id == id }) {
+            return AudioInputTransport.of(id) == .bluetooth
+        }
+        return AudioInputTransport.systemDefaultInput == .bluetooth
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             SettingsCard("Microphone") {
@@ -48,6 +58,13 @@ struct AudioSettingsView: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Input level for \(activeDeviceLabel)")
                     .accessibilityValue(audioLevelLabel)
+                }
+
+                if usesBluetoothInput {
+                    SettingsNotice(
+                        kind: .info,
+                        message: "This is a Bluetooth headset mic. Recording with it switches the headphones to call quality and can take a moment to start. For the clearest dictation, choose your Mac's microphone here and keep the headphones for listening."
+                    )
                 }
 
                 if audioDeviceManager.devices.isEmpty {

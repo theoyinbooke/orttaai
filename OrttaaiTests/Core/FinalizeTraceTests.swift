@@ -204,7 +204,7 @@ final class FinalizeTraceTests: XCTestCase {
             Set(objects[1].keys),
             ["ts", "kind", "reason", "recording_duration_ms", "mode", "silence_stop_seconds",
              "speech_frame_count", "peak_frame_rms", "trailing_silence_ms", "hands_free_armed",
-             "speech_threshold_rms"],
+             "speech_threshold_rms", "capture_restarts"],
             "A recording-end line carries numbers and enums only"
         )
     }
@@ -225,6 +225,28 @@ final class FinalizeTraceTests: XCTestCase {
 
         XCTAssertEqual(object["mode"] as? String, "push_to_talk")
         XCTAssertTrue(object["silence_stop_seconds"] is NSNull)
+    }
+
+    func testRecordingEndCarriesCaptureHealth() throws {
+        let end = RecordingEndTrace(
+            reason: .hotkeyTapStop,
+            recordingDurationMs: 80_000,
+            isHandsFree: true,
+            silenceStopSeconds: nil,
+            speechFrameCount: 500,
+            peakFrameRMS: 0.1,
+            trailingSilenceMs: 900,
+            handsFreeArmed: true,
+            captureCoverage: 0.72,
+            inputTransport: .bluetooth,
+            captureRestarts: 2
+        )
+        let data = try JSONEncoder().encode(end)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(try XCTUnwrap(object["capture_coverage"] as? Double), 0.72, accuracy: 0.000_1)
+        XCTAssertEqual(object["input_transport"] as? String, "bluetooth")
+        XCTAssertEqual(object["capture_restarts"] as? Int, 2)
     }
 
     func testLogRotatesOnceSizeCapIsReached() throws {

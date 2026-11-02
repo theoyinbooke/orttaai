@@ -11,6 +11,10 @@ protocol AudioCapturing: AnyObject {
     var activeInputDeviceID: AudioDeviceID? { get }
     /// Name of the device being recorded from, nil when not recording.
     var activeInputDeviceName: String? { get }
+    /// How the device being recorded from is connected, nil when not recording.
+    var activeInputTransport: AudioInputTransport? { get }
+    /// Times the active recording's capture stopped and was brought back.
+    var captureRestartCount: Int { get }
     func startCapture(deviceID: AudioDeviceID?) throws
     func stopCapture() -> [Float]
     func currentSamplesSnapshot(maxSamples: Int?) -> [Float]
@@ -22,6 +26,9 @@ protocol AudioCapturing: AnyObject {
 }
 
 extension AudioCapturing {
+    var activeInputTransport: AudioInputTransport? { nil }
+    var captureRestartCount: Int { 0 }
+
     func startCapture() throws {
         try startCapture(deviceID: nil)
     }
@@ -109,12 +116,23 @@ final class AudioCaptureService: AudioCapturing {
     private static let startupRetryDelays: [TimeInterval] = [0.0, 0.2, 0.5]
     private static let postWakeStartupRetryDelays: [TimeInterval] = [0.0, 0.25, 0.6, 1.0]
     private static let callbackHandshakeTimeout: TimeInterval = 0.55
+    /// How long a running capture may go without a single frame before it is
+    /// restarted. A Bluetooth headset switching to its call profile can leave
+    /// the engine "running" but silent.
+    private static let stallRestartInterval: TimeInterval = 1.5
+    /// Pauses between attempts to bring capture back mid-recording. A
+    /// Bluetooth headset can take a couple of seconds to settle.
+    private static let recoveryRetryDelays: [TimeInterval] = [0.0, 0.3, 0.6, 1.0, 1.5, 2.0]
 
     private(set) var audioLevel: Float = 0
     private(set) var activeInputDeviceID: AudioDeviceID?
     var activeInputDeviceName: String? {
         activeInputDeviceID.map(Self.deviceName(for:))
     }
+    var activeInputTransport: AudioInputTransport? {
+        activeInputDeviceID.map(AudioInputTransport.of)
+    }
+    private(set) var captureRestartCount = 0
 
     private var engine = AVAudioEngine()
     private struct ConverterState {
@@ -161,6 +179,15 @@ final class AudioCaptureService: AudioCapturing {
     private var captureSessionDelegate: CaptureSessionOutputDelegate?
     private let captureOutputQueue = DispatchQueue(label: "com.orttaai.capture-session-output")
     private let backendPreferences: AudioCaptureBackendPreferences
+    /// The device the active recording asked for (nil = system default), so a
+    /// mid-recording restart reopens the same input.
+    private var recordingRequestedDeviceID: AudioDeviceID?
+    private var engineConfigurationObserver: NSObjectProtocol?
+    /// Bumped whenever a recording starts or stops, so a recovery still in
+    /// flight never touches a newer (or finished) recording.
+    private var recordingGeneration = 0
+    private var isRecoveringCapture = false
+    private var lastFrameProgress: (count: UInt64, at: Date) = (0, .distantPast)
 
     init(defaults: UserDefaults = .standard) {
         backendPreferences = AudioCaptureBackendPreferences(defaults: defaults)
@@ -191,6 +218,10 @@ final class AudioCaptureService: AudioCapturing {
 
         let isPostWake = audioSystemMayBeStale
         audioSystemMayBeStale = false
+        recordingGeneration += 1
+        isRecoveringCapture = false
+        recordingRequestedDeviceID = deviceID
+        captureRestartCount = 0
 
         let retryDelays = isPostWake ? Self.postWakeStartupRetryDelays : Self.startupRetryDelays
         var lastError: Error = OrttaaiError.noAudioInput
@@ -271,8 +302,8 @@ final class AudioCaptureService: AudioCapturing {
         try configureAndStartAudioEngine(deviceID: nil)
     }
 
-    private func configureAndStartAudioEngine(deviceID: AudioDeviceID? = nil) throws {
-        teardownEngineState(clearSamples: true)
+    private func configureAndStartAudioEngine(deviceID: AudioDeviceID? = nil, keepSamples: Bool = false) throws {
+        teardownEngineState(clearSamples: !keepSamples)
         engine = AVAudioEngine()
         captureBackend = .audioEngine
 
@@ -330,7 +361,7 @@ final class AudioCaptureService: AudioCapturing {
             engine.prepare()
             try engine.start()
         } catch {
-            teardownEngineState(clearSamples: true)
+            teardownEngineState(clearSamples: !keepSamples)
             throw error
         }
 
@@ -344,8 +375,22 @@ final class AudioCaptureService: AudioCapturing {
             Logger.audio.warning(
                 "Audio engine started but produced no converted frames (tap callbacks: \(callbackDelta))"
             )
-            teardownEngineState(clearSamples: true)
+            teardownEngineState(clearSamples: !keepSamples)
             throw OrttaaiError.noAudioInput
+        }
+
+        // macOS stops the engine, without telling the tap, whenever the
+        // input's format changes: a Bluetooth headset switching to its call
+        // profile, a mic unplugged, the default input changing. Bring the
+        // recording back rather than silently losing the rest of it.
+        engineConfigurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.recoverCapture(reason: "the input's audio format changed")
+            }
         }
 
         startLevelTimer()
@@ -353,8 +398,8 @@ final class AudioCaptureService: AudioCapturing {
         Logger.audio.info("Audio capture started at hardware rate \(hwFormat.sampleRate) Hz, converting to 16 kHz")
     }
 
-    private func configureAndStartCaptureSession(deviceID: AudioDeviceID) throws {
-        teardownEngineState(clearSamples: true)
+    private func configureAndStartCaptureSession(deviceID: AudioDeviceID, keepSamples: Bool = false) throws {
+        teardownEngineState(clearSamples: !keepSamples)
         captureBackend = .captureSession
 
         let deviceName = Self.deviceName(for: deviceID)
@@ -412,7 +457,7 @@ final class AudioCaptureService: AudioCapturing {
         let initialOutputFrameCount = tapOutputFrameCount.withLock { $0 }
         session.startRunning()
         guard session.isRunning else {
-            teardownEngineState(clearSamples: true)
+            teardownEngineState(clearSamples: !keepSamples)
             throw OrttaaiError.noAudioInput
         }
 
@@ -423,7 +468,7 @@ final class AudioCaptureService: AudioCapturing {
             Logger.audio.warning(
                 "Capture session started for \(inputDevice.localizedName) but produced no converted frames"
             )
-            teardownEngineState(clearSamples: true)
+            teardownEngineState(clearSamples: !keepSamples)
             throw OrttaaiError.noAudioInput
         }
 
@@ -432,6 +477,8 @@ final class AudioCaptureService: AudioCapturing {
     }
 
     func stopCapture() -> [Float] {
+        recordingGeneration += 1
+        isRecoveringCapture = false
         teardownEngineState(clearSamples: false)
 
         let capturedSamples = sampleQueue.sync {
@@ -545,6 +592,10 @@ final class AudioCaptureService: AudioCapturing {
     }
 
     private func teardownEngineState(clearSamples: Bool) {
+        if let engineConfigurationObserver {
+            NotificationCenter.default.removeObserver(engineConfigurationObserver)
+            self.engineConfigurationObserver = nil
+        }
         if tapInstalled {
             engine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
@@ -581,6 +632,66 @@ final class AudioCaptureService: AudioCapturing {
         }
     }
 
+    /// Restarts a capture that has stopped delivering audio mid-recording.
+    private func restartIfStalled() {
+        guard captureBackend != .idle, !isRecoveringCapture else { return }
+        let frames = tapOutputFrameCount.withLock { $0 }
+        let now = Date()
+        if frames != lastFrameProgress.count {
+            lastFrameProgress = (frames, now)
+            return
+        }
+        guard frames > 0, now.timeIntervalSince(lastFrameProgress.at) >= Self.stallRestartInterval else { return }
+        recoverCapture(reason: "no audio arrived for \(Self.stallRestartInterval) s")
+    }
+
+    /// Reopens the recording's input after it stopped mid-recording, keeping
+    /// every sample already captured. Retries for a few seconds while the
+    /// device settles; gives up quietly if the recording ends meanwhile.
+    private func recoverCapture(reason: String) {
+        guard !isRecoveringCapture, captureBackend != .idle || tapInstalled else { return }
+        isRecoveringCapture = true
+        let generation = recordingGeneration
+        let capturedSoFar = capturedSampleCount
+        Logger.audio.warning(
+            "Capture interrupted mid-recording (\(reason)) after \(capturedSoFar) samples; restarting"
+        )
+        teardownEngineState(clearSamples: false)
+
+        Task { @MainActor [weak self] in
+            var deviceID = self?.recordingRequestedDeviceID
+            for (attempt, delay) in Self.recoveryRetryDelays.enumerated() {
+                if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+                guard let self, self.recordingGeneration == generation else { return }
+                do {
+                    try self.restartCapture(deviceID: deviceID)
+                    self.isRecoveringCapture = false
+                    self.captureRestartCount += 1
+                    Logger.audio.info("Capture recovered on attempt \(attempt + 1); recording continues")
+                    return
+                } catch {
+                    Logger.audio.warning(
+                        "Capture recovery attempt \(attempt + 1) failed: \(error.localizedDescription)"
+                    )
+                    // The chosen mic may be gone; carry on from the system default.
+                    deviceID = nil
+                }
+            }
+            guard let self, self.recordingGeneration == generation else { return }
+            self.isRecoveringCapture = false
+            Logger.audio.error("Capture could not be recovered; the recording keeps what it had")
+        }
+    }
+
+    private func restartCapture(deviceID: AudioDeviceID?) throws {
+        do {
+            try configureAndStartAudioEngine(deviceID: deviceID, keepSamples: true)
+        } catch {
+            guard let deviceID else { throw error }
+            try configureAndStartCaptureSession(deviceID: deviceID, keepSamples: true)
+        }
+    }
+
     private func waitForInitialTapFrames(after count: UInt64, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -594,11 +705,13 @@ final class AudioCaptureService: AudioCapturing {
     }
 
     private func startLevelTimer() {
+        lastFrameProgress = (tapOutputFrameCount.withLock { $0 }, Date())
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now(), repeating: 1.0 / 30.0)
         timer.setEventHandler { [weak self] in
             guard let self = self else { return }
             self.audioLevel = self._currentLevel.withLock { $0 }
+            self.restartIfStalled()
         }
         timer.resume()
         levelTimer = timer

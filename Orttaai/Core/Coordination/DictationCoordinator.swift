@@ -123,7 +123,7 @@ final class DictationCoordinator {
     private let backgroundDecodePollIntervalNs: UInt64 = 250_000_000
     private let silenceMonitorPollIntervalNs: UInt64 = 250_000_000
     nonisolated private static let captureSampleRate = 16_000
-    private static let minimumCaptureCoverage = 0.90
+    nonisolated private static let minimumCaptureCoverage = 0.90
 
     private var capTimerTask: Task<Void, Never>?
     private var backgroundDecodeTask: Task<Void, Never>?
@@ -134,6 +134,9 @@ final class DictationCoordinator {
     /// The microphone the current recording came from, kept with its history
     /// row (capture forgets the device when it stops).
     private var recordingInputDeviceName: String?
+    private var recordingInputTransport: AudioInputTransport?
+    /// Part of this recording's audio never arrived; the rest was kept.
+    private var sessionLostAudio = false
     /// Watches each inserted dictation for the user's fixes.
     private let editLearner: (any InsertedTextWatching)?
     /// Per-session speech accounting behind the hands-free silence auto-stop
@@ -447,6 +450,7 @@ final class DictationCoordinator {
             let selectedDeviceID = settings.selectedInputDeviceID
             try audioService.startCapture(deviceID: selectedDeviceID)
             recordingInputDeviceName = audioService.activeInputDeviceName
+            recordingInputTransport = audioService.activeInputTransport
             state = .recording(startTime: Date())
             startCapTimer()
             startBackgroundDecodeLoop()
@@ -554,8 +558,19 @@ final class DictationCoordinator {
             sampleCount: samples.count,
             recordingDurationMs: Int(duration * 1000)
         )
-        guard coverage >= Self.minimumCaptureCoverage else {
-            recordRecordingEnd(.audioDropped, duration: duration)
+        switch Self.captureCompleteness(sampleCount: samples.count, coverage: coverage) {
+        case .complete:
+            break
+        case .partial:
+            // Some audio never arrived (typically a Bluetooth mic resetting
+            // mid-recording). Most of it did: keep what was said rather
+            // than throw away a long dictation, and say so afterwards.
+            sessionLostAudio = true
+            Logger.dictation.warning(
+                "Keeping incomplete recording: \(samples.count) samples over \(duration, format: .fixed(precision: 2))s (\(coverage * 100, format: .fixed(precision: 1))% coverage)"
+            )
+        case .dropped:
+            recordRecordingEnd(.audioDropped, duration: duration, coverage: coverage)
             discardBackgroundDecodeSession()
             state = .error(message: "Audio was dropped. Please dictate again.")
             endSessionContext()
@@ -566,7 +581,7 @@ final class DictationCoordinator {
             return
         }
 
-        recordRecordingEnd(reason, duration: duration)
+        recordRecordingEnd(reason, duration: duration, coverage: coverage)
         let estimatedProcessing = estimateProcessingTime(duration)
         state = .processing(estimatedDuration: settings.showProcessingEstimate ? estimatedProcessing : nil)
 
@@ -718,7 +733,12 @@ final class DictationCoordinator {
             case .success(let method):
                 maybeStartFastFirstPrefetch(afterSuccessfulDictationWith: resolvedModelID)
                 editLearner?.watch(insertedText: output.text, targetApp: targetApp)
-                state = .idle
+                if sessionLostAudio {
+                    state = .error(message: "Some audio was lost. The rest was inserted.")
+                    autoDismissError()
+                } else {
+                    state = .idle
+                }
                 endSessionContext()
                 Logger.dictation.info(
                     "Latency telemetry (ms): settings=\(settingsSyncMs ?? -1), transcribe=\(transcriptionMs ?? -1), process=\(textProcessingMs ?? -1), inject=\(injectionMs ?? -1), activate=\(injectionTelemetry?.appActivationMs ?? -1), restoreDelay=\(injectionTelemetry?.clipboardRestoreDelayMs ?? -1), pipeline=\(processingMs), method=\(method.rawValue)"
@@ -753,6 +773,8 @@ final class DictationCoordinator {
     private func endSessionContext() {
         targetApp = nil
         recordingInputDeviceName = nil
+        recordingInputTransport = nil
+        sessionLostAudio = false
         editSelection = nil
         sessionKind = .dictation
         autoStopPolicy = HandsFreeAutoStopPolicy()
@@ -761,7 +783,7 @@ final class DictationCoordinator {
     /// Hands one numbers-and-enums trace for the recording that just ended to
     /// the diagnostics sink. Call before `endSessionContext` resets the
     /// session's speech accounting.
-    private func recordRecordingEnd(_ reason: RecordingEndReason, duration: TimeInterval) {
+    private func recordRecordingEnd(_ reason: RecordingEndReason, duration: TimeInterval, coverage: Double? = nil) {
         let isHandsFree = recordingMode == .handsFree
         recordingEndSink?(RecordingEndTrace(
             reason: reason,
@@ -772,7 +794,10 @@ final class DictationCoordinator {
             peakFrameRMS: autoStopPolicy.peakFrameRMS,
             trailingSilenceMs: autoStopPolicy.trailingSilenceMs,
             handsFreeArmed: isHandsFree && autoStopPolicy.isArmed,
-            speechThresholdRMS: autoStopPolicy.speechThreshold
+            speechThresholdRMS: autoStopPolicy.speechThreshold,
+            captureCoverage: coverage,
+            inputTransport: recordingInputTransport,
+            captureRestarts: audioService.captureRestartCount
         ))
     }
 
@@ -1230,6 +1255,7 @@ final class DictationCoordinator {
                 do {
                     try self.audioService.startCapture(deviceID: self.settings.selectedInputDeviceID)
                     self.recordingInputDeviceName = self.audioService.activeInputDeviceName
+                    self.recordingInputTransport = self.audioService.activeInputTransport
                     Logger.dictation.info("Audio capture recovered after health check")
                 } catch {
                     Logger.dictation.error("Audio recovery failed: \(error.localizedDescription)")
@@ -1250,6 +1276,27 @@ final class DictationCoordinator {
 
     private func syncTranscriptionSettings() async {
         await settings.syncTranscriptionSettings(to: transcriptionService)
+    }
+
+    /// Whether a finished recording has enough of its audio to transcribe.
+    nonisolated enum CaptureCompleteness: Equatable {
+        /// All, or nearly all, of the audio arrived.
+        case complete
+        /// A gap, but most of a real recording arrived: keep it.
+        case partial
+        /// Too little arrived to be worth transcribing.
+        case dropped
+    }
+
+    /// At least half the audio and at least three seconds of it make a gap
+    /// worth keeping; less would insert fragments.
+    nonisolated private static let minimumPartialCoverage = 0.5
+    nonisolated private static let minimumPartialSampleCount = captureSampleRate * 3
+
+    nonisolated static func captureCompleteness(sampleCount: Int, coverage: Double) -> CaptureCompleteness {
+        if coverage >= minimumCaptureCoverage { return .complete }
+        if coverage >= minimumPartialCoverage, sampleCount >= minimumPartialSampleCount { return .partial }
+        return .dropped
     }
 
     nonisolated static func captureCoverage(
