@@ -130,6 +130,23 @@ nonisolated enum ExpressModelStore {
         ]
     )
 
+    /// Silero VAD, which tells hands-free dictation when you've stopped
+    /// talking (HandsFreeAutoStopPolicy). About 1 MB, for every engine, not
+    /// only Express. The model card carries its MIT licence.
+    static let voiceDetector = ExpressModelPackage(
+        name: "Silero VAD",
+        repository: "FluidInference/silero-vad-coreml",
+        revision: "b419383c55c110e2c9271fa6ee0ea83d03c70d96",
+        files: [
+            file("silero-vad-unified-256ms-v6.2.1.mlmodelc/analytics/coremldata.bin", 243, "8067594eb3126ab8318af507f0c00cabfed40d5fedb8a0ee5075dd02e903d909"),
+            file("silero-vad-unified-256ms-v6.2.1.mlmodelc/coremldata.bin", 625, "7db35a4fd995222a7fb0129713473b15d1462572ab4a2e5e4d56bcaad9e40f41"),
+            file("silero-vad-unified-256ms-v6.2.1.mlmodelc/metadata.json", 3_335, "2740be542c611e1ba358e1849b4e265c65cdf0b17192767e1e5de86a31ac94d6"),
+            file("silero-vad-unified-256ms-v6.2.1.mlmodelc/model.mil", 176_918, "c6a9d1bf22d413265da0a07a1d14151c3ea2fad296b3aa5859275b33ef1c3270"),
+            file("silero-vad-unified-256ms-v6.2.1.mlmodelc/weights/weight.bin", 882_304, "53ecc8b5081146140ab654c89109cf001f2183abddd7a2411c5081feeffff063"),
+            file("README.md", 2_472, "c31dbec3e24a014a51fc06c645b3cb04897c97ecdbad9a90645466019c933ef4"),
+        ]
+    )
+
     static let packages = [speech, wordBoost]
 
     /// Everything turning Express on downloads.

@@ -52,6 +52,37 @@ final class MockAudioCaptureService: AudioCapturing {
     }
 }
 
+/// Hears speech for the first `speechSamples` of each recording, then none.
+actor MockVoiceDetector: VoiceActivityDetecting {
+    nonisolated let chunkSampleCount = 4_096
+    private let speechSamples: Int
+    private let fails: Bool
+    private var consumed = 0
+    private(set) var calls = 0
+
+    init(speechSamples: Int, fails: Bool = false) {
+        self.speechSamples = speechSamples
+        self.fails = fails
+    }
+
+    func reset() {
+        consumed = 0
+    }
+
+    func speech(in samples: [Float]) throws -> [Bool] {
+        calls += 1
+        if fails { throw OrttaaiError.noAudioInput }
+        var verdicts: [Bool] = []
+        var start = 0
+        while start + chunkSampleCount <= samples.count {
+            verdicts.append(consumed < speechSamples)
+            consumed += chunkSampleCount
+            start += chunkSampleCount
+        }
+        return verdicts
+    }
+}
+
 actor MockTranscriptionService: Transcribing {
     var isLoaded: Bool = true
     var mockResult: String = "Hello world"
@@ -1220,6 +1251,61 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(end?.speechFrameCount, 10)
         XCTAssertGreaterThanOrEqual(end?.trailingSilenceMs ?? 0, 1_000)
         XCTAssertEqual(end?.isHandsFree, true)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    // MARK: - Hands-free auto-stop with the voice detector
+
+    @MainActor
+    func testVoiceDetectorStopsOverLoudNoise() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        // Loud throughout (a fan as loud as speech); the voice is only the first second.
+        audioService.mockSamples = speech(seconds: 3.0)
+        coordinator.voiceDetector = MockVoiceDetector(speechSamples: 16_000)
+
+        coordinator.startHandsFreeRecording()
+        let stopped = await waitUntil(timeoutSeconds: 4) { !self.isStillRecording() }
+        XCTAssertTrue(stopped, "Silence after the voice must stop it, however loud the room")
+
+        let end = recordedEnds.first
+        XCTAssertEqual(end?.reason, .silenceAutoStop)
+        XCTAssertEqual(end?.voiceDetected, 4 * 4_096 * 1_000 / 16_000)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testVoiceDetectorKeepsSoftSpeechRecording() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        // Loudness would stop this after a second; the voice detector hears talking throughout.
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 2.5)
+        coordinator.voiceDetector = MockVoiceDetector(speechSamples: .max)
+
+        coordinator.startHandsFreeRecording()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        XCTAssertTrue(isStillRecording(), "A voice the detector hears keeps the recording open")
+
+        coordinator.stopRecording()
+        XCTAssertNotEqual(recordedEnds.last?.reason, .silenceAutoStop)
+        _ = await waitUntil { self.coordinator.state == .idle }
+    }
+
+    @MainActor
+    func testFailingVoiceDetectorFallsBackToLoudness() async {
+        settings.handsFreeSilenceStopEnabled = true
+        settings.handsFreeSilenceStopSeconds = 1.0
+        audioService.mockSamples = speech(seconds: 1.0) + silence(seconds: 1.5)
+        let detector = MockVoiceDetector(speechSamples: .max, fails: true)
+        coordinator.voiceDetector = detector
+
+        coordinator.startHandsFreeRecording()
+        let stopped = await waitUntil(timeoutSeconds: 4) { !self.isStillRecording() }
+        XCTAssertTrue(stopped, "Loudness takes over when the detector fails")
+        XCTAssertEqual(recordedEnds.first?.reason, .silenceAutoStop)
+        XCTAssertNil(recordedEnds.first?.voiceDetected)
+        let calls = await detector.calls
+        XCTAssertEqual(calls, 1, "A failed detector isn't asked again in the same recording")
         _ = await waitUntil { self.coordinator.state == .idle }
     }
 

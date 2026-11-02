@@ -185,6 +185,9 @@ nonisolated struct RecordingEndTrace: Sendable, Equatable {
     var inputTransport: AudioInputTransport?
     /// Times capture stopped mid-recording and was brought back.
     var captureRestarts: Int = 0
+    /// Milliseconds the Silero voice detector heard as speech, nil when
+    /// loudness decided when the recording had gone quiet.
+    var voiceDetected: Int?
 }
 
 nonisolated extension RecordingEndTrace: Encodable {
@@ -201,6 +204,7 @@ nonisolated extension RecordingEndTrace: Encodable {
         case captureCoverage = "capture_coverage"
         case inputTransport = "input_transport"
         case captureRestarts = "capture_restarts"
+        case voiceDetected = "voice_detected_ms"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -217,6 +221,7 @@ nonisolated extension RecordingEndTrace: Encodable {
         try container.encodeIfPresent(captureCoverage, forKey: .captureCoverage)
         try container.encodeIfPresent(inputTransport?.rawValue, forKey: .inputTransport)
         try container.encode(captureRestarts, forKey: .captureRestarts)
+        try container.encodeIfPresent(voiceDetected, forKey: .voiceDetected)
     }
 }
 

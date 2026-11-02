@@ -41,6 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isPushToTalkPressed = false
     private var isEditCommandPressed = false
     private let rightOptionTapMonitor = RightOptionTapMonitor()
+    private let voiceDetectorLoader = SileroVoiceDetectorLoader()
+    private var voiceDetectorRequested = false
     private var rightOptionRetryTask: Task<Void, Never>?
     private let recordingStartCue = NSSound.Name("Glass")
     private let recordingStopCue = NSSound.Name("Pop")
@@ -144,6 +146,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.statusBarMenu?.updatePolishMode(isOn: settings.localLLMPolishEnabled)
             self.floatingPanel?.handsFreeHintEnabled = settings.handsFreeModeEnabled
             self.updateRightOptionListener()
+            self.loadVoiceDetectorIfNeeded()
         }
         floatingPanel?.handsFreeHintEnabled = state.settings.handsFreeModeEnabled
         statusBarMenu?.setHomePreviewMode(!isHomeWorkspaceAutoOpenEnabled)
@@ -529,6 +532,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Gives hands-free auto-stop the Silero voice detector, downloading it
+    /// (about 1 MB) the first time. Once per launch: if it can't be had,
+    /// auto-stop keeps using loudness until the next launch.
+    private func loadVoiceDetectorIfNeeded() {
+        guard runtimeServicesStarted, !voiceDetectorRequested, let settings = appState?.settings,
+              settings.handsFreeModeEnabled, settings.handsFreeSilenceStopEnabled else { return }
+        voiceDetectorRequested = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let detector = await self.voiceDetectorLoader.readyDetector()
+            self.coordinator?.voiceDetector = detector
+        }
+    }
+
     /// Starts or stops the Right Option listener to match the setting. When
     /// macOS refuses it for lack of Input Monitoring, keeps retrying quietly
     /// so it starts the moment the permission is granted.
@@ -691,6 +708,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startEditCommandShortcut()
         runtimeServicesStarted = true
         updateRightOptionListener()
+        loadVoiceDetectorIfNeeded()
         floatingPanel?.show()
         warmUpModel()
         Task { @MainActor [weak self] in

@@ -126,6 +126,110 @@ final class HandsFreeAutoStopTests: XCTestCase {
         XCTAssertTrue(shouldStop(samples, window: 6, duration: 9.5))
     }
 
+    // MARK: - A very quiet microphone (wireless mic, near-silent room)
+
+    /// Soft speech as the wireless mic recorded it: words between 0.002 and
+    /// 0.005, short gaps at the room's level, and one louder syllable per
+    /// second when `withAccents` (peaking near 0.0145).
+    private func softSpeech(seconds: Double, withAccents: Bool = true) -> [Float] {
+        let frames: [Float] = [
+            withAccents ? 0.0145 : 0.0045, 0.004, 0.003, 0.0045, 0.0025,
+            0.0005, 0.0035, 0.005, 0.002, 0.0005,
+        ]
+        let frame = TranscriptionService.energyFrameSampleCount
+        var samples: [Float] = []
+        for index in 0..<Int(seconds * 10) {
+            samples += [Float](repeating: frames[index % frames.count], count: frame)
+        }
+        return samples
+    }
+
+    func testSoftSpeechOnAVeryQuietMicrophoneKeepsRecording() {
+        // Tonight's cut-off: talking throughout, but for more than six
+        // seconds nothing rose above the old 0.006 floor.
+        let samples = room(seconds: 1, level: 0.0005)
+            + softSpeech(seconds: 10)
+            + softSpeech(seconds: 8, withAccents: false)
+            + softSpeech(seconds: 10)
+        let scanned = policy(scanning: samples)
+        XCTAssertLessThanOrEqual(scanned.speechThreshold, 0.002, "The line follows this microphone, not a fixed floor")
+        XCTAssertFalse(shouldStop(samples, window: 6, duration: 29), "Soft speech is speech, not silence")
+        XCTAssertGreaterThan(
+            scanned.speechFrameCount, 200,
+            "Most of what was said counts as speech, not 2.5 seconds of it"
+        )
+    }
+
+    func testVeryQuietMicrophoneStillStopsAfterSilence() {
+        let samples = room(seconds: 1, level: 0.0005) + softSpeech(seconds: 10) + room(seconds: 6.5, level: 0.0005)
+        XCTAssertTrue(shouldStop(samples, window: 6, duration: 17.5), "The room itself is still silence")
+    }
+
+    func testNearDigitalSilenceNeverCountsAsSpeech() {
+        // Digital silence, a little quiet speech, then faint hiss: only the
+        // floor stands between the hiss and "still talking".
+        let samples = silence(seconds: 0.5) + room(seconds: 1, level: 0.01) + room(seconds: 6.5, level: 0.001)
+        let scanned = policy(scanning: samples)
+        XCTAssertEqual(scanned.speechThreshold, HandsFreeAutoStopPolicy.quietestSpeech, accuracy: 0.000_01)
+        XCTAssertTrue(shouldStop(samples, window: 6, duration: 8))
+    }
+
+    // MARK: - Voice detector verdicts
+
+    private let voiceChunk = 4_096
+
+    func testVoiceVerdictsStopOverLoudNoise() {
+        // A fan as loud as speech: loudness never hears the silence.
+        let loudThroughout = speech(seconds: 8)
+        var policy = policy(scanning: loudThroughout)
+        XCTAssertFalse(policy.shouldStop(silenceWindow: 4, recordingDuration: 8, minimumDuration: 0.5))
+
+        // The voice detector hears 2 s of speech, then none.
+        policy.heardVoice([Bool](repeating: true, count: 8) + [Bool](repeating: false, count: 23), chunkSampleCount: voiceChunk)
+        XCTAssertTrue(policy.usesVoiceDetector)
+        XCTAssertTrue(policy.isArmed)
+        XCTAssertEqual(policy.trailingSilenceMs, 23 * voiceChunk * 1_000 / 16_000)
+        XCTAssertTrue(policy.shouldStop(silenceWindow: 4, recordingDuration: 8, minimumDuration: 0.5))
+    }
+
+    func testVoiceVerdictsKeepSoftSpeechRecording() {
+        // Loudness calls this silence after the first second...
+        let samples = speech(seconds: 1) + silence(seconds: 7)
+        var policy = policy(scanning: samples)
+        XCTAssertTrue(policy.shouldStop(silenceWindow: 4, recordingDuration: 8, minimumDuration: 0.5))
+
+        // ...but the voice detector hears someone talking softly throughout.
+        policy.heardVoice([Bool](repeating: true, count: 31), chunkSampleCount: voiceChunk)
+        XCTAssertFalse(policy.shouldStop(silenceWindow: 4, recordingDuration: 8, minimumDuration: 0.5))
+    }
+
+    func testOneVoiceChunkDoesNotArm() {
+        var policy = HandsFreeAutoStopPolicy()
+        policy.heardVoice([true] + [Bool](repeating: false, count: 30), chunkSampleCount: voiceChunk)
+        XCTAssertFalse(policy.isArmed, "256 ms of speech is a cough or a click, not a dictation")
+        XCTAssertFalse(policy.shouldStop(silenceWindow: 4, recordingDuration: 8, minimumDuration: 0.5))
+    }
+
+    func testVerdictsContinueFromWhereTheyEnded() {
+        var policy = HandsFreeAutoStopPolicy()
+        policy.heardVoice([true, true], chunkSampleCount: voiceChunk)
+        policy.heardVoice([false], chunkSampleCount: voiceChunk)
+        XCTAssertEqual(policy.voiceScannedSampleCount, 3 * voiceChunk)
+        XCTAssertEqual(policy.voiceSpeechSampleCount, 2 * voiceChunk)
+        XCTAssertEqual(policy.trailingSilenceMs, voiceChunk * 1_000 / 16_000)
+    }
+
+    func testAbandoningTheVoiceDetectorFallsBackToLoudness() {
+        var policy = policy(scanning: speech(seconds: 1) + silence(seconds: 5))
+        policy.heardVoice([Bool](repeating: true, count: 23), chunkSampleCount: voiceChunk)
+        XCTAssertFalse(policy.shouldStop(silenceWindow: 4, recordingDuration: 6, minimumDuration: 0.5))
+
+        policy.abandonVoiceDetector()
+        XCTAssertFalse(policy.usesVoiceDetector)
+        XCTAssertTrue(policy.voiceDetectorFailed)
+        XCTAssertTrue(policy.shouldStop(silenceWindow: 4, recordingDuration: 6, minimumDuration: 0.5))
+    }
+
     func testNeverStricterThanTheTranscriptionThreshold() {
         let scanned = policy(scanning: speech(seconds: 3) + silence(seconds: 1))
         XCTAssertLessThanOrEqual(scanned.speechThreshold, TranscriptionService.speechEnergyThreshold)

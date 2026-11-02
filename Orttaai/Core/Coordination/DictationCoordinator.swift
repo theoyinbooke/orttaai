@@ -142,6 +142,12 @@ final class DictationCoordinator {
     /// Per-session speech accounting behind the hands-free silence auto-stop
     /// and the recording-end diagnostics. Reset when the session ends.
     private var autoStopPolicy = HandsFreeAutoStopPolicy()
+    /// Silero VAD once it's loaded; hands-free auto-stop uses loudness until
+    /// then, or if it fails.
+    var voiceDetector: VoiceActivityDetecting?
+    /// Changes whenever the silence monitor starts, so a verdict that
+    /// arrives after its recording ended is dropped.
+    private var voiceListeningSession = UUID()
     /// Receives one numbers-and-enums trace per recording end. Nil (inert)
     /// unless the app installs the diagnostics log.
     var recordingEndSink: ((RecordingEndTrace) -> Void)?
@@ -797,7 +803,10 @@ final class DictationCoordinator {
             speechThresholdRMS: autoStopPolicy.speechThreshold,
             captureCoverage: coverage,
             inputTransport: recordingInputTransport,
-            captureRestarts: audioService.captureRestartCount
+            captureRestarts: audioService.captureRestartCount,
+            voiceDetected: autoStopPolicy.usesVoiceDetector
+                ? autoStopPolicy.voiceSpeechSampleCount * 1_000 / HandsFreeAutoStopPolicy.sampleRate
+                : nil
         ))
     }
 
@@ -1188,13 +1197,41 @@ final class DictationCoordinator {
     /// recorded since the last one.
     private func startHandsFreeSilenceMonitor() {
         silenceMonitorTask?.cancel()
+        let session = UUID()
+        voiceListeningSession = session
+        let detector = voiceDetector
         silenceMonitorTask = Task(priority: .userInitiated) { [weak self] in
+            await detector?.reset()
             guard let self = self else { return }
 
             while !Task.isCancelled {
+                if let detector {
+                    await self.listenForVoice(with: detector, session: session)
+                }
                 self.evaluateHandsFreeAutoStopIfNeeded()
                 try? await Task.sleep(nanoseconds: self.silenceMonitorPollIntervalNs)
             }
+        }
+    }
+
+    /// Passes the whole voice-detector chunks recorded since the last poll to
+    /// the detector and its verdicts to `autoStopPolicy`. A detector failure
+    /// hands the rest of the recording back to loudness.
+    private func listenForVoice(with detector: VoiceActivityDetecting, session: UUID) async {
+        guard case .recording = state, recordingMode == .handsFree, !autoStopPolicy.voiceDetectorFailed else { return }
+        let start = autoStopPolicy.voiceScannedSampleCount
+        let chunk = detector.chunkSampleCount
+        let available = audioService.capturedSampleCount - start
+        guard available >= chunk else { return }
+        let audio = Array(audioService.currentSamplesSnapshot(from: start).prefix(available / chunk * chunk))
+        do {
+            let verdicts = try await detector.speech(in: audio)
+            guard voiceListeningSession == session, autoStopPolicy.voiceScannedSampleCount == start else { return }
+            autoStopPolicy.heardVoice(verdicts, chunkSampleCount: chunk)
+        } catch {
+            guard voiceListeningSession == session else { return }
+            Logger.dictation.error("Voice detector failed mid-recording; using loudness: \(error.localizedDescription)")
+            autoStopPolicy.abandonVoiceDetector()
         }
     }
 
@@ -1223,7 +1260,7 @@ final class DictationCoordinator {
         ) else { return }
 
         Logger.dictation.info(
-            "Hands-free auto-stop: window=\(silenceStop, format: .fixed(precision: 1))s trailingSilence=\(self.autoStopPolicy.trailingSilenceMs)ms speechFrames=\(self.autoStopPolicy.speechFrameCount) peakRMS=\(self.autoStopPolicy.peakFrameRMS, format: .fixed(precision: 3)) threshold=\(self.autoStopPolicy.speechThreshold, format: .fixed(precision: 3)) duration=\(duration, format: .fixed(precision: 1))s"
+            "Hands-free auto-stop (\(self.autoStopPolicy.usesVoiceDetector ? "voice" : "loudness")): window=\(silenceStop, format: .fixed(precision: 1))s trailingSilence=\(self.autoStopPolicy.trailingSilenceMs)ms speechFrames=\(self.autoStopPolicy.speechFrameCount) peakRMS=\(self.autoStopPolicy.peakFrameRMS, format: .fixed(precision: 3)) threshold=\(self.autoStopPolicy.speechThreshold, format: .fixed(precision: 3)) duration=\(duration, format: .fixed(precision: 1))s"
         )
         stopRecording(reason: .silenceAutoStop)
     }
