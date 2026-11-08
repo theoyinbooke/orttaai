@@ -1,0 +1,26 @@
+{
+  "payloadBytes" : "{\"candidateSource\":\"orta ai\",\"candidateTarget\":\"Orttaai\",\"confidence\":0.92,\"createdAt\":1790000030000,\"evidence\":\"Corrected after dictation in Claude Code\",\"normalizedSource\":\"orta ai\",\"status\":\"pending\",\"type\":\"dictionary\"}",
+  "payloadReadable" : {
+    "candidateSource" : "orta ai",
+    "candidateTarget" : "Orttaai",
+    "confidence" : 0.92000000000000004,
+    "createdAt" : 1790000030000,
+    "evidence" : "Corrected after dictation in Claude Code",
+    "normalizedSource" : "orta ai",
+    "status" : "pending",
+    "type" : "dictionary"
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJjYW5kaWRhdGVTb3VyY2UiOiJvcnRhIGFpIiwiY2FuZGlkYXRlVGFyZ2V0IjoiT3J0dGFhaSIsImNvbmZpZGVuY2UiOjAuOTIsImNyZWF0ZWRBdCI6MTc5MDAwMDAzMDAwMCwiZXZpZGVuY2UiOiJDb3JyZWN0ZWQgYWZ0ZXIgZGljdGF0aW9uIGluIENsYXVkZSBDb2RlIiwibm9ybWFsaXplZFNvdXJjZSI6Im9ydGEgYWkiLCJzdGF0dXMiOiJwZW5kaW5nIiwidHlwZSI6ImRpY3Rpb25hcnkifQ==",
+    "recordName" : "suggestion.8e2b4d70-1f9a-4c36-b05e-d7a3c6f1e928",
+    "revision" : {
+      "counter" : 46,
+      "modifiedAt" : 1790000030000,
+      "writer" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42"
+    },
+    "schemaVersion" : 1,
+    "zone" : "MacOnly"
+  }
+}

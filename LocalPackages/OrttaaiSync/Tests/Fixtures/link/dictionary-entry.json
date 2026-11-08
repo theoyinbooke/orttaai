@@ -1,0 +1,24 @@
+{
+  "payloadBytes" : "{\"createdAt\":1790000010000,\"isActive\":true,\"isCaseSensitive\":true,\"normalizedSource\":\"orta ai\",\"source\":\"orta ai\",\"target\":\"Orttaai\"}",
+  "payloadReadable" : {
+    "createdAt" : 1790000010000,
+    "isActive" : true,
+    "isCaseSensitive" : true,
+    "normalizedSource" : "orta ai",
+    "source" : "orta ai",
+    "target" : "Orttaai"
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJjcmVhdGVkQXQiOjE3OTAwMDAwMTAwMDAsImlzQWN0aXZlIjp0cnVlLCJpc0Nhc2VTZW5zaXRpdmUiOnRydWUsIm5vcm1hbGl6ZWRTb3VyY2UiOiJvcnRhIGFpIiwic291cmNlIjoib3J0YSBhaSIsInRhcmdldCI6Ik9ydHRhYWkifQ==",
+    "recordName" : "dict.febc84929b1992279ddb52a666c85d57b21aab684fd2d8dd18ecabcf69783bd0",
+    "revision" : {
+      "counter" : 42,
+      "modifiedAt" : 1790000010000,
+      "writer" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42"
+    },
+    "schemaVersion" : 1,
+    "zone" : "Library"
+  }
+}

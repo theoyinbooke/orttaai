@@ -1,0 +1,15 @@
+{
+  "record" : {
+    "deletedAt" : 1790000200000,
+    "generation" : 1,
+    "isDeleted" : true,
+    "recordName" : "dict.62f3ad9699dc3ce8ad25d20c8e0b6ffe9b672ef9d2b9179b8edae2e380f2e8fd",
+    "revision" : {
+      "counter" : 43,
+      "modifiedAt" : 1790000200000,
+      "writer" : "c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4"
+    },
+    "schemaVersion" : 1,
+    "zone" : "Library"
+  }
+}

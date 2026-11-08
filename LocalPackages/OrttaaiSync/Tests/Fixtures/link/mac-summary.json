@@ -1,0 +1,73 @@
+{
+  "payloadBytes" : "{\"asOf\":1790007200000,\"coverage\":{\"Dictations-2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42\":12,\"Dictations-6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10\":40,\"Dictations-c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4\":3},\"perDevice\":{\"2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42\":{\"dictations\":12,\"recordingMs\":61000,\"words\":340},\"6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10\":{\"dictations\":40,\"recordingMs\":170000,\"words\":1000},\"c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4\":{\"dictations\":3,\"recordingMs\":9000,\"words\":80}},\"publisherDeviceID\":\"6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10\",\"publisherName\":\"Mac Studio\",\"recentDays\":[{\"day\":\"2026-09-21\",\"dictations\":20,\"words\":500},{\"day\":\"2026-09-22\",\"dictations\":35,\"words\":920}],\"timeZoneIdentifier\":\"Europe\\/London\",\"topApps\":[{\"dictations\":30,\"name\":\"Claude Code\"},{\"dictations\":9,\"name\":\"Slack\"}],\"totals\":{\"dictations\":55,\"firstAt\":1789913600000,\"lastAt\":1790003500000,\"recordingMs\":240000,\"words\":1420}}",
+  "payloadReadable" : {
+    "asOf" : 1790007200000,
+    "coverage" : {
+      "Dictations-2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42" : 12,
+      "Dictations-6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10" : 40,
+      "Dictations-c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4" : 3
+    },
+    "perDevice" : {
+      "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42" : {
+        "dictations" : 12,
+        "recordingMs" : 61000,
+        "words" : 340
+      },
+      "6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10" : {
+        "dictations" : 40,
+        "recordingMs" : 170000,
+        "words" : 1000
+      },
+      "c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4" : {
+        "dictations" : 3,
+        "recordingMs" : 9000,
+        "words" : 80
+      }
+    },
+    "publisherDeviceID" : "6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10",
+    "publisherName" : "Mac Studio",
+    "recentDays" : [
+      {
+        "day" : "2026-09-21",
+        "dictations" : 20,
+        "words" : 500
+      },
+      {
+        "day" : "2026-09-22",
+        "dictations" : 35,
+        "words" : 920
+      }
+    ],
+    "timeZoneIdentifier" : "Europe/London",
+    "topApps" : [
+      {
+        "dictations" : 30,
+        "name" : "Claude Code"
+      },
+      {
+        "dictations" : 9,
+        "name" : "Slack"
+      }
+    ],
+    "totals" : {
+      "dictations" : 55,
+      "firstAt" : 1789913600000,
+      "lastAt" : 1790003500000,
+      "recordingMs" : 240000,
+      "words" : 1420
+    }
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJhc09mIjoxNzkwMDA3MjAwMDAwLCJjb3ZlcmFnZSI6eyJEaWN0YXRpb25zLTJmMGM4YTRlLTdkMjEtNGI5YS1hM2Y2LTVlOGQ5YzFiMGE0MiI6MTIsIkRpY3RhdGlvbnMtNmYxZDFjOWUtMWI3YS00YzU1LTljMzktMGQzYzFlMmE3YjEwIjo0MCwiRGljdGF0aW9ucy1jNDdiMmU5MC01YTEzLTRkNmUtOWYwOC03MWUzYTVkMmI2YzQiOjN9LCJwZXJEZXZpY2UiOnsiMmYwYzhhNGUtN2QyMS00YjlhLWEzZjYtNWU4ZDljMWIwYTQyIjp7ImRpY3RhdGlvbnMiOjEyLCJyZWNvcmRpbmdNcyI6NjEwMDAsIndvcmRzIjozNDB9LCI2ZjFkMWM5ZS0xYjdhLTRjNTUtOWMzOS0wZDNjMWUyYTdiMTAiOnsiZGljdGF0aW9ucyI6NDAsInJlY29yZGluZ01zIjoxNzAwMDAsIndvcmRzIjoxMDAwfSwiYzQ3YjJlOTAtNWExMy00ZDZlLTlmMDgtNzFlM2E1ZDJiNmM0Ijp7ImRpY3RhdGlvbnMiOjMsInJlY29yZGluZ01zIjo5MDAwLCJ3b3JkcyI6ODB9fSwicHVibGlzaGVyRGV2aWNlSUQiOiI2ZjFkMWM5ZS0xYjdhLTRjNTUtOWMzOS0wZDNjMWUyYTdiMTAiLCJwdWJsaXNoZXJOYW1lIjoiTWFjIFN0dWRpbyIsInJlY2VudERheXMiOlt7ImRheSI6IjIwMjYtMDktMjEiLCJkaWN0YXRpb25zIjoyMCwid29yZHMiOjUwMH0seyJkYXkiOiIyMDI2LTA5LTIyIiwiZGljdGF0aW9ucyI6MzUsIndvcmRzIjo5MjB9XSwidGltZVpvbmVJZGVudGlmaWVyIjoiRXVyb3BlXC9Mb25kb24iLCJ0b3BBcHBzIjpbeyJkaWN0YXRpb25zIjozMCwibmFtZSI6IkNsYXVkZSBDb2RlIn0seyJkaWN0YXRpb25zIjo5LCJuYW1lIjoiU2xhY2sifV0sInRvdGFscyI6eyJkaWN0YXRpb25zIjo1NSwiZmlyc3RBdCI6MTc4OTkxMzYwMDAwMCwibGFzdEF0IjoxNzkwMDAzNTAwMDAwLCJyZWNvcmRpbmdNcyI6MjQwMDAwLCJ3b3JkcyI6MTQyMH19",
+    "recordName" : "summary.6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10",
+    "revision" : {
+      "counter" : 90,
+      "modifiedAt" : 1790007200000,
+      "writer" : "6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10"
+    },
+    "schemaVersion" : 1,
+    "zone" : "Library"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "payloadBytes" : "{\"app\":\"Orttaai\",\"appVersion\":\"0.4.0\",\"deviceID\":\"2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42\",\"firstSeenAt\":1790000000000,\"kind\":\"linux\",\"lastSeenAt\":1790003600000,\"model\":\"ThinkPad X1 Carbon\",\"name\":\"ThinkPad\",\"osVersion\":\"Ubuntu 26.04\",\"totals\":{\"dictations\":12,\"firstAt\":1790000000000,\"lastAt\":1790003500000,\"recordingMs\":61000,\"words\":340}}",
+  "payloadReadable" : {
+    "app" : "Orttaai",
+    "appVersion" : "0.4.0",
+    "deviceID" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42",
+    "firstSeenAt" : 1790000000000,
+    "kind" : "linux",
+    "lastSeenAt" : 1790003600000,
+    "model" : "ThinkPad X1 Carbon",
+    "name" : "ThinkPad",
+    "osVersion" : "Ubuntu 26.04",
+    "totals" : {
+      "dictations" : 12,
+      "firstAt" : 1790000000000,
+      "lastAt" : 1790003500000,
+      "recordingMs" : 61000,
+      "words" : 340
+    }
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJhcHAiOiJPcnR0YWFpIiwiYXBwVmVyc2lvbiI6IjAuNC4wIiwiZGV2aWNlSUQiOiIyZjBjOGE0ZS03ZDIxLTRiOWEtYTNmNi01ZThkOWMxYjBhNDIiLCJmaXJzdFNlZW5BdCI6MTc5MDAwMDAwMDAwMCwia2luZCI6ImxpbnV4IiwibGFzdFNlZW5BdCI6MTc5MDAwMzYwMDAwMCwibW9kZWwiOiJUaGlua1BhZCBYMSBDYXJib24iLCJuYW1lIjoiVGhpbmtQYWQiLCJvc1ZlcnNpb24iOiJVYnVudHUgMjYuMDQiLCJ0b3RhbHMiOnsiZGljdGF0aW9ucyI6MTIsImZpcnN0QXQiOjE3OTAwMDAwMDAwMDAsImxhc3RBdCI6MTc5MDAwMzUwMDAwMCwicmVjb3JkaW5nTXMiOjYxMDAwLCJ3b3JkcyI6MzQwfX0=",
+    "recordName" : "device.2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42",
+    "revision" : {
+      "counter" : 45,
+      "modifiedAt" : 1790003600000,
+      "writer" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42"
+    },
+    "schemaVersion" : 2,
+    "zone" : "Library"
+  }
+}

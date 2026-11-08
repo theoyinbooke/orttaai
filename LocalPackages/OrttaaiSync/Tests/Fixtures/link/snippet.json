@@ -1,0 +1,23 @@
+{
+  "payloadBytes" : "{\"createdAt\":1790000020000,\"expansion\":\"12 Marina Road, Lagos\",\"isActive\":true,\"normalizedTrigger\":\"my address\",\"trigger\":\"my address\"}",
+  "payloadReadable" : {
+    "createdAt" : 1790000020000,
+    "expansion" : "12 Marina Road, Lagos",
+    "isActive" : true,
+    "normalizedTrigger" : "my address",
+    "trigger" : "my address"
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJjcmVhdGVkQXQiOjE3OTAwMDAwMjAwMDAsImV4cGFuc2lvbiI6IjEyIE1hcmluYSBSb2FkLCBMYWdvcyIsImlzQWN0aXZlIjp0cnVlLCJub3JtYWxpemVkVHJpZ2dlciI6Im15IGFkZHJlc3MiLCJ0cmlnZ2VyIjoibXkgYWRkcmVzcyJ9",
+    "recordName" : "snippet.6382194ee778f4a9511f173097d930711073ccc9f097b6203de738dd7e24fe5e",
+    "revision" : {
+      "counter" : 5,
+      "modifiedAt" : 1790000020000,
+      "writer" : "9a3e5b71-0c4d-4f28-8e16-b2d7f4a9c053"
+    },
+    "schemaVersion" : 1,
+    "zone" : "MacOnly"
+  }
+}

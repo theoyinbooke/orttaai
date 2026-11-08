@@ -1,0 +1,25 @@
+{
+  "payloadBytes" : "{\"analyzerName\":\"local-llm\",\"generatedAt\":1790000040000,\"isPinned\":true,\"requestJSON\":\"{\\\"window\\\":\\\"30d\\\"}\",\"sampleCount\":25,\"snapshotJSON\":\"{\\\"tone\\\":\\\"direct\\\"}\",\"usedFallback\":false}",
+  "payloadReadable" : {
+    "analyzerName" : "local-llm",
+    "generatedAt" : 1790000040000,
+    "isPinned" : true,
+    "requestJSON" : "{\"window\":\"30d\"}",
+    "sampleCount" : 25,
+    "snapshotJSON" : "{\"tone\":\"direct\"}",
+    "usedFallback" : false
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJhbmFseXplck5hbWUiOiJsb2NhbC1sbG0iLCJnZW5lcmF0ZWRBdCI6MTc5MDAwMDA0MDAwMCwiaXNQaW5uZWQiOnRydWUsInJlcXVlc3RKU09OIjoie1wid2luZG93XCI6XCIzMGRcIn0iLCJzYW1wbGVDb3VudCI6MjUsInNuYXBzaG90SlNPTiI6IntcInRvbmVcIjpcImRpcmVjdFwifSIsInVzZWRGYWxsYmFjayI6ZmFsc2V9",
+    "recordName" : "insight.4c9f1a3e-6d2b-4e87-a1c5-0b8e7d3f9a61",
+    "revision" : {
+      "counter" : 47,
+      "modifiedAt" : 1790000040000,
+      "writer" : "9a3e5b71-0c4d-4f28-8e16-b2d7f4a9c053"
+    },
+    "schemaVersion" : 1,
+    "zone" : "MacOnly"
+  }
+}

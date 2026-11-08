@@ -20,7 +20,14 @@ public struct DictationOrigin: Codable, Hashable, Sendable {
 }
 
 public struct SyncEnvelope: Hashable, Sendable {
-    public static let currentSchemaVersion = 1
+    /// The newest schema this version reads.
+    ///
+    /// - 1: sync v2 as first shipped.
+    /// - 2: adds the device kinds `windows`, `linux` and `android`. Only a
+    ///   record that names one of them (a dictation from that device, or
+    ///   that device's own record) is written as 2; every other record stays
+    ///   1, so older apps keep reading them.
+    public static let currentSchemaVersion = 2
     /// CloudKit refuses records over 1 MB; staying well under leaves room for
     /// the plain fields and CloudKit's own.
     public static let maximumPayloadBytes = 900_000
@@ -44,7 +51,7 @@ public struct SyncEnvelope: Hashable, Sendable {
 
     public init(
         id: SyncRecordID,
-        schemaVersion: Int = SyncEnvelope.currentSchemaVersion,
+        schemaVersion: Int? = nil,
         revision: Revision,
         generation: Int64 = 0,
         isDeleted: Bool = false,
@@ -54,7 +61,9 @@ public struct SyncEnvelope: Hashable, Sendable {
         createdAt: Date? = nil
     ) {
         self.id = id
-        self.schemaVersion = schemaVersion
+        // Nil when writing: the lowest version that can carry the record.
+        // Decoding passes the version the record was written with.
+        self.schemaVersion = schemaVersion ?? Self.requiredSchemaVersion(id: id, payload: payload, origin: origin)
         self.revision = revision
         self.generation = generation
         self.isDeleted = isDeleted
@@ -90,6 +99,17 @@ public struct SyncEnvelope: Hashable, Sendable {
 }
 
 extension SyncEnvelope {
+    /// The lowest schema version an app must read to understand this record:
+    /// the version that introduced the device kind it names, else 1.
+    public static func requiredSchemaVersion(id: SyncRecordID, payload: Data?, origin: DictationOrigin?) -> Int {
+        var version = 1
+        if let origin { version = max(version, origin.kind.schemaVersion) }
+        if id.kind == .device, let payload, let device = try? PayloadCoder.decode(DevicePayload.self, from: payload) {
+            version = max(version, device.kind.schemaVersion)
+        }
+        return version
+    }
+
     static func payloadDecodes(_ data: Data, as kind: RecordKind) -> Bool {
         func decodes<T: Decodable>(_ type: T.Type) -> Bool { (try? PayloadCoder.decode(type, from: data)) != nil }
         switch kind {

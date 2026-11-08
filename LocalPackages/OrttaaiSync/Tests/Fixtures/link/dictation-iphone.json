@@ -1,0 +1,26 @@
+{
+  "payloadBytes" : "{\"createdAt\":1790000090000,\"recordingMs\":900,\"text\":\"On my way\"}",
+  "payloadReadable" : {
+    "createdAt" : 1790000090000,
+    "recordingMs" : 900,
+    "text" : "On my way"
+  },
+  "record" : {
+    "createdAt" : 1790000090000,
+    "generation" : 0,
+    "isDeleted" : false,
+    "origin" : {
+      "deviceID" : "e8d4f1a2-36b9-4c07-b5e1-9a0c2f7d84e3",
+      "kind" : "iphone"
+    },
+    "payload" : "eyJjcmVhdGVkQXQiOjE3OTAwMDAwOTAwMDAsInJlY29yZGluZ01zIjo5MDAsInRleHQiOiJPbiBteSB3YXkifQ==",
+    "recordName" : "dictation.5d8b2f61-a3c9-4e07-9b14-c6e0f3a82d59",
+    "revision" : {
+      "counter" : 12,
+      "modifiedAt" : 1790000090000,
+      "writer" : "e8d4f1a2-36b9-4c07-b5e1-9a0c2f7d84e3"
+    },
+    "schemaVersion" : 1,
+    "zone" : "Dictations-e8d4f1a2-36b9-4c07-b5e1-9a0c2f7d84e3"
+  }
+}

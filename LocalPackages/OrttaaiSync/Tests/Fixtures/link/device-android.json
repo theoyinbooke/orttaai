@@ -1,0 +1,32 @@
+{
+  "payloadBytes" : "{\"app\":\"Orttakey\",\"appVersion\":\"1.0.0\",\"deviceID\":\"c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4\",\"firstSeenAt\":1790000000000,\"kind\":\"android\",\"lastSeenAt\":1790000600000,\"model\":\"Pixel 10 Pro\",\"name\":\"Pixel 10 Pro\",\"osVersion\":\"Android 17\",\"totals\":{\"dictations\":0,\"recordingMs\":0,\"words\":0}}",
+  "payloadReadable" : {
+    "app" : "Orttakey",
+    "appVersion" : "1.0.0",
+    "deviceID" : "c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4",
+    "firstSeenAt" : 1790000000000,
+    "kind" : "android",
+    "lastSeenAt" : 1790000600000,
+    "model" : "Pixel 10 Pro",
+    "name" : "Pixel 10 Pro",
+    "osVersion" : "Android 17",
+    "totals" : {
+      "dictations" : 0,
+      "recordingMs" : 0,
+      "words" : 0
+    }
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJhcHAiOiJPcnR0YWtleSIsImFwcFZlcnNpb24iOiIxLjAuMCIsImRldmljZUlEIjoiYzQ3YjJlOTAtNWExMy00ZDZlLTlmMDgtNzFlM2E1ZDJiNmM0IiwiZmlyc3RTZWVuQXQiOjE3OTAwMDAwMDAwMDAsImtpbmQiOiJhbmRyb2lkIiwibGFzdFNlZW5BdCI6MTc5MDAwMDYwMDAwMCwibW9kZWwiOiJQaXhlbCAxMCBQcm8iLCJuYW1lIjoiUGl4ZWwgMTAgUHJvIiwib3NWZXJzaW9uIjoiQW5kcm9pZCAxNyIsInRvdGFscyI6eyJkaWN0YXRpb25zIjowLCJyZWNvcmRpbmdNcyI6MCwid29yZHMiOjB9fQ==",
+    "recordName" : "device.c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4",
+    "revision" : {
+      "counter" : 4,
+      "modifiedAt" : 1790000600000,
+      "writer" : "c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4"
+    },
+    "schemaVersion" : 2,
+    "zone" : "Library"
+  }
+}

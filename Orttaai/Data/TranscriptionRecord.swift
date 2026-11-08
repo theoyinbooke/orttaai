@@ -50,9 +50,9 @@ nonisolated struct Transcription: Codable, Identifiable, FetchableRecord, Persis
         entryKind == Self.editEntryKind
     }
 
-    /// Said on Orttakey on an iPhone or iPad.
+    /// Said on Orttakey on an iPhone, iPad or Android phone.
     var isFromMobile: Bool {
-        sourceDeviceKind == "iphone" || sourceDeviceKind == "ipad"
+        sourceDeviceKind == "iphone" || sourceDeviceKind == "ipad" || sourceDeviceKind == "android"
     }
 
     /// The app it went into, or where it came from when that isn't known:
@@ -62,6 +62,7 @@ nonisolated struct Transcription: Codable, Identifiable, FetchableRecord, Persis
         switch sourceDeviceKind {
         case "iphone": return "Orttakey on iPhone"
         case "ipad": return "Orttakey on iPad"
+        case "android": return "Orttakey on Android"
         default: return nil
         }
     }

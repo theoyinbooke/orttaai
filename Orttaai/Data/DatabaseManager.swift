@@ -744,6 +744,10 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration(SyncSchema.changeFeedMigrationIdentifier) { db in
+            try SyncSchema.addChangeFeed(db)
+        }
+
         return migrator
     }
 

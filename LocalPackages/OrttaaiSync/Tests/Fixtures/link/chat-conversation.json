@@ -1,0 +1,19 @@
+{
+  "payloadBytes" : "{\"data\":\"eyJ0aXRsZSI6IlJlbGVhc2Ugbm90ZXMiLCJtZXNzYWdlcyI6W3sicm9sZSI6InVzZXIiLCJ0ZXh0IjoiV2hhdCBkaWQgSSBzYXkgYWJvdXQgTGludXg\\/In1dfQ==\"}",
+  "payloadReadable" : {
+    "data" : "eyJ0aXRsZSI6IlJlbGVhc2Ugbm90ZXMiLCJtZXNzYWdlcyI6W3sicm9sZSI6InVzZXIiLCJ0ZXh0IjoiV2hhdCBkaWQgSSBzYXkgYWJvdXQgTGludXg/In1dfQ=="
+  },
+  "record" : {
+    "generation" : 0,
+    "isDeleted" : false,
+    "payload" : "eyJkYXRhIjoiZXlKMGFYUnNaU0k2SWxKbGJHVmhjMlVnYm05MFpYTWlMQ0p0WlhOellXZGxjeUk2VzNzaWNtOXNaU0k2SW5WelpYSWlMQ0owWlhoMElqb2lWMmhoZENCa2FXUWdTU0J6WVhrZ1lXSnZkWFFnVEdsdWRYZ1wvSW4xZGZRPT0ifQ==",
+    "recordName" : "chat.3a7d0e91-c2f4-4b85-96d1-e8b3f0a5c726",
+    "revision" : {
+      "counter" : 8,
+      "modifiedAt" : 1790000400000,
+      "writer" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42"
+    },
+    "schemaVersion" : 1,
+    "zone" : "MacOnly"
+  }
+}

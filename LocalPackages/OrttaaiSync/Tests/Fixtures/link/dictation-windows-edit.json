@@ -1,0 +1,30 @@
+{
+  "payloadBytes" : "{\"createdAt\":1790000060000,\"editInstruction\":\"make it shorter\",\"entryKind\":\"edit\",\"recordingMs\":2100,\"targetAppName\":\"Outlook\",\"text\":\"Thanks, see you at nine.\",\"timeZoneIdentifier\":\"Africa\\/Lagos\"}",
+  "payloadReadable" : {
+    "createdAt" : 1790000060000,
+    "editInstruction" : "make it shorter",
+    "entryKind" : "edit",
+    "recordingMs" : 2100,
+    "targetAppName" : "Outlook",
+    "text" : "Thanks, see you at nine.",
+    "timeZoneIdentifier" : "Africa/Lagos"
+  },
+  "record" : {
+    "createdAt" : 1790000060000,
+    "generation" : 0,
+    "isDeleted" : false,
+    "origin" : {
+      "deviceID" : "9a3e5b71-0c4d-4f28-8e16-b2d7f4a9c053",
+      "kind" : "windows"
+    },
+    "payload" : "eyJjcmVhdGVkQXQiOjE3OTAwMDAwNjAwMDAsImVkaXRJbnN0cnVjdGlvbiI6Im1ha2UgaXQgc2hvcnRlciIsImVudHJ5S2luZCI6ImVkaXQiLCJyZWNvcmRpbmdNcyI6MjEwMCwidGFyZ2V0QXBwTmFtZSI6Ik91dGxvb2siLCJ0ZXh0IjoiVGhhbmtzLCBzZWUgeW91IGF0IG5pbmUuIiwidGltZVpvbmVJZGVudGlmaWVyIjoiQWZyaWNhXC9MYWdvcyJ9",
+    "recordName" : "dictation.7c2e9a10-4b6d-4f83-a5e2-1d9c0b7f6e34",
+    "revision" : {
+      "counter" : 7,
+      "modifiedAt" : 1790000060000,
+      "writer" : "9a3e5b71-0c4d-4f28-8e16-b2d7f4a9c053"
+    },
+    "schemaVersion" : 2,
+    "zone" : "Dictations-9a3e5b71-0c4d-4f28-8e16-b2d7f4a9c053"
+  }
+}

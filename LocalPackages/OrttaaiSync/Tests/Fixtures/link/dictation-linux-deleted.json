@@ -1,0 +1,20 @@
+{
+  "record" : {
+    "createdAt" : 1790000005000,
+    "deletedAt" : 1790000300000,
+    "generation" : 0,
+    "isDeleted" : true,
+    "origin" : {
+      "deviceID" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42",
+      "kind" : "linux"
+    },
+    "recordName" : "dictation.0f4c7e2a-8b19-4d63-a7f5-3e1b9d6c2a08",
+    "revision" : {
+      "counter" : 44,
+      "modifiedAt" : 1790000300000,
+      "writer" : "6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10"
+    },
+    "schemaVersion" : 2,
+    "zone" : "Dictations-2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42"
+  }
+}

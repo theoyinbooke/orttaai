@@ -218,6 +218,8 @@ enum DeviceLabel {
         case .mac: "laptopcomputer"
         case .iphone: "iphone"
         case .ipad: "ipad"
+        case .windows, .linux: "pc"
+        case .android: "smartphone"
         case .unknown: "questionmark.square.dashed"
         }
     }

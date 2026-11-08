@@ -1,0 +1,38 @@
+{
+  "payloadBytes" : "{\"audioDevice\":\"Built-in Microphone\",\"createdAt\":1790000000000,\"entryKind\":\"dictation\",\"injectionMethod\":\"paste\",\"injectionMs\":40,\"modelID\":\"parakeet-tdt-0.6b-v3\",\"processingMs\":410,\"rawText\":\"ship the linux build on friday\",\"recordingMs\":3400,\"targetAppBundleID\":\"claude\",\"targetAppName\":\"Claude Code\",\"text\":\"Ship the Linux build on Friday.\",\"textProcessingMs\":12,\"timeZoneIdentifier\":\"Europe\\/London\",\"transcriptionMs\":300}",
+  "payloadReadable" : {
+    "audioDevice" : "Built-in Microphone",
+    "createdAt" : 1790000000000,
+    "entryKind" : "dictation",
+    "injectionMethod" : "paste",
+    "injectionMs" : 40,
+    "modelID" : "parakeet-tdt-0.6b-v3",
+    "processingMs" : 410,
+    "rawText" : "ship the linux build on friday",
+    "recordingMs" : 3400,
+    "targetAppBundleID" : "claude",
+    "targetAppName" : "Claude Code",
+    "text" : "Ship the Linux build on Friday.",
+    "textProcessingMs" : 12,
+    "timeZoneIdentifier" : "Europe/London",
+    "transcriptionMs" : 300
+  },
+  "record" : {
+    "createdAt" : 1790000000000,
+    "generation" : 0,
+    "isDeleted" : false,
+    "origin" : {
+      "deviceID" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42",
+      "kind" : "linux"
+    },
+    "payload" : "eyJhdWRpb0RldmljZSI6IkJ1aWx0LWluIE1pY3JvcGhvbmUiLCJjcmVhdGVkQXQiOjE3OTAwMDAwMDAwMDAsImVudHJ5S2luZCI6ImRpY3RhdGlvbiIsImluamVjdGlvbk1ldGhvZCI6InBhc3RlIiwiaW5qZWN0aW9uTXMiOjQwLCJtb2RlbElEIjoicGFyYWtlZXQtdGR0LTAuNmItdjMiLCJwcm9jZXNzaW5nTXMiOjQxMCwicmF3VGV4dCI6InNoaXAgdGhlIGxpbnV4IGJ1aWxkIG9uIGZyaWRheSIsInJlY29yZGluZ01zIjozNDAwLCJ0YXJnZXRBcHBCdW5kbGVJRCI6ImNsYXVkZSIsInRhcmdldEFwcE5hbWUiOiJDbGF1ZGUgQ29kZSIsInRleHQiOiJTaGlwIHRoZSBMaW51eCBidWlsZCBvbiBGcmlkYXkuIiwidGV4dFByb2Nlc3NpbmdNcyI6MTIsInRpbWVab25lSWRlbnRpZmllciI6IkV1cm9wZVwvTG9uZG9uIiwidHJhbnNjcmlwdGlvbk1zIjozMDB9",
+    "recordName" : "dictation.1b0d6c3e-9f57-4a2e-8c11-6a4e2d9f3b70",
+    "revision" : {
+      "counter" : 41,
+      "modifiedAt" : 1790000000000,
+      "writer" : "2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42"
+    },
+    "schemaVersion" : 2,
+    "zone" : "Dictations-2f0c8a4e-7d21-4b9a-a3f6-5e8d9c1b0a42"
+  }
+}

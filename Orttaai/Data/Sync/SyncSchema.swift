@@ -23,6 +23,7 @@ import OrttaaiSyncCore
 nonisolated enum SyncSchema {
     static let migrationIdentifier = "v19_sync_v2"
     static let generationMigrationIdentifier = "v20_sync_generation"
+    static let changeFeedMigrationIdentifier = "v25_link_change_feed"
 
     /// Revivable records' generation (SyncEnvelope.generation). Added only
     /// if missing, so databases that ran an early v19 get it too.
@@ -31,6 +32,61 @@ nonisolated enum SyncSchema {
         try db.alter(table: "sync_record") { t in
             t.add(column: "generation", .integer).notNull().defaults(to: 0)
         }
+    }
+
+    /// Orttaai Link's change feed (docs/orttaai-link-protocol.md §7): every
+    /// sync record carries `changeSeq`, raised from one counter whenever its
+    /// content changes (a local edit, a record from iCloud or from a linked
+    /// device), so a linked device asks for everything after the last number
+    /// it saw. Triggers keep it, so no write path can forget to. Saving
+    /// CloudKit's system fields alone isn't a change.
+    static func addChangeFeed(_ db: Database) throws {
+        try db.alter(table: "sync_record") { t in
+            t.add(column: "changeSeq", .integer).notNull().defaults(to: 0)
+        }
+        try db.create(table: "sync_change_counter") { t in
+            t.column("id", .integer).primaryKey()
+            t.column("value", .integer).notNull()
+        }
+        // Rows that exist already are all "changed" once, in insertion order.
+        try db.execute(sql: "UPDATE sync_record SET changeSeq = rowid")
+        try db.execute(sql: "INSERT INTO sync_change_counter (id, value) VALUES (1, COALESCE((SELECT MAX(changeSeq) FROM sync_record), 0))")
+        try db.create(index: "idx_sync_record_change", on: "sync_record", columns: ["changeSeq"])
+        let bump = """
+            UPDATE sync_change_counter SET value = value + 1 WHERE id = 1;
+            UPDATE sync_record SET changeSeq = (SELECT value FROM sync_change_counter WHERE id = 1) WHERE rowid = NEW.rowid;
+            """
+        try db.execute(sql: """
+            CREATE TRIGGER sync_record_change_insert AFTER INSERT ON sync_record
+            BEGIN
+            \(bump)
+            END;
+            CREATE TRIGGER sync_record_change_update
+            AFTER UPDATE OF revCounter, revModifiedAtMs, revWriter, generation, isDeleted, payload, zoneName, originDeviceID, originKind ON sync_record
+            WHEN OLD.revCounter IS NOT NEW.revCounter OR OLD.revModifiedAtMs IS NOT NEW.revModifiedAtMs
+                OR OLD.revWriter IS NOT NEW.revWriter OR OLD.generation IS NOT NEW.generation
+                OR OLD.isDeleted IS NOT NEW.isDeleted OR OLD.payload IS NOT NEW.payload
+                OR OLD.zoneName IS NOT NEW.zoneName OR OLD.originDeviceID IS NOT NEW.originDeviceID
+                OR OLD.originKind IS NOT NEW.originKind
+            BEGIN
+            \(bump)
+            END;
+            """)
+    }
+
+    /// One page of the change feed: records changed after `cursor`, oldest
+    /// change first. Fewer than `limit` rows means the feed is caught up.
+    static func changes(after cursor: Int64, limit: Int, in db: Database) throws -> [(recordName: String, zoneName: String, changeSeq: Int64)] {
+        try Row.fetchAll(
+            db,
+            sql: "SELECT recordName, zoneName, changeSeq FROM sync_record WHERE changeSeq > ? ORDER BY changeSeq LIMIT ?",
+            arguments: [cursor, limit]
+        ).map { (recordName: $0["recordName"], zoneName: $0["zoneName"], changeSeq: $0["changeSeq"]) }
+    }
+
+    /// The newest change number, for a device starting at "now".
+    static func latestChange(in db: Database) throws -> Int64 {
+        try Int64.fetchOne(db, sql: "SELECT value FROM sync_change_counter WHERE id = 1") ?? 0
     }
 
     /// Revision dates are stored as whole milliseconds so comparing an

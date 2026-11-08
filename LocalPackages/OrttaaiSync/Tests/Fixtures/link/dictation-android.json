@@ -1,0 +1,27 @@
+{
+  "payloadBytes" : "{\"createdAt\":1790000120000,\"recordingMs\":1800,\"targetAppName\":\"Keep\",\"text\":\"Buy plantain and eggs\"}",
+  "payloadReadable" : {
+    "createdAt" : 1790000120000,
+    "recordingMs" : 1800,
+    "targetAppName" : "Keep",
+    "text" : "Buy plantain and eggs"
+  },
+  "record" : {
+    "createdAt" : 1790000120000,
+    "generation" : 0,
+    "isDeleted" : false,
+    "origin" : {
+      "deviceID" : "c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4",
+      "kind" : "android"
+    },
+    "payload" : "eyJjcmVhdGVkQXQiOjE3OTAwMDAxMjAwMDAsInJlY29yZGluZ01zIjoxODAwLCJ0YXJnZXRBcHBOYW1lIjoiS2VlcCIsInRleHQiOiJCdXkgcGxhbnRhaW4gYW5kIGVnZ3MifQ==",
+    "recordName" : "dictation.e3a91f2c-0d7b-4c56-b8e4-29f6a1c0d785",
+    "revision" : {
+      "counter" : 3,
+      "modifiedAt" : 1790000120000,
+      "writer" : "c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4"
+    },
+    "schemaVersion" : 2,
+    "zone" : "Dictations-c47b2e90-5a13-4d6e-9f08-71e3a5d2b6c4"
+  }
+}

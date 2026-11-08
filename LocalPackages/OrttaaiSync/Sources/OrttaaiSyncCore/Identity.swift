@@ -12,15 +12,75 @@ public enum DeviceKind: String, Codable, Sendable, CaseIterable {
     case mac
     case iphone
     case ipad
-    /// A dictation from before sync v2 whose device was never recorded.
+    /// Orttaai for Windows, linked to a Mac through Orttaai Link.
+    case windows
+    /// Orttaai for Linux, linked to a Mac through Orttaai Link.
+    case linux
+    /// Orttakey for Android, linked to a Mac through Orttaai Link.
+    case android
+    /// A dictation from before sync v2 whose device was never recorded, or
+    /// a kind of device this version doesn't know yet.
     case unknown
+
+    /// A kind this version doesn't know reads as `.unknown` rather than
+    /// making the whole record unreadable.
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = DeviceKind(rawValue: raw) ?? .unknown
+    }
+
+    /// The schema version that introduced this kind. A record that names a
+    /// kind is written at least at that version, so an app from before it
+    /// sets the record aside and reads it once updated, instead of reading
+    /// the device wrong or dropping the record.
+    public var schemaVersion: Int {
+        switch self {
+        case .mac, .iphone, .ipad, .unknown: 1
+        case .windows, .linux, .android: 2
+        }
+    }
+
+    /// Whether this device syncs through Orttaai Link on a Mac rather than
+    /// through iCloud itself.
+    public var linksThroughMac: Bool {
+        switch self {
+        case .windows, .linux, .android: true
+        case .mac, .iphone, .ipad, .unknown: false
+        }
+    }
+
+    /// Which zones this kind of device reads. An unknown device gets the
+    /// narrower phone rules.
+    public var syncPlatform: SyncPlatform {
+        switch self {
+        case .mac, .windows, .linux: .mac
+        case .iphone, .ipad, .android, .unknown: .mobile
+        }
+    }
+
+    /// The device's name where no name of its own is known.
+    public var displayName: String {
+        switch self {
+        case .mac: "Mac"
+        case .iphone: "iPhone"
+        case .ipad: "iPad"
+        case .windows: "Windows"
+        case .linux: "Linux"
+        case .android: "Android"
+        case .unknown: "Unknown device"
+        }
+    }
 }
 
 /// Which app is running the sync, and so which zones it reads.
+/// Orttaai Link applies the same rules to the devices it serves: Orttaai on
+/// Windows and Linux gets what a Mac gets, Orttakey on Android what a phone
+/// gets.
 public enum SyncPlatform: String, Codable, Sendable {
-    /// Orttaai on the Mac: reads every zone.
+    /// Orttaai on the Mac, Windows or Linux: reads every zone.
     case mac
-    /// Orttakey on iPhone or iPad: reads the Library and its own dictations.
+    /// Orttakey on iPhone, iPad or Android: reads the Library and its own
+    /// dictations.
     case mobile
 }
 

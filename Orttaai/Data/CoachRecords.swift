@@ -74,6 +74,7 @@ nonisolated struct CoachAppUsage: Sendable, Equatable, Identifiable {
         switch deviceKind {
         case "iphone": return "Orttakey on iPhone"
         case "ipad": return "Orttakey on iPad"
+        case "android": return "Orttakey on Android"
         default: return bundleID ?? "Unknown app"
         }
     }

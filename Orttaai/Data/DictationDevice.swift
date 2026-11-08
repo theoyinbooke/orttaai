@@ -7,6 +7,7 @@
 // another Mac that could have written them.
 
 import Foundation
+import OrttaaiSyncCore
 
 /// The device groups History and Analytics filter by.
 nonisolated enum DictationDeviceFilter: String, CaseIterable, Identifiable {
@@ -40,7 +41,11 @@ nonisolated struct DictationDevices: Equatable {
     var untaggedAreThisMac = true
 
     func isThisMac(deviceID: String?, kind: String?) -> Bool {
-        guard let deviceID else { return untaggedAreThisMac && kind != "iphone" && kind != "ipad" }
+        guard let deviceID else {
+            // Untagged and said on another kind of device: never this Mac's.
+            let saidElsewhere = kind.flatMap(DeviceKind.init(rawValue:)).map { $0 != .mac && $0 != .unknown } ?? false
+            return untaggedAreThisMac && !saidElsewhere
+        }
         return deviceID == currentDeviceID
     }
 
@@ -74,11 +79,9 @@ nonisolated struct DictationDevices: Equatable {
     func name(for record: Transcription) -> String {
         if isThisMac(record) { return "This Mac" }
         if let id = record.sourceDeviceID, let name = names[id] { return name }
-        switch record.sourceDeviceKind {
-        case "iphone": return "iPhone"
-        case "ipad": return "iPad"
-        case "mac": return "Another Mac"
-        default: return "Unknown device"
+        switch record.sourceDeviceKind.flatMap(DeviceKind.init(rawValue:)) ?? .unknown {
+        case .mac: return "Another Mac"
+        case let kind: return kind.displayName
         }
     }
 }
