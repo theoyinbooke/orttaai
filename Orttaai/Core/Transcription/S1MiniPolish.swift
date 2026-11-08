@@ -254,6 +254,16 @@ final class S1MiniPolishProcessor: TextProcessor {
     }
 }
 
+extension S1MiniPolishProcessor: PolishWarming {
+    /// S1-mini stays loaded while it's the polish; this also covers it being
+    /// freed or failing to load since. The local model below may be the
+    /// engine instead.
+    func warmPolishIfIdle() {
+        controller.sync(with: settings)
+        (baseProcessor as? PolishWarming)?.warmPolishIfIdle()
+    }
+}
+
 extension S1MiniPolishProcessor: WordBoostVocabularyProviding {
     func wordBoostTerms() -> [WordBoostTerm] {
         (baseProcessor as? WordBoostVocabularyProviding)?.wordBoostTerms() ?? []

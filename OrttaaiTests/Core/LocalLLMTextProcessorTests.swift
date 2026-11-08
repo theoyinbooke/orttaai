@@ -127,6 +127,52 @@ final class LocalLLMTextProcessorTests: XCTestCase {
         XCTAssertEqual(later.clampedLocalLLMPolishMaxChars, 280)
     }
 
+    func testPolishKeepsTheModelLoadedForAnHour() async throws {
+        let client = MockLocalLLMClient(result: .success("Hello there, team."))
+        let processor = LocalLLMTextProcessor(
+            baseProcessor: PassthroughProcessor(), settings: settings, ollamaClient: client
+        )
+        _ = try await processor.process(
+            TextProcessorInput(rawTranscript: "hello there team", targetApp: nil, mode: .clean)
+        )
+        XCTAssertEqual(client.keepAlives, [LocalLLMTextProcessor.polishKeepAlive])
+    }
+
+    func testRecordingWarmsAnIdlePolishModelOnce() async throws {
+        settings.localLLMPolishModel = "warm-test-\(UUID().uuidString)"
+        let client = MockLocalLLMClient(result: .success("ok"))
+        let processor = LocalLLMTextProcessor(
+            baseProcessor: PassthroughProcessor(), settings: settings, ollamaClient: client
+        )
+
+        processor.warmPolishIfIdle()
+        for _ in 0..<100 where client.warmed.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(client.warmed.map(\.model), [settings.localLLMPolishModel])
+        XCTAssertEqual(client.warmed.first?.keepAlive, LocalLLMTextProcessor.polishKeepAlive)
+
+        // Still fresh: the next recording doesn't warm it again.
+        processor.warmPolishIfIdle()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(client.warmed.count, 1)
+    }
+
+    func testNoWarmUpWhenAnotherEngineOrPolishIsOff() async throws {
+        settings.localLLMPolishModel = "warm-test-\(UUID().uuidString)"
+        let client = MockLocalLLMClient(result: .success("ok"))
+        let processor = LocalLLMTextProcessor(
+            baseProcessor: PassthroughProcessor(), settings: settings, ollamaClient: client
+        )
+        settings.polishEngine = "s1Mini"
+        processor.warmPolishIfIdle()
+        settings.polishEngine = "localLLM"
+        settings.localLLMPolishEnabled = false
+        processor.warmPolishIfIdle()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(client.warmed.isEmpty)
+    }
+
     func testS1MiniEngineLeavesPolishToItAndNeverContactsTheProvider() async throws {
         settings.polishEngine = "s1Mini"
         let client = MockLocalLLMClient(result: .success("Should never be used."))
@@ -286,6 +332,20 @@ private final class MockLocalLLMClient: LocalLLMServing, @unchecked Sendable {
     private let result: Result<String, Error>
     private let lock = NSLock()
     private var _generateCallCount = 0
+    private var _warmed: [(model: String, keepAlive: String)] = []
+    private var _keepAlives: [String] = []
+
+    var warmed: [(model: String, keepAlive: String)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _warmed
+    }
+
+    var keepAlives: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _keepAlives
+    }
 
     var generateCallCount: Int {
         lock.lock()
@@ -322,6 +382,7 @@ private final class MockLocalLLMClient: LocalLLMServing, @unchecked Sendable {
     ) async throws -> String {
         lock.lock()
         _generateCallCount += 1
+        _keepAlives.append(keepAlive)
         lock.unlock()
         return try result.get()
     }
@@ -357,6 +418,9 @@ private final class MockLocalLLMClient: LocalLLMServing, @unchecked Sendable {
         timeoutMs: Int,
         keepAlive: String
     ) async throws -> Int {
-        0
+        lock.lock()
+        _warmed.append((model, keepAlive))
+        lock.unlock()
+        return 0
     }
 }

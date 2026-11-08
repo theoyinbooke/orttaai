@@ -675,7 +675,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         baseURLString: target.endpoint,
                         model: target.model,
                         timeoutMs: 40_000,
-                        keepAlive: "5m"
+                        keepAlive: LocalLLMTextProcessor.polishKeepAlive
                     )
                     aiLogger.info("Prewarmed local LLM model [model=\(target.model), elapsedMs=\(elapsedMs)]")
                 } catch {

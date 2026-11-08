@@ -1997,7 +1997,7 @@ struct ModelSettingsView: View {
                     baseURLString: endpoint,
                     model: model,
                     timeoutMs: 40_000,
-                    keepAlive: "5m"
+                    keepAlive: LocalLLMTextProcessor.polishKeepAlive
                 )
                 warmed.append((name: model, elapsedMs: elapsedMs))
                 await MainActor.run {

@@ -460,6 +460,8 @@ final class DictationCoordinator {
             state = .recording(startTime: Date())
             startCapTimer()
             startBackgroundDecodeLoop()
+            // A polish model that went idle loads while the user talks.
+            (textProcessor as? PolishWarming)?.warmPolishIfIdle()
             startAudioHealthMonitor()
             if let selectedDeviceID {
                 if let activeDeviceID = audioService.activeInputDeviceID, activeDeviceID != selectedDeviceID {

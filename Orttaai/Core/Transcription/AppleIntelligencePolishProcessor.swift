@@ -163,6 +163,12 @@ private struct PolishedTranscript {
 }
 #endif
 
+extension AppleIntelligencePolishProcessor: PolishWarming {
+    func warmPolishIfIdle() {
+        (baseProcessor as? PolishWarming)?.warmPolishIfIdle()
+    }
+}
+
 extension AppleIntelligencePolishProcessor: WordBoostVocabularyProviding {
     func wordBoostTerms() -> [WordBoostTerm] {
         (baseProcessor as? WordBoostVocabularyProviding)?.wordBoostTerms() ?? []

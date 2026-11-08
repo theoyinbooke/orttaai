@@ -4,7 +4,24 @@
 import Foundation
 import os
 
-final class LocalLLMTextProcessor: TextProcessor {
+/// A text processor that can get its polish model ready ahead of a
+/// dictation. The coordinator asks when a recording starts, so a model that
+/// went idle loads while the user talks.
+protocol PolishWarming {
+    func warmPolishIfIdle()
+}
+
+final class LocalLLMTextProcessor: TextProcessor, PolishWarming {
+    /// How long Ollama / LM Studio keep the polish model loaded after it was
+    /// last used. An hour keeps it ready through a working session, like
+    /// S1-mini staying loaded, without holding the memory forever.
+    static let polishKeepAlive = "60m"
+    /// Used or warmed more recently than this, the model is still loaded:
+    /// it's warmed again before the keep-alive above runs out.
+    static let warmFreshFor: TimeInterval = 50 * 60
+    /// When each polish model was last used or warmed, by endpoint and model.
+    private static var lastActive: [String: Date] = [:]
+
     private let baseProcessor: TextProcessor
     private let settings: AppSettings
     private let injectedClient: (any LocalLLMServing)?
@@ -68,6 +85,7 @@ final class LocalLLMTextProcessor: TextProcessor {
             Logger.ai.debug("Local polish timeout adjusted for model [model=\(model), requestedMs=\(requestedTimeoutMs), effectiveMs=\(timeoutMs)]")
         }
         let startedAt = Date()
+        let warmKey = Self.warmKey(endpoint: settings.polishLLMEndpoint, model: model)
         Logger.ai.debug("Local polish request started [model=\(model), chars=\(normalizedInput.count), timeoutMs=\(timeoutMs)]")
 
         do {
@@ -82,9 +100,10 @@ final class LocalLLMTextProcessor: TextProcessor {
                 temperature: 0,
                 numPredict: max(24, min(200, (normalizedInput.count / 2) + 24)),
                 numContext: nil,
-                keepAlive: "5m"
+                keepAlive: Self.polishKeepAlive
             )
 
+            Self.lastActive[warmKey] = Date()
             guard var polishedText = sanitizePolishOutput(rawResponse, original: normalizedInput) else {
                 Logger.ai.debug("Skipping local polish (response rejected by sanitizer)")
                 await circuitBreaker.recordFailure()
@@ -214,6 +233,42 @@ final class LocalLLMTextProcessor: TextProcessor {
         return 600
     }
 
+    private static func warmKey(endpoint: String, model: String) -> String {
+        "\(endpoint)|\(model)"
+    }
+
+    /// Loads the polish model on the local server unless it was used or
+    /// warmed in the last 50 minutes: when a recording starts, the model then
+    /// loads while the user talks instead of after they stop.
+    func warmPolishIfIdle() {
+        guard settings.localLLMPolishEnabled, settings.usesLocalLLMPolish else { return }
+        let model = settings.normalizedLocalLLMPolishModel
+        let endpoint = settings.polishLLMEndpoint
+        guard !model.isEmpty else { return }
+        let key = Self.warmKey(endpoint: endpoint, model: model)
+        if let last = Self.lastActive[key], Date().timeIntervalSince(last) < Self.warmFreshFor {
+            return
+        }
+        // Claimed now, so a second recording doesn't start a second warm-up.
+        Self.lastActive[key] = Date()
+        let client = llmClient
+        Task {
+            do {
+                let elapsedMs = try await client.warmModel(
+                    baseURLString: endpoint,
+                    model: model,
+                    timeoutMs: 60_000,
+                    keepAlive: Self.polishKeepAlive
+                )
+                Logger.ai.info("Warmed the polish model [model=\(model), elapsedMs=\(elapsedMs)]")
+            } catch {
+                // Not warm: let the next recording try again.
+                Self.lastActive[key] = nil
+                Logger.ai.debug("Couldn't warm the polish model: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func warmModelInBackground(endpoint: String, model: String) {
         let warmPrompt = "Fix punctuation only: hello world"
         let client = llmClient
@@ -229,7 +284,7 @@ final class LocalLLMTextProcessor: TextProcessor {
                 temperature: 0,
                 numPredict: 24,
                 numContext: nil,
-                keepAlive: "5m"
+                keepAlive: Self.polishKeepAlive
             )
         }
     }
