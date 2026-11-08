@@ -10,6 +10,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "OrttaaiLink", targets: ["OrttaaiLink"]),
+        // For testing linked devices against the real service on this Mac:
+        // `swift run LinkTestServer`. Not part of Orttaai.
+        .executable(name: "LinkTestServer", targets: ["LinkTestServer"]),
     ],
     dependencies: [
         .package(path: "../OrttaaiSync"),
@@ -30,6 +33,7 @@ let package = Package(
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
             ]
         ),
+        .executableTarget(name: "LinkTestServer", dependencies: ["OrttaaiLink", .product(name: "OrttaaiSyncCore", package: "OrttaaiSync")]),
         .testTarget(
             name: "OrttaaiLinkTests",
             dependencies: [
