@@ -79,14 +79,19 @@ final class LocalLLMTextProcessorTests: XCTestCase {
     }
 
     func testReliabilityRecoveryRunsOnceThenPreservesExplicitOptIn() {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: "dictationReliabilityRecoveryVersion")
+        // Its own defaults: the hosted app's startup (iCloud settings sync)
+        // can write the shared domain while this runs.
+        let suite = "OrttaaiTests.reliabilityRecovery.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "localLLMPolishEnabled")
 
-        XCTAssertFalse(AppSettings().localLLMPolishEnabled)
+        _ = AppSettings(defaults: defaults)
+        XCTAssertFalse(defaults.bool(forKey: "localLLMPolishEnabled"))
 
         defaults.set(true, forKey: "localLLMPolishEnabled")
-        XCTAssertTrue(AppSettings().localLLMPolishEnabled)
+        _ = AppSettings(defaults: defaults)
+        XCTAssertTrue(defaults.bool(forKey: "localLLMPolishEnabled"))
     }
 
     func testOrphanedPolishModeKeyIsRemovedAtInit() {
