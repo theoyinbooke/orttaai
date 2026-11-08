@@ -8,6 +8,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case text
     case audio
     case coach
+    case devices
     case general
 
     var id: String { rawValue }
@@ -18,6 +19,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .text: return "Text"
         case .audio: return "Audio"
         case .coach: return "Coach"
+        case .devices: return "Devices"
         case .general: return "General"
         }
     }
@@ -28,6 +30,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .text: return "text.alignleft"
         case .audio: return "mic"
         case .coach: return "scope"
+        case .devices: return "laptopcomputer.and.iphone"
         case .general: return "slider.horizontal.3"
         }
     }
@@ -39,6 +42,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .text: TextSettingsView()
         case .audio: AudioSettingsView()
         case .coach: CoachSettingsView()
+        case .devices: DevicesSettingsView()
         case .general: GeneralSettingsView()
         }
     }

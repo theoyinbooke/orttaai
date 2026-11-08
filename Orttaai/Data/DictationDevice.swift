@@ -15,6 +15,10 @@ nonisolated enum DictationDeviceFilter: String, CaseIterable, Identifiable {
     case thisMac
     case iphone
     case ipad
+    /// Linked through Orttaai Link.
+    case windows
+    case linux
+    case android
     /// Other Macs, and dictations whose device isn't known.
     case other
 
@@ -26,6 +30,9 @@ nonisolated enum DictationDeviceFilter: String, CaseIterable, Identifiable {
         case .thisMac: "This Mac"
         case .iphone: "iPhone"
         case .ipad: "iPad"
+        case .windows: "Windows"
+        case .linux: "Linux"
+        case .android: "Android"
         case .other: "Other"
         }
     }
@@ -57,6 +64,9 @@ nonisolated struct DictationDevices: Equatable {
         switch kind {
         case "iphone": .iphone
         case "ipad": .ipad
+        case "windows": .windows
+        case "linux": .linux
+        case "android": .android
         default: isThisMac(deviceID: deviceID, kind: kind) ? .thisMac : .other
         }
     }

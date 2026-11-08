@@ -19,6 +19,12 @@ public struct LinkingSession: Sendable, Equatable {
 
     public static let lifetime: TimeInterval = 5 * 60
     public static let allowedWrongCodes = 5
+
+    public init(secret: String, code: String, expires: Date) {
+        self.secret = secret
+        self.code = code
+        self.expires = expires
+    }
 }
 
 public enum LinkingRefusal: Error, Equatable, Sendable {

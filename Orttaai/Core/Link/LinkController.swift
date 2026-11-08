@@ -163,6 +163,18 @@ final class LinkController {
         }
     }
 
+    #if DEBUG
+    /// Sample state for rendering the Devices page in tests.
+    func showPreview(devices: [LinkedDevice], totals: [String: DeviceTotals], tailscaleName: String?, session: LinkingSession? = nil, url: URL? = nil) {
+        self.session = session
+        self.linkingURL = url
+        self.devices = devices
+        self.totals = totals
+        self.tailscaleName = tailscaleName
+        state = .running(port: LinkProtocol.defaultPort)
+    }
+    #endif
+
     // MARK: Network
 
     /// Addresses a device tries at home: LAN addresses, then the .local name.

@@ -22,7 +22,10 @@ final class LinkedDeviceKindTests: XCTestCase {
     func testTaggedLinuxDictationIsAnotherDevice() {
         let devices = DictationDevices(currentDeviceID: "this-mac")
         XCTAssertFalse(devices.isThisMac(deviceID: "linux-box", kind: "linux"))
-        XCTAssertEqual(devices.filter(deviceID: "linux-box", kind: "linux"), .other)
+        XCTAssertEqual(devices.filter(deviceID: "linux-box", kind: "linux"), .linux)
+        XCTAssertEqual(devices.filter(deviceID: "pc", kind: "windows"), .windows)
+        XCTAssertEqual(devices.filter(deviceID: "pixel", kind: "android"), .android)
+        XCTAssertEqual(DictationDeviceFilter.linux.title, "Linux")
     }
 
     func testLinkedDevicesHaveTheirOwnSymbols() {
