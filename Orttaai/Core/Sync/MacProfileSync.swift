@@ -145,6 +145,10 @@ nonisolated enum MacProfileSync {
             }
             // An open chat window reloads instead of saving over these.
             NotificationCenter.default.post(name: .syncedChatsDidChange, object: nil)
+            // A synced appearance applies now, not at the next launch.
+            if preferences?.entries[AppAppearance.key] != nil {
+                DispatchQueue.main.async { AppAppearance.apply() }
+            }
         } catch {
             logger.error("Applying synced settings failed: \(error.localizedDescription, privacy: .public)")
         }

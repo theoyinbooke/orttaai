@@ -244,12 +244,22 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     // localLLMInsightsModel, semanticEmbeddingModel, expressEngineEnabled,
     // expressWordBoostEnabled.
     // Also per-Mac: launchAtLogin (a login item registers this Mac only),
-    // hasCompletedSetup (sync starts after setup), and sidebarCollapsed.
+    // hasCompletedSetup (sync starts after setup), sidebarCollapsed,
+    // rightOptionDictationEnabled (needs this Mac's Input Monitoring),
+    // polishEngine (S1-mini is downloaded per Mac, and Apple Intelligence
+    // depends on the Mac), and expressLiveSegmentsEnabled (goes with Express,
+    // which is downloaded per Mac).
+    // Synced: choices about how you like Orttaai to behave and look, which
+    // mean the same on any Mac (appearance, celebrations, voice editing,
+    // graph summaries, the text and dictation preferences below).
     // "polishModeEnabled" was removed in 1.7: it was an orphaned key that
     // synced but controlled nothing. Polish is governed solely by
     // "localLLMPolishEnabled"; AppSettings deletes the stale key at launch.
     static let syncedUserDefaultsKeys: [String] = [
         "showProcessingEstimate",
+        "celebrateMilestones",
+        "appearance",
+        "editCommandsEnabled",
         "spokenFormattingEnabled",
         "autoParagraphsEnabled",
         "dictionaryEnabled",
@@ -285,6 +295,7 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         "semanticMemoryEnabled",
         "semanticMemoryAutoIndexEnabled",
         "semanticEmbeddingFallbackEnabled",
+        "semanticInsightSummaryEnabled",
         "modelSortMode",
         "toneOfVoiceProfile",
         "chatAIConversations"
