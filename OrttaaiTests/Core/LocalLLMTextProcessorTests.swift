@@ -100,14 +100,31 @@ final class LocalLLMTextProcessorTests: XCTestCase {
         )
     }
 
-    func testLegacyMaxChars280MigratesTo400OnRead() {
-        settings.localLLMPolishMaxChars = 280
+    func testLegacyPolishDefaultsMigrateOnceAndLaterChoicesStick() {
+        let defaults = UserDefaults.standard
+        let versionKey = "polishDefaultsMigrationVersion"
+        let saved = defaults.object(forKey: versionKey)
+        defer {
+            if let saved { defaults.set(saved, forKey: versionKey) } else { defaults.removeObject(forKey: versionKey) }
+            defaults.removeObject(forKey: "localLLMInsightsContextTokens")
+        }
+        defaults.removeObject(forKey: versionKey)
+        defaults.set(650, forKey: "localLLMPolishTimeoutMs")
+        defaults.set(280, forKey: "localLLMPolishMaxChars")
+        defaults.set(65_536, forKey: "localLLMInsightsContextTokens")
 
-        XCTAssertEqual(
-            settings.clampedLocalLLMPolishMaxChars,
-            400,
-            "The old 280-char default must migrate so polish covers longer dictation"
-        )
+        let migrated = AppSettings(defaults: defaults)
+        XCTAssertEqual(migrated.clampedLocalLLMPolishTimeoutMs, 3_000)
+        XCTAssertEqual(migrated.clampedLocalLLMPolishMaxChars, 400, "polish covers longer dictation")
+        XCTAssertEqual(migrated.clampedLocalLLMInsightsContextTokens, 16_384)
+
+        // Picked afterwards, the same values are kept (they used to be
+        // replaced on every read).
+        migrated.localLLMPolishTimeoutMs = 650
+        migrated.localLLMPolishMaxChars = 280
+        let later = AppSettings(defaults: defaults)
+        XCTAssertEqual(later.clampedLocalLLMPolishTimeoutMs, 650)
+        XCTAssertEqual(later.clampedLocalLLMPolishMaxChars, 280)
     }
 
     func testS1MiniEngineLeavesPolishToItAndNeverContactsTheProvider() async throws {

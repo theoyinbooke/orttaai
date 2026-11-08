@@ -85,12 +85,6 @@ nonisolated struct DownloadedModelMetrics: Sendable {
     }
 }
 
-enum ModelPrefetchOutcome: Sendable, Equatable {
-    case alreadyAvailable
-    case downloaded
-    case failed(message: String)
-}
-
 @Observable
 final class ModelManager {
     /// Set by AppDelegate after initialization so views can access the shared instance.
@@ -603,40 +597,6 @@ final class ModelManager {
             }
         }
         return removedAny
-    }
-
-    nonisolated static func prefetchModelIfNeeded(
-        _ modelId: String,
-        locator: ModelDirectoryLocator = .shared
-    ) async -> ModelPrefetchOutcome {
-        // Availability and download both use the exact id. Normalization would
-        // let a quantized sibling suppress a requested full-precision prefetch.
-        let exactModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !exactModelId.isEmpty else {
-            return .failed(message: "Missing model id.")
-        }
-
-        let inventory = await locator.inventory()
-        if inventory.directories[exactModelId] != nil {
-            return .alreadyAvailable
-        }
-        // The build may already sit on a folder that did not answer; do not
-        // start a multi-gigabyte download on that guess.
-        guard inventory.isComplete else {
-            return .failed(message: ModelLoadError.storageUnavailable.localizedDescription)
-        }
-
-        do {
-            let storageAccess = try await locator.beginAccess(createIfNeeded: true, requiresWrite: true)
-            _ = try await WhisperKit.download(
-                variant: exactModelId,
-                downloadBase: storageAccess.url
-            )
-            await locator.invalidate()
-            return .downloaded
-        } catch {
-            return .failed(message: error.localizedDescription)
-        }
     }
 
     nonisolated static func modelStorageRoots() -> [URL] {

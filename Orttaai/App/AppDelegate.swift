@@ -50,9 +50,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let handsFreeCue = NSSound.Name("Tink")
     private var handsFreeCueSound: NSSound?
     private var activeCueSound: NSSound?
-    private var isHomeWorkspaceAutoOpenEnabled: Bool {
-        appState?.settings.homeWorkspaceAutoOpenEnabled ?? false
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A macOS unit-test bundle runs inside an Orttaai app host. Starting
@@ -149,7 +146,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.loadVoiceDetectorIfNeeded()
         }
         floatingPanel?.handsFreeHintEnabled = state.settings.handsFreeModeEnabled
-        statusBarMenu?.setHomePreviewMode(!isHomeWorkspaceAutoOpenEnabled)
 
         statusItem.menu = statusBarMenu?.menu
 
@@ -171,7 +167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         presentInitialWindow(hasCompletedSetup: hasCompletedSetup)
 
         Logger.ui.info(
-            "App launched, setup complete: \(hasCompletedSetup), home auto-open: \(self.isHomeWorkspaceAutoOpenEnabled)"
+            "App launched, setup complete: \(hasCompletedSetup)"
         )
         observeShortcutChanges()
         observeAudioPipelineResetRequests()
@@ -648,7 +644,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Warm each enabled feature's model on the local provider.
         var warmTargets: [(model: String, provider: LocalLLMProviderKind, endpoint: String)] = []
-        if settings.localLLMPolishEnabled {
+        // With S1-mini as the polish engine, polish runs in-process (warmed
+        // separately), so the provider's polish model would load for nothing.
+        if settings.localLLMPolishEnabled, !settings.usesS1MiniPolish {
             warmTargets.append((
                 settings.normalizedLocalLLMPolishModel,
                 settings.polishLLMProvider,

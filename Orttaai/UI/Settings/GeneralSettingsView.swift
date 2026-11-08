@@ -14,6 +14,10 @@ struct GeneralSettingsView: View {
     @AppStorage(AppAppearance.key) private var appearance = AppAppearance.system.rawValue
     @State private var showClearConfirmation = false
     @State private var showResetConfirmation = false
+    /// Set while the toggle is being matched to the system's login item, so
+    /// that change isn't sent back to the system.
+    @State private var isSyncingLoginItem = false
+    @State private var loginItemError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
@@ -40,7 +44,18 @@ struct GeneralSettingsView: View {
                     isOn: $launchAtLogin
                 )
                 .onChange(of: launchAtLogin) { _, newValue in
+                    if isSyncingLoginItem {
+                        isSyncingLoginItem = false
+                        return
+                    }
                     updateLoginItem(enabled: newValue)
+                }
+                .onAppear { syncLoginItemState() }
+
+                if let loginItemError {
+                    SettingsNotice(kind: .error, message: loginItemError) {
+                        self.loginItemError = nil
+                    }
                 }
 
                 SettingsDivider()
@@ -123,8 +138,22 @@ struct GeneralSettingsView: View {
             } else {
                 try SMAppService.mainApp.unregister()
             }
+            loginItemError = nil
         } catch {
             Logger.ui.error("Failed to update login item: \(error.localizedDescription)")
+            loginItemError = "Couldn't change Launch at Login: \(error.localizedDescription)"
+        }
+        syncLoginItemState()
+    }
+
+    /// Shows what macOS actually has, rather than the last value saved: the
+    /// login item belongs to this Mac and can be changed in System Settings.
+    private func syncLoginItemState() {
+        let status = SMAppService.mainApp.status
+        let isOn = status == .enabled || status == .requiresApproval
+        if launchAtLogin != isOn {
+            isSyncingLoginItem = true
+            launchAtLogin = isOn
         }
     }
 

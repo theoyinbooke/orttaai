@@ -234,7 +234,7 @@ struct MemoryView: View {
                 SettingsDivider()
                 SettingsToggleRow(
                     title: "Bias Recognition to My Words",
-                    info: "Nudges speech recognition toward the words in your dictionary, so names are heard right the first time.",
+                    info: "Nudges speech recognition toward the words in your dictionary, so names are heard right the first time. Whisper only, for dictations up to about 28 seconds. Express uses Word Boost instead.",
                     isOn: $vocabularyBiasEnabled
                 )
             }
@@ -505,13 +505,15 @@ struct MemoryView: View {
                     isOn: $learnFromEditsEnabled
                 )
 
-                SettingsDivider()
+                if AppleIntelligencePolishProcessor.isModelAvailable {
+                    SettingsDivider()
 
-                SettingsToggleRow(
-                    title: "Prefer Apple AI for Suggestions",
-                    info: "Uses Apple's on-device model to propose dictionary words and snippets from your history.",
-                    isOn: $aiSuggestionsEnabled
-                )
+                    SettingsToggleRow(
+                        title: "Prefer Apple AI for Suggestions",
+                        info: "Uses Apple's on-device model to propose dictionary words and snippets from your history.",
+                        isOn: $aiSuggestionsEnabled
+                    )
+                }
             }
 
             if learnFromEditsEnabled {

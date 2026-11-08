@@ -19,7 +19,6 @@ final class HomeViewModel {
     private(set) var payload: DashboardStatsPayload = .empty
     private(set) var isLoading = false
     private(set) var hasLoaded = false
-    private(set) var isApplyingFastFirstUpgrade = false
     private(set) var isInsightsPanelVisible = false
     private(set) var isGeneratingInsights = false
     /// When the running analysis started, for the panel's progress lines.
@@ -34,8 +33,6 @@ final class HomeViewModel {
     private(set) var insightsComparison: WritingInsightsComparison?
     private(set) var insightsFreshness: WritingInsightFreshness?
     private(set) var appliedInsightRecommendations: Set<String> = []
-    private(set) var fastFirstRecommendedModelId: String?
-    private(set) var fastFirstPrefetchReady = false
     private(set) var githubStarPromptStep: GitHubStarPromptStep?
     private(set) var insightsSnapshot: WritingInsightSnapshot?
     var errorMessage: String?
@@ -65,7 +62,6 @@ final class HomeViewModel {
         self.statsService = statsService
         self.insightsService = insightsService
         self.settings = settings
-        refreshFastFirstState()
     }
 
     convenience init() {
@@ -76,24 +72,11 @@ final class HomeViewModel {
         )
     }
 
-    var shouldShowFastFirstUpgradePrompt: Bool {
-        guard fastFirstPrefetchReady else { return false }
-        guard let recommendedModelId = fastFirstRecommendedModelId else { return false }
-        guard !settings.fastFirstUpgradeDismissed else { return false }
-        return currentModelIdForComparison() != ModelManager.normalizedModelID(recommendedModelId)
-    }
-
-    var fastFirstRecommendedModelDisplayName: String {
-        guard let id = fastFirstRecommendedModelId else { return "Recommended model" }
-        return HomeViewModel.formatModelDisplayName(id)
-    }
-
     func load() {
         guard !isLoading else { return }
         guard let statsService else {
             errorMessage = "Couldn't load dashboard data."
             hasLoaded = true
-            refreshFastFirstState()
             return
         }
         // Before the first refresh, so a change between the two isn't missed.
@@ -143,7 +126,6 @@ final class HomeViewModel {
             Logger.database.error("Dashboard load failed: \(error.localizedDescription)")
         }
         hasLoaded = true
-        refreshFastFirstState()
         evaluateGitHubStarPromptIfNeeded()
     }
 
@@ -396,44 +378,6 @@ final class HomeViewModel {
         }
     }
 
-    func refreshFastFirstState() {
-        let recommended = ModelManager.normalizedModelID(
-            settings.fastFirstRecommendedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        fastFirstRecommendedModelId = recommended.isEmpty ? nil : recommended
-        fastFirstPrefetchReady = settings.fastFirstOnboardingEnabled && settings.fastFirstPrefetchReady
-    }
-
-    func applyFastFirstUpgrade() {
-        guard !isApplyingFastFirstUpgrade else { return }
-        guard shouldShowFastFirstUpgradePrompt else { return }
-        guard let modelId = fastFirstRecommendedModelId else { return }
-
-        isApplyingFastFirstUpgrade = true
-        errorMessage = nil
-
-        Task {
-            defer { isApplyingFastFirstUpgrade = false }
-
-            do {
-                if let manager = ModelManager.shared {
-                    try await manager.switchModel(toModelId: modelId)
-                } else {
-                    settings.selectedModelId = modelId
-                    settings.activeModelId = modelId
-                }
-                settings.fastFirstOnboardingEnabled = false
-                settings.fastFirstUpgradeDismissed = true
-                settings.fastFirstPrefetchReady = false
-                refreshFastFirstState()
-                refresh()
-            } catch {
-                errorMessage = "Couldn't switch to recommended model."
-                Logger.model.error("Fast-first upgrade switch failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
     private func startObservingIfNeeded(_ statsService: DashboardStatsService) {
         guard observation == nil else { return }
         var isFirstCall = true
@@ -465,7 +409,6 @@ final class HomeViewModel {
 
     private func handleCloudSyncCompleted() {
         refresh()
-        refreshFastFirstState()
         guard hasLoadedInsightsContext, let insightsService else { return }
         insightsAvailableApps = insightsService.loadAvailableApps()
         refreshInsightsHistory(using: insightsService)
@@ -670,31 +613,5 @@ final class HomeViewModel {
         }
     }
 
-    private func currentModelIdForComparison() -> String {
-        let active = settings.activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !active.isEmpty {
-            return ModelManager.normalizedModelID(active)
-        }
-        return ModelManager.normalizedModelID(settings.selectedModelId.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    private static func formatModelDisplayName(_ id: String) -> String {
-        var name = id
-            .replacingOccurrences(of: "openai_whisper-", with: "Whisper ")
-            .replacingOccurrences(of: "openai_whisper_", with: "Whisper ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-
-        name = name.split(separator: " ")
-            .map { word in
-                let w = String(word)
-                if w.hasPrefix("v") && w.count <= 3 { return w.uppercased() }
-                if w == "en" || w == ".en" { return "(English)" }
-                return w.prefix(1).uppercased() + w.dropFirst()
-            }
-            .joined(separator: " ")
-
-        return name.replacingOccurrences(of: ".(English)", with: " (English)")
-    }
 
 }

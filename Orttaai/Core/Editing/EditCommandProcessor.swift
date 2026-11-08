@@ -52,7 +52,7 @@ final class EditCommandProcessor: EditCommandProcessing {
         guard !normalizedInstruction.isEmpty else {
             return .failed(reason: "Didn't catch an instruction")
         }
-        guard normalizedSelection.count <= settings.clampedEditCommandMaxChars else {
+        guard normalizedSelection.count <= AppSettings.editCommandMaxChars else {
             return .failed(reason: "Selection too long to edit")
         }
 
@@ -67,7 +67,7 @@ final class EditCommandProcessor: EditCommandProcessing {
 
         let prompt = Self.makeEditPrompt(selection: normalizedSelection, instruction: normalizedInstruction)
         let timeoutMs = Self.effectiveTimeoutMs(
-            requestedTimeoutMs: settings.clampedEditCommandTimeoutMs,
+            requestedTimeoutMs: AppSettings.editCommandTimeoutMs,
             model: model
         )
         let numPredict = Self.numPredictTokens(selectionLength: normalizedSelection.count)

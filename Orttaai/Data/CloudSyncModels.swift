@@ -240,28 +240,25 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     // never ran, or activating a model that isn't downloaded here):
     // selectedModelId, activeModelId, selectedAudioDeviceID, selectedAudioDeviceUID,
     // computeMode,
-    // decodingWorkerCount, lowLatencyModeEnabled, fastFirstRecommendedModelId,
-    // fastFirstPrefetchStarted/Ready/ErrorMessage, localLLMPolishModel,
+    // decodingWorkerCount, localLLMPolishModel, localLLMEndpoint,
     // localLLMInsightsModel, semanticEmbeddingModel, expressEngineEnabled,
     // expressWordBoostEnabled.
+    // Also per-Mac: launchAtLogin (a login item registers this Mac only),
+    // hasCompletedSetup (sync starts after setup), and sidebarCollapsed.
     // "polishModeEnabled" was removed in 1.7: it was an orphaned key that
     // synced but controlled nothing. Polish is governed solely by
     // "localLLMPolishEnabled"; AppSettings deletes the stale key at launch.
     static let syncedUserDefaultsKeys: [String] = [
-        "launchAtLogin",
-        "hasCompletedSetup",
         "showProcessingEstimate",
-        "homeWorkspaceAutoOpenEnabled",
         "spokenFormattingEnabled",
         "autoParagraphsEnabled",
         "dictionaryEnabled",
         "fuzzyDictionaryEnabled",
         "disfluencyCleanupEnabled",
         "snippetsEnabled",
+        "vocabularyBiasEnabled",
         "aiSuggestionsEnabled",
         "learnFromEditsEnabled",
-        "fastFirstOnboardingEnabled",
-        "fastFirstUpgradeDismissed",
         "githubStarPromptCompleted",
         "githubStarPromptShownCount",
         "githubStarPromptLastShownAtEpoch",
@@ -280,7 +277,6 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         "decodingLogProbThreshold",
         "decodingNoSpeechThreshold",
         "localLLMPolishEnabled",
-        "localLLMEndpoint",
         "localLLMPolishTimeoutMs",
         "localLLMPolishMaxChars",
         "localLLMInsightsEnabled",
@@ -290,7 +286,6 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         "semanticMemoryAutoIndexEnabled",
         "semanticEmbeddingFallbackEnabled",
         "modelSortMode",
-        "homeSidebarCollapsed",
         "toneOfVoiceProfile",
         "chatAIConversations"
     ]

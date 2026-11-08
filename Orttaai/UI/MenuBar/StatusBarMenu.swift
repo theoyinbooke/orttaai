@@ -26,10 +26,6 @@ final class StatusBarMenu {
         statusItem.title = text
     }
 
-    func setHomePreviewMode(_ isPreview: Bool) {
-        homeItem.title = isPreview ? "Home (Preview)" : "Home"
-    }
-
     /// Reflects the polish setting in the menu; the checkmark is the single
     /// visible truth for whether dictation output gets the local LLM polish.
     func updatePolishMode(isOn: Bool) {

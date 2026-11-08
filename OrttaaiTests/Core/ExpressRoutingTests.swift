@@ -683,7 +683,6 @@ private actor ScriptedLoadTranscriptionService: Transcribing {
     func updateSettings(
         language: String,
         computeMode: String,
-        lowLatencyMode: Bool,
         decodingPreferences: DecodingPreferences
     ) {}
 }

@@ -11,12 +11,6 @@ enum AppResetService {
     static func resetOnboardingState() {
         let settings = AppSettings()
         settings.hasCompletedSetup = false
-        settings.fastFirstOnboardingEnabled = false
-        settings.fastFirstRecommendedModelId = ""
-        settings.fastFirstPrefetchStarted = false
-        settings.fastFirstPrefetchReady = false
-        settings.fastFirstUpgradeDismissed = false
-        settings.fastFirstPrefetchErrorMessage = ""
         settings.githubStarPromptCompleted = false
         settings.githubStarPromptShownCount = 0
         settings.githubStarPromptLastShownAtEpoch = 0

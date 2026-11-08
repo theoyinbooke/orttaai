@@ -188,7 +188,6 @@ struct DownloadStepView: View {
         }
         .onChange(of: express?.status) { _, status in
             if status == .active, expressEngineEnabled {
-                configureFastFirstOnboarding(settings: AppSettings())
                 isModelReady = true
             } else if installedModelId == nil {
                 isModelReady = false
@@ -521,7 +520,6 @@ struct DownloadStepView: View {
                 await MainActor.run {
                     settings.selectedModelId = modelId
                     settings.activeModelId = modelId
-                    configureFastFirstOnboarding(settings: settings)
                     refreshInstalledModelState(selectedModelID: modelId)
                     isDownloading = false
                     downloadingModelId = nil
@@ -567,17 +565,6 @@ struct DownloadStepView: View {
         Task {
             modelStorage = await ModelDirectoryLocator.shared.storageSnapshot()
         }
-    }
-
-    /// Setup no longer offers the large model, so it doesn't start the
-    /// background download of it either; it stays a choice on the Model page.
-    private func configureFastFirstOnboarding(settings: AppSettings) {
-        settings.fastFirstOnboardingEnabled = false
-        settings.fastFirstRecommendedModelId = ""
-        settings.fastFirstPrefetchStarted = false
-        settings.fastFirstPrefetchReady = false
-        settings.fastFirstUpgradeDismissed = false
-        settings.fastFirstPrefetchErrorMessage = ""
     }
 
     private func refreshInstalledModelState(selectedModelID: String? = nil) {

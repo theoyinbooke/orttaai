@@ -183,7 +183,6 @@ actor MockTranscriptionService: Transcribing {
     func updateSettings(
         language: String,
         computeMode: String,
-        lowLatencyMode: Bool,
         decodingPreferences: DecodingPreferences
     ) {
         // No-op for tests
@@ -209,7 +208,6 @@ final class MockTextProcessor: TextProcessor, VocabularyBiasProviding {
 }
 
 final class MockInjectionService: TextInjecting {
-    var lowLatencyModeEnabled: Bool = false
     var mockResult: InjectionResult = .success(method: .paste)
     var onInject: ((String) -> Void)?
     private(set) var injectedTexts: [String] = []

@@ -113,7 +113,7 @@ final class DecodeAccuracyTests: XCTestCase {
 
     func testAccuracyStartsGreedilyAndKeepsQualityFallbacks() async {
         let service = TranscriptionService()
-        await service.updateSettings(language: "en", computeMode: "cpuAndNeuralEngine", lowLatencyMode: false,
+        await service.updateSettings(language: "en", computeMode: "cpuAndNeuralEngine",
                                      decodingPreferences: preferences(expertOverridesEnabled: false))
         let options = await service.makeDecodingOptions()
         XCTAssertEqual(options.temperature, 0)
@@ -126,7 +126,7 @@ final class DecodeAccuracyTests: XCTestCase {
 
     func testExplicitExpertSamplingSettingsStillTakePrecedence() async {
         let service = TranscriptionService()
-        await service.updateSettings(language: "en", computeMode: "cpuAndNeuralEngine", lowLatencyMode: false,
+        await service.updateSettings(language: "en", computeMode: "cpuAndNeuralEngine",
                                      decodingPreferences: preferences(expertOverridesEnabled: true))
         let options = await service.makeDecodingOptions()
         XCTAssertEqual(options.temperature, 0.4)

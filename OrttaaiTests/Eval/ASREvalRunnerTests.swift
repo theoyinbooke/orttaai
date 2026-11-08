@@ -149,7 +149,6 @@ final class ASREvalRunnerTests: XCTestCase {
         await service.updateSettings(
             language: "en",
             computeMode: "cpuAndNeuralEngine",
-            lowLatencyMode: false,
             decodingPreferences: DecodingPreferences(
                 preset: preset,
                 expertOverridesEnabled: false,

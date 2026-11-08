@@ -15,7 +15,6 @@ struct DictationSettingsView: View {
     @AppStorage("rightOptionDictationEnabled") private var rightOptionDictationEnabled = false
     @State private var hasInputMonitoring = RightOptionTapMonitor.hasInputMonitoringAccess
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
-    @AppStorage("lowLatencyModeEnabled") private var lowLatencyModeEnabled = false
     @State private var languageSwitchStatus: String?
     @State private var languageSwitchError: String?
 
@@ -50,11 +49,7 @@ struct DictationSettingsView: View {
                 try? await Task.sleep(for: .seconds(1.5))
             }
         }
-        .onChange(of: dictationLanguage) { _, newValue in
-            if lowLatencyModeEnabled, newValue == "auto" {
-                dictationLanguage = "en"
-                return
-            }
+        .onChange(of: dictationLanguage) { _, _ in
             switchToLanguageOptimizedModelIfNeeded()
         }
     }
@@ -103,12 +98,13 @@ struct DictationSettingsView: View {
                 isOn: $handsFreeModeEnabled
             )
 
-            if handsFreeModeEnabled {
+            // Right Option recordings are always hands-free, so they use these too.
+            if handsFreeModeEnabled || rightOptionDictationEnabled {
                 SettingsDivider()
 
                 SettingsRow(
                     title: "Stop After Silence",
-                    info: "Ends a hands-free recording once you stop talking for this long. It only starts counting after it hears you speak. Off means it runs until you stop it."
+                    info: "Ends a hands-free or Right Option recording once you stop talking for this long. It only starts counting after it hears you speak. Off means it runs until you stop it."
                 ) {
                     OrttaaiSegmentedControl(
                         title: "Stop After Silence",
@@ -121,7 +117,7 @@ struct DictationSettingsView: View {
 
                 SettingsRow(
                     title: "Hands-Free Limit",
-                    info: "The longest a hands-free recording can run. The pill counts down the final 20 seconds."
+                    info: "The longest a hands-free or Right Option recording can run. The pill counts down the final 20 seconds."
                 ) {
                     OrttaaiSegmentedControl(
                         title: "Hands-Free Limit",
@@ -160,9 +156,7 @@ struct DictationSettingsView: View {
         SettingsCard("Language") {
             SettingsRow(
                 title: "Dictation Language",
-                info: lowLatencyModeEnabled
-                    ? "The language you speak. Auto-detect is unavailable while Low Latency Mode is on (Model › Speech)."
-                    : "The language you speak. Auto-detect handles any language but is slower."
+                info: "The language you speak. Auto-detect handles any language but is slower."
             ) {
                 OrttaaiDropdown(
                     selection: $dictationLanguage,
@@ -184,9 +178,7 @@ struct DictationSettingsView: View {
     }
 
     private var languageOptions: [OrttaaiDropdown<String>.Option] {
-        Self.supportedLanguages
-            .filter { !(lowLatencyModeEnabled && $0.code == "auto") }
-            .map { .init($0.code, $0.name) }
+        Self.supportedLanguages.map { .init($0.code, $0.name) }
     }
 
     /// nil means silence stop is off.

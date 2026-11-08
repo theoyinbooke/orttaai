@@ -7,7 +7,6 @@ final class AppSettingsTests: XCTestCase {
         "dictationLanguage",
         "selectedModelId",
         "activeModelId",
-        "lowLatencyModeEnabled",
         "computeMode",
         "spokenFormattingEnabled",
         "decodingPreset",
@@ -45,20 +44,19 @@ final class AppSettingsTests: XCTestCase {
         super.tearDown()
     }
 
-    func testEffectiveDictationLanguageForcesEnglishWhenLowLatencyUsesAutoDetect() {
+    func testEffectiveDictationLanguageIsTheChosenLanguage() {
         let settings = AppSettings()
-        settings.lowLatencyModeEnabled = true
         settings.dictationLanguage = "auto"
-
-        XCTAssertEqual(settings.effectiveDictationLanguage, "en")
+        XCTAssertEqual(settings.effectiveDictationLanguage, "auto")
+        settings.dictationLanguage = "es"
+        XCTAssertEqual(settings.effectiveDictationLanguage, "es")
     }
 
-    func testEffectiveDictationLanguagePreservesExplicitLanguage() {
-        let settings = AppSettings()
-        settings.lowLatencyModeEnabled = true
-        settings.dictationLanguage = "es"
-
-        XCTAssertEqual(settings.effectiveDictationLanguage, "es")
+    func testRetiredLowLatencyPreferenceIsCleared() {
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "lowLatencyModeEnabled")
+        _ = AppSettings(defaults: defaults)
+        XCTAssertNil(defaults.object(forKey: "lowLatencyModeEnabled"))
     }
 
     func testQualityDefaultsUseBalancedDecodeAndNoLLMRewrite() {
@@ -98,7 +96,6 @@ final class AppSettingsTests: XCTestCase {
     func testSyncTranscriptionSettingsPassesCurrentRuntimeValues() async {
         let settings = AppSettings()
         settings.dictationLanguage = "auto"
-        settings.lowLatencyModeEnabled = true
         settings.computeMode = "cpuOnly"
         settings.decodingPresetRaw = DecodingPreset.accuracy.rawValue
         settings.advancedDecodingEnabled = true
@@ -114,9 +111,8 @@ final class AppSettingsTests: XCTestCase {
         await settings.syncTranscriptionSettings(to: transcriptionService)
 
         let snapshot = await transcriptionService.lastSettings
-        XCTAssertEqual(snapshot?.language, "en")
+        XCTAssertEqual(snapshot?.language, "auto")
         XCTAssertEqual(snapshot?.computeMode, "cpuOnly")
-        XCTAssertEqual(snapshot?.lowLatencyMode, true)
         XCTAssertEqual(snapshot?.decodingPreferences.preset, .accuracy)
         XCTAssertEqual(snapshot?.decodingPreferences.expertOverridesEnabled, true)
         XCTAssertEqual(snapshot?.decodingPreferences.temperature, 0.4)
@@ -140,7 +136,6 @@ private actor RecordingTranscriptionService: Transcribing {
     struct SettingsSnapshot: Equatable {
         let language: String
         let computeMode: String
-        let lowLatencyMode: Bool
         let decodingPreferences: DecodingPreferences
     }
 
@@ -160,13 +155,11 @@ private actor RecordingTranscriptionService: Transcribing {
     func updateSettings(
         language: String,
         computeMode: String,
-        lowLatencyMode: Bool,
         decodingPreferences: DecodingPreferences
     ) {
         lastSettings = SettingsSnapshot(
             language: language,
             computeMode: computeMode,
-            lowLatencyMode: lowLatencyMode,
             decodingPreferences: decodingPreferences
         )
     }

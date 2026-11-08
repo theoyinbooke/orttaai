@@ -78,16 +78,11 @@ struct InjectionTelemetry: Sendable {
 
 protocol TextInjecting: AnyObject {
     var lastInjectionTelemetry: InjectionTelemetry? { get }
-    var lowLatencyModeEnabled: Bool { get set }
     func inject(text: String, targetApp: NSRunningApplication?) async -> InjectionResult
 }
 
 extension TextInjecting {
     var lastInjectionTelemetry: InjectionTelemetry? { nil }
-    var lowLatencyModeEnabled: Bool {
-        get { false }
-        set {}
-    }
 
     func inject(text: String) async -> InjectionResult {
         await inject(text: text, targetApp: nil)
@@ -105,7 +100,6 @@ final class TextInjectionService: TextInjecting {
     private let requestFront: (NSRunningApplication) -> Void
     private let returnTimeoutMs: Int
     private(set) var lastInjectionTelemetry: InjectionTelemetry?
-    var lowLatencyModeEnabled: Bool = false
     private var adaptiveTimingByApp: [String: AdaptiveInjectionTiming] = [:]
 
     /// Extra verification polls after the first read reports a failed paste,
@@ -653,24 +647,24 @@ final class TextInjectionService: TextInjecting {
     private func adaptiveKey(for app: NSRunningApplication?) -> String {
         guard let bundleID = app?.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
               !bundleID.isEmpty else {
-            return lowLatencyModeEnabled ? "ll:__default__" : "std:__default__"
+            return "std:__default__"
         }
-        return lowLatencyModeEnabled ? "ll:\(bundleID)" : "std:\(bundleID)"
+        return "std:\(bundleID)"
     }
 
     private func adaptiveTiming(for appKey: String, textLength: Int) -> AdaptiveInjectionTiming {
-        let baseline = lowLatencyModeEnabled ? AdaptiveInjectionTiming.lowLatencyDefault : AdaptiveInjectionTiming.default
+        let baseline = AdaptiveInjectionTiming.default
         let current = adaptiveTimingByApp[appKey] ?? baseline
         let textComplexityBoost = min(35, Int(Double(max(textLength, 1)).squareRoot() * 2.3))
         let timeout = clamp(
             current.activationTimeoutMs + textComplexityBoost / 3,
             min: 55,
-            max: lowLatencyModeEnabled ? 260 : 450
+            max: 450
         )
         let restore = clamp(
             current.restoreDelayMs + textComplexityBoost,
             min: 30,
-            max: lowLatencyModeEnabled ? 150 : 240
+            max: 240
         )
         return AdaptiveInjectionTiming(activationTimeoutMs: timeout, restoreDelayMs: restore)
     }
@@ -682,12 +676,12 @@ final class TextInjectionService: TextInjecting {
     ) -> Int {
         var delay = timing.restoreDelayMs
         if activationMs > 140 {
-            delay += lowLatencyModeEnabled ? 10 : 18
+            delay += 18
         }
         if !activationSucceeded {
-            delay = max(delay, lowLatencyModeEnabled ? 100 : 130)
+            delay = max(delay, 130)
         }
-        return clamp(delay, min: 30, max: lowLatencyModeEnabled ? 170 : 260)
+        return clamp(delay, min: 30, max: 260)
     }
 
     private func updateAdaptiveTiming(
@@ -696,17 +690,17 @@ final class TextInjectionService: TextInjecting {
         restoreDelayMs: Int,
         activationSucceeded: Bool
     ) {
-        let baseline = lowLatencyModeEnabled ? AdaptiveInjectionTiming.lowLatencyDefault : AdaptiveInjectionTiming.default
+        let baseline = AdaptiveInjectionTiming.default
         let current = adaptiveTimingByApp[appKey] ?? baseline
         let activationTarget = clamp(
             activationMs + (activationSucceeded ? 28 : 110),
             min: 60,
-            max: lowLatencyModeEnabled ? 300 : 460
+            max: 460
         )
         let restoreTarget = clamp(
             activationSucceeded ? max(30, restoreDelayMs - 10) : restoreDelayMs + 22,
             min: 30,
-            max: lowLatencyModeEnabled ? 170 : 260
+            max: 260
         )
 
         let updated = AdaptiveInjectionTiming(
@@ -732,10 +726,5 @@ private struct AdaptiveInjectionTiming {
     static let `default` = AdaptiveInjectionTiming(
         activationTimeoutMs: 140,
         restoreDelayMs: 90
-    )
-
-    static let lowLatencyDefault = AdaptiveInjectionTiming(
-        activationTimeoutMs: 95,
-        restoreDelayMs: 52
     )
 }

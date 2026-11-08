@@ -9,7 +9,7 @@ import XCTest
 final class EditLearningWatcherTests: XCTestCase {
     private var settings: AppSettings!
     private var savedDefaults: [String: Any] = [:]
-    private let keys = ["learnFromEditsEnabled", "dictationLanguage", "lowLatencyModeEnabled"]
+    private let keys = ["learnFromEditsEnabled", "dictationLanguage"]
 
     override func setUp() async throws {
         savedDefaults = keys.reduce(into: [:]) { $0[$1] = UserDefaults.standard.object(forKey: $1) }

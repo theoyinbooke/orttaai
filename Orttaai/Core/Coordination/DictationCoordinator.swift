@@ -396,7 +396,7 @@ final class DictationCoordinator {
                 return
             }
 
-            guard selection.text.count <= self.settings.clampedEditCommandMaxChars else {
+            guard selection.text.count <= AppSettings.editCommandMaxChars else {
                 self.pendingEditGestureAction = nil
                 self.editHotkeyGesture.reset()
                 self.state = .error(message: "Selection too long to edit")
@@ -699,7 +699,6 @@ final class DictationCoordinator {
             // Deliver the saved final text once to the app that was focused
             // when recording began.
             state = .injecting
-            injectionService.lowLatencyModeEnabled = settings.lowLatencyModeEnabled
             let injectionStart = CFAbsoluteTimeGetCurrent()
             let result = await injectionService.inject(text: output.text, targetApp: self.targetApp)
             injectionTelemetry = injectionService.lastInjectionTelemetry
@@ -737,7 +736,6 @@ final class DictationCoordinator {
 
             switch result {
             case .success(let method):
-                maybeStartFastFirstPrefetch(afterSuccessfulDictationWith: resolvedModelID)
                 editLearner?.watch(insertedText: output.text, targetApp: targetApp)
                 if sessionLostAudio {
                     state = .error(message: "Some audio was lost. The rest was inserted.")
@@ -840,7 +838,6 @@ final class DictationCoordinator {
         switch outcome {
         case .edited(let editedText):
             state = .injecting
-            injectionService.lowLatencyModeEnabled = settings.lowLatencyModeEnabled
             let injectionStart = CFAbsoluteTimeGetCurrent()
             let result = await injectionService.inject(text: editedText, targetApp: targetApp)
             let injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
@@ -1075,40 +1072,6 @@ final class DictationCoordinator {
         }
         settings.recordLoadedModel(selectedModelID)
         Logger.model.info("Exact transcription model load complete: \(selectedModelID)")
-    }
-
-    private func maybeStartFastFirstPrefetch(afterSuccessfulDictationWith activeModelId: String) {
-        // The fast-first upgrade is a Whisper model; Express users already chose.
-        guard activeModelId != ExpressEngine.modelID else { return }
-        guard settings.fastFirstOnboardingEnabled else { return }
-        guard !settings.fastFirstPrefetchStarted else { return }
-
-        // Keep the exact variant id for the download; normalize only for the
-        // same-family comparison (suffix-stripped ids are ambiguous targets).
-        let recommendedModelId = settings.fastFirstRecommendedModelId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !recommendedModelId.isEmpty else { return }
-        guard ModelManager.normalizedModelID(recommendedModelId) != ModelManager.normalizedModelID(activeModelId) else { return }
-
-        settings.fastFirstPrefetchStarted = true
-        settings.fastFirstPrefetchReady = false
-        settings.fastFirstPrefetchErrorMessage = ""
-        NotificationCenter.default.post(name: .fastFirstUpgradeAvailabilityDidChange, object: nil)
-
-        Task.detached(priority: .utility) {
-            let outcome = await ModelManager.prefetchModelIfNeeded(recommendedModelId)
-            await MainActor.run {
-                let appSettings = AppSettings()
-                switch outcome {
-                case .alreadyAvailable, .downloaded:
-                    appSettings.fastFirstPrefetchReady = true
-                    appSettings.fastFirstPrefetchErrorMessage = ""
-                case .failed(let message):
-                    appSettings.fastFirstPrefetchStarted = false
-                    appSettings.fastFirstPrefetchErrorMessage = message
-                }
-                NotificationCenter.default.post(name: .fastFirstUpgradeAvailabilityDidChange, object: nil)
-            }
-        }
     }
 
     /// Bounds the recording at the mode-appropriate max duration, surfacing

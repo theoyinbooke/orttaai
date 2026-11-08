@@ -105,7 +105,9 @@ final class AppSettings: ObservableObject {
         // Remove retired insertion/rewrite state. Version this reliability
         // recovery so users can deliberately re-enable optional polish later
         // without every launch overriding their choice.
-        defaults.removeObject(forKey: "polishModeEnabled")
+        for key in Self.retiredKeys {
+            defaults.removeObject(forKey: key)
+        }
         let recoveryVersionKey = "dictationReliabilityRecoveryVersion"
         if defaults.integer(forKey: recoveryVersionKey) < 1 {
             defaults.set(false, forKey: "localLLMPolishEnabled")
@@ -113,7 +115,43 @@ final class AppSettings: ObservableObject {
             defaults.removeObject(forKey: "KeyboardShortcuts_pasteLastTranscript")
             defaults.set(1, forKey: recoveryVersionKey)
         }
+        // Old defaults that were too low, rewritten once so a value the user
+        // picks afterwards sticks (these used to be replaced on every read).
+        let polishDefaultsVersionKey = "polishDefaultsMigrationVersion"
+        if defaults.integer(forKey: polishDefaultsVersionKey) < 1 {
+            // 220 (pre-1.5) and 650 (pre-polish-default-on) were too short for
+            // real local generation.
+            if [220, 650].contains(defaults.integer(forKey: "localLLMPolishTimeoutMs")) {
+                defaults.set(3_000, forKey: "localLLMPolishTimeoutMs")
+            }
+            if defaults.integer(forKey: "localLLMPolishMaxChars") == 280 {
+                defaults.set(400, forKey: "localLLMPolishMaxChars")
+            }
+            if defaults.integer(forKey: "localLLMInsightsContextTokens") == 65_536 {
+                defaults.set(16_384, forKey: "localLLMInsightsContextTokens")
+            }
+            defaults.set(1, forKey: polishDefaultsVersionKey)
+        }
     }
+
+    /// Keys of settings that no longer exist, deleted at launch so they don't
+    /// linger: Polish Mode (orphaned in 1.7), Low Latency Mode (removed in
+    /// 1.19: Express covers speed, and it barely changed decoding), the
+    /// fast-first onboarding that setup stopped using, the Home auto-open
+    /// flag that nothing set, and the voice-edit limits that are now fixed.
+    static let retiredKeys = [
+        "polishModeEnabled",
+        "lowLatencyModeEnabled",
+        "fastFirstOnboardingEnabled",
+        "fastFirstRecommendedModelId",
+        "fastFirstPrefetchStarted",
+        "fastFirstPrefetchReady",
+        "fastFirstUpgradeDismissed",
+        "fastFirstPrefetchErrorMessage",
+        "homeWorkspaceAutoOpenEnabled",
+        "editCommandTimeoutMs",
+        "editCommandMaxChars",
+    ]
 
     @AppStorage("selectedModelId") var selectedModelId: String = "openai_whisper-small"
     @AppStorage("activeModelId") var activeModelId: String = ""
@@ -135,8 +173,6 @@ final class AppSettings: ObservableObject {
     @AppStorage("showProcessingEstimate") var showProcessingEstimate: Bool = true
     /// Corner toast and in-window celebration when a badge is earned.
     @AppStorage("celebrateMilestones") var celebrateMilestones: Bool = true
-    @AppStorage("homeWorkspaceAutoOpenEnabled") var homeWorkspaceAutoOpenEnabled: Bool = true
-    @AppStorage("lowLatencyModeEnabled") var lowLatencyModeEnabled: Bool = false
     @AppStorage("spokenFormattingEnabled") var spokenFormattingEnabled: Bool = true
     /// Breaks a long dictation that came out as one block into paragraphs.
     @AppStorage("autoParagraphsEnabled") var autoParagraphsEnabled: Bool = true
@@ -157,12 +193,6 @@ final class AppSettings: ObservableObject {
     /// Suggests dictionary words from fixes the user makes right after a
     /// dictation is inserted (`EditLearningWatcher`).
     @AppStorage("learnFromEditsEnabled") var learnFromEditsEnabled: Bool = true
-    @AppStorage("fastFirstOnboardingEnabled") var fastFirstOnboardingEnabled: Bool = false
-    @AppStorage("fastFirstRecommendedModelId") var fastFirstRecommendedModelId: String = ""
-    @AppStorage("fastFirstPrefetchStarted") var fastFirstPrefetchStarted: Bool = false
-    @AppStorage("fastFirstPrefetchReady") var fastFirstPrefetchReady: Bool = false
-    @AppStorage("fastFirstUpgradeDismissed") var fastFirstUpgradeDismissed: Bool = false
-    @AppStorage("fastFirstPrefetchErrorMessage") var fastFirstPrefetchErrorMessage: String = ""
     @AppStorage("githubStarPromptCompleted") var githubStarPromptCompleted: Bool = false
     @AppStorage("githubStarPromptShownCount") var githubStarPromptShownCount: Int = 0
     @AppStorage("githubStarPromptLastShownAtEpoch") var githubStarPromptLastShownAtEpoch: Double = 0
@@ -188,8 +218,9 @@ final class AppSettings: ObservableObject {
     // local provider is reachable the edit fails honestly and the selection
     // stays untouched, so the default is safe.
     @AppStorage("editCommandsEnabled") var editCommandsEnabled: Bool = true
-    @AppStorage("editCommandTimeoutMs") var editCommandTimeoutMs: Int = 6_000
-    @AppStorage("editCommandMaxChars") var editCommandMaxChars: Int = 1_500
+    /// How long a voice edit may take, and the longest selection it accepts.
+    static let editCommandTimeoutMs = 6_000
+    static let editCommandMaxChars = 1_500
 
     // Advanced / Compute
     @AppStorage("computeMode") var computeMode: String = "cpuAndNeuralEngine"
@@ -296,10 +327,9 @@ final class AppSettings: ObservableObject {
         return TimeInterval(max(range.lowerBound, min(range.upperBound, handsFreeMaxRecordingDuration)))
     }
 
+    /// The language dictation runs in ("auto" detects it).
     var effectiveDictationLanguage: String {
-        (lowLatencyModeEnabled && dictationLanguage == "auto")
-            ? "en"
-            : dictationLanguage
+        dictationLanguage
     }
 
     var effectiveSelectedModelId: String {
@@ -437,37 +467,15 @@ final class AppSettings: ObservableObject {
     }
 
     var clampedLocalLLMPolishTimeoutMs: Int {
-        let clamped = max(80, min(4_000, localLLMPolishTimeoutMs))
-        // Migrate from old defaults that are too low for real local
-        // generation latency (220 pre-1.5, 650 pre-polish-default-on).
-        if clamped == 220 || clamped == 650 {
-            return 3_000
-        }
-        return clamped
+        max(80, min(4_000, localLLMPolishTimeoutMs))
     }
 
     var clampedLocalLLMPolishMaxChars: Int {
-        // Migrate the old 280-char default so polish covers longer dictation
-        // (ModelSettingsView persists the same migration when settings open).
-        if localLLMPolishMaxChars == 280 {
-            return 400
-        }
-        return max(80, min(2_000, localLLMPolishMaxChars))
-    }
-
-    var clampedEditCommandTimeoutMs: Int {
-        max(1_000, min(12_000, editCommandTimeoutMs))
-    }
-
-    var clampedEditCommandMaxChars: Int {
-        max(200, min(6_000, editCommandMaxChars))
+        max(80, min(2_000, localLLMPolishMaxChars))
     }
 
     var clampedLocalLLMInsightsContextTokens: Int {
-        if localLLMInsightsContextTokens == 65_536 {
-            return 16_384
-        }
-        return max(8_192, min(262_144, localLLMInsightsContextTokens))
+        max(8_192, min(262_144, localLLMInsightsContextTokens))
     }
 
     private func sanitizeLocalLLMModel(_ value: String, fallback: String) -> String {
@@ -490,7 +498,6 @@ final class AppSettings: ObservableObject {
         await transcriptionService.updateSettings(
             language: effectiveDictationLanguage,
             computeMode: computeMode,
-            lowLatencyMode: lowLatencyModeEnabled,
             decodingPreferences: decodingPreferences
         )
         await transcriptionService.setExpressLiveSegments(expressLiveSegmentsEnabled)

@@ -18,8 +18,7 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         "autoParagraphsEnabled",
         "fuzzyDictionaryEnabled",
         "disfluencyCleanupEnabled",
-        "dictationLanguage",
-        "lowLatencyModeEnabled"
+        "dictationLanguage"
     ]
 
     override func setUpWithError() throws {
@@ -38,8 +37,6 @@ final class RuleBasedTextProcessorTests: XCTestCase {
         settings.fuzzyDictionaryEnabled = true
         settings.disfluencyCleanupEnabled = true
         settings.dictationLanguage = "en"
-        // The test host shares the Debug app's defaults, where this may be on.
-        settings.lowLatencyModeEnabled = false
         processor = RuleBasedTextProcessor(databaseManager: db, settings: settings)
     }
 
@@ -704,16 +701,6 @@ final class RuleBasedTextProcessorTests: XCTestCase {
             XCTAssertEqual(output.text, "Tematope will present", language)
             XCTAssertFalse(output.changes.contains { $0.hasPrefix("Dictionary (fuzzy)") }, language)
         }
-    }
-
-    func testFuzzyDictionaryRunsForAutoLanguageWhenLowLatencyModeForcesEnglish() async throws {
-        _ = try db.upsertDictionaryEntry(source: "temi tope", target: "Temitope")
-        settings.dictationLanguage = "auto"
-        settings.lowLatencyModeEnabled = true
-
-        let output = try await process("Tematope will present")
-
-        XCTAssertEqual(output.text, "Temitope will present")
     }
 
     func testFuzzyDictionaryKeepsInflectedFormsAndSimilarNamesIntact() async throws {

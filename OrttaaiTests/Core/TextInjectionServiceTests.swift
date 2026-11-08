@@ -159,7 +159,6 @@ final class TextInjectionServiceTests: XCTestCase {
             keyPoster: keyPoster,
             unverifiedPastePolicy: { _ in .assumeDeliveredAndRestoreClipboard }
         )
-        service.lowLatencyModeEnabled = true // keep test waits short
     }
 
     // MARK: Secure-field policy matrix (real decision logic)
@@ -341,7 +340,6 @@ final class TextInjectionServiceTests: XCTestCase {
             keyPoster: keyPoster,
             unverifiedPastePolicy: { _ in .guardedRestoreAfterUnverifiedSuccess }
         )
-        durableService.lowLatencyModeEnabled = true
 
         let result = await durableService.inject(text: "Hello Codex")
 
@@ -366,7 +364,6 @@ final class TextInjectionServiceTests: XCTestCase {
             keyPoster: keyPoster,
             unverifiedPastePolicy: { _ in .guardedRestoreAfterUnverifiedSuccess }
         )
-        durableService.lowLatencyModeEnabled = true
 
         let result = await durableService.inject(text: "Hello Codex")
 
@@ -445,7 +442,6 @@ final class TextInjectionServiceTests: XCTestCase {
     }
 
     func testClipboardIsRestoredAsSoonAsThePasteShowsUpInTheField() async {
-        service.lowLatencyModeEnabled = false // a restore budget near 100 ms
         inspector.detailsResult = normalDetails()
         inspector.simulatedFieldValue = ""
         keyPoster.onPasteChord = { [inspector] _ in
@@ -669,7 +665,6 @@ final class TextInjectionServiceTests: XCTestCase {
             requestFront: { _ in },
             returnTimeoutMs: returnTimeoutMs
         )
-        service.lowLatencyModeEnabled = true
         return service
     }
 

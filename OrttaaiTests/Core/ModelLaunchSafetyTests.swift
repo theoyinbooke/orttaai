@@ -165,7 +165,6 @@ private actor FailingLoadTranscriptionService: Transcribing {
     func updateSettings(
         language: String,
         computeMode: String,
-        lowLatencyMode: Bool,
         decodingPreferences: DecodingPreferences
     ) {}
 }

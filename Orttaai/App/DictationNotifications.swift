@@ -5,7 +5,6 @@ import Foundation
 
 extension Notification.Name {
     static let dictationStateDidChange = Notification.Name("Orttaai.dictationStateDidChange")
-    static let fastFirstUpgradeAvailabilityDidChange = Notification.Name("Orttaai.fastFirstUpgradeAvailabilityDidChange")
     static let audioPipelineResetRequested = Notification.Name("Orttaai.audioPipelineResetRequested")
     static let audioPipelineResetDidComplete = Notification.Name("Orttaai.audioPipelineResetDidComplete")
     static let cloudSyncDidComplete = Notification.Name("Orttaai.cloudSyncDidComplete")

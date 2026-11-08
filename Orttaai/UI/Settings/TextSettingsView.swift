@@ -32,7 +32,7 @@ struct TextSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Fuzzy Dictionary Matching",
-                    info: "Corrects near-miss spellings of your dictionary words, like Tematope for Temitope.",
+                    info: "Corrects near-miss spellings of your dictionary words, like Tematope for Temitope. English only. Needs Dictionary Replacements on in Memory.",
                     isOn: $fuzzyDictionaryEnabled
                 )
 
@@ -48,7 +48,7 @@ struct TextSettingsView: View {
             SettingsCard("Voice Editing") {
                 SettingsToggleRow(
                     title: "Edit Selection with Voice",
-                    info: "Select text, press the edit shortcut, and say how to change it, like \u{201C}make this more formal\u{201D}. Uses the polish model set in Model › AI Features.",
+                    info: "Select text, press the edit shortcut, and say how to change it, like \u{201C}make this more formal\u{201D}. Uses the local model on Ollama or LM Studio set in Model › AI Features. S1-mini can only polish.",
                     isOn: $editCommandsEnabled
                 )
 

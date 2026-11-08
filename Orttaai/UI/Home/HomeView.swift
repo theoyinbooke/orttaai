@@ -93,12 +93,8 @@ struct HomeView: View {
             if !viewModel.hasLoaded {
                 viewModel.load()
             } else {
-                viewModel.refreshFastFirstState()
                 viewModel.evaluateGitHubStarPromptIfNeeded()
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fastFirstUpgradeAvailabilityDidChange)) { _ in
-            viewModel.refreshFastFirstState()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Orttaai home dashboard")
@@ -124,7 +120,7 @@ struct HomeView: View {
                         HomeBannerView(
                             title: banner.title,
                             buttonTitle: banner.buttonTitle,
-                            isButtonDisabled: isBannerButtonDisabled,
+                            isButtonDisabled: false,
                             onButtonTap: bannerAction
                         )
                     }
@@ -259,12 +255,6 @@ struct HomeView: View {
     /// Shown only when there is something to do; on an ordinary day the
     /// page opens straight onto the cards.
     private var banner: (title: String, buttonTitle: String)? {
-        if viewModel.shouldShowFastFirstUpgradePrompt {
-            return (
-                "Recommended model is ready",
-                viewModel.isApplyingFastFirstUpgrade ? "Applying..." : "Use Recommended Model"
-            )
-        }
         if !hasAnyDictation {
             return ("Start your first dictation", "Run Setup")
         }
@@ -280,15 +270,8 @@ struct HomeView: View {
         viewModel.payload.header.activeDays > 0
     }
 
-    private var isBannerButtonDisabled: Bool {
-        viewModel.shouldShowFastFirstUpgradePrompt && viewModel.isApplyingFastFirstUpgrade
-    }
 
     private func bannerAction() {
-        if viewModel.shouldShowFastFirstUpgradePrompt {
-            viewModel.applyFastFirstUpgrade()
-            return
-        }
         if !hasAnyDictation {
             onRunSetup()
             return

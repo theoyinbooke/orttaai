@@ -220,11 +220,10 @@ final class EditCommandProcessorTests: XCTestCase {
     }
 
     func testPerformEditRejectsOverlongSelectionWithoutCallingTheModel() async {
-        settings.editCommandMaxChars = 200
         let client = ScriptedLLMClient(result: .success("whatever"))
         let processor = EditCommandProcessor(settings: settings, llmClient: client)
         let outcome = await processor.performEdit(
-            selection: String(repeating: "a", count: 300),
+            selection: String(repeating: "a", count: AppSettings.editCommandMaxChars + 1),
             instruction: "make this shorter"
         )
         XCTAssertEqual(outcome, .failed(reason: "Selection too long to edit"))

@@ -35,7 +35,6 @@ protocol Transcribing: Actor {
     func updateSettings(
         language: String,
         computeMode: String,
-        lowLatencyMode: Bool,
         decodingPreferences: DecodingPreferences
     )
 }
@@ -218,7 +217,6 @@ actor TranscriptionService: Transcribing {
 
     /// Compute mode string from settings. Maps to MLComputeUnits.
     var computeModeSetting: String = "cpuAndNeuralEngine"
-    var lowLatencyModeEnabled: Bool = false
     var decodingPreferences = DecodingPreferences(
         preset: .fast,
         expertOverridesEnabled: false,
@@ -1099,12 +1097,10 @@ actor TranscriptionService: Transcribing {
     func updateSettings(
         language: String,
         computeMode: String,
-        lowLatencyMode: Bool,
         decodingPreferences: DecodingPreferences
     ) {
         self.language = language
         self.computeModeSetting = computeMode
-        self.lowLatencyModeEnabled = lowLatencyMode
         self.decodingPreferences = decodingPreferences.clamped()
     }
 
@@ -2037,15 +2033,8 @@ actor TranscriptionService: Transcribing {
         )
     }
 
-    private func preferredConcurrentWorkerCount() -> Int {
-        guard lowLatencyModeEnabled else { return 4 }
-
-        let modelID = loadedModelIDValue?.lowercased() ?? ""
-        if modelID.contains("tiny") || modelID.contains("small") || modelID.contains("base") {
-            return 2
-        }
-        return 3
-    }
+    /// Concurrent decode workers when the user leaves it on Auto.
+    private static let autoConcurrentWorkerCount = 4
 
     private func resolvedDecodingOptions() -> (
         temperature: Float,
@@ -2057,7 +2046,7 @@ actor TranscriptionService: Transcribing {
         workerCount: Int
     ) {
         let prefs = decodingPreferences.clamped()
-        let autoWorkerCount = preferredConcurrentWorkerCount()
+        let autoWorkerCount = Self.autoConcurrentWorkerCount
 
         // Preset baselines keep fast defaults safe for onboarding.
         var temperature: Float

@@ -45,9 +45,12 @@ struct ModelSettingsView: View {
     @AppStorage("activeModelId") private var activeModelId = ""
     @AppStorage("quantizedMigrationDismissedFamilies") private var dismissedMigrationFamiliesRaw = ""
     @AppStorage("modelSortMode") private var modelSortModeRaw: String = ModelSortMode.size.rawValue
-    @AppStorage("lowLatencyModeEnabled") private var lowLatencyModeEnabled = false
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
     @AppStorage("computeMode") private var computeMode = "cpuAndNeuralEngine"
+    // Read so the Performance card redraws when Express turns on or off.
+    @AppStorage("expressEngineEnabled") private var expressEngineEnabled = false
+    // Read so the polish model picker shows when voice editing needs it.
+    @AppStorage("editCommandsEnabled") private var editCommandsEnabled = true
     @AppStorage("decodingPreset") private var decodingPresetRaw: String = DecodingPreset.balanced.rawValue
     @AppStorage("advancedDecodingEnabled") private var advancedDecodingEnabled = false
     @AppStorage("decodingTemperature") private var decodingTemperature = DecodingPreferences.defaultTemperature
@@ -178,18 +181,12 @@ struct ModelSettingsView: View {
         .onChange(of: modelSortModeRaw) { _, _ in
             models = sortedModelsForCurrentMode(models)
         }
-        .onChange(of: lowLatencyModeEnabled) { _, enabled in
-            applyLowLatencyDefaults(enabled: enabled)
-        }
-        .onChange(of: dictationLanguage) { _, newValue in
-            if lowLatencyModeEnabled, newValue == "auto" {
-                dictationLanguage = "en"
-                return
-            }
+        .onChange(of: dictationLanguage) { _, _ in
             switchToLanguageOptimizedSmallModelIfNeeded()
         }
         .onChange(of: localLLMPolishEnabled) { _, enabled in
-            guard enabled else { return }
+            // S1-mini polishes in-process; there's no server model to warm.
+            guard enabled, polishEngine == "localLLM" else { return }
             Task {
                 if ollamaStatusReachable != true {
                     await checkOllamaAvailability()
@@ -561,19 +558,22 @@ struct ModelSettingsView: View {
         }
     }
 
+    /// Express never reads Compute Mode or the decoding settings; only
+    /// Whisper does.
+    private var isExpressEngineActive: Bool {
+        AppSettings().isExpressEngineActive
+    }
+
+    /// Marks a Whisper-only setting while Express is the speech engine.
+    private func whisperOnlyInfo(_ info: String, separator: String = " ") -> String {
+        isExpressEngineActive ? "Whisper only. Express doesn't use this.\(separator)\(info)" : info
+    }
+
     private var performanceCard: some View {
-        SettingsCard("Performance", info: "Changes apply from your next dictation.") {
-            SettingsToggleRow(
-                title: "Low Latency Mode",
-                info: "Optimizes for the fastest result. Accuracy may drop slightly on difficult audio, and the dictation language can't be Auto-detect.",
-                isOn: $lowLatencyModeEnabled
-            )
-
-            SettingsDivider()
-
+        SettingsCard("Performance", info: "Decoding changes apply from your next dictation.") {
             SettingsRow(
                 title: "Compute Mode",
-                info: "Which chips run the speech model. CPU + Neural Engine is usually fastest on Apple silicon. Applies after the model reloads."
+                info: whisperOnlyInfo("Which chips run the speech model. CPU + Neural Engine is usually fastest on Apple silicon. Applies the next time the model loads, like after switching models or restarting Orttaai.")
             ) {
                 OrttaaiDropdown(
                     selection: $computeMode,
@@ -585,14 +585,18 @@ struct ModelSettingsView: View {
                     width: SettingsLayout.controlWidth
                 )
             }
+            .disabled(isExpressEngineActive)
 
             SettingsDivider()
 
             SettingsRow(
                 title: "Decoding Profile",
-                info: DecodingPreset.allCases
-                    .map { "\($0.title): \($0.summary)" }
-                    .joined(separator: "\n")
+                info: whisperOnlyInfo(
+                    DecodingPreset.allCases
+                        .map { "\($0.title): \($0.summary)" }
+                        .joined(separator: "\n"),
+                    separator: "\n"
+                )
             ) {
                 OrttaaiSegmentedControl(
                     title: "Decoding Profile",
@@ -600,19 +604,22 @@ struct ModelSettingsView: View {
                     options: DecodingPreset.allCases.map { .init($0.rawValue, $0.title) }
                 )
             }
+            .disabled(isExpressEngineActive)
 
             SettingsDivider()
 
             SettingsToggleRow(
                 title: "Advanced Decoding",
-                info: "Replaces the decoding profile with manual Whisper settings. Leave it off unless you are tuning accuracy.",
+                info: whisperOnlyInfo("Replaces the decoding profile with manual Whisper settings. Leave it off unless you are tuning accuracy."),
                 isOn: $advancedDecodingEnabled
             )
+            .disabled(isExpressEngineActive)
             .accessibilityIdentifier("advancedDecodingToggle")
 
             if advancedDecodingEnabled {
                 SettingsFootnote("\(decodingPreset.title) stays selected, but its values are paused while Advanced Decoding is on.")
                 advancedDecodingControls
+                    .disabled(isExpressEngineActive)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -805,7 +812,7 @@ struct ModelSettingsView: View {
     private var polishCard: some View {
         SettingsCard(
             "Text Polish",
-            info: "Fixes grammar and punctuation in each dictation with a language model before it's inserted. Voice editing uses the same model."
+            info: "Fixes grammar and punctuation in each dictation with a language model before it's inserted. Voice editing always uses the local model on Ollama or LM Studio, since S1-mini can only polish."
         ) {
             if AppleIntelligencePolishProcessor.isModelAvailable {
                 SettingsToggleRow(
@@ -836,15 +843,11 @@ struct ModelSettingsView: View {
             SettingsDivider()
 
             if polishEngine == "localLLM" {
-                SettingsRow(title: "Polish Model") {
-                    OrttaaiDropdown(
-                        selection: Binding(
-                            get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
-                            set: { localLLMPolishModel = $0 }
-                        ),
-                        options: modelDropdownOptions(current: normalizedPolishOllamaModel),
-                        width: SettingsLayout.controlWidth
-                    )
+                SettingsRow(
+                    title: "Polish Model",
+                    info: editCommandsEnabled ? "Voice editing uses this model too." : nil
+                ) {
+                    polishModelDropdown
                 }
 
                 SettingsDivider()
@@ -874,10 +877,35 @@ struct ModelSettingsView: View {
                 SettingsFootnote(polishRecommendationMessage)
             } else {
                 S1MiniPolishRow(controller: S1MiniPolishController.shared)
+
+                // S1-mini can't edit, so voice editing still needs a model
+                // on the local LLM server.
+                if editCommandsEnabled {
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Voice Editing Model",
+                        info: "Voice editing uses this model on \(providerKind.displayName). S1-mini can only polish."
+                    ) {
+                        polishModelDropdown
+                    }
+                }
             }
         }
         .onChange(of: polishEngine) { _, _ in applyS1MiniLoading() }
         .onChange(of: localLLMPolishEnabled) { _, _ in applyS1MiniLoading() }
+    }
+
+    /// The local LLM server model used for polish and for voice editing.
+    private var polishModelDropdown: some View {
+        OrttaaiDropdown(
+            selection: Binding(
+                get: { resolvedModelSelection(for: normalizedPolishOllamaModel) },
+                set: { localLLMPolishModel = $0 }
+            ),
+            options: modelDropdownOptions(current: normalizedPolishOllamaModel),
+            width: SettingsLayout.controlWidth
+        )
     }
 
     /// Keeps S1-mini loaded only while it's the engine and Polish is on.
@@ -971,7 +999,7 @@ struct ModelSettingsView: View {
 
                 SettingsToggleRow(
                     title: "Auto-index for ChatAI",
-                    info: "Indexes new dictations in the background so ChatAI can use them right away.",
+                    info: "Indexes new dictations the next time ChatAI searches your history.",
                     isOn: $semanticMemoryAutoIndexEnabled
                 )
 
@@ -1602,18 +1630,6 @@ struct ModelSettingsView: View {
             .lineLimit(1)
     }
 
-    private func applyLowLatencyDefaults(enabled: Bool) {
-        guard enabled else { return }
-
-        if dictationLanguage == "auto" {
-            dictationLanguage = "en"
-        }
-
-        if computeMode == "cpuOnly" {
-            computeMode = "cpuAndNeuralEngine"
-        }
-    }
-
     private func normalizeAdvancedDecodingValues() {
         let normalized = DecodingPreferences(
             preset: decodingPreset,
@@ -1652,22 +1668,11 @@ struct ModelSettingsView: View {
         }
         semanticActiveIndexModelID = semanticActiveIndexModelID.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Migrate old defaults (220ms pre-1.5, 650ms pre-polish-default-on)
-        // which are too short for real local generation latency.
-        if localLLMPolishTimeoutMs == 220 || localLLMPolishTimeoutMs == 650 {
-            localLLMPolishTimeoutMs = 3_000
-        }
+        // Old defaults are migrated once in AppSettings; here we only keep
+        // values inside the ranges the controls offer.
         localLLMPolishTimeoutMs = max(80, min(4_000, localLLMPolishTimeoutMs))
-        // Migrate the old 280-char default so polish covers longer dictation.
-        if localLLMPolishMaxChars == 280 {
-            localLLMPolishMaxChars = 400
-        }
         localLLMPolishMaxChars = max(80, min(2_000, localLLMPolishMaxChars))
-        if localLLMInsightsContextTokens == 65_536 {
-            localLLMInsightsContextTokens = 16_384
-        } else {
-            localLLMInsightsContextTokens = max(8_192, min(262_144, localLLMInsightsContextTokens))
-        }
+        localLLMInsightsContextTokens = max(8_192, min(262_144, localLLMInsightsContextTokens))
     }
 
     private var providerKind: LocalLLMProviderKind {
@@ -1928,7 +1933,7 @@ struct ModelSettingsView: View {
 
     private func enabledOllamaModelsToWarm() -> [String] {
         var models: [String] = []
-        if localLLMPolishEnabled {
+        if localLLMPolishEnabled, polishEngine == "localLLM" {
             models.append(normalizedPolishOllamaModel)
         }
         if localLLMInsightsEnabled {
@@ -1953,7 +1958,7 @@ struct ModelSettingsView: View {
         guard !models.isEmpty else {
             if !silent {
                 await MainActor.run {
-                    ollamaWarmError = "Enable local polish or local insights to warm a model."
+                    ollamaWarmError = "Turn on polish with the local LLM server, or Writing Insights, to warm a model."
                     ollamaWarmSuccessMessage = nil
                 }
             }
