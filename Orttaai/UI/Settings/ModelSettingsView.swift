@@ -61,7 +61,6 @@ struct ModelSettingsView: View {
     @AppStorage("decodingNoSpeechThreshold") private var decodingNoSpeechThreshold = DecodingPreferences.defaultNoSpeechThreshold
     @AppStorage("decodingWorkerCount") private var decodingWorkerCount = DecodingPreferences.defaultWorkerCount
     @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
-    @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("aiProviderMigrationNotice") private var aiProviderMigrationNotice = ""
     @AppStorage("localLLMEndpoint") private var localLLMEndpoint = "http://127.0.0.1:11434"
@@ -814,16 +813,6 @@ struct ModelSettingsView: View {
             "Text Polish",
             info: "Fixes grammar and punctuation in each dictation with a language model before it's inserted. Voice editing always uses the local model on Ollama or LM Studio, since S1-mini can only polish."
         ) {
-            if AppleIntelligencePolishProcessor.isModelAvailable {
-                SettingsToggleRow(
-                    title: "Apple Intelligence Polish",
-                    info: "Polishes with Apple's on-device model.",
-                    isOn: $appleIntelligencePolishEnabled
-                )
-
-                SettingsDivider()
-            }
-
             SettingsToggleRow(
                 title: "Local Text Polish",
                 info: "Polishes each dictation on this Mac before it's inserted, a paragraph at a time. Whatever can't be polished safely or in time is inserted unpolished.",
@@ -832,10 +821,10 @@ struct ModelSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(title: "Polish Engine", info: "S1-mini is built in and runs on this Mac's GPU. The local LLM server uses the model you pick below.") {
+            SettingsRow(title: "Polish Engine", info: polishEngineInfo) {
                 OrttaaiDropdown(
                     selection: $polishEngine,
-                    options: [.init("s1Mini", "S1-mini (built in)"), .init("localLLM", "Local LLM server")],
+                    options: polishEngineOptions,
                     width: SettingsLayout.controlWidth
                 )
             }
@@ -876,16 +865,27 @@ struct ModelSettingsView: View {
 
                 SettingsFootnote(polishRecommendationMessage)
             } else {
-                S1MiniPolishRow(controller: S1MiniPolishController.shared)
+                if polishEngine == PolishEngineChoice.appleIntelligence.rawValue {
+                    if !AppleIntelligencePolishProcessor.isModelAvailable {
+                        SettingsNotice(
+                            kind: .warning,
+                            message: "Apple Intelligence isn't available on this Mac right now, so Polish uses S1-mini. Turn it on in System Settings › Apple Intelligence & Siri."
+                        )
+                        SettingsDivider()
+                        S1MiniPolishRow(controller: S1MiniPolishController.shared)
+                    }
+                } else {
+                    S1MiniPolishRow(controller: S1MiniPolishController.shared)
+                }
 
-                // S1-mini can't edit, so voice editing still needs a model
-                // on the local LLM server.
+                // S1-mini and Apple Intelligence can't edit, so voice editing
+                // still needs a model on the local LLM server.
                 if editCommandsEnabled {
                     SettingsDivider()
 
                     SettingsRow(
                         title: "Voice Editing Model",
-                        info: "Voice editing uses this model on \(providerKind.displayName). S1-mini can only polish."
+                        info: "Voice editing uses this model on \(providerKind.displayName). The polish engine only polishes."
                     ) {
                         polishModelDropdown
                     }
@@ -908,13 +908,31 @@ struct ModelSettingsView: View {
         )
     }
 
-    /// Keeps S1-mini loaded only while it's the engine and Polish is on.
+    /// Keeps S1-mini loaded and warm only while it's the engine and Polish is on.
     private func applyS1MiniLoading() {
-        if localLLMPolishEnabled, polishEngine != "localLLM" {
-            Task { _ = await S1MiniPolishController.shared.readyPolisher() }
-        } else {
-            S1MiniPolishController.shared.unload()
+        S1MiniPolishController.shared.sync(with: AppSettings())
+    }
+
+    /// Apple Intelligence is offered where this Mac can run it, and stays
+    /// listed while chosen so the choice is visible if it becomes unavailable.
+    private var polishEngineOptions: [OrttaaiDropdown<String>.Option] {
+        var options: [OrttaaiDropdown<String>.Option] = [
+            .init(PolishEngineChoice.s1Mini.rawValue, "S1-mini (built in)"),
+            .init(PolishEngineChoice.localLLM.rawValue, "Local LLM server"),
+        ]
+        if AppleIntelligencePolishProcessor.isModelAvailable
+            || polishEngine == PolishEngineChoice.appleIntelligence.rawValue {
+            options.append(.init(PolishEngineChoice.appleIntelligence.rawValue, "Apple Intelligence"))
         }
+        return options
+    }
+
+    private var polishEngineInfo: String {
+        var info = "S1-mini is built in and runs on this Mac's GPU. The local LLM server uses the model you pick below."
+        if AppleIntelligencePolishProcessor.isModelAvailable {
+            info += " Apple Intelligence uses Apple's on-device model."
+        }
+        return info
     }
 
     private var insightsCard: some View {
@@ -1923,9 +1941,6 @@ struct ModelSettingsView: View {
     private func sanitizeLocalLLMModel(_ value: String, fallback: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return fallback
-        }
-        if trimmed.lowercased().contains("llama") {
             return fallback
         }
         return trimmed

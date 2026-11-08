@@ -24,6 +24,16 @@ enum TranscriptionModelSelectionPolicy {
     }
 }
 
+/// The engines Text Polish can run on (the `polishEngine` setting).
+enum PolishEngineChoice: String, CaseIterable, Sendable {
+    /// S1-mini by Superwhisper, built in, on this Mac's GPU.
+    case s1Mini
+    /// A model on the Ollama or LM Studio server.
+    case localLLM
+    /// Apple's on-device foundation model (macOS 26+, Apple Intelligence on).
+    case appleIntelligence
+}
+
 enum DecodingPreset: String, CaseIterable, Sendable {
     case fast
     case balanced
@@ -105,6 +115,17 @@ final class AppSettings: ObservableObject {
         // Remove retired insertion/rewrite state. Version this reliability
         // recovery so users can deliberately re-enable optional polish later
         // without every launch overriding their choice.
+        // Apple Intelligence Polish used to be a separate switch that ran
+        // after the chosen engine, even with Polish off (and polished twice
+        // with it on). It's now one of the Polish engines: whoever used it on
+        // its own keeps it, as their engine with Polish on.
+        if let appleOn = defaults.object(forKey: "appleIntelligencePolishEnabled") as? Bool {
+            if appleOn, !defaults.bool(forKey: "localLLMPolishEnabled") {
+                defaults.set(true, forKey: "localLLMPolishEnabled")
+                defaults.set(PolishEngineChoice.appleIntelligence.rawValue, forKey: "polishEngine")
+            }
+            defaults.removeObject(forKey: "appleIntelligencePolishEnabled")
+        }
         for key in Self.retiredKeys {
             defaults.removeObject(forKey: key)
         }
@@ -242,7 +263,6 @@ final class AppSettings: ObservableObject {
     /// Optional rewriting is off by default so the recognizer's final result
     /// remains authoritative. Users can opt in from Model settings.
     @AppStorage("localLLMPolishEnabled") var localLLMPolishEnabled: Bool = false
-    @AppStorage("appleIntelligencePolishEnabled") var appleIntelligencePolishEnabled: Bool = false
     @AppStorage("localLLMEndpoint") var localLLMEndpoint: String = "http://127.0.0.1:11434"
     @AppStorage("localLLMPolishModel") var localLLMPolishModel: String = "gemma4:e2b"
     /// Which model Text Polish uses: "s1Mini" (S1-mini by Superwhisper,
@@ -461,10 +481,24 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// Text Polish runs S1-mini in-process rather than the local LLM server.
-    var usesS1MiniPolish: Bool {
-        polishEngine != "localLLM"
+    /// The engine Text Polish runs on. Apple Intelligence falls back to
+    /// S1-mini when the Mac can't run it right now (turned off in System
+    /// Settings, or the model is still downloading), so Polish keeps working.
+    var polishEngineChoice: PolishEngineChoice {
+        switch PolishEngineChoice(rawValue: polishEngine) {
+        case .localLLM: return .localLLM
+        case .appleIntelligence:
+            return AppleIntelligencePolishProcessor.isModelAvailable ? .appleIntelligence : .s1Mini
+        case .s1Mini, nil: return .s1Mini
+        }
     }
+
+    /// Text Polish runs S1-mini in-process.
+    var usesS1MiniPolish: Bool { polishEngineChoice == .s1Mini }
+    /// Text Polish runs on the Ollama / LM Studio server.
+    var usesLocalLLMPolish: Bool { polishEngineChoice == .localLLM }
+    /// Text Polish runs on Apple's on-device model.
+    var usesAppleIntelligencePolish: Bool { polishEngineChoice == .appleIntelligence }
 
     var clampedLocalLLMPolishTimeoutMs: Int {
         max(80, min(4_000, localLLMPolishTimeoutMs))
@@ -480,13 +514,8 @@ final class AppSettings: ObservableObject {
 
     private func sanitizeLocalLLMModel(_ value: String, fallback: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return fallback
-        }
-        if trimmed.lowercased().contains("llama") {
-            return fallback
-        }
-        return trimmed
+        // The model the user picked is the model that runs.
+        return trimmed.isEmpty ? fallback : trimmed
     }
 
     private func sanitizeSemanticEmbeddingModel(_ value: String, fallback: String) -> String {

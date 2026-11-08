@@ -33,7 +33,7 @@ final class LocalLLMTextProcessor: TextProcessor {
         let baseOutput = try await baseProcessor.process(input)
 
         // S1-mini (S1MiniPolishProcessor) polishes instead when it's the engine.
-        guard settings.localLLMPolishEnabled, !settings.usesS1MiniPolish, !input.deferPolish else {
+        guard settings.localLLMPolishEnabled, settings.usesLocalLLMPolish, !input.deferPolish else {
             return baseOutput
         }
 

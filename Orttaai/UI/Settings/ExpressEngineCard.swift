@@ -17,7 +17,6 @@ struct ExpressEngineCard: View {
     @AppStorage("expressLiveSegmentsEnabled") private var expressLiveSegmentsEnabled = false
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
     @AppStorage("localLLMPolishEnabled") private var localLLMPolishEnabled = false
-    @AppStorage("appleIntelligencePolishEnabled") private var appleIntelligencePolishEnabled = false
     // Read so the polish footnote redraws when the model or provider changes.
     @AppStorage("localLLMPolishModel") private var localLLMPolishModel = "gemma4:e2b"
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
@@ -175,14 +174,14 @@ struct ExpressEngineCard: View {
 
     private var polishStatus: String {
         let settings = AppSettings()
-        let model = settings.usesS1MiniPolish
-            ? "S1-mini on this Mac"
-            : "\(settings.normalizedLocalLLMPolishModel) on \(settings.polishLLMProvider.displayName)"
+        let model: String
+        switch settings.polishEngineChoice {
+        case .s1Mini: model = "S1-mini on this Mac"
+        case .localLLM: model = "\(settings.normalizedLocalLLMPolishModel) on \(settings.polishLLMProvider.displayName)"
+        case .appleIntelligence: model = "Apple Intelligence"
+        }
         guard localLLMPolishEnabled else {
             return "Off. When on, polishes with \(model)."
-        }
-        if appleIntelligencePolishEnabled, AppleIntelligencePolishProcessor.isModelAvailable {
-            return "Polishes with \(model), then Apple Intelligence."
         }
         return "Polishes with \(model)."
     }

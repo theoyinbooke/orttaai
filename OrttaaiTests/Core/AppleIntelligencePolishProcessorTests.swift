@@ -63,11 +63,16 @@ final class AppleIntelligencePolishProcessorTests: XCTestCase {
 
     // MARK: - Gating
 
-    func testDisabledSettingPassesTextThroughUnchanged() async throws {
+    func testAnotherPolishEnginePassesTextThroughUnchanged() async throws {
         let settings = AppSettings()
-        let original = settings.appleIntelligencePolishEnabled
-        defer { settings.appleIntelligencePolishEnabled = original }
-        settings.appleIntelligencePolishEnabled = false
+        let (wasOn, engine) = (settings.localLLMPolishEnabled, settings.polishEngine)
+        defer {
+            settings.localLLMPolishEnabled = wasOn
+            settings.polishEngine = engine
+        }
+        // Polish is on, but with S1-mini: Apple's model never runs as well.
+        settings.localLLMPolishEnabled = true
+        settings.polishEngine = PolishEngineChoice.s1Mini.rawValue
 
         let processor = AppleIntelligencePolishProcessor(
             baseProcessor: PassthroughProcessor(),

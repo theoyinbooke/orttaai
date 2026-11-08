@@ -41,6 +41,8 @@ final class S1MiniPolishController {
     /// folder, which may need a security scope.
     private var access: ModelStorageAccess?
     private var loading: Task<S1MiniPolisher?, Never>?
+    /// The warm-up run for the loaded model, so it runs once per load.
+    private var warming: Task<Void, Never>?
 
     init(locator: ModelDirectoryLocator = .shared) {
         self.locator = locator
@@ -72,7 +74,7 @@ final class S1MiniPolishController {
             }
             Logger.model.info("S1-mini installed")
             status = .installed
-            _ = await readyPolisher()
+            await warmUp()
         } catch {
             Logger.model.error("Installing S1-mini failed: \(error.localizedDescription, privacy: .public)")
             status = .failed(error.localizedDescription)
@@ -91,9 +93,53 @@ final class S1MiniPolishController {
         return loaded
     }
 
+    /// Keeps the model ready exactly while Polish is on with S1-mini:
+    /// warmed when it becomes the polish, freed when it stops being it. Cheap
+    /// to call often (it runs on every settings change).
+    func sync(with settings: AppSettings) {
+        if settings.localLLMPolishEnabled, settings.usesS1MiniPolish {
+            guard warming == nil else { return }
+            // Not on disk, downloading, or failed to load: nothing to warm
+            // (installing warms it; a failed load is retried by the next polish).
+            switch status {
+            case .notInstalled, .downloading, .failed: return
+            default: break
+            }
+            warming = Task { await self.runWarmUp() }
+        } else {
+            unload()
+        }
+    }
+
+    /// Loads S1-mini and warms it (see `sync`); waits when that's running.
+    func warmUp() async {
+        if warming == nil {
+            warming = Task { await self.runWarmUp() }
+        }
+        await warming?.value
+    }
+
+    /// Loading takes about 0.4 s, but the first polish after it also pays
+    /// for the model's first run on the GPU. One short polish here takes
+    /// that, so the user's first dictation is as quick as the rest. The model
+    /// then stays loaded while Polish uses it.
+    private func runWarmUp() async {
+        guard let polisher = await readyPolisher() else {
+            warming = nil
+            return
+        }
+        let started = ContinuousClock.now
+        let sample = "so um this is a quick warm up sentence, uh, to get polish ready"
+        _ = try? await polisher.polish(sample, deadline: started.advanced(by: .seconds(5)))
+        let elapsed = started.duration(to: .now)
+        Logger.ai.info("S1-mini warmed in \(Int(elapsed.components.seconds * 1_000 + elapsed.components.attoseconds / 1_000_000_000_000_000), privacy: .public) ms")
+    }
+
     /// Frees the model's memory when Polish is turned off or another engine
     /// is chosen.
     func unload() {
+        warming?.cancel()
+        warming = nil
         guard polisher != nil else { return }
         polisher = nil
         access = nil

@@ -9,9 +9,9 @@ import FoundationModels
 #endif
 
 /// Polishes dictation through the on-device Apple Foundation Models base
-/// model (macOS 26+, Apple Intelligence enabled). Wraps the existing
-/// processing chain: when the feature is off or the model is unavailable,
-/// output passes through unchanged. Guardrail refusals, timeouts, and
+/// model (macOS 26+, Apple Intelligence enabled) when it's the chosen Polish
+/// engine and Polish is on. Wraps the existing processing chain: otherwise,
+/// or when the model is unavailable, output passes through unchanged. Guardrail refusals, timeouts, and
 /// rejected outputs all fall back to the unpolished text — polish must never
 /// lose a dictation.
 final class AppleIntelligencePolishProcessor: TextProcessor {
@@ -56,7 +56,7 @@ final class AppleIntelligencePolishProcessor: TextProcessor {
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
         let baseOutput = try await baseProcessor.process(input)
 
-        guard settings.appleIntelligencePolishEnabled, !input.deferPolish else {
+        guard settings.localLLMPolishEnabled, settings.usesAppleIntelligencePolish, !input.deferPolish else {
             return baseOutput
         }
 

@@ -20,6 +20,10 @@ final class AppSettingsTests: XCTestCase {
         "decodingWorkerCount",
         "dictationReliabilityRecoveryVersion",
         "localLLMPolishEnabled",
+        "polishEngine",
+        "appleIntelligencePolishEnabled",
+        "localLLMPolishModel",
+        "localLLMInsightsModel",
     ]
 
     override func setUp() {
@@ -50,6 +54,72 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.effectiveDictationLanguage, "auto")
         settings.dictationLanguage = "es"
         XCTAssertEqual(settings.effectiveDictationLanguage, "es")
+    }
+
+    func testAppleIntelligencePolishOnItsOwnBecomesThePolishEngine() {
+        let defaults = UserDefaults.standard
+        defaults.set(1, forKey: "dictationReliabilityRecoveryVersion")
+        defaults.set(true, forKey: "appleIntelligencePolishEnabled")
+        defaults.set(false, forKey: "localLLMPolishEnabled")
+
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertTrue(settings.localLLMPolishEnabled, "Polish stays on for someone who used Apple's")
+        XCTAssertEqual(settings.polishEngine, PolishEngineChoice.appleIntelligence.rawValue)
+        XCTAssertNil(defaults.object(forKey: "appleIntelligencePolishEnabled"))
+    }
+
+    func testAppleIntelligencePolishAlongsidePolishKeepsTheChosenEngine() {
+        let defaults = UserDefaults.standard
+        defaults.set(1, forKey: "dictationReliabilityRecoveryVersion")
+        defaults.set(true, forKey: "appleIntelligencePolishEnabled")
+        defaults.set(true, forKey: "localLLMPolishEnabled")
+        defaults.set(PolishEngineChoice.localLLM.rawValue, forKey: "polishEngine")
+
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertTrue(settings.localLLMPolishEnabled)
+        XCTAssertEqual(settings.polishEngineChoice, .localLLM, "one engine, no second pass")
+        XCTAssertNil(defaults.object(forKey: "appleIntelligencePolishEnabled"))
+    }
+
+    func testPolishEngineChoice() {
+        let settings = AppSettings()
+        settings.polishEngine = "localLLM"
+        XCTAssertEqual(settings.polishEngineChoice, .localLLM)
+        XCTAssertTrue(settings.usesLocalLLMPolish)
+        settings.polishEngine = "something-old"
+        XCTAssertEqual(settings.polishEngineChoice, .s1Mini, "unknown values use the built-in engine")
+        settings.polishEngine = PolishEngineChoice.appleIntelligence.rawValue
+        XCTAssertEqual(
+            settings.polishEngineChoice,
+            AppleIntelligencePolishProcessor.isModelAvailable ? .appleIntelligence : .s1Mini,
+            "Apple Intelligence falls back to S1-mini where it can't run"
+        )
+    }
+
+    func testTheChosenLocalModelIsTheOneThatRuns() {
+        let settings = AppSettings()
+        settings.localLLMPolishModel = "llama3.2:3b"
+        settings.localLLMInsightsModel = "  llama3.1:8b  "
+        XCTAssertEqual(settings.normalizedLocalLLMPolishModel, "llama3.2:3b")
+        XCTAssertEqual(settings.normalizedLocalLLMInsightsModel, "llama3.1:8b")
+        settings.localLLMPolishModel = "   "
+        XCTAssertEqual(settings.normalizedLocalLLMPolishModel, "gemma4:e2b", "only an empty choice falls back")
+    }
+
+    func testAppleIntelligencePolishDoesNothingWhilePolishIsOff() async throws {
+        let settings = AppSettings()
+        settings.localLLMPolishEnabled = false
+        settings.polishEngine = PolishEngineChoice.appleIntelligence.rawValue
+        let processor = AppleIntelligencePolishProcessor(baseProcessor: PassThroughProcessor(), settings: settings)
+
+        let output = try await processor.process(
+            TextProcessorInput(rawTranscript: "so um this is the the text", targetApp: nil, mode: .clean)
+        )
+
+        XCTAssertEqual(output.text, "so um this is the the text")
+        XCTAssertFalse(output.changes.contains("Apple Intelligence polish applied"))
     }
 
     func testRetiredLowLatencyPreferenceIsCleared() {
@@ -163,4 +233,12 @@ private actor RecordingTranscriptionService: Transcribing {
             decodingPreferences: decodingPreferences
         )
     }
+}
+
+private struct PassThroughProcessor: TextProcessor {
+    func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
+        TextProcessorOutput(text: input.rawTranscript, changes: [])
+    }
+
+    func isAvailable() -> Bool { true }
 }

@@ -141,6 +141,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             guard let self, let settings = self.appState?.settings else { return }
             self.statusBarMenu?.updatePolishMode(isOn: settings.localLLMPolishEnabled)
+            // Polish turned on with S1-mini from anywhere (Settings, the menu,
+            // iCloud): warm it now. Turned off or switched away: free it.
+            S1MiniPolishController.shared.sync(with: settings)
             self.floatingPanel?.handsFreeHintEnabled = settings.handsFreeModeEnabled
             self.updateRightOptionListener()
             self.loadVoiceDetectorIfNeeded()
@@ -350,10 +353,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 baseProcessor: s1MiniProcessor,
                 settings: settings
             )
-            // Load S1-mini now (about 0.4 s), so the first dictation isn't the one that waits.
-            if settings.localLLMPolishEnabled, settings.usesS1MiniPolish {
-                Task { _ = await S1MiniPolishController.shared.readyPolisher() }
-            }
+            // Load and warm S1-mini now, so the first dictation isn't the one that waits.
+            S1MiniPolishController.shared.sync(with: settings)
             databaseManager = db
             startMilestones(database: db, settings: settings)
 
@@ -646,7 +647,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         var warmTargets: [(model: String, provider: LocalLLMProviderKind, endpoint: String)] = []
         // With S1-mini as the polish engine, polish runs in-process (warmed
         // separately), so the provider's polish model would load for nothing.
-        if settings.localLLMPolishEnabled, !settings.usesS1MiniPolish {
+        if settings.localLLMPolishEnabled, settings.usesLocalLLMPolish {
             warmTargets.append((
                 settings.normalizedLocalLLMPolishModel,
                 settings.polishLLMProvider,
