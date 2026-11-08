@@ -695,7 +695,7 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
             Self.add(row, to: &all)
             let device = row["sourceDeviceID"] as String? ?? "unknown"
             Self.add(row, to: &perDevice[device, default: DeviceTotals()])
-            if let app = row["targetAppName"] as String?, !app.isEmpty { apps[app, default: 0] += 1 }
+            if let app = row["targetAppName"] as String?, !app.isEmpty { apps[AppNames.display(app), default: 0] += 1 }
             let createdAt: Date = row["createdAt"]
             if createdAt >= firstDay {
                 let day = dayFormatter.string(from: createdAt)

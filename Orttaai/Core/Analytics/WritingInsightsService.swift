@@ -2,6 +2,7 @@
 // Orttaai
 
 import Foundation
+import OrttaaiSyncCore
 import os
 
 #if canImport(FoundationModels)
@@ -193,10 +194,9 @@ final class HeuristicWritingInsightAnalyzer: WritingInsightAnalyzing {
         ["um", "uh", "like", "you know", "basically", "actually"]
     }
 
+    /// One name per app across devices ("chrome" from a PC is Google Chrome).
     private func normalizedAppName(_ appName: String?) -> String {
-        guard let appName else { return "Unknown App" }
-        let trimmed = appName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown App" : trimmed
+        AppNames.display(appName)
     }
 
     private func timeBucket(forHour hour: Int) -> String {
@@ -349,10 +349,9 @@ final class AppleFoundationWritingInsightAnalyzer: WritingInsightAnalyzing {
         )
     }
 
+    /// One name per app across devices ("chrome" from a PC is Google Chrome).
     private func normalizedAppName(_ appName: String?) -> String {
-        guard let appName else { return "Unknown App" }
-        let trimmed = appName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown App" : trimmed
+        AppNames.display(appName)
     }
 
     private func extractJSONObject(from text: String) -> String? {
@@ -506,10 +505,9 @@ final class OllamaWritingInsightAnalyzer: WritingInsightAnalyzing {
         )
     }
 
+    /// One name per app across devices ("chrome" from a PC is Google Chrome).
     private func normalizedAppName(_ appName: String?) -> String {
-        guard let appName else { return "Unknown App" }
-        let trimmed = appName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown App" : trimmed
+        AppNames.display(appName)
     }
 
     private func extractJSONObject(from text: String) -> String? {

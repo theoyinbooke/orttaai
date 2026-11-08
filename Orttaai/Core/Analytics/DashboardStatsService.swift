@@ -2,6 +2,7 @@
 // Orttaai
 
 import Foundation
+import OrttaaiSyncCore
 import GRDB
 
 nonisolated final class DashboardStatsService {
@@ -285,10 +286,9 @@ nonisolated final class DashboardStatsService {
         return Int((Double(words) / minutes).rounded())
     }
 
+    /// One name per app across devices ("chrome" from a PC is Google Chrome).
     private func normalizedAppName(_ rawName: String?) -> String {
-        guard let rawName else { return "Unknown App" }
-        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown App" : trimmed
+        AppNames.display(rawName)
     }
 
     private func resolvedModelId(currentModelId: String?, records: [Transcription]) -> String {
