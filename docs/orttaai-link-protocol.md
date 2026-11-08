@@ -223,9 +223,10 @@ change commits its row and an outbox entry in one transaction. It publishes its 
 
 ## 10. Tailscale
 
-- Mac: Orttaai joins the user's tailnet as its own node with TailscaleKit (userspace, no VPN), as
-  My Local AI Link does, and forwards that node's port to the Link port. Its MagicDNS name goes in the
-  QR code, the pair response and status.
+- Mac: Link listens on every interface, so with the Tailscale app running the Mac is reachable on
+  the tailnet. Orttaai reads its MagicDNS name (`tailscale status --json`) every 15 seconds and puts
+  it in the QR code, the pair response and status. (Building Tailscale in, as My Local AI Link does,
+  was set aside on 2026-11-08: about +50 MB and macOS 15+ only.)
 - Android: Orttakey embeds the same userspace node (MyLocalAIAndroid's `tailnet` module).
 - Windows and Linux: Orttaai uses the Tailscale app if it's installed and dials the Mac's MagicDNS
   name. A built-in node can follow later.
