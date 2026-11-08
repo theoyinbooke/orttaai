@@ -453,6 +453,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startCloudSyncIfEnabled() {
         CloudSyncScheduler.startIfEnabled()
+        // Orttaai Link: serve the PCs and Android phones linked to this Mac.
+        Task { @MainActor in await LinkController.shared.startIfNeeded() }
     }
 
     private func presentInitialWindow(hasCompletedSetup: Bool) {

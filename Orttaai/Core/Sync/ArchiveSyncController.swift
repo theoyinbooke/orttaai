@@ -228,6 +228,7 @@ final class ArchiveSyncController {
     /// shared copy always holds this Mac's latest before anything incoming
     /// is applied over it.
     func localDataChanged(profileChanged: Bool = false) {
+        onArchiveChanged?()
         if profileChanged, UserDefaults.standard.bool(forKey: Self.profileBaselineKey) {
             do {
                 _ = try MacProfileSync.recordLocalChanges(dbQueue: try DatabaseManager().dbQueue)
@@ -374,7 +375,37 @@ final class ArchiveSyncController {
 
     // MARK: Remote changes
 
+    // MARK: Orttaai Link
+
+    /// Told about every change to the archive, from this Mac, iCloud or a
+    /// linked device, so Orttaai Link answers waiting devices at once.
+    @ObservationIgnored var onArchiveChanged: (@MainActor () -> Void)?
+
+    /// A linked device's records were saved: refresh what's on screen and
+    /// send them on to iCloud.
+    func linkedDeviceChanged(_ ids: [SyncRecordID]) {
+        remoteChangesApplied(ids)
+        localDataChanged()
+    }
+
+    /// How iCloud sync stands, as linked devices see it.
+    var linkICloudState: (state: String, lastSentAt: Date?) {
+        switch phase {
+        case .running:
+            return (status.suspension == .none ? "syncing" : status.suspension == .signedOut ? "signedOut" : "paused", status.lastSentAt)
+        case .starting:
+            return ("syncing", status.lastSentAt)
+        case .needsAccountChoice:
+            return ("paused", status.lastSentAt)
+        case .unavailable:
+            return ("signedOut", status.lastSentAt)
+        case .off:
+            return ("off", nil)
+        }
+    }
+
     private func remoteChangesApplied(_ ids: [SyncRecordID]) {
+        onArchiveChanged?()
         let kinds = Set(ids.compactMap(\.kind))
         if !kinds.isDisjoint(with: [.macPreferences, .toneProfile, .chatConversation]), let dbQueue = try? DatabaseManager().dbQueue {
             MacProfileSync.applyRemote(dbQueue: dbQueue)
@@ -410,7 +441,7 @@ final class ArchiveSyncController {
 
     // MARK: Device
 
-    private static func deviceInfo() -> SyncDeviceInfo {
+    static func deviceInfo() -> SyncDeviceInfo {
         var size = 0
         sysctlbyname("hw.model", nil, &size, nil, 0)
         var model = [CChar](repeating: 0, count: max(size, 1))

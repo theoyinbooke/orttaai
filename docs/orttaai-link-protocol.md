@@ -46,10 +46,11 @@ carries the record.
 
 - HTTPS on port **47821** (the next free port if taken), on every interface, so it works on Wi-Fi
   and on Tailscale.
-- Self-signed P-256 certificate, made on first run and kept in Orttaai's Application Support.
-  Devices trust it by its **SHA-256 fingerprint** (lowercase hex of the DER), learnt while linking.
-  There's no CA and no hostname check: the fingerprint is the identity. A device refuses any other
-  certificate, whatever address it reached.
+- Self-signed P-256 certificate, made on first run and kept in `~/Library/Application Support/
+  Orttaai/Link`. Devices trust its **public key** by fingerprint: lowercase hex SHA-256 of the key's
+  X9.63 bytes (`04 || X || Y`, 65 bytes), learnt while linking. There's no CA and no hostname check:
+  the key is the identity, so the certificate can be renewed without linking again. A device refuses
+  any other key, whatever address it reached.
 - JSON bodies, UTF-8, `Content-Type: application/json`. Requests over 8 MB are refused with `413`.
 
 ## 3. Finding the Mac: Bonjour
@@ -60,7 +61,7 @@ Service type `_orttaai._tcp`, the instance name being the Mac's name. TXT record
 | --- | --- |
 | `v` | `1` (this protocol) |
 | `id` | the Mac's Orttaai device ID |
-| `fp` | certificate fingerprint |
+| `fp` | public-key fingerprint (§2) |
 | `host` | `<LocalHostName>.local` |
 | `ips` | LAN IPv4 addresses, comma-separated |
 | `port` | the HTTPS port |
@@ -189,18 +190,18 @@ The device shows this on its Devices page ("Synced with Mac Studio · iCloud up 
 ### Errors
 
 `401 {"error":{"code":"unlinked"}}`: the device was removed on the Mac; it shows "Link again" and
-keeps its queue. `426 {"error":{"code":"updateMac"}}`: the device speaks a newer protocol or sends a
-schema the Mac can't read; it keeps its queue and asks for an Orttaai update on the Mac. `503`:
-iCloud sync is off or paused on the Mac; records are still accepted and stored, and go to iCloud when
-it resumes.
+keeps its queue. `426 {"error":{"code":"updateMac"}}`: the device sent a record from a newer schema
+than the Mac reads; nothing in that push is applied, and the device keeps its queue and asks for an
+Orttaai update on the Mac. When iCloud sync is off or paused on the Mac, pushes are still accepted
+and stored, and go to iCloud when it resumes; `status` says how iCloud stands.
 
 ## 7. What the Mac keeps
 
 - `sync_record.changeSeq`: a number raised from one counter on every write to the row (local edit,
   iCloud fetch, Link push). The change feed reads rows with `changeSeq > cursor` in order.
-- `link_device`: one row per linked device: ID, kind, name, token hash, linked at, last seen, last
-  pushed, last pulled, address last used (LAN or Tailscale). The Devices page reads it with each
-  device's `Device` record (its totals).
+- `linked-devices.json` beside the identity: one entry per linked device: ID, kind, name, app and
+  versions, key hash, linked at, last seen, last push, last pull, and whether it last came over
+  Tailscale. The Devices page shows it with totals the Mac counts from the device's own dictations.
 - Linked devices' records live in the same tables as everything else, so History, Analytics, Chat,
   Memory Graph and the iCloud summary for phones include them with no extra work.
 

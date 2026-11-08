@@ -13,11 +13,30 @@ public struct LinkRecord: Codable, Hashable, Sendable {
         /// Milliseconds since 1970.
         public var modifiedAt: Int64
         public var writer: String
+
+        public init(counter: Int64, modifiedAt: Int64, writer: String) {
+            self.counter = counter
+            self.modifiedAt = modifiedAt
+            self.writer = writer
+        }
+
+        public init(_ revision: Revision) {
+            self.init(counter: revision.counter, modifiedAt: LinkWire.milliseconds(revision.modifiedAt), writer: revision.writerDeviceID)
+        }
+
+        public var revision: Revision {
+            Revision(counter: counter, modifiedAt: LinkWire.date(modifiedAt), writerDeviceID: writer)
+        }
     }
 
     public struct WireOrigin: Codable, Hashable, Sendable {
         public var deviceID: String?
         public var kind: DeviceKind
+
+        public init(deviceID: String?, kind: DeviceKind) {
+            self.deviceID = deviceID
+            self.kind = kind
+        }
     }
 
     public var zone: String
@@ -96,11 +115,11 @@ public enum LinkWire {
         try JSONDecoder().decode(type, from: data)
     }
 
-    static func milliseconds(_ date: Date) -> Int64 {
+    public static func milliseconds(_ date: Date) -> Int64 {
         Int64((date.timeIntervalSince1970 * 1000).rounded())
     }
 
-    static func date(_ milliseconds: Int64) -> Date {
+    public static func date(_ milliseconds: Int64) -> Date {
         Date(timeIntervalSince1970: Double(milliseconds) / 1000)
     }
 }

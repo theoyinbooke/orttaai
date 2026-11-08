@@ -21,7 +21,7 @@ nonisolated struct SyncDeviceInfo: Sendable {
 }
 
 nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
-    private let dbQueue: DatabaseQueue
+    let dbQueue: DatabaseQueue
     private let device: SyncDeviceInfo
     private let logger = Logger(subsystem: "com.orttaai.sync", category: "store")
 
@@ -50,39 +50,45 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
 
     func outgoingRecord(for id: SyncRecordID) throws -> OutgoingRecord? {
         try dbQueue.write { db in
-            guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_outbox WHERE recordName = ?)", arguments: [id.recordName]) == true,
-                  let record = try Row.fetchOne(db, sql: "SELECT * FROM sync_record WHERE recordName = ?", arguments: [id.recordName]),
-                  record["zoneName"] as String? == id.zone.zoneName,
-                  let kind = id.kind else { return nil }
-
-            let isDeleted: Bool = record["isDeleted"]
-            var payload: Data?
-            if !isDeleted {
-                payload = try currentPayload(kind: kind, record: record, in: db)
-                guard payload != nil else {
-                    logger.error("No content for \(id.recordName, privacy: .public); not sending")
-                    return nil
-                }
-            }
-            var origin: DictationOrigin?
-            if kind == .dictation {
-                origin = DictationOrigin(
-                    deviceID: record["originDeviceID"],
-                    kind: (record["originKind"] as String?).flatMap(DeviceKind.init(rawValue:)) ?? .unknown
-                )
-            }
-            let envelope = SyncEnvelope(
-                id: id,
-                revision: Self.revision(record, counter: "revCounter", ms: "revModifiedAtMs", writer: "revWriter"),
-                generation: record["generation"],
-                isDeleted: isDeleted,
-                deletedAt: record["deletedAt"],
-                payload: payload,
-                origin: origin,
-                createdAt: record["createdAt"]
-            )
-            return OutgoingRecord(envelope: envelope, systemFields: record["systemFields"])
+            guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_outbox WHERE recordName = ?)", arguments: [id.recordName]) == true else { return nil }
+            return try currentRecord(for: id, in: db)
         }
+    }
+
+    /// The current local version of a record, whether or not it waits to be
+    /// sent: for iCloud and for Orttaai Link's change feed.
+    func currentRecord(for id: SyncRecordID, in db: Database) throws -> OutgoingRecord? {
+        guard let record = try Row.fetchOne(db, sql: "SELECT * FROM sync_record WHERE recordName = ?", arguments: [id.recordName]),
+              record["zoneName"] as String? == id.zone.zoneName,
+              let kind = id.kind else { return nil }
+
+        let isDeleted: Bool = record["isDeleted"]
+        var payload: Data?
+        if !isDeleted {
+            payload = try currentPayload(kind: kind, record: record, in: db)
+            guard payload != nil else {
+                logger.error("No content for \(id.recordName, privacy: .public); not sending")
+                return nil
+            }
+        }
+        var origin: DictationOrigin?
+        if kind == .dictation {
+            origin = DictationOrigin(
+                deviceID: record["originDeviceID"],
+                kind: (record["originKind"] as String?).flatMap(DeviceKind.init(rawValue:)) ?? .unknown
+            )
+        }
+        let envelope = SyncEnvelope(
+            id: id,
+            revision: Self.revision(record, counter: "revCounter", ms: "revModifiedAtMs", writer: "revWriter"),
+            generation: record["generation"],
+            isDeleted: isDeleted,
+            deletedAt: record["deletedAt"],
+            payload: payload,
+            origin: origin,
+            createdAt: record["createdAt"]
+        )
+        return OutgoingRecord(envelope: envelope, systemFields: record["systemFields"])
     }
 
     /// The payload for a live record, read from its content row (or, for
@@ -118,8 +124,13 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
                 isPinned: entry.isPinned, sampleCount: entry.sampleCount, requestJSON: entry.requestJSON, snapshotJSON: entry.snapshotJSON
             ))
         case .device:
+            // Another device's record (a phone's, or a device linked through
+            // Orttaai Link) is passed on as it came; only this Mac's is
+            // recomputed.
+            guard record["recordName"] as String? == SyncRecordID.device(device.deviceID).recordName else { return record["payload"] }
             return try PayloadCoder.encode(try devicePayload(in: db))
         case .macSummary:
+            guard record["recordName"] as String? == SyncRecordID.macSummary(macDeviceID: device.deviceID).recordName else { return record["payload"] }
             return try PayloadCoder.encode(try summaryPayload(in: db))
         case .macPreferences, .toneProfile, .chatConversation:
             return record["payload"]
@@ -231,7 +242,7 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
         return true
     }
 
-    private func upsertSyncRecord(_ envelope: SyncEnvelope, systemFields: Data?, in db: Database) throws {
+    func upsertSyncRecord(_ envelope: SyncEnvelope, systemFields: Data?, in db: Database) throws {
         guard let kind = envelope.kind else { return }
         let keepsPayload: Bool
         switch kind {
@@ -293,7 +304,7 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
 
     /// Writes a remote version into its content table, never through the
     /// ledger (that would send it straight back).
-    private func applyContent(_ envelope: SyncEnvelope, in db: Database) throws {
+    func applyContent(_ envelope: SyncEnvelope, in db: Database) throws {
         guard let kind = envelope.kind else { return }
         let existingID = try contentRowID(for: envelope, in: db)
 
@@ -640,7 +651,7 @@ nonisolated final class MacSyncStore: SyncStore, @unchecked Sendable {
         )
     }
 
-    private func totals(in db: Database, sourceDeviceID: String) throws -> DeviceTotals {
+    func totals(in db: Database, sourceDeviceID: String) throws -> DeviceTotals {
         var totals = DeviceTotals()
         let rows = try Row.fetchCursor(db, sql: """
             SELECT text, recordingDurationMs, createdAt FROM transcription

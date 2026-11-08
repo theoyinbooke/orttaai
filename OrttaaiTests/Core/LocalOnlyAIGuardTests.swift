@@ -24,8 +24,10 @@ final class LocalOnlyAIGuardTests: XCTestCase {
     /// The migration names the removed providers' settings to delete them.
     private let removedSymbolAllowList = ["Core/Transcription/LocalAIMigration.swift"]
 
-    /// The only file that may start a process: it opens System Settings.
-    private let processAllowList = ["UI/Setup/PermissionStepView.swift"]
+    /// The only files that may start a process: one opens System Settings,
+    /// the other asks the Tailscale app for this Mac's Tailscale name
+    /// (`tailscale status`), so Orttaai Link works away from home.
+    private let processAllowList = ["UI/Setup/PermissionStepView.swift", "Core/Link/LinkSystem.swift"]
 
     func testOnlyLocalProvidersExist() {
         XCTAssertEqual(LocalLLMProviderKind.allCases.map(\.rawValue), ["ollama", "lmstudio"])

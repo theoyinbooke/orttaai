@@ -16,6 +16,7 @@
 		C0FFEE530000000000000001 /* CoachCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE530000000000000002 /* CoachCore */; };
 		C0FFEE520000000000000001 /* OrttaaiSyncCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE520000000000000002 /* OrttaaiSyncCore */; };
 		C0FFEE520000000000000004 /* OrttaaiSyncCloudKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE520000000000000005 /* OrttaaiSyncCloudKit */; };
+		C0FFEE540000000000000001 /* OrttaaiLink in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE540000000000000002 /* OrttaaiLink */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +87,7 @@
 				C0FFEE530000000000000001 /* CoachCore in Frameworks */,
 				C0FFEE520000000000000001 /* OrttaaiSyncCore in Frameworks */,
 				C0FFEE520000000000000004 /* OrttaaiSyncCloudKit in Frameworks */,
+				C0FFEE540000000000000001 /* OrttaaiLink in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -163,6 +165,7 @@
 				C0FFEE530000000000000002 /* CoachCore */,
 				C0FFEE520000000000000002 /* OrttaaiSyncCore */,
 				C0FFEE520000000000000005 /* OrttaaiSyncCloudKit */,
+				C0FFEE540000000000000002 /* OrttaaiLink */,
 			);
 			productName = Orttaai;
 			productReference = DBDBFF2D2F4BCC0800217055 /* Orttaai.app */;
@@ -255,6 +258,7 @@
 				C0FFEE510000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/PolishEngine" */,
 				C0FFEE530000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/CoachCore" */,
 				C0FFEE520000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiSync" */,
+				C0FFEE540000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiLink" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DBDBFF2E2F4BCC0800217055 /* Products */;
@@ -680,6 +684,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		C0FFEE540000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiLink" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/OrttaaiLink;
+		};
 		DBD11A932F4BD2DD0058DD90 /* XCLocalSwiftPackageReference "LocalPackages/ExpressAudio" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LocalPackages/ExpressAudio;
@@ -734,6 +742,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		C0FFEE540000000000000002 /* OrttaaiLink */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0FFEE540000000000000003 /* XCLocalSwiftPackageReference "LocalPackages/OrttaaiLink" */;
+			productName = OrttaaiLink;
+		};
 		DBD11A8B2F4BD2AD0058DD90 /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = DBD11A862F4BCDF90058DD90 /* XCRemoteSwiftPackageReference "WhisperKit" */;
