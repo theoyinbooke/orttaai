@@ -42,6 +42,13 @@ final class DevicesPageRenderTests: XCTestCase {
         LinkController.shared.showPreview(devices: [], totals: [:], tailscaleName: "mac-studio.tail1b0ba8.ts.net", session: session,
                                           url: URL(string: "orttaai://link?v=1&id=6f1d1c9e-1b7a-4c55-9c39-0d3c1e2a7b10&n=Mac%20Studio&h=192.168.1.20,Mac-Studio.local&p=47821&fp=\(String(repeating: "ab", count: 32))&ts=mac-studio.tail1b0ba8.ts.net#x"))
         render(LinkDeviceSheet(link: LinkController.shared, onDone: {}), named: "link-sheet", in: directory)
+
+        // Just linked: the window says so instead of showing a spent code.
+        let justLinked = try device("9a3e5b71-0c4d-4f28-8e16-b2d7f4a9c053", .windows, "TALKTOTAIWO", app: "Orttaai", version: "0.3.0", seen: 1, tailnet: false)
+        var linkedNow = justLinked
+        linkedNow.linkedAt = Date().addingTimeInterval(5)
+        LinkController.shared.showPreview(devices: [linkedNow], totals: [:], tailscaleName: nil)
+        render(LinkDeviceSheet(link: LinkController.shared, onDone: {}), named: "link-sheet-linked", in: directory)
     }
 
     private func render(_ content: some View, named prefix: String, in directory: String) {

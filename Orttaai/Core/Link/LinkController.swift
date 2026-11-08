@@ -35,6 +35,9 @@ final class LinkController {
     private(set) var tailscaleName: String?
     private(set) var addresses: [String] = []
     let computerName = LinkMacNames.computerName
+    /// The Link a Device window is open: it renews the code itself, and an
+    /// expired code isn't a reason to stop.
+    var isLinkWindowOpen = false
 
     var isRunning: Bool { if case .running = state { true } else { false } }
 
@@ -137,7 +140,8 @@ final class LinkController {
     // MARK: Changes
 
     private func devicesChanged(_ list: [LinkedDevice]) {
-        let newlyLinked = list.count > devices.count
+        let newest = list.map(\.linkedAt).max()
+        let newlyLinked = newest.map { newest in !devices.contains { $0.linkedAt >= newest } } ?? false
         devices = list.sorted { $0.linkedAt < $1.linkedAt }
         // A device just linked with the code: the session is used up.
         if newlyLinked, session != nil {
@@ -194,7 +198,7 @@ final class LinkController {
 
     /// Every 15 seconds: addresses, Tailscale, the linking timer, Bonjour.
     private func tick() async {
-        if let session, session.expires < .now { await closeLinking() }
+        if let session, session.expires < .now, !isLinkWindowOpen { await closeLinking() }
         await refreshNetwork()
     }
 

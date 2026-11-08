@@ -222,7 +222,9 @@ private struct DeviceRow: View {
 struct LinkDeviceSheet: View {
     let link: LinkController
     let onDone: () -> Void
-    @State private var deviceCountAtOpen: Int?
+    /// Devices linked since this moment are the ones this window linked
+    /// (linking again replaces a device, so counting wouldn't show it).
+    @State private var since = Date()
     @State private var copied = false
 
     var body: some View {
@@ -231,35 +233,35 @@ struct LinkDeviceSheet: View {
                 Text("Link a Device")
                     .font(.Orttaai.title)
                     .foregroundStyle(Color.Orttaai.textPrimary)
-                Text("Keep this window open while you link. The code works once and for 5 minutes.")
+                Text("Keep this window open while you link. The code works once, and a new one appears every 5 minutes.")
                     .font(.Orttaai.secondary)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }
 
-            if let linked = newlyLinked {
-                SettingsNotice(kind: .success, message: "\(linked.name) is linked. Its dictations start syncing now.")
-            } else if case .failed(let message) = link.state {
+            if newlyLinked == nil, case .failed(let message) = link.state {
                 SettingsNotice(kind: .error, message: message)
             }
 
-            HStack(alignment: .top, spacing: Spacing.lg) {
-                pcColumn
-                Divider()
-                phoneColumn
+            if let linked = newlyLinked {
+                linkedState(linked)
+                    .frame(minHeight: 220)
+            } else {
+                HStack(alignment: .top, spacing: Spacing.lg) {
+                    pcColumn
+                    Divider()
+                    phoneColumn
+                }
+                .frame(minHeight: 220)
             }
-            .frame(minHeight: 220)
 
             HStack {
-                if let session = link.session {
+                if newlyLinked == nil, let session = link.session {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(remaining(until: session.expires, now: context.date))
                             .font(.Orttaai.caption)
                             .foregroundStyle(Color.Orttaai.textTertiary)
                             .monospacedDigit()
                     }
-                } else if newlyLinked == nil {
-                    Button("New Code") { Task { await link.openLinking() } }
-                        .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
                 }
                 Spacer()
                 Button(newlyLinked == nil ? "Cancel" : "Done", action: onDone)
@@ -270,12 +272,47 @@ struct LinkDeviceSheet: View {
         .padding(Spacing.xxl)
         .frame(width: 600)
         .background(Color.Orttaai.bgPrimary)
-        .onAppear { deviceCountAtOpen = link.devices.count }
+        .onAppear {
+            since = Date()
+            link.isLinkWindowOpen = true
+        }
+        .onDisappear { link.isLinkWindowOpen = false }
+        // A fresh code before the old one runs out, for as long as this is open.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard newlyLinked == nil else { continue }
+                if let session = link.session, session.expires.timeIntervalSinceNow > 2 { continue }
+                await link.openLinking()
+            }
+        }
     }
 
     private var newlyLinked: LinkedDevice? {
-        guard let start = deviceCountAtOpen, link.devices.count > start else { return nil }
-        return link.devices.max { $0.linkedAt < $1.linkedAt }
+        link.devices.filter { $0.linkedAt >= since.addingTimeInterval(-1) }.max { $0.linkedAt < $1.linkedAt }
+    }
+
+    private func linkedState(_ device: LinkedDevice) -> some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(Color.Orttaai.success)
+            VStack(spacing: Spacing.xs) {
+                Text("\(device.name) is linked")
+                    .font(.Orttaai.heading)
+                    .foregroundStyle(Color.Orttaai.textPrimary)
+                Text("\(device.kind.displayName) · \(device.app). It syncs with this Mac from now on, at home and away.")
+                    .font(.Orttaai.secondary)
+                    .foregroundStyle(Color.Orttaai.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+            Button("Link Another Device") {
+                since = Date()
+                Task { await link.openLinking() }
+            }
+            .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var pcColumn: some View {
