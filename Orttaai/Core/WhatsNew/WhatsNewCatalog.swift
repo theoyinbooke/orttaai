@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.20.0", items: [
+            WhatsNewItem(
+                id: "1.20-link",
+                title: "Your PC and phone, linked",
+                detail: "Link Orttaai on Windows or Linux and Orttakey on Android in Settings › Devices. They sync through this Mac, at home or over Tailscale.",
+                art: .symbol("laptopcomputer.and.iphone")
+            ),
+            WhatsNewItem(
+                id: "1.20-devices",
+                title: "Where you said it",
+                detail: "History labels each dictation with its device, and Devices shows each one's totals, so you see everything you said, everywhere.",
+                art: .symbol("desktopcomputer")
+            ),
+            WhatsNewItem(
+                id: "1.20-app-names",
+                title: "One name per app",
+                detail: "Chrome on Windows and Google Chrome on the Mac are one app in Analytics now, and so are Word, Visual Studio Code and the rest.",
+                art: .symbol("square.grid.2x2")
+            ),
+        ]),
         WhatsNewRelease(version: "1.19.0", items: [
             WhatsNewItem(
                 id: "1.19-polish-switch",
