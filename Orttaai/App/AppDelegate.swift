@@ -40,7 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let hasCompletedSetupKey = "hasCompletedSetup"
     private var isPushToTalkPressed = false
     private var isEditCommandPressed = false
-    private let rightOptionTapMonitor = RightOptionTapMonitor()
+    private let modifierTapMonitor = ModifierTapMonitor()
     private let voiceDetectorLoader = SileroVoiceDetectorLoader()
     private var voiceDetectorRequested = false
     private var rightOptionRetryTask: Task<Void, Never>?
@@ -145,7 +145,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // iCloud): warm it now. Turned off or switched away: free it.
             S1MiniPolishController.shared.sync(with: settings)
             self.floatingPanel?.handsFreeHintEnabled = settings.handsFreeModeEnabled
-            self.updateRightOptionListener()
+            self.updateModifierTapListener()
             self.loadVoiceDetectorIfNeeded()
         }
         floatingPanel?.handsFreeHintEnabled = state.settings.handsFreeModeEnabled
@@ -212,7 +212,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardShortcuts.removeHandler(for: .pushToTalk)
         KeyboardShortcuts.removeHandler(for: .editCommand)
         rightOptionRetryTask?.cancel()
-        rightOptionTapMonitor.stop()
+        modifierTapMonitor.stop()
         stopWaveformUpdates()
         if let shortcutObserver {
             NotificationCenter.default.removeObserver(shortcutObserver)
@@ -545,29 +545,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Starts or stops the Right Option listener to match the setting. When
-    /// macOS refuses it for lack of Input Monitoring, keeps retrying quietly
-    /// so it starts the moment the permission is granted.
-    private func updateRightOptionListener() {
-        let wanted = runtimeServicesStarted && (appState?.settings.rightOptionDictationEnabled ?? false)
+    /// Starts or stops the Right Option / Right Command listener to match
+    /// the settings. When macOS refuses it for lack of Input Monitoring,
+    /// keeps retrying quietly so it starts the moment the permission is
+    /// granted.
+    private func updateModifierTapListener() {
+        let settings = appState?.settings
+        let rightOptionWanted = settings?.rightOptionDictationEnabled ?? false
+        let rightCommandWanted = (settings?.rightCommandEditEnabled ?? false) && (settings?.editCommandsEnabled ?? false)
+        let wanted = runtimeServicesStarted && (rightOptionWanted || rightCommandWanted)
         guard wanted else {
             rightOptionRetryTask?.cancel()
             rightOptionRetryTask = nil
-            rightOptionTapMonitor.stop()
+            modifierTapMonitor.stop()
             return
         }
-        guard !rightOptionTapMonitor.isRunning, rightOptionRetryTask == nil else { return }
-
-        rightOptionTapMonitor.onTap = { [weak self] in
+        // Each tap checks its own setting, so one listener serves both keys.
+        modifierTapMonitor.onRightOptionTap = { [weak self] in
+            guard self?.appState?.settings.rightOptionDictationEnabled == true else { return }
             self?.coordinator?.handleRightOptionTap()
         }
-        if rightOptionTapMonitor.start() { return }
+        modifierTapMonitor.onRightCommandTap = { [weak self] in
+            guard self?.appState?.settings.rightCommandEditEnabled == true else { return }
+            self?.coordinator?.handleRightCommandTap()
+        }
+        guard !modifierTapMonitor.isRunning, rightOptionRetryTask == nil else { return }
+        if modifierTapMonitor.start() { return }
 
         rightOptionRetryTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard let self, !Task.isCancelled else { return }
-                if self.rightOptionTapMonitor.start() {
+                if self.modifierTapMonitor.start() {
                     self.rightOptionRetryTask = nil
                     return
                 }
@@ -708,7 +717,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         startEditCommandShortcut()
         runtimeServicesStarted = true
-        updateRightOptionListener()
+        updateModifierTapListener()
         loadVoiceDetectorIfNeeded()
         floatingPanel?.show()
         warmUpModel()

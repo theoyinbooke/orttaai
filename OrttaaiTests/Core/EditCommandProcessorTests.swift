@@ -219,6 +219,36 @@ final class EditCommandProcessorTests: XCTestCase {
         XCTAssertEqual(outcome, .failed(reason: "Couldn't apply the edit"))
     }
 
+    func testPerformEditReportsAnUnreachableProviderAsUnavailable() async {
+        let client = ScriptedLLMClient(result: .failure(URLError(.cannotConnectToHost)))
+        let processor = EditCommandProcessor(settings: settings, llmClient: client)
+        let outcome = await processor.performEdit(
+            selection: "the report needs fixing before friday",
+            instruction: "make this shorter"
+        )
+        XCTAssertEqual(outcome, .unavailable(reason: "Couldn't reach the edit model"))
+
+        let next = await processor.performEdit(
+            selection: "the report needs fixing before friday",
+            instruction: "make this shorter"
+        )
+        XCTAssertEqual(next, .unavailable(reason: "Edit model unavailable. Try again shortly."), "Backs off without dialing again")
+    }
+
+    func testCooldownAfterATimeoutIsAFailureNotUnavailable() async {
+        let client = ScriptedLLMClient(result: .failure(URLError(.timedOut)))
+        let processor = EditCommandProcessor(settings: settings, llmClient: client)
+        _ = await processor.performEdit(selection: "some text here", instruction: "make this shorter")
+
+        let retry = await processor.performEdit(selection: "some text here", instruction: "make this shorter")
+
+        XCTAssertEqual(
+            retry,
+            .failed(reason: "Edit model unavailable. Try again shortly."),
+            "A model that is running but slow must never make the dictation key type the instruction"
+        )
+    }
+
     func testPerformEditRejectsOverlongSelectionWithoutCallingTheModel() async {
         let client = ScriptedLLMClient(result: .success("whatever"))
         let processor = EditCommandProcessor(settings: settings, llmClient: client)

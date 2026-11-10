@@ -59,6 +59,23 @@ final class MockAccessibilityInspector: AccessibilityInspecting {
         }
         return insertResult
     }
+
+    /// Whether the app accepts a new selection, and whether it then shows it.
+    var selectRangeResult = true
+    var selectionTakesEffect = true
+    private(set) var selectedRanges: [FocusedTextRange] = []
+
+    func selectTextRange(_ range: FocusedTextRange, processIdentifier: pid_t?) -> Bool {
+        selectedRanges.append(range)
+        guard selectRangeResult else { return false }
+        if selectionTakesEffect, let value = simulatedFieldValue {
+            simulatedSelectedRange = range
+            simulatedSelectedText = (value as NSString).substring(
+                with: NSRange(location: range.location, length: range.length)
+            )
+        }
+        return true
+    }
 }
 
 final class MockKeyEventPoster: KeyEventPosting {
@@ -104,6 +121,10 @@ final class MockClipboard: ClipboardManaging {
     var stringToReturn: String?
     var restoredStringToReturn: String?
     var changeCount: Int = 0
+    /// Simulates a code editor's whole-line copy with nothing selected.
+    var copyIsFromEmptySelection = false
+
+    func copiedFromEmptySelection() -> Bool { copyIsFromEmptySelection }
     /// Saving gives up, as when the clipboard holds an item copied on an
     /// iPhone that doesn't answer.
     var saveGivesUp = false

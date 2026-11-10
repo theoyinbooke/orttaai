@@ -13,7 +13,7 @@ struct DictationSettingsView: View {
     @AppStorage("handsFreeSilenceStopSeconds") private var handsFreeSilenceStopSeconds = 4.0
     @AppStorage("handsFreeMaxRecordingDuration") private var handsFreeMaxRecordingDuration = 600
     @AppStorage("rightOptionDictationEnabled") private var rightOptionDictationEnabled = false
-    @State private var hasInputMonitoring = RightOptionTapMonitor.hasInputMonitoringAccess
+    @State private var hasInputMonitoring = ModifierTapMonitor.hasInputMonitoringAccess
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
     @State private var languageSwitchStatus: String?
     @State private var languageSwitchError: String?
@@ -44,7 +44,7 @@ struct DictationSettingsView: View {
             // Watch for the permission while the key is on but not allowed,
             // so the notice clears by itself once it's granted.
             while rightOptionDictationEnabled, !Task.isCancelled {
-                hasInputMonitoring = RightOptionTapMonitor.hasInputMonitoringAccess
+                hasInputMonitoring = ModifierTapMonitor.hasInputMonitoringAccess
                 if hasInputMonitoring { break }
                 try? await Task.sleep(for: .seconds(1.5))
             }

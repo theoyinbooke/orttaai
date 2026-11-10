@@ -239,6 +239,15 @@ final class AppSettings: ObservableObject {
     // local provider is reachable the edit fails honestly and the selection
     // stays untouched, so the default is safe.
     @AppStorage("editCommandsEnabled") var editCommandsEnabled: Bool = true
+    /// With text selected, an instruction spoken on the dictation shortcut
+    /// ("make this shorter") edits the selection; anything else replaces it
+    /// as before. Needs `editCommandsEnabled`.
+    @AppStorage("editWithDictationKeyEnabled") var editWithDictationKeyEnabled: Bool = true
+    /// Tap Right Command to record an edit (of the selection, or the last
+    /// dictation) and tap again to apply it. Off by default: like the Right
+    /// Option key it needs Input Monitoring, which belongs to this Mac, so
+    /// the setting isn't synced.
+    @AppStorage("rightCommandEditEnabled") var rightCommandEditEnabled: Bool = false
     /// How long a voice edit may take, and the longest selection it accepts.
     static let editCommandTimeoutMs = 6_000
     static let editCommandMaxChars = 1_500

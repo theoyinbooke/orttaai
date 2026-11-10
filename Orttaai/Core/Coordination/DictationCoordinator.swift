@@ -40,6 +40,15 @@ final class DictationCoordinator {
         case handsFree
     }
 
+    /// How an edit instruction ended, for the dictation-key path that must
+    /// keep the spoken words when the edit didn't land.
+    enum EditInstructionResult: Equatable {
+        case applied
+        case notApplied
+        /// No local model answered; the caller may dictate the words instead.
+        case modelUnavailable
+    }
+
     /// What the active session is for. A dictation session injects the
     /// transcript; an edit session treats the transcript as an instruction to
     /// apply to the selection captured when the session started.
@@ -73,6 +82,20 @@ final class DictationCoordinator {
     /// True while the edit shortcut's selection capture is in flight (before
     /// recording starts) so no other session can slip in underneath it.
     private(set) var isCapturingEditSelection = false
+    /// What was selected when a dictation started, looked up while the
+    /// recording runs. If the words turn out to be an instruction, the
+    /// dictation becomes an edit of that selection.
+    private var selectionPeekTask: Task<CapturedSelection?, Never>?
+    /// The text Orttaai last put into an app, so the edit shortcut can work
+    /// on it when nothing is selected.
+    private var lastInsertion: LastInsertion?
+    private struct LastInsertion {
+        let text: String
+        let processIdentifier: pid_t
+        let at: Date
+    }
+    /// How long after a dictation the edit shortcut still reaches for it.
+    static let lastInsertionEditWindow: TimeInterval = 600
     /// True while Coach records a practice rep on the dictation microphone;
     /// dictation waits until it's done.
     private(set) var isPracticeRecording = false
@@ -282,6 +305,30 @@ final class DictationCoordinator {
         }
     }
 
+    /// A tap of the Right Command key: the first records an edit
+    /// instruction, hands-free, for the selected text or, when nothing is
+    /// selected, the last dictation; the next tap stops it and applies the
+    /// edit. Ignored while a dictation is recording or anything is still
+    /// being processed.
+    func handleRightCommandTap() {
+        guard settings.editCommandsEnabled else { return }
+        switch state {
+        case .idle:
+            guard !isCapturingEditSelection else { return }
+            pendingEditGestureAction = nil
+            editHotkeyGesture.reset()
+            startEditCommand(handsFree: true)
+
+        case .recording:
+            guard sessionKind == .edit, recordingMode == .handsFree else { return }
+            Logger.dictation.info("Edit recording stopped by Right Command tap")
+            stopRecording(reason: .hotkeyTapStop)
+
+        case .processing, .injecting, .error:
+            Logger.dictation.info("Ignoring Right Command tap; busy (state: \(String(describing: self.state)))")
+        }
+    }
+
     private func applyGestureAction(_ action: HotkeyGestureInterpreter.ReleaseAction) {
         switch action {
         case .promoteToHandsFree:
@@ -347,10 +394,11 @@ final class DictationCoordinator {
         applyGestureAction(action)
     }
 
-    /// Captures the current selection in the frontmost app and, when one
-    /// exists, starts recording the spoken edit instruction. No selection
-    /// means a clear pill error and no recording.
-    func startEditCommand() {
+    /// Captures the current selection in the frontmost app (or, with nothing
+    /// selected, the last dictation) and, when there is one, starts recording
+    /// the spoken edit instruction; `handsFree` keeps it recording until the
+    /// next tap. Nothing to edit means a clear pill error and no recording.
+    func startEditCommand(handsFree: Bool = false) {
         guard settings.editCommandsEnabled else {
             Logger.dictation.info("Ignoring startEditCommand; edit commands disabled")
             return
@@ -367,13 +415,17 @@ final class DictationCoordinator {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let captureResult = await self.selectionCapture.captureSelection(
-                processIdentifier: frontmostApp?.processIdentifier
-            )
+            let captureResult = await self.captureEditTarget(processIdentifier: frontmostApp?.processIdentifier)
             self.isCapturingEditSelection = false
 
             guard case .idle = self.state else {
                 self.pendingEditGestureAction = nil
+                if case .captured(let selection) = captureResult, selection.method == .lastInsertion {
+                    await self.selectionCapture.deselectInsertedText(
+                        selection.text,
+                        processIdentifier: frontmostApp?.processIdentifier
+                    )
+                }
                 return
             }
 
@@ -406,6 +458,21 @@ final class DictationCoordinator {
             }
 
             self.beginSession(kind: .edit, selection: selection, targetApp: frontmostApp)
+            guard case .recording = self.state else {
+                // The recording didn't start (a Coach practice rep holds the
+                // mic): don't leave the last dictation selected.
+                if selection.method == .lastInsertion {
+                    await self.selectionCapture.deselectInsertedText(
+                        selection.text,
+                        processIdentifier: frontmostApp?.processIdentifier
+                    )
+                }
+                self.pendingEditGestureAction = nil
+                return
+            }
+            if handsFree {
+                self.promoteToHandsFree()
+            }
 
             if let pending = self.pendingEditGestureAction {
                 // The edit key was already released while capture ran.
@@ -415,6 +482,36 @@ final class DictationCoordinator {
                 }
             }
         }
+    }
+
+    /// The selection, or when nothing is selected, the dictation just
+    /// inserted in the same app (selected so the edit can replace it).
+    private func captureEditTarget(processIdentifier: pid_t?) async -> SelectionCaptureResult {
+        let captured = await selectionCapture.captureSelection(processIdentifier: processIdentifier)
+        guard case .noSelection = captured,
+              !Self.isCommandLineApp(targetAppForEdit(processIdentifier)),
+              let last = lastInsertion,
+              last.processIdentifier == processIdentifier,
+              now().timeIntervalSince(last.at) <= Self.lastInsertionEditWindow else {
+            return captured
+        }
+        guard last.text.count <= AppSettings.editCommandMaxChars else {
+            // Too long to edit: say so without selecting it in the field.
+            return .captured(CapturedSelection(text: last.text, method: .lastInsertion))
+        }
+        return await selectionCapture.selectInsertedText(last.text, processIdentifier: last.processIdentifier)
+    }
+
+    /// Terminals show selected text that pasting doesn't replace: the
+    /// result would land at the prompt with the original still on screen.
+    nonisolated static func isCommandLineApp(_ app: NSRunningApplication?) -> Bool {
+        guard let name = app?.localizedName else { return false }
+        return !AutoParagraphFormatter.appliesTo(targetApp: name)
+    }
+
+    private func targetAppForEdit(_ processIdentifier: pid_t?) -> NSRunningApplication? {
+        guard let processIdentifier else { return nil }
+        return NSRunningApplication(processIdentifier: processIdentifier)
     }
 
     // MARK: - Public API
@@ -449,6 +546,27 @@ final class DictationCoordinator {
         // The next insertion would mix into the field being watched.
         editLearner?.finishCurrentWatch()
         editLearner?.prepare(targetApp: frontmostApp)
+        selectionPeekTask?.cancel()
+        selectionPeekTask = nil
+        if kind == .dictation {
+            // A new dictation: the edit shortcut must never reach past it to
+            // an older one, even if this one doesn't get inserted.
+            lastInsertion = nil
+        }
+        if kind == .dictation,
+           settings.editCommandsEnabled,
+           settings.editWithDictationKeyEnabled,
+           settings.effectiveDictationLanguage == "en",
+           !Self.isCommandLineApp(frontmostApp) {
+            let selectionCapture = self.selectionCapture
+            let processIdentifier = frontmostApp?.processIdentifier
+            selectionPeekTask = Task { @MainActor in
+                guard case .captured(let selection) = await selectionCapture.peekSelection(
+                    processIdentifier: processIdentifier
+                ) else { return nil }
+                return selection
+            }
+        }
 
         do {
             // Capture the target app NOW, before the floating panel appears
@@ -636,10 +754,32 @@ final class DictationCoordinator {
             let transcript = try await transcriptionService.finalizeLiveTranscription(audioSamples: samples)
             transcriptionMs = Int((CFAbsoluteTimeGetCurrent() - transcriptionStart) * 1000)
 
+            // Text was selected when this dictation started and the words
+            // are an instruction for it: edit the selection instead of
+            // typing the instruction over it. The words are checked first,
+            // so an ordinary dictation never waits on the selection lookup.
+            var editFromDictationKey = false
+            if sessionKind == .dictation,
+               settings.effectiveDictationLanguage == "en",
+               EditInstructionClassifier.isInstruction(transcript),
+               let selected = await selectionPeekTask?.value {
+                guard selected.text.count <= AppSettings.editCommandMaxChars else {
+                    await saveUnappliedInstruction(transcript, appName: appName, bundleID: appBundleID, recordingMs: recordingDurationMs, processingStart: processingStart)
+                    state = .error(message: "Selection too long to edit")
+                    endSessionContext()
+                    autoDismissError()
+                    return
+                }
+                sessionKind = .edit
+                editSelection = selected
+                editFromDictationKey = true
+                Logger.dictation.info("Dictation treated as an edit of the selection (\(selected.text.count) chars)")
+            }
+
             // Edit sessions treat the transcript as the spoken instruction:
             // the polish/injection pipeline below is dictation-only.
             if sessionKind == .edit, let editSelection {
-                await processEditInstruction(
+                let result = await processEditInstruction(
                     rawInstruction: transcript,
                     selection: editSelection,
                     appName: appName,
@@ -647,9 +787,28 @@ final class DictationCoordinator {
                     recordingDurationMs: recordingDurationMs,
                     settingsSyncMs: settingsSyncMs,
                     transcriptionMs: transcriptionMs,
-                    processingStart: processingStart
+                    processingStart: processingStart,
+                    dictateWhenModelUnavailable: editFromDictationKey
                 )
-                return
+                switch result {
+                case .applied:
+                    return
+                case .notApplied:
+                    if editFromDictationKey {
+                        // The words were spoken on the dictation key: keep
+                        // them in History like any other dictation.
+                        await saveUnappliedInstruction(transcript, appName: appName, bundleID: appBundleID, recordingMs: recordingDurationMs, processingStart: processingStart)
+                    }
+                    return
+                case .modelUnavailable:
+                    break
+                }
+                // No local model to edit with (most people without Ollama or
+                // LM Studio): the dictation shortcut does what it always
+                // did and types the words over the selection.
+                sessionKind = .dictation
+                self.editSelection = nil
+                Logger.dictation.info("Edit model unavailable; inserting the dictation as typed")
             }
 
             let textProcessStart = CFAbsoluteTimeGetCurrent()
@@ -739,6 +898,7 @@ final class DictationCoordinator {
             switch result {
             case .success(let method):
                 editLearner?.watch(insertedText: output.text, targetApp: targetApp)
+                rememberInsertion(output.text)
                 if sessionLostAudio {
                     state = .error(message: "Some audio was lost. The rest was inserted.")
                     autoDismissError()
@@ -775,8 +935,30 @@ final class DictationCoordinator {
         }
     }
 
+    /// Keeps what was just inserted, and where, for the edit shortcut. Call
+    /// before `endSessionContext` clears the target app.
+    private func rememberInsertion(_ text: String) {
+        guard let processIdentifier = targetApp?.processIdentifier else {
+            lastInsertion = nil
+            return
+        }
+        lastInsertion = LastInsertion(text: text, processIdentifier: processIdentifier, at: now())
+    }
+
     /// Clears per-session context once a session (dictation or edit) is over.
     private func endSessionContext() {
+        selectionPeekTask?.cancel()
+        selectionPeekTask = nil
+        // An edit of the last dictation selected it in the field. If the edit
+        // didn't land, put the caret back after it, so the next key typed
+        // doesn't replace it.
+        if let editSelection, editSelection.method == .lastInsertion, let targetApp {
+            let processIdentifier = targetApp.processIdentifier
+            let selectionCapture = self.selectionCapture
+            Task { @MainActor in
+                await selectionCapture.deselectInsertedText(editSelection.text, processIdentifier: processIdentifier)
+            }
+        }
         targetApp = nil
         recordingInputDeviceName = nil
         recordingInputTransport = nil
@@ -823,22 +1005,36 @@ final class DictationCoordinator {
         recordingDurationMs: Int,
         settingsSyncMs: Int?,
         transcriptionMs: Int?,
-        processingStart: CFAbsoluteTime
-    ) async {
+        processingStart: CFAbsoluteTime,
+        dictateWhenModelUnavailable: Bool = false
+    ) async -> EditInstructionResult {
         let instruction = rawInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !instruction.isEmpty else {
             state = .error(message: "Didn't catch the instruction. Try again.")
             endSessionContext()
             autoDismissError()
-            return
+            return .notApplied
         }
 
         let editStart = CFAbsoluteTimeGetCurrent()
         let outcome = await editProcessor.performEdit(selection: selection.text, instruction: instruction)
         let editMs = Int((CFAbsoluteTimeGetCurrent() - editStart) * 1000)
+        var outcomeApplied = false
 
         switch outcome {
         case .edited(let editedText):
+            // The result is pasted over whatever is selected now. If the
+            // selection Orttaai read is gone (a click while the instruction
+            // was being spoken), pasting would add the result next to the
+            // original, so nothing is pasted.
+            if selection.method != .clipboardCopy,
+               await !selectionCapture.isStillSelected(selection.text, processIdentifier: targetApp?.processIdentifier) {
+                state = .error(message: "The selection changed, so nothing was replaced")
+                editSelection = nil
+                endSessionContext()
+                autoDismissError()
+                return .notApplied
+            }
             state = .injecting
             let injectionStart = CFAbsoluteTimeGetCurrent()
             let result = await injectionService.inject(text: editedText, targetApp: targetApp)
@@ -869,6 +1065,11 @@ final class DictationCoordinator {
                     latency: latency,
                     injectionMethod: method
                 )
+                // A second edit with nothing selected works on this result.
+                rememberInsertion(editedText)
+                // The selection was replaced; there's nothing left to tidy.
+                editSelection = nil
+                outcomeApplied = true
                 state = .idle
                 Logger.dictation.info(
                     "Edit command complete via \(method.rawValue) [selection=\(selection.method.rawValue), editMs=\(editMs), pipelineMs=\(processingMs)]"
@@ -885,6 +1086,8 @@ final class DictationCoordinator {
                     latency: latency,
                     injectionMethod: .failed
                 )
+                // Leave the selection in place so Cmd+V replaces it.
+                editSelection = nil
                 state = .error(message: "Couldn't insert the edit. Press Cmd+V to paste it.")
                 autoDismissError()
             case .blockedSecureField:
@@ -903,7 +1106,43 @@ final class DictationCoordinator {
             state = .error(message: reason)
             endSessionContext()
             autoDismissError()
+
+        case .unavailable(let reason):
+            if dictateWhenModelUnavailable { return .modelUnavailable }
+            state = .error(message: reason)
+            endSessionContext()
+            autoDismissError()
         }
+        return outcomeApplied ? .applied : .notApplied
+    }
+
+    /// Saves words spoken on the dictation key whose edit didn't land, so a
+    /// completed dictation always reaches History. Not inserted anywhere.
+    private func saveUnappliedInstruction(
+        _ transcript: String,
+        appName: String?,
+        bundleID: String?,
+        recordingMs: Int,
+        processingStart: CFAbsoluteTime
+    ) async {
+        _ = await persistTranscription(
+            text: transcript,
+            rawText: transcript,
+            appName: appName,
+            bundleID: bundleID,
+            recordingMs: recordingMs,
+            processingMs: Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000),
+            modelId: settings.activeModelId.isEmpty ? settings.selectedModelId : settings.activeModelId,
+            latency: DictationLatencyTelemetry(
+                settingsSyncMs: nil,
+                transcriptionMs: nil,
+                textProcessingMs: nil,
+                injectionMs: nil,
+                appActivationMs: nil,
+                clipboardRestoreDelayMs: nil
+            ),
+            injectionMethod: nil
+        )
     }
 
     /// Persists an edit-command history entry with the same bounded-retry

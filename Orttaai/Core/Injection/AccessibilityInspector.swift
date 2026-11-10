@@ -158,6 +158,16 @@ nonisolated struct AXTimeoutPolicy: Equatable, Sendable {
     }
 }
 
+/// What a quick look at the focused field's selection found.
+nonisolated enum SelectionPeek: Equatable, Sendable {
+    /// `isSingleLine`: a one-line field (an address bar, a search box),
+    /// which usually selects all its text when clicked.
+    case selected(String, isSingleLine: Bool)
+    case nothingSelected
+    /// A password field: its text was not read.
+    case secureField
+}
+
 /// Testable seam over the Accessibility API so unit tests can drive the real
 /// secure-field and paste-verification decision logic without live AX calls.
 protocol AccessibilityInspecting: AnyObject {
@@ -166,6 +176,40 @@ protocol AccessibilityInspecting: AnyObject {
     /// Inserts text at the caret via kAXSelectedTextAttribute.
     /// Returns true when the AX API accepted the write.
     func insertTextAtFocus(_ text: String, processIdentifier: pid_t?) -> Bool
+    /// The focused field's selected text, read without holding up the
+    /// caller: it runs while a dictation is already recording. A field that
+    /// can't be read counts as nothing selected.
+    func peekSelectedText(processIdentifier: pid_t?) async -> SelectionPeek
+    /// Selects `range` (UTF-16 units) in the focused field. Returns true
+    /// when the AX API accepted the write.
+    func selectTextRange(_ range: FocusedTextRange, processIdentifier: pid_t?) -> Bool
+}
+
+extension AccessibilityInspecting {
+    func peekSelectedText(processIdentifier: pid_t?) async -> SelectionPeek {
+        let details = focusedElementDetails(processIdentifier: processIdentifier)
+        if TextInjectionService.assessSecureField(details) == .blocked {
+            return .secureField
+        }
+        guard case .value(let snapshot) = focusedElementTextSnapshot(processIdentifier: processIdentifier),
+              let selected = snapshot.selectedText, !selected.isEmpty else {
+            return .nothingSelected
+        }
+        if case .value(let found) = details {
+            return .selected(selected, isSingleLine: SelectionPeek.isSingleLine(found))
+        }
+        return .selected(selected, isSingleLine: false)
+    }
+
+    func selectTextRange(_ range: FocusedTextRange, processIdentifier: pid_t?) -> Bool { false }
+}
+
+extension SelectionPeek {
+    static func isSingleLine(_ details: FocusedElementDetails) -> Bool {
+        details.role == (kAXTextFieldRole as String)
+            || details.role == (kAXComboBoxRole as String)
+            || details.subrole == "AXSearchField"
+    }
 }
 
 /// Real implementation backed by the AX API.
@@ -299,6 +343,65 @@ final class SystemAccessibilityInspector: AccessibilityInspecting, FocusedFieldR
             text as CFString
         )
         return setResult == .success
+    }
+
+    /// Reads on a background queue with the short timeout, so an app that
+    /// is slow to answer never holds up the recording that just started.
+    /// The role is read and judged first; a password field's text is never
+    /// asked for.
+    func peekSelectedText(processIdentifier: pid_t?) async -> SelectionPeek {
+        guard let processIdentifier else { return .nothingSelected }
+        let details: FocusedElementDetails? = await withCheckedContinuation { continuation in
+            switchQueue.async {
+                continuation.resume(returning: Self.backgroundFocusedElement(of: processIdentifier).flatMap { element in
+                    Self.backgroundString(element, kAXRoleAttribute).map { role in
+                        FocusedElementDetails(
+                            role: role,
+                            subrole: Self.backgroundString(element, kAXSubroleAttribute),
+                            roleDescription: Self.backgroundString(element, kAXRoleDescriptionAttribute)
+                        )
+                    }
+                })
+            }
+        }
+        guard let details else { return .nothingSelected }
+        guard TextInjectionService.assessSecureField(.value(details)) != .blocked else { return .secureField }
+        let selected: String? = await withCheckedContinuation { continuation in
+            switchQueue.async {
+                continuation.resume(returning: Self.backgroundFocusedElement(of: processIdentifier).flatMap {
+                    Self.backgroundString($0, kAXSelectedTextAttribute)
+                })
+            }
+        }
+        guard let selected, !selected.isEmpty else { return .nothingSelected }
+        return .selected(selected, isSingleLine: SelectionPeek.isSingleLine(details))
+    }
+
+    nonisolated private static func backgroundFocusedElement(of processIdentifier: pid_t) -> AXUIElement? {
+        let appElement = AXUIElementCreateApplication(processIdentifier)
+        _ = AXUIElementSetMessagingTimeout(appElement, AXTimeoutPolicy.verificationSeconds)
+        var focused: AnyObject?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        // swiftlint:disable:next force_cast
+        let element = focused as! AXUIElement
+        _ = AXUIElementSetMessagingTimeout(element, AXTimeoutPolicy.verificationSeconds)
+        return element
+    }
+
+    nonisolated private static func backgroundString(_ element: AXUIElement, _ attribute: String) -> String? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    func selectTextRange(_ range: FocusedTextRange, processIdentifier: pid_t?) -> Bool {
+        guard let element = focusedElement(processIdentifier: processIdentifier, policy: .verification) else {
+            return false
+        }
+        var cfRange = CFRange(location: range.location, length: range.length)
+        guard let value = AXValueCreate(.cfRange, &cfRange) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
     }
 
     // MARK: - Bounded element access

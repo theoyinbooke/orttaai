@@ -15,6 +15,10 @@ enum EditCommandOutcome: Equatable {
     /// The provider failed (timeout, unreachable, rejected output). The
     /// selection stays as it was.
     case failed(reason: String)
+    /// No local model answered at all: nothing is running at the provider's
+    /// address, the model isn't installed, or recent attempts failed that
+    /// way. The selection stays as it was.
+    case unavailable(reason: String)
 }
 
 /// Coordinator-facing seam so edit orchestration can be tested without a
@@ -31,6 +35,9 @@ final class EditCommandProcessor: EditCommandProcessing {
     private let settings: AppSettings
     private let injectedClient: (any LocalLLMServing)?
     private let circuitBreaker = LLMCircuitBreaker()
+    /// Whether the breaker last tripped because no model answered at all, as
+    /// opposed to a slow or bad answer. Only the first means "unavailable".
+    private var lastTripWasUnreachable = false
 
     init(settings: AppSettings, llmClient: (any LocalLLMServing)? = nil) {
         self.settings = settings
@@ -62,7 +69,8 @@ final class EditCommandProcessor: EditCommandProcessing {
         }
 
         guard await circuitBreaker.canAttempt() else {
-            return .failed(reason: "Edit model unavailable. Try again shortly.")
+            let reason = "Edit model unavailable. Try again shortly."
+            return lastTripWasUnreachable ? .unavailable(reason: reason) : .failed(reason: reason)
         }
 
         let prompt = Self.makeEditPrompt(selection: normalizedSelection, instruction: normalizedInstruction)
@@ -96,10 +104,12 @@ final class EditCommandProcessor: EditCommandProcessing {
                 instruction: normalizedInstruction
             ) else {
                 Logger.ai.debug("Edit command rejected by sanitizer [model=\(model), elapsedMs=\(elapsedMs)]")
+                lastTripWasUnreachable = false
                 await circuitBreaker.recordFailure()
                 return .failed(reason: "Couldn't apply the edit")
             }
 
+            lastTripWasUnreachable = false
             await circuitBreaker.recordSuccess()
             guard editedText != normalizedSelection else {
                 Logger.ai.debug("Edit command returned no changes [model=\(model), elapsedMs=\(elapsedMs)]")
@@ -108,16 +118,20 @@ final class EditCommandProcessor: EditCommandProcessing {
             Logger.ai.debug("Edit command applied [model=\(model), elapsedMs=\(elapsedMs)]")
             return .edited(text: editedText)
         } catch {
+            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+            Logger.ai.debug("Edit command failed [model=\(model), elapsedMs=\(elapsedMs)]: \(error.localizedDescription)")
             if LLMRequestErrorClassifier.isTimeoutError(error) {
+                lastTripWasUnreachable = false
                 await circuitBreaker.recordTimeout()
             } else if LLMRequestErrorClassifier.isUnreachableError(error)
                 || LLMRequestErrorClassifier.isModelMissingError(error) {
+                lastTripWasUnreachable = true
                 await circuitBreaker.recordUnreachable()
+                return .unavailable(reason: "Couldn't reach the edit model")
             } else {
+                lastTripWasUnreachable = false
                 await circuitBreaker.recordFailure()
             }
-            let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
-            Logger.ai.debug("Edit command failed [model=\(model), elapsedMs=\(elapsedMs)]: \(error.localizedDescription)")
             return .failed(reason: "Couldn't apply the edit")
         }
     }

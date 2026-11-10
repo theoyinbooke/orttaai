@@ -231,7 +231,10 @@ nonisolated enum UserDefaultsSyncValue: Codable, Equatable, Sendable {
 nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     static let modifiedAtKey = "cloudSyncProfileModifiedAt"
     private static let preserveWhenMissingKeys: Set<String> = [
-        "toneOfVoiceProfile"
+        "toneOfVoiceProfile",
+        // New in 1.21: a Mac on an older version sends profiles without it,
+        // which must not switch it back on where it was turned off.
+        "editWithDictationKeyEnabled"
     ]
 
     // Device-specific keys are intentionally NOT synced. Each Mac has different
@@ -245,7 +248,8 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     // expressWordBoostEnabled.
     // Also per-Mac: launchAtLogin (a login item registers this Mac only),
     // hasCompletedSetup (sync starts after setup), sidebarCollapsed,
-    // rightOptionDictationEnabled (needs this Mac's Input Monitoring),
+    // rightOptionDictationEnabled and rightCommandEditEnabled (need this
+    // Mac's Input Monitoring),
     // polishEngine (S1-mini is downloaded per Mac, and Apple Intelligence
     // depends on the Mac), and expressLiveSegmentsEnabled (goes with Express,
     // which is downloaded per Mac).
@@ -260,6 +264,7 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
         "celebrateMilestones",
         "appearance",
         "editCommandsEnabled",
+        "editWithDictationKeyEnabled",
         "spokenFormattingEnabled",
         "autoParagraphsEnabled",
         "dictionaryEnabled",

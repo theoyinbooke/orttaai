@@ -298,6 +298,43 @@ final class MockSelectionCapture: SelectionCapturing {
         if let scriptedResult { return scriptedResult }
         return result.map { .captured($0) } ?? .noSelection
     }
+
+    /// What the dictation shortcut finds selected when recording starts.
+    var peekResult: SelectionCaptureResult = .noSelection
+    private(set) var peekCallCount = 0
+
+    var peekDelayNs: UInt64 = 0
+
+    func peekSelection(processIdentifier: pid_t?) async -> SelectionCaptureResult {
+        peekCallCount += 1
+        if peekDelayNs > 0 {
+            try? await Task.sleep(nanoseconds: peekDelayNs)
+        }
+        return peekResult
+    }
+
+    /// When true, the last dictation is found in the field and selected.
+    var lastDictationIsSelectable = false
+    private(set) var selectInsertedTexts: [String] = []
+
+    func selectInsertedText(_ text: String, processIdentifier: pid_t?) async -> SelectionCaptureResult {
+        selectInsertedTexts.append(text)
+        return lastDictationIsSelectable
+            ? .captured(CapturedSelection(text: text, method: .lastInsertion))
+            : .noSelection
+    }
+
+    private(set) var deselectedTexts: [String] = []
+    /// Whether the selection is still there when the edit is pasted.
+    var selectionStillThere = true
+
+    func isStillSelected(_ text: String, processIdentifier: pid_t?) async -> Bool {
+        selectionStillThere
+    }
+
+    func deselectInsertedText(_ text: String, processIdentifier: pid_t?) async {
+        deselectedTexts.append(text)
+    }
 }
 
 /// Scripted edit processor so the coordinator's edit pipeline is exercised
@@ -338,6 +375,7 @@ final class DictationCoordinatorTests: XCTestCase {
         "handsFreeSilenceStopSeconds",
         "handsFreeMaxRecordingDuration",
         "editCommandsEnabled",
+        "editWithDictationKeyEnabled",
         "vocabularyBiasEnabled",
         // The test host shares defaults with the Debug app, where Express
         // may be on; these tests drive the Whisper path.
@@ -1055,6 +1093,100 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(transcribeCount, 1)
     }
 
+    // MARK: - Right Command tap edits
+
+    /// Taps Right Command, speaks `instruction`, and taps again to apply.
+    @MainActor
+    private func rightCommandEdit(_ instruction: String) async {
+        // A message from the step before (under load, a slow recording can
+        // end with one) must clear first: keys are ignored while it shows.
+        _ = await waitUntil(timeoutSeconds: 4) { self.coordinator.state == .idle }
+        await transcriptionService.setMockResultForTest(instruction)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.handleRightCommandTap()
+        _ = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        XCTAssertTrue(coordinator.isEditSession)
+        XCTAssertTrue(coordinator.isHandsFreeRecording, "A tap records until the next tap")
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.handleRightCommandTap()
+        _ = await waitUntil(timeoutSeconds: 5) {
+            switch self.coordinator.state {
+            case .idle, .error: return true
+            default: return false
+            }
+        }
+    }
+
+    @MainActor
+    func testRightCommandTapEditsTheSelection() async {
+        selectionCapture.result = CapturedSelection(text: "teh original selektion", method: .axRead)
+        editProcessor.outcome = .edited(text: "the original selection")
+
+        await rightCommandEdit("fix the spelling")
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(editProcessor.receivedSelections, ["teh original selektion"])
+        XCTAssertEqual(editProcessor.receivedInstructions, ["fix the spelling"])
+        XCTAssertEqual(injectionService.injectedTexts, ["the original selection"])
+    }
+
+    @MainActor
+    func testRightCommandTapWithNothingSelectedEditsTheLastDictation() async {
+        await dictate("See you on Monday.")
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = true
+        editProcessor.outcome = .edited(text: "I look forward to seeing you on Monday.")
+
+        await rightCommandEdit("make that more formal")
+
+        XCTAssertEqual(editProcessor.receivedSelections, ["See you on Monday."])
+        XCTAssertEqual(
+            injectionService.injectedTexts,
+            ["See you on Monday.", "I look forward to seeing you on Monday."]
+        )
+    }
+
+    @MainActor
+    func testRightCommandTapWithNothingToEditNeverRecords() async {
+        selectionCapture.result = nil
+
+        coordinator.handleRightCommandTap()
+        let errored = await waitUntil { self.coordinator.state == .error(message: "Select text first") }
+
+        XCTAssertTrue(errored)
+        let beginCallCount = await transcriptionService.beginLiveSessionCallCount
+        XCTAssertEqual(beginCallCount, 0)
+    }
+
+    @MainActor
+    func testRightCommandTapIgnoredWithEditingOff() async {
+        settings.editCommandsEnabled = false
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+
+        coordinator.handleRightCommandTap()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(selectionCapture.captureCallCount, 0)
+    }
+
+    @MainActor
+    func testRightCommandTapNeverDisturbsADictation() async {
+        coordinator.handleRightOptionTap()
+        coordinator.handleRightCommandTap()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        guard case .recording = coordinator.state else {
+            return XCTFail("The dictation keeps recording")
+        }
+        XCTAssertFalse(coordinator.isEditSession)
+        XCTAssertEqual(selectionCapture.captureCallCount, 0)
+        coordinator.stopRecording()
+    }
+
     @MainActor
     func testRightOptionTapStopsAPushToTalkRecording() {
         settings.handsFreeModeEnabled = true
@@ -1693,6 +1825,7 @@ final class DictationCoordinatorTests: XCTestCase {
             XCTAssertEqual(message, "Select text first")
         }
         XCTAssertEqual(selectionCapture.captureCallCount, 1)
+        XCTAssertTrue(selectionCapture.selectInsertedTexts.isEmpty, "Nothing was dictated to fall back on")
         let beginCallCount = await transcriptionService.beginLiveSessionCallCount
         XCTAssertEqual(beginCallCount, 0, "No recording may start without a selection")
     }
@@ -1791,6 +1924,293 @@ final class DictationCoordinatorTests: XCTestCase {
         }
         XCTAssertTrue(errored, "A failed edit must show an honest pill error")
         XCTAssertTrue(injectionService.injectedTexts.isEmpty, "Nothing may be injected when the edit fails")
+    }
+
+    // MARK: - Editing from the dictation shortcut
+
+    /// One push-to-talk dictation from key-down to the end of processing.
+    @MainActor
+    private func dictate(_ words: String) async {
+        await transcriptionService.setMockResultForTest(words)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        _ = await waitUntil(timeoutSeconds: 5) {
+            switch self.coordinator.state {
+            case .idle, .error: return true
+            default: return false
+            }
+        }
+    }
+
+    @MainActor
+    func testInstructionOnDictationKeyEditsTheSelection() async throws {
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "teh original selektion", method: .axRead))
+        editProcessor.outcome = .edited(text: "the original selection")
+
+        await dictate("Fix the spelling.")
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(editProcessor.receivedSelections, ["teh original selektion"])
+        XCTAssertEqual(editProcessor.receivedInstructions, ["Fix the spelling."])
+        XCTAssertEqual(injectionService.injectedTexts, ["the original selection"])
+        XCTAssertEqual(selectionCapture.captureCallCount, 0, "The dictation shortcut never presses Cmd+C")
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.entryKind, "edit")
+        XCTAssertFalse(coordinator.isEditSession)
+    }
+
+    @MainActor
+    func testOrdinaryWordsOnDictationKeyReplaceTheSelection() async {
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "old sentence", method: .axRead))
+
+        await dictate("Thanks, see you on Monday.")
+
+        XCTAssertTrue(editProcessor.receivedInstructions.isEmpty, "Dictation over a selection is not an edit")
+        XCTAssertEqual(injectionService.injectedTexts, ["Thanks, see you on Monday."])
+    }
+
+    @MainActor
+    func testInstructionWithNothingSelectedIsDictatedAsText() async {
+        selectionCapture.peekResult = .noSelection
+
+        await dictate("Fix the spelling.")
+
+        XCTAssertTrue(editProcessor.receivedInstructions.isEmpty)
+        XCTAssertEqual(injectionService.injectedTexts, ["Fix the spelling."])
+    }
+
+    @MainActor
+    func testDictationKeyEditingCanBeTurnedOff() async {
+        settings.editWithDictationKeyEnabled = false
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "old sentence", method: .axRead))
+
+        await dictate("Fix the spelling.")
+
+        XCTAssertEqual(selectionCapture.peekCallCount, 0)
+        XCTAssertTrue(editProcessor.receivedInstructions.isEmpty)
+        XCTAssertEqual(injectionService.injectedTexts, ["Fix the spelling."])
+    }
+
+    @MainActor
+    func testInstructionForTooLongSelectionIsNotTypedOverIt() async {
+        selectionCapture.peekResult = .captured(CapturedSelection(
+            text: String(repeating: "a", count: AppSettings.editCommandMaxChars + 1),
+            method: .axRead
+        ))
+
+        await dictate("Make this shorter.")
+
+        XCTAssertEqual(coordinator.state, .error(message: "Selection too long to edit"))
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty, "The instruction must not replace the selection")
+        XCTAssertTrue(editProcessor.receivedInstructions.isEmpty)
+    }
+
+    @MainActor
+    func testDictationKeyTypesTheWordsWhenNoEditModelIsRunning() async {
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "old sentence", method: .axRead))
+        editProcessor.outcome = .unavailable(reason: "Couldn't reach the edit model")
+
+        await dictate("Make this shorter.")
+
+        XCTAssertEqual(coordinator.state, .idle, "Without a local model the shortcut works as it always did")
+        XCTAssertEqual(injectionService.injectedTexts, ["Make this shorter."])
+    }
+
+    @MainActor
+    func testDictationKeyShowsTheErrorWhenTheModelFails() async throws {
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "old sentence", method: .axRead))
+        editProcessor.outcome = .failed(reason: "Couldn't apply the edit")
+
+        await dictate("Make this shorter.")
+
+        XCTAssertEqual(coordinator.state, .error(message: "Couldn't apply the edit"))
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty, "The selection is left as it was")
+        let saved = try await waitForTranscription()
+        XCTAssertEqual(saved.text, "Make this shorter.", "The spoken words still reach History")
+        XCTAssertNotEqual(saved.entryKind, "edit")
+    }
+
+    @MainActor
+    func testEditIsNotPastedWhenTheSelectionMovedAway() async {
+        selectionCapture.result = CapturedSelection(text: "teh original", method: .axRead)
+        selectionCapture.selectionStillThere = false
+        editProcessor.outcome = .edited(text: "the original")
+
+        await rightCommandEdit("fix the spelling")
+
+        XCTAssertEqual(coordinator.state, .error(message: "The selection changed, so nothing was replaced"))
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty, "Pasting would add the result beside the original")
+    }
+
+    @MainActor
+    func testClipboardCaptureSkipsTheSelectionRecheck() async {
+        // Apps that hide their selection from Accessibility can't be re-read.
+        selectionCapture.result = CapturedSelection(text: "teh original", method: .clipboardCopy)
+        selectionCapture.selectionStillThere = false
+        editProcessor.outcome = .edited(text: "the original")
+
+        await rightCommandEdit("fix the spelling")
+
+        XCTAssertEqual(injectionService.injectedTexts, ["the original"])
+    }
+
+    @MainActor
+    func testEditShortcutStillReportsAnUnavailableModel() async {
+        selectionCapture.result = CapturedSelection(text: "some text", method: .axRead)
+        editProcessor.outcome = .unavailable(reason: "Couldn't reach the edit model")
+
+        await rightCommandEdit("make this shorter")
+
+        XCTAssertEqual(coordinator.state, .error(message: "Couldn't reach the edit model"))
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty)
+    }
+
+    @MainActor
+    func testOrdinaryDictationNeverWaitsForTheSelectionLookup() async {
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "old sentence", method: .axRead))
+        selectionCapture.peekDelayNs = 5_000_000_000
+
+        let started = Date()
+        await dictate("Thanks, see you on Monday.")
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "Only instruction-like words wait for it")
+        XCTAssertEqual(injectionService.injectedTexts, ["Thanks, see you on Monday."])
+    }
+
+    @MainActor
+    func testDictationKeyEditingIsEnglishOnly() async {
+        settings.dictationLanguage = "fr"
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "old sentence", method: .axRead))
+
+        await dictate("Make this shorter.")
+
+        XCTAssertEqual(selectionCapture.peekCallCount, 0)
+        XCTAssertTrue(editProcessor.receivedInstructions.isEmpty)
+    }
+
+    // MARK: - Editing the last dictation with nothing selected
+
+    @MainActor
+    func testFailedEditOfTheLastDictationPutsTheCaretBack() async {
+        await dictate("See you on Monday.")
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = true
+        editProcessor.outcome = .failed(reason: "Couldn't apply the edit")
+
+        await rightCommandEdit("make that more formal")
+
+        XCTAssertEqual(coordinator.state, .error(message: "Couldn't apply the edit"))
+        _ = await waitUntil { !self.selectionCapture.deselectedTexts.isEmpty }
+        XCTAssertEqual(
+            selectionCapture.deselectedTexts,
+            ["See you on Monday."],
+            "The next key typed must not replace the dictation"
+        )
+    }
+
+    @MainActor
+    func testSuccessfulEditOfTheLastDictationLeavesTheCaretAlone() async {
+        await dictate("See you on Monday.")
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = true
+        editProcessor.outcome = .edited(text: "See you Monday.")
+
+        await rightCommandEdit("make that shorter")
+
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(selectionCapture.deselectedTexts.isEmpty)
+    }
+
+    @MainActor
+    func testANewDictationReplacesTheLastOneEvenIfItFailsToInsert() async {
+        await dictate("See you on Monday.")
+        injectionService.mockResult = .failedAllMethods
+        await dictate("Second message.")
+        // Its error clears by itself; keys are ignored until then.
+        _ = await waitUntil(timeoutSeconds: 4) { self.coordinator.state == .idle }
+        injectionService.mockResult = .success(method: .paste)
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = true
+
+        coordinator.handleRightCommandTap()
+        let errored = await waitUntil { self.coordinator.state == .error(message: "Select text first") }
+
+        XCTAssertTrue(errored, "The edit never reaches past the newest dictation to an older one")
+        XCTAssertTrue(selectionCapture.selectInsertedTexts.isEmpty)
+    }
+
+    @MainActor
+    func testTooLongLastDictationIsNeverSelected() async {
+        let long = String(repeating: "word ", count: 400)
+        await dictate(long)
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = true
+
+        coordinator.handleRightCommandTap()
+        let errored = await waitUntil { self.coordinator.state == .error(message: "Selection too long to edit") }
+
+        XCTAssertTrue(errored)
+        XCTAssertTrue(selectionCapture.selectInsertedTexts.isEmpty, "Nothing is selected in the field")
+    }
+
+    @MainActor
+    func testEditShortcutWithNothingSelectedWorksOnTheLastDictation() async {
+        settings.handsFreeModeEnabled = true
+        await dictate("See you on Monday.")
+        XCTAssertEqual(injectionService.injectedTexts, ["See you on Monday."])
+
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = true
+        editProcessor.outcome = .edited(text: "I look forward to seeing you on Monday.")
+        await transcriptionService.setMockResultForTest("make that more formal")
+
+        coordinator.handleEditHotkeyDown()
+        let recording = await waitUntil {
+            if case .recording = self.coordinator.state { return true }
+            return false
+        }
+        XCTAssertTrue(recording, "The edit records once the last dictation is selected")
+        XCTAssertTrue(coordinator.isEditSession)
+        XCTAssertEqual(selectionCapture.selectInsertedTexts, ["See you on Monday."])
+
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        _ = await waitUntil(timeoutSeconds: 5) { self.coordinator.state == .idle }
+
+        XCTAssertEqual(editProcessor.receivedSelections, ["See you on Monday."])
+        XCTAssertEqual(
+            injectionService.injectedTexts,
+            ["See you on Monday.", "I look forward to seeing you on Monday."]
+        )
+    }
+
+    @MainActor
+    func testEditShortcutSaysSelectTextWhenTheLastDictationIsGone() async {
+        await dictate("See you on Monday.")
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = false
+
+        coordinator.handleEditHotkeyDown()
+        let errored = await waitUntil { self.coordinator.state == .error(message: "Select text first") }
+
+        XCTAssertTrue(errored)
+        XCTAssertEqual(selectionCapture.selectInsertedTexts, ["See you on Monday."])
+    }
+
+    @MainActor
+    func testEditShortcutForgetsAnOldDictation() async {
+        await dictate("See you on Monday.")
+        selectionCapture.result = nil
+        selectionCapture.lastDictationIsSelectable = true
+        gestureNow.addTimeInterval(DictationCoordinator.lastInsertionEditWindow + 1)
+
+        coordinator.handleEditHotkeyDown()
+        let errored = await waitUntil { self.coordinator.state == .error(message: "Select text first") }
+
+        XCTAssertTrue(errored)
+        XCTAssertTrue(selectionCapture.selectInsertedTexts.isEmpty)
     }
 
     // MARK: - Mode collision matrix

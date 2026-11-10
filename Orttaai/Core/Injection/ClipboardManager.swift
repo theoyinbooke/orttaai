@@ -14,9 +14,16 @@ protocol ClipboardManaging: AnyObject {
     func setString(_ string: String)
     /// Current plain-string contents, nil when the pasteboard holds none.
     func getString() -> String?
+    /// True when the copy now on the pasteboard came from a code editor
+    /// with nothing selected (VS Code and its forks copy the whole line).
+    func copiedFromEmptySelection() -> Bool
     /// Pasteboard change counter — bumps whenever any app writes to it, so a
     /// synthetic Cmd+C landing can be detected without polling contents.
     var changeCount: Int { get }
+}
+
+extension ClipboardManaging {
+    func copiedFromEmptySelection() -> Bool { false }
 }
 
 final class ClipboardManager: ClipboardManaging {
@@ -121,6 +128,28 @@ final class ClipboardManager: ClipboardManaging {
 
     func getString() -> String? {
         pasteboard.string(forType: .string)
+    }
+
+    func copiedFromEmptySelection() -> Bool {
+        guard let item = pasteboard.pasteboardItems?.first else { return false }
+        return item.types.contains { type in
+            guard type != .string, let data = item.data(forType: type) else { return false }
+            return Self.marksEmptySelection(data)
+        }
+    }
+
+    /// VS Code (and Cursor, Windsurf, VSCodium) tags its copies with JSON
+    /// metadata, `"isFromEmptySelection":true` when the line was copied
+    /// because nothing was selected. macOS won't take "vscode-editor-data"
+    /// as a pasteboard type, so Chromium packs it into its own custom-data
+    /// type as UTF-16. The bytes are searched directly, in UTF-8 and UTF-16,
+    /// since the rest of that format isn't text.
+    nonisolated static func marksEmptySelection(_ data: Data) -> Bool {
+        guard data.count <= 256_000 else { return false }
+        let marker = "\"isFromEmptySelection\":true"
+        if data.range(of: Data(marker.utf8)) != nil { return true }
+        if let utf16 = marker.data(using: .utf16LittleEndian), data.range(of: utf16) != nil { return true }
+        return false
     }
 
     var changeCount: Int {
