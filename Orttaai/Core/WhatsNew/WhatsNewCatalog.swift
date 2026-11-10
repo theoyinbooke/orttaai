@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.21.0", items: [
+            WhatsNewItem(
+                id: "1.21-right-command",
+                title: "Tap Right Command to edit",
+                detail: "Tap Right Command, say how to change your text, and tap again. Turn it on in Settings › Text.",
+                art: .symbol("command")
+            ),
+            WhatsNewItem(
+                id: "1.21-instruction",
+                title: "Edit with your dictation key",
+                detail: "Select text, press your dictation shortcut and say \u{201C}make this shorter\u{201D}. Anything else still replaces it.",
+                art: .symbol("text.cursor")
+            ),
+            WhatsNewItem(
+                id: "1.21-last-dictation",
+                title: "Fix what you just said",
+                detail: "With nothing selected, the edit key changes your last dictation, like \u{201C}make that more formal\u{201D}.",
+                art: .symbol("arrow.uturn.backward")
+            ),
+        ]),
         WhatsNewRelease(version: "1.20.0", items: [
             WhatsNewItem(
                 id: "1.20-link",
