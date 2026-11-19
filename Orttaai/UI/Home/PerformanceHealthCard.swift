@@ -149,7 +149,7 @@ struct PerformanceHealthCard: View {
                 .foregroundStyle(Color.Orttaai.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if health.currentModelId == ExpressEngine.modelID {
+            if ExpressEngine.isModelID(health.currentModelId) {
                 Text("Express")
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.accent)

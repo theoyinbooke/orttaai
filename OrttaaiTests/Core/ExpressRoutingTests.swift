@@ -10,7 +10,10 @@ import XCTest
 
 @MainActor
 final class ExpressRoutingTests: XCTestCase {
-    private let savedKeys = ["selectedModelId", "activeModelId", "dictationLanguage", "expressEngineEnabled"]
+    private let savedKeys = [
+        "selectedModelId", "activeModelId", "dictationLanguage", "expressEngineEnabled", "expressModel",
+        "expressWordBoostEnabled",
+    ]
     private var savedDefaults: [String: Any] = [:]
     private var directories: [URL] = []
 
@@ -21,6 +24,8 @@ final class ExpressRoutingTests: XCTestCase {
                 snapshot[key] = value
             }
         }
+        UserDefaults.standard.removeObject(forKey: "expressModel")
+        UserDefaults.standard.removeObject(forKey: "expressWordBoostEnabled")
     }
 
     override func tearDown() {
@@ -41,10 +46,11 @@ final class ExpressRoutingTests: XCTestCase {
 
     /// A storage base whose Express package has every file at its recorded
     /// size. Sparse files: a quarter-gigabyte package costs no disk space.
-    private func makeInstalledBase(withWordBoost: Bool = false) throws -> URL {
+    private func makeInstalledBase(withWordBoost: Bool = false, model: ExpressModel = .mini) throws -> URL {
         let base = try ModelProbeTestSupport.makeTemporaryDirectory()
         directories.append(base)
-        let packages = withWordBoost ? ExpressModelStore.packages : [ExpressModelStore.speech]
+        let speech = ExpressModelStore.speech(for: model)
+        let packages = withWordBoost ? ExpressModelStore.packages(for: model) : [speech]
         for package in packages {
             let folder = ExpressModelStore.folder(for: package, in: base)
             for file in package.files {
@@ -482,6 +488,64 @@ final class ExpressRoutingTests: XCTestCase {
         XCTAssertEqual(withBoost.wordBoost, ExpressModelStore.folder(for: ExpressModelStore.wordBoost, in: base))
     }
 
+    // MARK: - Express Pro
+
+    func testExpressProLoadsFromItsOwnFolder() async throws {
+        let folders = FolderRecorder()
+        let base = try makeInstalledBase(withWordBoost: true, model: .pro)
+        let service = makeService(base: base, backend: FakeExpressBackend(text: "Bonjour."), loadedFolders: folders)
+
+        try await service.loadModel(named: ExpressModel.pro.modelID)
+
+        let loadedID = await service.loadedModelID()
+        XCTAssertEqual(loadedID, "fluid-speech-pro")
+        XCTAssertEqual(folders.speech, ExpressModelStore.folder(for: ExpressModelStore.speechPro, in: base))
+        XCTAssertEqual(folders.wordBoost, ExpressModelStore.folder(for: ExpressModelStore.wordBoost, in: base))
+    }
+
+    func testExpressProNeedsItsOwnPackage() async throws {
+        let service = makeService(base: try makeInstalledBase(model: .mini), backend: FakeExpressBackend(text: "hi"))
+
+        do {
+            try await service.loadModel(named: ExpressModel.pro.modelID)
+            XCTFail("Pro must not load from Mini's files")
+        } catch let error as ModelLoadError {
+            XCTAssertEqual(error, .modelFilesNotFound(modelID: ExpressModel.pro.modelID))
+        }
+    }
+
+    func testSwitchingFromMiniToProReplacesTheLoadedModel() async throws {
+        let base = try makeInstalledBase(model: .mini)
+        let proBase = try makeInstalledBase(model: .pro)
+        for package in [ExpressModelStore.speechPro] {
+            try FileManager.default.copyItem(
+                at: ExpressModelStore.folder(for: package, in: proBase),
+                to: ExpressModelStore.folder(for: package, in: base)
+            )
+        }
+        let service = makeService(base: base, backend: FakeExpressBackend(text: "hi"))
+
+        try await service.loadModel(named: ExpressModel.mini.modelID)
+        try await service.loadModel(named: ExpressModel.pro.modelID)
+
+        let loadedID = await service.loadedModelID()
+        XCTAssertEqual(loadedID, ExpressModel.pro.modelID)
+    }
+
+    func testNumbersAreFormattedOnlyOnEnglishDictation() async throws {
+        let spoken = "Call me back at five five five zero one four three."
+        let service = makeService(base: try makeInstalledBase(model: .pro), backend: FakeExpressBackend(text: spoken))
+        try await service.loadModel(named: ExpressModel.pro.modelID)
+        let preferences = await service.decodingPreferences
+
+        let english = try await service.transcribe(audioSamples: speech(seconds: 2))
+        XCTAssertEqual(english, "Call me back at 555-0143.")
+
+        await service.updateSettings(language: "fr", computeMode: "cpuAndNeuralEngine", decodingPreferences: preferences)
+        let french = try await service.transcribe(audioSamples: speech(seconds: 2))
+        XCTAssertEqual(french, spoken)
+    }
+
     func testWordBoostVocabularySetBeforeLoadIsAppliedOnLoad() async throws {
         let backend = FakeExpressBackend(text: "hi")
         let service = makeService(base: try makeInstalledBase(withWordBoost: true), backend: backend)
@@ -533,11 +597,58 @@ final class ExpressRoutingTests: XCTestCase {
         XCTAssertEqual(settings.dictationModelID(), "openai_whisper-large-v3-v20240930")
     }
 
+    func testExpressProCoversItsEuropeanLanguages() {
+        let settings = AppSettings()
+        settings.selectedModelId = "openai_whisper-large-v3-v20240930"
+        settings.expressEngineEnabled = true
+        settings.expressModel = .pro
+
+        settings.dictationLanguage = "en"
+        XCTAssertEqual(settings.dictationModelID(), "fluid-speech-pro")
+        settings.dictationLanguage = "fr"
+        XCTAssertEqual(settings.dictationModelID(), "fluid-speech-pro")
+        XCTAssertEqual(settings.dictationModelIDForDisplay, "fluid-speech-pro")
+
+        settings.dictationLanguage = "auto"
+        XCTAssertEqual(settings.dictationModelID(), "openai_whisper-large-v3-v20240930")
+        settings.dictationLanguage = "yo"
+        XCTAssertEqual(settings.dictationModelID(), "openai_whisper-large-v3-v20240930")
+
+        settings.expressModel = .mini
+        settings.dictationLanguage = "fr"
+        XCTAssertEqual(settings.dictationModelID(), "openai_whisper-large-v3-v20240930")
+    }
+
+    func testWordBoostRunsOnlyOnEnglishExpressDictation() {
+        let settings = AppSettings()
+        settings.expressEngineEnabled = true
+        settings.expressWordBoostEnabled = true
+        settings.expressModel = .pro
+
+        settings.dictationLanguage = "en"
+        XCTAssertTrue(settings.isExpressWordBoostActive)
+        settings.dictationLanguage = "de"
+        XCTAssertTrue(settings.isExpressEngineActive)
+        XCTAssertFalse(settings.isExpressWordBoostActive)
+
+        settings.dictationLanguage = "en"
+        settings.expressWordBoostEnabled = false
+        XCTAssertFalse(settings.isExpressWordBoostActive)
+    }
+
+    func testUnknownExpressModelSettingFallsBackToMini() {
+        let settings = AppSettings()
+        settings.expressModelRaw = "ultra-max"
+        XCTAssertEqual(settings.expressModel, .mini)
+    }
+
     func testExpressNeverReplacesTheWhisperSelection() {
         let settings = AppSettings()
         settings.activeModelId = "openai_whisper-small.en"
 
         settings.recordLoadedModel(ExpressEngine.modelID)
+        XCTAssertEqual(settings.activeModelId, "openai_whisper-small.en")
+        settings.recordLoadedModel(ExpressModel.pro.modelID)
         XCTAssertEqual(settings.activeModelId, "openai_whisper-small.en")
 
         settings.recordLoadedModel("openai_whisper-large-v3-v20240930")

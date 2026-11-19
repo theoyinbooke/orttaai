@@ -26,6 +26,27 @@ final class ExpressEngineTests: XCTestCase {
         XCTAssertFalse(ExpressEngine.supportsLanguage("yo"))
     }
 
+    func testExpressProCoversTwentyFiveLanguagesButNotAutoDetect() {
+        XCTAssertEqual(ExpressModel.pro.languages.count, 25)
+        for language in ["en", "fr", "de", "es", "uk", "mt"] {
+            XCTAssertTrue(ExpressModel.pro.supportsLanguage(language), language)
+        }
+        XCTAssertFalse(ExpressModel.pro.supportsLanguage("auto"))
+        XCTAssertFalse(ExpressModel.pro.supportsLanguage("ja"))
+        XCTAssertEqual(ExpressModel.mini.languages, ["en"])
+    }
+
+    func testExpressModelIDsRoundTrip() {
+        for model in ExpressModel.allCases {
+            XCTAssertEqual(ExpressModel(modelID: model.modelID), model)
+            XCTAssertTrue(ExpressEngine.isModelID(model.modelID))
+        }
+        XCTAssertEqual(ExpressEngine.modelID, ExpressModel.mini.modelID)
+        XCTAssertFalse(ExpressEngine.isModelID("openai_whisper-large-v3-v20240930"))
+        XCTAssertEqual(ExpressModel.pro.productName, "Express Pro")
+        XCTAssertEqual(ExpressModel.pro.attribution, "Fluid Speech Pro by FluidVoice")
+    }
+
     func testFluidSpeechMiniLoadsAsUltra() throws {
         guard #available(macOS 15, *) else { throw XCTSkip("Express needs macOS 15") }
         XCTAssertEqual(String(describing: ExpressEngine.modelVersion), "ultra")
@@ -43,5 +64,6 @@ final class ExpressEngineTests: XCTestCase {
 
     func testDisplayNameForTheExpressModelID() {
         XCTAssertEqual(ModelManager.formatDisplayName(ExpressEngine.modelID), "Fluid Speech Mini")
+        XCTAssertEqual(ModelManager.formatDisplayName(ExpressModel.pro.modelID), "Fluid Speech Pro")
     }
 }

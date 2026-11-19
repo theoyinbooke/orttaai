@@ -22,7 +22,8 @@
 //                                 corpus_realistic/manifest_realistic.json (required)
 //   ORTTAAI_ASR_EVAL_OUT          path for the raw decode JSON (required)
 //   ORTTAAI_ASR_EVAL_MODEL        model name (default openai_whisper-large-v3);
-//                                 fluid-speech-mini runs Express, installing it
+//                                 fluid-speech-mini runs Express and
+//                                 fluid-speech-pro Express Pro, installing it
 //                                 into ORTTAAI_ASR_EVAL_MODEL_ROOT when missing
 //   ORTTAAI_ASR_EVAL_PRESET       fast|balanced|accuracy (default balanced —
 //                                 the user's active preset)
@@ -167,13 +168,13 @@ final class ASREvalRunnerTests: XCTestCase {
             await service.setVocabularyBias(terms: manifest.bias_vocabulary)
         }
 
-        if modelName == ExpressEngine.modelID, let rootPath = env["ORTTAAI_ASR_EVAL_MODEL_ROOT"] {
+        if let expressModel = ExpressModel(modelID: modelName), let rootPath = env["ORTTAAI_ASR_EVAL_MODEL_ROOT"] {
             // Express goes through the same installer Settings uses, into the
             // eval's storage base, so the run also checks the pinned download.
             let base = URL(fileURLWithPath: rootPath, isDirectory: true)
-            if !ExpressModelStore.packages.allSatisfy({ ExpressModelStore.isInstalled($0, in: base) }) {
-                print("ASR-EVAL: installing \(ExpressEngine.displayName) into \(rootPath)")
-                try await ExpressModelStore.installMissing(into: base) { _ in }
+            if !ExpressModelStore.packages(for: expressModel).allSatisfy({ ExpressModelStore.isInstalled($0, in: base) }) {
+                print("ASR-EVAL: installing \(expressModel.displayName) into \(rootPath)")
+                try await ExpressModelStore.installMissing(for: expressModel, into: base) { _ in }
             }
         }
         if biasEnabled {

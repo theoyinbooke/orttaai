@@ -179,7 +179,7 @@ actor TranscriptionService: Transcribing {
     /// model itself lived in. Only consulted as a fallback.
     private let legacyTokenizerBase: URL?
     private var whisperKit: WhisperKit?
-    /// Set instead of `whisperKit` while `ExpressEngine.modelID` is loaded.
+    /// Set instead of `whisperKit` while an Express model (Mini or Pro) is loaded.
     /// Only one engine is resident at a time.
     private var expressBackend: (any ExpressBackend)?
     /// The latest Word Boost vocabulary, re-applied whenever Express loads.
@@ -289,8 +289,8 @@ actor TranscriptionService: Transcribing {
     private func performLoad(named modelName: String, allowDownload: Bool) async throws {
         Logger.transcription.info("Loading model: \(modelName)")
 
-        if modelName == ExpressEngine.modelID {
-            try await performExpressLoad()
+        if let expressModel = ExpressModel(modelID: modelName) {
+            try await performExpressLoad(expressModel)
             return
         }
 
@@ -345,34 +345,36 @@ actor TranscriptionService: Transcribing {
         Logger.transcription.info("Model loaded: \(modelName)")
     }
 
-    /// Loads Fluid Speech Mini from the selected storage folder. Never
-    /// downloads: ExpressModelStore installs it when the user turns Express on.
-    private func performExpressLoad() async throws {
+    /// Loads Fluid Speech Mini or Pro from the selected storage folder. Never
+    /// downloads: ExpressModelStore installs it when the user turns Express on
+    /// or picks the model.
+    private func performExpressLoad(_ model: ExpressModel) async throws {
         guard ExpressEngine.isSupported else {
-            throw ModelLoadError.modelFilesNotFound(modelID: ExpressEngine.modelID)
+            throw ModelLoadError.modelFilesNotFound(modelID: model.modelID)
         }
         let access = try await modelLocator.beginAccess(createIfNeeded: false, requiresWrite: false)
         let storageBase = access.url
-        guard let installed = await modelLocator.probe({ ExpressModelStore.isInstalled(in: storageBase) }) else {
+        let speech = ExpressModelStore.speech(for: model)
+        guard let installed = await modelLocator.probe({ ExpressModelStore.isInstalled(speech, in: storageBase) }) else {
             throw ModelLoadError.storageUnavailable
         }
         guard installed else {
-            throw ModelLoadError.modelFilesNotFound(modelID: ExpressEngine.modelID)
+            throw ModelLoadError.modelFilesNotFound(modelID: model.modelID)
         }
         let wordBoostInstalled = await modelLocator.probe({
             ExpressModelStore.isInstalled(ExpressModelStore.wordBoost, in: storageBase)
         }) ?? false
 
         let backend = try await expressBackendFactory(
-            ExpressModelStore.folder(for: ExpressModelStore.speech, in: storageBase),
+            ExpressModelStore.folder(for: speech, in: storageBase),
             wordBoostInstalled ? ExpressModelStore.folder(for: ExpressModelStore.wordBoost, in: storageBase) : nil
         )
         expressBackend = backend
         whisperKit = nil
-        loadedModelIDValue = ExpressEngine.modelID
+        loadedModelIDValue = model.modelID
         modelStorageAccess = access
         wordBoostTermCount = await backend.setWordBoost(wordBoostTerms)
-        Logger.transcription.info("Model loaded: \(ExpressEngine.modelID)")
+        Logger.transcription.info("Model loaded: \(model.modelID)")
     }
 
     @Sendable
@@ -772,7 +774,7 @@ actor TranscriptionService: Transcribing {
             let decoded = await early.task.value
             trace.msAwaitingSpeculative = Self.milliseconds(since: awaitStarted, on: clock)
             if let decoded,
-               case let text = Self.normalizedTranscriptionText(ExpressNumberFormatter.format(decoded)), !text.isEmpty,
+               case let text = Self.normalizedTranscriptionText(formatExpressNumbers(decoded)), !text.isEmpty,
                (try? Self.rejectNonSpeechArtifact(text, audioSamples: audioSamples)) != nil {
                 await backend.discardPreparedWordBoost()
                 trace.path = .expressEarlyDecode
@@ -818,15 +820,21 @@ actor TranscriptionService: Transcribing {
                 text = stitched
             }
         }
-        text = Self.normalizedTranscriptionText(ExpressNumberFormatter.format(text))
+        text = Self.normalizedTranscriptionText(formatExpressNumbers(text))
         guard (try? Self.rejectNonSpeechArtifact(text, audioSamples: audioSamples)) != nil else { return nil }
         return text
+    }
+
+    /// The number formatter reads English number words, so other languages
+    /// (Express Pro) keep the text as the model wrote it.
+    private func formatExpressNumbers(_ text: String) -> String {
+        ExpressEngine.usesEnglishPostProcessing(language: language) ? ExpressNumberFormatter.format(text) : text
     }
 
     /// Same contract as a WhisperKit decode: nothing decoded throws the
     /// standard no-result error, and non-speech artifacts are rejected.
     private func expressTranscript(audioSamples: [Float], backend: any ExpressBackend) async throws -> String {
-        let text = Self.normalizedTranscriptionText(ExpressNumberFormatter.format(try await backend.transcribe(audioSamples)))
+        let text = Self.normalizedTranscriptionText(formatExpressNumbers(try await backend.transcribe(audioSamples)))
         guard !text.isEmpty else {
             throw Self.noTranscriptionResultError()
         }

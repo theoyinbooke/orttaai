@@ -245,7 +245,7 @@ nonisolated struct CloudProfileSnapshot: Codable, Equatable, Sendable {
     // computeMode,
     // decodingWorkerCount, localLLMPolishModel, localLLMEndpoint,
     // localLLMInsightsModel, semanticEmbeddingModel, expressEngineEnabled,
-    // expressWordBoostEnabled.
+    // expressModel, expressWordBoostEnabled.
     // Also per-Mac: launchAtLogin (a login item registers this Mac only),
     // hasCompletedSetup (sync starts after setup), sidebarCollapsed,
     // rightOptionDictationEnabled and rightCommandEditEnabled (need this

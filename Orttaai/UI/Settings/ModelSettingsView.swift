@@ -1515,16 +1515,30 @@ struct ModelSettingsView: View {
         }
     }
 
+    /// As in Dictation settings: Express loads the model the language calls
+    /// for, and while it dictates the language the Whisper fallback is only
+    /// recorded, never loaded over it.
     private func switchToLanguageOptimizedSmallModelIfNeeded() {
+        let express = ExpressEngine.isSupported ? ModelManager.shared?.express : nil
         let targetModelID = TranscriptionModelSelectionPolicy.resolvedModelID(
             selectedModelID: selectedModelId,
             dictationLanguage: dictationLanguage
         )
-        guard targetModelID != selectedModelId else { return }
+        guard targetModelID != selectedModelId else {
+            express?.dictationLanguageDidChange()
+            return
+        }
 
         guard let manager = ModelManager.shared else {
             selectedModelId = targetModelID
             activeModelId = ""
+            return
+        }
+
+        if AppSettings().isExpressEngineActive {
+            selectedModelId = targetModelID
+            activeModelId = ""
+            express?.dictationLanguageDidChange()
             return
         }
 
@@ -1541,6 +1555,7 @@ struct ModelSettingsView: View {
             }
             isSwitching = false
             switchingModelId = nil
+            express?.dictationLanguageDidChange()
         }
     }
 

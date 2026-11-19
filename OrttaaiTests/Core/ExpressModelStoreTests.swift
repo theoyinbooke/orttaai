@@ -57,6 +57,34 @@ final class ExpressModelStoreTests: XCTestCase {
         XCTAssertEqual(ExpressModelStore.speech.totalBytes, 252_730_493)
     }
 
+    func testProManifestCoversEveryComponentFluidAudioLoads() {
+        let package = ExpressModelStore.speechPro
+        let localPaths = Set(package.files.map(\.localPath))
+        for component in ["Preprocessor", "Encoder", "Decoder", "JointDecisionv3"] {
+            XCTAssertTrue(
+                localPaths.contains("\(component).mlmodelc/weights/weight.bin"),
+                "\(component) weights missing from the manifest"
+            )
+        }
+        XCTAssertTrue(localPaths.contains("parakeet_vocab.json"))
+        XCTAssertTrue(localPaths.contains("LICENSE"))
+        XCTAssertTrue(localPaths.contains("NOTICE"))
+        XCTAssertFalse(localPaths.contains { $0.hasPrefix("JointDecision.mlmodelc/") })
+        XCTAssertEqual(package.files.count, localPaths.count, "duplicate paths")
+        XCTAssertEqual(package.totalBytes, 652_324_639)
+        XCTAssertNotEqual(
+            ExpressModelStore.folder(for: package, in: URL(fileURLWithPath: "/m")),
+            ExpressModelStore.folder(for: ExpressModelStore.speech, in: URL(fileURLWithPath: "/m"))
+        )
+    }
+
+    func testEachModelInstallsItsSpeechPackageAndWordBoost() {
+        XCTAssertEqual(ExpressModelStore.packages(for: .mini).map(\.name), ["Fluid Speech Mini", "Parakeet CTC 110M"])
+        XCTAssertEqual(ExpressModelStore.packages(for: .pro).map(\.name), ["Fluid Speech Pro", "Parakeet CTC 110M"])
+        XCTAssertEqual(ExpressModelStore.packages, ExpressModelStore.packages(for: .mini))
+        XCTAssertEqual(Set(ExpressModelStore.allPackages.map(\.repository)).count, 3)
+    }
+
     func testWordBoostManifestCoversWhatTheCTCLoaderReads() {
         let localPaths = Set(ExpressModelStore.wordBoost.files.map(\.localPath))
         for required in [

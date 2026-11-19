@@ -18,20 +18,39 @@ struct DictationSettingsView: View {
     @State private var languageSwitchStatus: String?
     @State private var languageSwitchError: String?
 
+    /// English first, then A to Z. Express Pro covers the European ones;
+    /// Whisper covers them all.
     static let supportedLanguages: [(code: String, name: String)] = [
         ("en", "English"),
-        ("es", "Spanish"),
+        ("ar", "Arabic"),
+        ("bg", "Bulgarian"),
+        ("zh", "Chinese"),
+        ("hr", "Croatian"),
+        ("cs", "Czech"),
+        ("da", "Danish"),
+        ("nl", "Dutch"),
+        ("et", "Estonian"),
+        ("fi", "Finnish"),
         ("fr", "French"),
         ("de", "German"),
-        ("ja", "Japanese"),
-        ("zh", "Chinese"),
-        ("ko", "Korean"),
-        ("pt", "Portuguese"),
-        ("it", "Italian"),
-        ("nl", "Dutch"),
-        ("ru", "Russian"),
-        ("ar", "Arabic"),
+        ("el", "Greek"),
         ("hi", "Hindi"),
+        ("hu", "Hungarian"),
+        ("it", "Italian"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("lv", "Latvian"),
+        ("lt", "Lithuanian"),
+        ("mt", "Maltese"),
+        ("pl", "Polish"),
+        ("pt", "Portuguese"),
+        ("ro", "Romanian"),
+        ("ru", "Russian"),
+        ("sk", "Slovak"),
+        ("sl", "Slovenian"),
+        ("es", "Spanish"),
+        ("sv", "Swedish"),
+        ("uk", "Ukrainian"),
         ("auto", "Auto-detect"),
     ]
 
@@ -236,13 +255,26 @@ struct DictationSettingsView: View {
 
     /// Keeps Small on its English-only checkpoint for English and on the
     /// multilingual one otherwise, reloading the model when that changes.
+    /// Keeps the Whisper selection right for the language and lets Express
+    /// load the model the language calls for. While Express dictates the new
+    /// language, the Whisper fallback is only recorded, never loaded over it.
     private func switchToLanguageOptimizedModelIfNeeded() {
         let settings = AppSettings()
+        let express = ExpressEngine.isSupported ? ModelManager.shared?.express : nil
         let target = settings.effectiveSelectedModelId
-        guard target != settings.selectedModelId else { return }
+        guard target != settings.selectedModelId else {
+            express?.dictationLanguageDidChange()
+            return
+        }
 
         guard let manager = ModelManager.shared else {
             settings.applyLanguageOptimizedSmallModelSelection()
+            return
+        }
+
+        if settings.isExpressEngineActive {
+            settings.applyLanguageOptimizedSmallModelSelection()
+            express?.dictationLanguageDidChange()
             return
         }
 
@@ -256,6 +288,7 @@ struct DictationSettingsView: View {
                 languageSwitchError = "Couldn't switch models: \(error.localizedDescription)"
             }
             languageSwitchStatus = nil
+            express?.dictationLanguageDidChange()
         }
     }
 }

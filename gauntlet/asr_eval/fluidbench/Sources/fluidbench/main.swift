@@ -2,9 +2,12 @@
 // FluidAudio's CTC vocabulary boosting, and writes two raw JSON files in the
 // ASREvalRunnerTests format so gauntlet/asr_eval/score.py can score them.
 //
-//   fluidbench <ultra|phonon2> <model dir> <ctc dir> <manifest.json> <out prefix>
+//   fluidbench <ultra|pro|phonon2> <model dir> <ctc dir> <manifest.json> <out prefix>
 //
 // The boost vocabulary is the manifest's bias_vocabulary (the simulated user dictionary).
+// `pro` is Fluid Speech Pro: the same v3 contract as Mini, loaded as `.ultra`. Its package
+// names the joint JointDecision.mlmodelc, so point <model dir> at a folder that links it
+// as JointDecisionv3.mlmodelc beside the other files.
 import AVFoundation
 import FluidAudio
 import Foundation
@@ -39,7 +42,7 @@ func write(_ out: RunOutput, to path: String) throws {
 
 let args = CommandLine.arguments
 guard args.count == 6 else {
-    print("usage: fluidbench <ultra|phonon2> <model dir> <ctc dir> <manifest.json> <out prefix>")
+    print("usage: fluidbench <ultra|pro|phonon2> <model dir> <ctc dir> <manifest.json> <out prefix>")
     exit(1)
 }
 let version: AsrModelVersion = args[1] == "phonon2" ? .phonon2 : .ultra
@@ -125,7 +128,7 @@ for (index, item) in manifest.items.enumerated() {
     }
 }
 
-let name = version == .phonon2 ? "phonon-2-coreml" : "fluid-speech-mini-coreml"
+let name = version == .phonon2 ? "phonon-2-coreml" : args[1] == "pro" ? "fluid-speech-pro-coreml" : "fluid-speech-mini-coreml"
 try write(RunOutput(model: name, preset: "plain", speedup: 1, biasEnabled: false, biasTermCount: 0, items: plain), to: outPrefix + "_plain.json")
 try write(RunOutput(model: name, preset: "ctc-boost", speedup: 1, biasEnabled: true, biasTermCount: terms.count, items: boosted), to: outPrefix + "_boost.json")
 print("FLUIDBENCH: wrote \(plain.count) items to \(outPrefix)_{plain,boost}.json")

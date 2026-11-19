@@ -176,10 +176,13 @@ final class AppSettings: ObservableObject {
 
     @AppStorage("selectedModelId") var selectedModelId: String = "openai_whisper-small"
     @AppStorage("activeModelId") var activeModelId: String = ""
-    /// Dictate with Express (Fluid Speech Mini) instead of the selected
-    /// Whisper model, which stays selected as the fallback. Per Mac: the
-    /// model package is downloaded on each Mac separately.
+    /// Dictate with Express (Fluid Speech Mini or Pro) instead of the
+    /// selected Whisper model, which stays selected as the fallback. Per Mac:
+    /// the model package is downloaded on each Mac separately.
     @AppStorage("expressEngineEnabled") var expressEngineEnabled: Bool = false
+    /// Which Express model runs: `ExpressModel.rawValue`, Mini by default.
+    /// Per Mac, like the switch above.
+    @AppStorage("expressModel") var expressModelRaw: String = ExpressModel.mini.rawValue
     /// Express checks Personal Memory dictionary words against the audio.
     @AppStorage("expressWordBoostEnabled") var expressWordBoostEnabled: Bool = true
     /// Express decodes each stretch of speech at the speaker's pauses while
@@ -381,19 +384,33 @@ final class AppSettings: ObservableObject {
         return resolved
     }
 
+    var expressModel: ExpressModel {
+        get { ExpressModel(rawValue: expressModelRaw) ?? .mini }
+        set { expressModelRaw = newValue.rawValue }
+    }
+
     /// Express runs only when it is on, this Mac supports it, and dictation is
-    /// in English; anything else dictates with the selected Whisper model.
+    /// in a language the chosen model knows (English for Mini, 25 languages
+    /// for Pro); anything else dictates with the selected Whisper model.
     var isExpressEngineActive: Bool {
         expressEngineEnabled
             && ExpressEngine.isSupported
-            && ExpressEngine.supportsLanguage(effectiveDictationLanguage)
+            && expressModel.supportsLanguage(effectiveDictationLanguage)
+    }
+
+    /// Word Boost runs with Express on English dictation: its model and the
+    /// dictionary matching it feeds are English.
+    var isExpressWordBoostActive: Bool {
+        isExpressEngineActive
+            && expressWordBoostEnabled
+            && ExpressEngine.usesEnglishPostProcessing(language: effectiveDictationLanguage)
     }
 
     /// The model dictation runs on, for the dashboards: Express when it is
     /// active (it is never stored as `activeModelId`), otherwise the loaded
     /// Whisper model; nil before any model has loaded.
     var dictationModelIDForDisplay: String? {
-        if isExpressEngineActive { return ExpressEngine.modelID }
+        if isExpressEngineActive { return expressModel.modelID }
         let active = activeModelId.trimmingCharacters(in: .whitespacesAndNewlines)
         return active.isEmpty ? nil : active
     }
@@ -403,13 +420,13 @@ final class AppSettings: ObservableObject {
     @discardableResult
     func dictationModelID() -> String {
         let whisperModelID = applyLanguageOptimizedSmallModelSelection()
-        return isExpressEngineActive ? ExpressEngine.modelID : whisperModelID
+        return isExpressEngineActive ? expressModel.modelID : whisperModelID
     }
 
     /// Records the model that just transcribed. `activeModelId` names the
     /// Whisper model, so an Express load never overwrites it.
     func recordLoadedModel(_ modelID: String) {
-        guard modelID != ExpressEngine.modelID else { return }
+        guard !ExpressEngine.isModelID(modelID) else { return }
         activeModelId = modelID
     }
 

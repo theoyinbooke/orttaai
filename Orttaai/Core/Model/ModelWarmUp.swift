@@ -31,9 +31,10 @@ enum ModelWarmUp {
         var expressFailed = false
         if settings.isExpressEngineActive {
             do {
-                try await transcription.loadModel(named: ExpressEngine.modelID)
+                let expressModelID = settings.expressModel.modelID
+                try await transcription.loadModel(named: expressModelID)
                 await warmUp()
-                return .ready(modelID: ExpressEngine.modelID)
+                return .ready(modelID: expressModelID)
             } catch {
                 // Dictation must still work: fall back to the Whisper model.
                 Logger.model.error("Express warm-up failed, using Whisper: \(error.localizedDescription)")

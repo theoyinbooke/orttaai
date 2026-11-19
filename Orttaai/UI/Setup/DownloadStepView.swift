@@ -100,13 +100,13 @@ struct DownloadStepView: View {
     }
 
     /// Express can be chosen: supported on this Mac and the dictation
-    /// language is English.
+    /// language is one the selected Express model covers.
     private var isExpressAvailable: Bool {
         express != nil && expressSupportsLanguage
     }
 
     private var expressSupportsLanguage: Bool {
-        ExpressEngine.supportsLanguage(dictationLanguage)
+        (express?.model ?? .mini).supportsLanguage(dictationLanguage)
     }
 
     private var isExpressSelected: Bool {
@@ -289,18 +289,24 @@ struct DownloadStepView: View {
         }
     }
 
-    /// Express: the compact English engine, offered as experimental. Choosing
-    /// it downloads Fluid Speech Mini and the Word Boost model, loads them and
-    /// turns Express on; the Whisper model stays the fallback.
+    /// Express: the selected Express model (Mini unless Express Pro was
+    /// chosen in Settings). Choosing it downloads that model and the Word
+    /// Boost model, loads them and turns Express on; the Whisper model stays
+    /// the fallback.
     private func expressCard(_ express: ExpressController) -> some View {
-        engineCard(
+        let model = express.model
+        let size = ByteCountFormatter.string(fromByteCount: ExpressModelStore.totalBytes(for: model), countStyle: .file)
+        let languages = model == .mini ? "English only" : "English and 24 more European languages"
+        return engineCard(
             icon: "bolt.fill",
-            title: "Express",
+            title: model.productName,
             badge: expressSupportsLanguage ? "Recommended" : nil,
-            subtitle: "\(ExpressEngine.displayName) + Word Boost",
+            subtitle: "\(model.displayName) + Word Boost",
             detail: expressSupportsLanguage
-                ? "Fastest dictation, best with names. English only, \(Self.expressDownloadSize)."
-                : "English only. Set dictation to English to use it.",
+                ? "Fastest dictation, best with names. \(languages), \(size)."
+                : (model == .mini
+                    ? "English only. Set dictation to English to use it."
+                    : "Express Pro doesn't cover this language. Choose one of its languages to use it."),
             isSelected: isExpressSelected,
             actionTitle: expressActionTitle(express),
             isActionDisabled: isAnyDownloadRunning
@@ -378,11 +384,6 @@ struct DownloadStepView: View {
         )
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isSelected)
     }
-
-    private static let expressDownloadSize = ByteCountFormatter.string(
-        fromByteCount: ExpressModelStore.totalBytes,
-        countStyle: .file
-    )
 
     private func expressActionTitle(_ express: ExpressController) -> String {
         switch express.status {

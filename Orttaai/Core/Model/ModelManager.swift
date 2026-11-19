@@ -795,8 +795,8 @@ final class ModelManager {
     }
 
     nonisolated static func formatDisplayName(_ id: String) -> String {
-        if id == ExpressEngine.modelID {
-            return ExpressEngine.displayName
+        if let expressModel = ExpressModel(modelID: id) {
+            return expressModel.displayName
         }
         // Variants display their family name: size/date suffixes describe the
         // build, not the model ("...-v20240930_626MB" → "Whisper Large V3 Turbo").

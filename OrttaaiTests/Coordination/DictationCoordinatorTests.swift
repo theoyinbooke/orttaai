@@ -193,10 +193,13 @@ final class MockTextProcessor: TextProcessor, VocabularyBiasProviding {
     var mockVocabularyBiasTerms: [String] = []
     /// Stands in for dictionary, polish and formatting.
     var rewrite: (String) -> String = { $0 }
+    /// Thrown by `process`, standing in for a dictionary that can't be read.
+    var error: Error?
     private(set) var inputs: [TextProcessorInput] = []
 
     func process(_ input: TextProcessorInput) async throws -> TextProcessorOutput {
         inputs.append(input)
+        if let error { throw error }
         return TextProcessorOutput(text: rewrite(input.rawTranscript), changes: [])
     }
 
@@ -682,6 +685,18 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(finalizeCount, 1)
         XCTAssertFalse(liveSampleCounts.isEmpty)
         XCTAssertEqual(injectionService.injectedTexts, ["Hello world"])
+    }
+
+    @MainActor
+    func testTextProcessingFailureStillInsertsTheTranscript() async {
+        textProcessor.error = NSError(domain: "dictionary", code: 1)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+
+        _ = await waitUntil { self.coordinator.state == .idle }
+        XCTAssertEqual(injectionService.injectedTexts, ["Hello world"], "a failed refinement must not lose the dictation")
     }
 
     @MainActor

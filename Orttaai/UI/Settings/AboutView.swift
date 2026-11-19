@@ -32,8 +32,13 @@ struct AboutView: View {
     private let acknowledgments: [AboutCredit] = [
         AboutCredit(name: "WhisperKit", detail: "On-device speech recognition", systemImage: "waveform"),
         AboutCredit(
-            name: ExpressEngine.attribution,
+            name: ExpressModel.mini.attribution,
             detail: "Express speech model, CC BY 4.0, built on NVIDIA Parakeet TDT 0.6B v3",
+            systemImage: "bolt"
+        ),
+        AboutCredit(
+            name: ExpressModel.pro.attribution,
+            detail: "Express Pro speech model, CC BY 4.0, built on NVIDIA Parakeet TDT 0.6B v3 and Moondream Parakeet Ultra",
             systemImage: "bolt"
         ),
         AboutCredit(
@@ -41,7 +46,7 @@ struct AboutView: View {
             detail: "Express Word Boost model by NVIDIA, CC BY 4.0, Core ML conversion by FluidInference",
             systemImage: "text.badge.checkmark"
         ),
-        AboutCredit(name: "FluidAudio", detail: "Runs Fluid Speech Mini and Coach's voices on this Mac, Apache 2.0", systemImage: "cpu"),
+        AboutCredit(name: "FluidAudio", detail: "Runs Fluid Speech Mini and Pro and Coach's voices on this Mac, Apache 2.0", systemImage: "cpu"),
         AboutCredit(
             name: "S1-mini",
             detail: "Text Polish model by Superwhisper, Apache 2.0, built on Qwen3 0.6B by Alibaba Cloud",

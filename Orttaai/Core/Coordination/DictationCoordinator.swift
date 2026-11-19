@@ -818,7 +818,7 @@ final class DictationCoordinator {
                 mode: .raw,
                 deferPolish: false
             )
-            let output = try await textProcessor.process(input)
+            let output = await processedText(input)
             textProcessingMs = Int((CFAbsoluteTimeGetCurrent() - textProcessStart) * 1000)
 
             let runtimeModelID = await transcriptionService.loadedModelID()
@@ -1268,7 +1268,7 @@ final class DictationCoordinator {
 
         if settings.isExpressEngineActive {
             do {
-                try await ensureModelLoaded(ExpressEngine.modelID)
+                try await ensureModelLoaded(settings.expressModel.modelID)
                 return
             } catch {
                 // A dictation never fails because of Express: use Whisper and say so.
@@ -1559,11 +1559,29 @@ final class DictationCoordinator {
         return provider.vocabularyBiasTerms()
     }
 
+    /// The transcript after the dictionary, snippets and polish. Text
+    /// processing only refines a finished transcript, so when it fails (a
+    /// dictionary that can't be read, say) the dictation still goes in as
+    /// transcribed rather than being lost.
+    private func processedText(_ input: TextProcessorInput) async -> TextProcessorOutput {
+        do {
+            return try await textProcessor.process(input)
+        } catch {
+            Logger.dictation.error(
+                "Text processing failed (\(error.localizedDescription, privacy: .public)); inserting the transcript as transcribed"
+            )
+            return TextProcessorOutput(
+                text: input.rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines),
+                changes: []
+            )
+        }
+    }
+
     /// Express's Word Boost snapshot for the session that is starting: the
     /// Personal Memory dictionary, or nothing when Express or Word Boost is
     /// off. Taken here, like the bias terms, never on the audio hot path.
     private func sessionWordBoostTerms() -> [WordBoostTerm] {
-        guard settings.isExpressEngineActive, settings.expressWordBoostEnabled else { return [] }
+        guard settings.isExpressWordBoostActive else { return [] }
         guard let provider = textProcessor as? WordBoostVocabularyProviding else { return [] }
         return provider.wordBoostTerms()
     }

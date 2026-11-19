@@ -24,7 +24,7 @@ nonisolated struct ExpressModelPackage: Sendable, Equatable {
     struct File: Sendable, Equatable {
         /// Path in the Hugging Face repository.
         let remotePath: String
-        /// Path inside the installed folder. Differs only for Mini's joint,
+        /// Path inside the installed folder. Differs only for the joint,
         /// which FluidAudio's `.ultra` loader reads as JointDecisionv3.mlmodelc.
         let localPath: String
         let size: Int64
@@ -88,6 +88,42 @@ nonisolated enum ExpressModelStore {
         ]
     )
 
+    /// Fluid Speech Pro, the optional Express Pro model: 0.63B parameters,
+    /// 25 languages, the encoder in 8-bit weights. Same files and contract as
+    /// Mini, so it loads the same way. The revision benchmarked in
+    /// gauntlet/asr_eval/fluid_speech_pro_comparison.json (2026-11-13).
+    static let speechPro = ExpressModelPackage(
+        name: "Fluid Speech Pro",
+        repository: "FluidVoice-Labs/fluid-speech-pro-coreml",
+        revision: "3b9d38a93d606f84011e5a0a669b7ea146375a22",
+        files: [
+            file("Preprocessor.mlmodelc/analytics/coremldata.bin", 243, "886396da81b6b29d60d79d903bd5d1f00077a7a4323f40cd2e9214d4205d8e6b"),
+            file("Preprocessor.mlmodelc/coremldata.bin", 429, "38f130eac9ffde8c684043d76e3eecdd3b6f9564d9efa59f7a87a34a272a4901"),
+            file("Preprocessor.mlmodelc/metadata.json", 2_606, "c25d98c19a181b7fa65ee50c34f5066f67172c22f0bf116a42b59443ee4bc37d"),
+            file("Preprocessor.mlmodelc/model.mil", 11_891, "71d4ad016334b3ad73ea7b69b6813feefe3b81f59e0b5e924f90f088cb02a7c9"),
+            file("Preprocessor.mlmodelc/weights/weight.bin", 2_150_580, "44180071e400951080786feb46452bffc4fb26363a703655ebadb760c8ad4030"),
+            file("Encoder.mlmodelc/analytics/coremldata.bin", 243, "ac53d09c1b1f7f00fd1a07a630d57c4193089b19fe0d3b1571a3ecf91be62aa4"),
+            file("Encoder.mlmodelc/coremldata.bin", 427, "abfbc09cc0b8aba7911e38390390f1c5850e3665862238035052e015659ebb74"),
+            file("Encoder.mlmodelc/metadata.json", 2_758, "cc74be4442be9fe7d6428aa238364d40e91d3c0ca4ce3cfa2f4fef4ad7a42cee"),
+            file("Encoder.mlmodelc/model.mil", 621_903, "f71d68afe10e227c39d43af07c1aa1a88dd0eb2f63109a3e03711066e38a2e9d"),
+            file("Encoder.mlmodelc/weights/weight.bin", 613_088_448, "4abdc3b4af2ff9b2843105f29677f0e674d2b08638b1ce6feac60876c235c659"),
+            file("Decoder.mlmodelc/analytics/coremldata.bin", 243, "d172cb80cbf3a2cd768952557164db1b50b9c6aef16af3653d2fd7c03d9fe8e5"),
+            file("Decoder.mlmodelc/coremldata.bin", 491, "5059c27aa8cc44eb735247d335e18da599d15e30d67b3d2d5633679fc5806f8a"),
+            file("Decoder.mlmodelc/metadata.json", 3_311, "47ee2ad3514945b6ee3ccd4171ed3b2318e38f3b929e4398ce33b50aca606083"),
+            file("Decoder.mlmodelc/model.mil", 11_823, "9d605291dfdaef07ef88b8d3dbf0702766f1ceea5649d5d6dee4d2322d8fa678"),
+            file("Decoder.mlmodelc/weights/weight.bin", 23_604_992, "7b3e3a4e3fbb580ae990613915f8ea2309226d85999ae37120912b8352d1df9e"),
+            file("JointDecision.mlmodelc/analytics/coremldata.bin", 243, "3dd0d66c51f69d683c587d5c88f3256d5e1690105ecf9d8ca4b0c2b8e1c883c7"),
+            file("JointDecision.mlmodelc/coremldata.bin", 462, "febdb37a5ad1a119539c33cf68fac1c51f80f40f82c90b6ef312033191ff4063"),
+            file("JointDecision.mlmodelc/metadata.json", 2_728, "36fa268dd3c132c7305bbe1f17b5891a00f91caf0a883782375c35a97e2f4ada"),
+            file("JointDecision.mlmodelc/model.mil", 7_178, "618bc532db01d5d80da27d0137e4b50cf2f56dde54e0686a4a1e732d74c1a55c"),
+            file("JointDecision.mlmodelc/weights/weight.bin", 12_642_764, "f0939e8807dded497926a7c3634af698557ec8b155d804f8f40e367e97f90849"),
+            file("parakeet_vocab.json", 151_122, "7ec60e05f1b24480736ec0eed40900f4626bce1fa9a60fd700ec7e2a59198735"),
+            file("config.json", 646, "b688c4d174c4fb043b368dad402ae91d4ae68cf2a53db42ff663340913c907db"),
+            file("LICENSE", 18_657, "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"),
+            file("NOTICE", 451, "fb46bca8b337792a755ec6c77e0e33ebd27d181f46540e4b88382d179942625c"),
+        ]
+    )
+
     /// Parakeet CTC 110M, the Word Boost model: everything
     /// `CtcModels.loadDirect` and `CtcTokenizer.load` read, plus the model
     /// card that carries its licence (CC BY 4.0, from NVIDIA's original).
@@ -147,12 +183,32 @@ nonisolated enum ExpressModelStore {
         ]
     )
 
-    static let packages = [speech, wordBoost]
+    /// Mini's packages: what turning Express on downloads by default.
+    static let packages = packages(for: .mini)
 
-    /// Everything turning Express on downloads.
+    /// Everything turning Express on downloads with Mini.
     static var totalBytes: Int64 {
-        packages.reduce(0) { $0 + $1.totalBytes }
+        totalBytes(for: .mini)
     }
+
+    static func speech(for model: ExpressModel) -> ExpressModelPackage {
+        switch model {
+        case .mini: return speech
+        case .pro: return speechPro
+        }
+    }
+
+    /// The speech model and Word Boost: everything `model` needs.
+    static func packages(for model: ExpressModel) -> [ExpressModelPackage] {
+        [speech(for: model), wordBoost]
+    }
+
+    static func totalBytes(for model: ExpressModel) -> Int64 {
+        packages(for: model).reduce(0) { $0 + $1.totalBytes }
+    }
+
+    /// Every Express package, both speech models included.
+    static let allPackages = [speech, speechPro, wordBoost]
 
     /// `<storage base>/models/<owner>/<name>`, e.g.
     /// `models/FluidVoice-Labs/fluid-speech-mini-coreml`.
@@ -181,10 +237,11 @@ nonisolated enum ExpressModelStore {
     /// across all of them.
     @concurrent
     static func installMissing(
+        for model: ExpressModel = .mini,
         into storageBase: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        let missing = packages.filter { !isInstalled($0, in: storageBase) }
+        let missing = packages(for: model).filter { !isInstalled($0, in: storageBase) }
         let total = Double(missing.reduce(0) { $0 + $1.totalBytes })
         var done: Int64 = 0
         for package in missing {
@@ -245,10 +302,10 @@ nonisolated enum ExpressModelStore {
         Logger.model.info("\(package.name, privacy: .public) installed at \(destination.path, privacy: .public)")
     }
 
-    /// Removes every Express package.
+    /// Removes every Express package, Mini and Pro.
     @concurrent
     static func remove(from storageBase: URL) async throws {
-        for package in packages {
+        for package in allPackages {
             let folder = folder(for: package, in: storageBase)
             guard FileManager.default.fileExists(atPath: folder.path) else { continue }
             try FileManager.default.removeItem(at: folder)

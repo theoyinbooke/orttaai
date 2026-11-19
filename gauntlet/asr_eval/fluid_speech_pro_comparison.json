@@ -1,0 +1,140 @@
+{
+  "evaluated_at": "2026-11-19",
+  "task": "Fluid Speech Pro (FluidVoice-Labs/fluid-speech-pro-coreml, released 2026-11-13) against Fluid Speech Mini",
+  "hardware": "Apple M5 Max Mac Studio, macOS 27",
+  "configuration": "fluidbench release build, FluidInference/FluidAudio main @16780f04, whole-utterance greedy decode, Word Boost = CTC 110M rescoring with the manifest's 36 bias terms (no WordBoostGuard, no ExpressNumberFormatter). Pro loaded as .ultra from a folder linking JointDecision.mlmodelc as JointDecisionv3.mlmodelc (same joint inputs and outputs as Mini).",
+  "notes": [
+    "Bench rows skip ExpressNumberFormatter, which the app runs on Express output. Pro writes digits, currency and times itself, so most of its real-voice gain (the number group) is something the app already gets for Mini.",
+    "Without the number group the real-voice set is 64 vs 63 errors in 678 words (Mini 9.44%, Pro 9.29%).",
+    "Pro is 25-language with automatic language detection; Mini is English only."
+  ],
+  "disk_mb": {
+    "mini": 241,
+    "pro": 622
+  },
+  "peak_footprint_mb_realistic_run_with_ctc": {
+    "mini": 114,
+    "pro": 123
+  },
+  "results": {
+    "real_voice_50": {
+      "mini_plain": {
+        "wer": 0.1635,
+        "recall": 0.28,
+        "p50_ms": 37
+      },
+      "pro_plain": {
+        "wer": 0.1676,
+        "recall": 0.23,
+        "p50_ms": 37
+      },
+      "mini_word_boost": {
+        "wer": 0.1019,
+        "recall": 0.82,
+        "p50_ms": 63
+      },
+      "pro_word_boost": {
+        "wer": 0.0952,
+        "recall": 0.81,
+        "p50_ms": 63
+      },
+      "word_boost_by_group": {
+        "real-pn": {
+          "mini": 0.125,
+          "pro": 0.1339
+        },
+        "real-tech": {
+          "mini": 0.0755,
+          "pro": 0.066
+        },
+        "real-num": {
+          "mini": 0.1765,
+          "pro": 0.1176
+        },
+        "real-ev": {
+          "mini": 0.0385,
+          "pro": 0.0385
+        },
+        "real-long": {
+          "mini": 0.0906,
+          "pro": 0.0984
+        },
+        "real-bg": {
+          "mini": 0.0885,
+          "pro": 0.0796
+        },
+        "real-soft": {
+          "mini": 0.1707,
+          "pro": 0.122
+        }
+      }
+    },
+    "clean_92": {
+      "mini_plain": {
+        "wer": 0.0516,
+        "recall": 0.24
+      },
+      "pro_plain": {
+        "wer": 0.0496,
+        "recall": 0.23
+      },
+      "mini_word_boost": {
+        "wer": 0.0275,
+        "recall": 0.84
+      },
+      "pro_word_boost": {
+        "wer": 0.0241,
+        "recall": 0.82
+      }
+    },
+    "realistic_36": {
+      "mini_plain": {
+        "wer": 0.0531,
+        "recall": 0.22
+      },
+      "pro_plain": {
+        "wer": 0.0472,
+        "recall": 0.22
+      },
+      "mini_word_boost": {
+        "wer": 0.0341,
+        "recall": 0.88
+      },
+      "pro_word_boost": {
+        "wer": 0.0268,
+        "recall": 0.9
+      }
+    }
+  },
+  "production_path_real_voice_50": {
+    "evaluated_at": "2026-11-19",
+    "configuration": "ASREvalRunnerTests through TranscriptionService (Debug, live path), ORTTAAI_ASR_EVAL_BIAS=1: Word Boost with WordBoostGuard, ExpressNumberFormatter, the app's pinned FluidAudio c79c410. Both models installed by ExpressModelStore (checksums verified).",
+    "fluid-speech-mini": {
+      "wer": 0.0791,
+      "errors": 59,
+      "ref_words": 746,
+      "recall": 0.807,
+      "p50_ms": 77.5,
+      "p90_ms": 197,
+      "by_group": {
+        "real-num": 0.0441,
+        "real-pn": 0.125,
+        "real-bg": 0.0796
+      }
+    },
+    "fluid-speech-pro": {
+      "wer": 0.0791,
+      "errors": 59,
+      "ref_words": 746,
+      "recall": 0.8246,
+      "p50_ms": 78.0,
+      "p90_ms": 195,
+      "by_group": {
+        "real-num": 0.0588,
+        "real-pn": 0.1339,
+        "real-bg": 0.0796
+      }
+    },
+    "note": "In the app the two tie on English real voice (59 errors each); Pro's case is its 24 other languages."
+  }
+}

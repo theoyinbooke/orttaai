@@ -4,7 +4,8 @@
 import SwiftUI
 
 /// Settings > Model > Speech: the whole Express chain in one place, in the
-/// order it runs: the engine, Word Boost, then Polish. Polish is the app-wide
+/// order it runs: the engine and its model (Express or Express Pro), Word
+/// Boost, then Polish. Polish is the app-wide
 /// text polish setting, not an Express copy of it. Shown only on macOS 15 and
 /// later.
 struct ExpressEngineCard: View {
@@ -13,6 +14,7 @@ struct ExpressEngineCard: View {
     var onShowPolishSettings: (() -> Void)?
 
     @AppStorage("expressEngineEnabled") private var expressEngineEnabled = false
+    @AppStorage("expressModel") private var expressModelRaw = ExpressModel.mini.rawValue
     @AppStorage("expressWordBoostEnabled") private var expressWordBoostEnabled = true
     @AppStorage("expressLiveSegmentsEnabled") private var expressLiveSegmentsEnabled = false
     @AppStorage("dictationLanguage") private var dictationLanguage = "en"
@@ -22,25 +24,45 @@ struct ExpressEngineCard: View {
     @AppStorage("localLLMProvider") private var localLLMProviderRaw = LocalLLMProviderKind.ollama.rawValue
     @AppStorage("polishEngine") private var polishEngine = "s1Mini"
 
-    private static let downloadSizeText = ByteCountFormatter.string(
-        fromByteCount: ExpressModelStore.totalBytes,
-        countStyle: .file
-    )
+    private static func downloadSizeText(_ model: ExpressModel) -> String {
+        ByteCountFormatter.string(fromByteCount: ExpressModelStore.totalBytes(for: model), countStyle: .file)
+    }
+
+    /// The chosen model, or the one a switch is downloading.
+    private var expressModel: ExpressModel {
+        controller.pendingModel ?? ExpressModel(rawValue: expressModelRaw) ?? .mini
+    }
 
     var body: some View {
         SettingsCard(
             "Express Engine",
-            info: "Fluid Speech Mini, a compact English speech model that runs on the Neural Engine. It finishes a dictation in tens of milliseconds. Your Whisper model stays selected and is used for other languages, or whenever Express can't load."
+            info: "Fluid Speech models that run on the Neural Engine and finish a dictation in tens of milliseconds. Your Whisper model stays selected and is used for languages Express doesn't cover, or whenever Express can't load."
         ) {
             statusChip
         } content: {
             VStack(alignment: .leading, spacing: 0) {
                 detailRow(
                     "Use Express for dictation",
-                    detail: "English only. Downloads \(Self.downloadSizeText) once: the speech model and the Word Boost model."
+                    detail: "\(languageSummary). Downloads \(Self.downloadSizeText(expressModel)) once: the speech model and the Word Boost model."
                 ) {
                     OrttaaiSwitch(title: "Use Express for dictation", isOn: enabledBinding)
                         .disabled(controller.isBusy)
+                }
+
+                SettingsDivider()
+
+                detailRow(
+                    "Model",
+                    info: "Express uses Fluid Speech Mini, a compact English model. Express Pro uses Fluid Speech Pro: a larger download that makes a few fewer mistakes and also dictates in Bulgarian, Croatian, Czech, Danish, Dutch, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish and Ukrainian. Both are equally fast. Switching downloads the other model once, and the current one keeps dictating until it's ready. Both stay on this Mac until you remove them.",
+                    detail: modelDetail
+                ) {
+                    OrttaaiSegmentedControl(
+                        title: "Express model",
+                        selection: modelBinding,
+                        options: ExpressModel.allCases.map { .init($0, $0.productName) }
+                    )
+                    .fixedSize()
+                    .disabled(controller.status == .loading)
                 }
 
                 SettingsDivider()
@@ -79,11 +101,14 @@ struct ExpressEngineCard: View {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     progressView
 
-                    if expressEngineEnabled, !ExpressEngine.supportsLanguage(dictationLanguage) {
-                        SettingsNotice(
-                            kind: .info,
-                            message: "Express is English only, so dictation uses your Whisper model while the language isn't English."
-                        )
+                    if expressEngineEnabled, !expressModel.supportsLanguage(dictationLanguage) {
+                        SettingsNotice(kind: .info, message: languageNotice)
+                    }
+
+                    if let switchError = controller.switchError {
+                        SettingsNotice(kind: .warning, message: switchError) {
+                            controller.dismissSwitchError()
+                        }
                     }
 
                     if case .failed(let message) = controller.status {
@@ -100,14 +125,14 @@ struct ExpressEngineCard: View {
                         Button {
                             controller.removeModel()
                         } label: {
-                            Label("Remove Express Model", systemImage: "trash")
+                            Label("Remove Express Models", systemImage: "trash")
                         }
                         .buttonStyle(OrttaaiButtonStyle(.secondary, size: .small))
                         .padding(.top, Spacing.xs)
                     }
                 }
 
-                SettingsFootnote("\(ExpressEngine.attribution) (CC BY 4.0), built on NVIDIA Parakeet TDT 0.6B v3. Word Boost uses NVIDIA Parakeet CTC 110M (CC BY 4.0).")
+                SettingsFootnote("\(expressModel.attribution) (CC BY 4.0), built on NVIDIA Parakeet TDT 0.6B v3 and Moondream Parakeet Ultra. Word Boost uses NVIDIA Parakeet CTC 110M (CC BY 4.0).")
                     .padding(.top, Spacing.sm)
             }
         }
@@ -121,6 +146,38 @@ struct ExpressEngineCard: View {
             get: { expressEngineEnabled },
             set: { controller.setEnabled($0) }
         )
+    }
+
+    private var modelBinding: Binding<ExpressModel> {
+        Binding(
+            get: { expressModel },
+            set: { controller.setModel($0) }
+        )
+    }
+
+    private var languageSummary: String {
+        switch expressModel {
+        case .mini: return "English only"
+        case .pro: return "English and 24 more European languages"
+        }
+    }
+
+    private var modelDetail: String {
+        switch expressModel {
+        case .mini: return "Fluid Speech Mini. Compact, English."
+        case .pro: return "Fluid Speech Pro. More accurate, 25 languages."
+        }
+    }
+
+    private var languageNotice: String {
+        switch expressModel {
+        case .mini:
+            return "Express is English only, so dictation uses your Whisper model while the language isn't English."
+        case .pro where dictationLanguage == "auto":
+            return "Express Pro needs a chosen language, so dictation uses your Whisper model while the language is set to Auto Detect."
+        case .pro:
+            return "Express Pro doesn't cover this language, so dictation uses your Whisper model."
+        }
     }
 
     private var wordBoostBinding: Binding<Bool> {
@@ -164,6 +221,10 @@ struct ExpressEngineCard: View {
     }
 
     private var wordBoostStatus: String? {
+        if expressEngineEnabled, expressWordBoostEnabled,
+           !ExpressEngine.usesEnglishPostProcessing(language: dictationLanguage) {
+            return "Works on English dictation only."
+        }
         guard expressEngineEnabled, expressWordBoostEnabled, case .active = controller.status else { return nil }
         switch controller.boostedWordCount {
         case 0: return "Add words in Memory > Dictionary and Word Boost will listen for them."
@@ -186,10 +247,13 @@ struct ExpressEngineCard: View {
         return "Polishes with \(model)."
     }
 
+    /// With Express off and any Express model on disk. Removes them all.
     private var canRemoveModel: Bool {
-        guard !expressEngineEnabled else { return false }
-        if case .installed = controller.status { return true }
-        return false
+        guard !expressEngineEnabled, controller.hasDownloadedModels else { return false }
+        switch controller.status {
+        case .installed, .notInstalled: return true
+        default: return false
+        }
     }
 
     @ViewBuilder
@@ -197,7 +261,7 @@ struct ExpressEngineCard: View {
         switch controller.status {
         case .downloading(let progress):
             ProgressView(value: progress) {
-                Text("Downloading \(ExpressEngine.displayName)… \(Int(progress * 100))%")
+                Text("Downloading \(expressModel.displayName)… \(Int(progress * 100))%")
                     .font(.Orttaai.caption)
                     .foregroundStyle(Color.Orttaai.textSecondary)
             }

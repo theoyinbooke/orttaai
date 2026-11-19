@@ -341,3 +341,15 @@ clean 4.72% vs 4.92%, realistic 4.38% vs 4.58%, real voice with Word Boost
 timings instead of stitching duplicated and dropped words at the cuts, and
 Word Boost run per segment missed two dictionary names, so segments stay off
 while Word Boost has dictionary words.
+
+## Express Pro: Fluid Speech Pro (2026-11-19)
+
+`fluidbench pro <dir> …` decodes with Fluid Speech Pro
+(`FluidVoice-Labs/fluid-speech-pro-coreml`), loaded as `.ultra` from a folder
+that links its `JointDecision.mlmodelc` as `JointDecisionv3.mlmodelc`.
+`fluid_speech_pro_comparison.json`: with Word Boost, 9.52% real-voice / 2.41%
+clean / 2.68% realistic WER against Mini's 10.19% / 2.75% / 3.41% at the same
+speed; most of the real-voice gain is number formatting, which
+`ExpressNumberFormatter` already gives Mini in the app. In the app Pro is the
+Express Pro choice (`ExpressModel.pro`, model id `fluid-speech-pro`); run it
+through the production path with `ORTTAAI_ASR_EVAL_MODEL=fluid-speech-pro`.
