@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.22.0", items: [
+            WhatsNewItem(
+                id: "1.22-express-pro",
+                title: "Meet Express Pro",
+                detail: "A larger Express model that makes fewer mistakes, just as fast. Choose it in Settings › Model › Speech.",
+                art: .symbol("bolt.fill")
+            ),
+            WhatsNewItem(
+                id: "1.22-languages",
+                title: "Express in 25 languages",
+                detail: "Express Pro also dictates French, German, Spanish and 21 more European languages. Pick yours in Settings › Dictation.",
+                art: .symbol("globe")
+            ),
+            WhatsNewItem(
+                id: "1.22-keep-words",
+                title: "Your words always go in",
+                detail: "If the dictionary or polish step fails, your dictation is inserted as you said it instead of being lost.",
+                art: .symbol("checkmark.shield")
+            ),
+        ]),
         WhatsNewRelease(version: "1.21.0", items: [
             WhatsNewItem(
                 id: "1.21-right-command",
