@@ -6,6 +6,15 @@
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
         <item>
+            <title>1.22.1</title>
+            <pubDate>Thu, 19 Nov 2026 15:44:45 -0600</pubDate>
+            <link>https://github.com/theoyinbooke/orttaai</link>
+            <sparkle:version>1.22.1</sparkle:version>
+            <sparkle:shortVersionString>1.22.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.22.1/Orttaai-1.22.1.dmg" length="40669623" type="application/octet-stream" sparkle:edSignature="4yKXHd8IQPF8Iie6eSE9wLGh7xKHTxFhSQWuiyTzpM+gagSkzOptSqU6IK4DWBayyr9W4bnR/xwHWcNAHOiIDw==" />
+        </item>
+        <item>
             <title>1.22.0</title>
             <pubDate>Thu, 19 Nov 2026 14:42:50 -0600</pubDate>
             <link>https://github.com/theoyinbooke/orttaai</link>
@@ -22,15 +31,6 @@
             <sparkle:shortVersionString>1.21.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.21.0/Orttaai-1.21.0.dmg" length="40604295" type="application/octet-stream" sparkle:edSignature="RCU5W/Lrb3a6IT1sCDG6Xd4+OSO/g5sLRNhjrJs00CXmn4i63ksXJeF7pqtoN8Gku1vuhbgc+fY40SS94SqfCQ==" />
-        </item>
-        <item>
-            <title>1.20.0</title>
-            <pubDate>Mon, 09 Nov 2026 00:22:16 -0600</pubDate>
-            <link>https://github.com/theoyinbooke/orttaai</link>
-            <sparkle:version>1.20.0</sparkle:version>
-            <sparkle:shortVersionString>1.20.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/theoyinbooke/orttaai/releases/download/v1.20.0/Orttaai-1.20.0.dmg" length="40550783" type="application/octet-stream" sparkle:edSignature="UdISaMTl/i0oCCntVyHg80k6IHH71HgQHjdCUbsOcmZ1CCVWdY0rWYc/F+/fNhK8rDzmKFvTqLA0hjR+N/MODQ==" />
         </item>
     </channel>
 </rss>
