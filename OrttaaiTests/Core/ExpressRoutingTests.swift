@@ -19,6 +19,7 @@ final class ExpressRoutingTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        SharedDefaultsLock.acquire()
         savedDefaults = savedKeys.reduce(into: [:]) { snapshot, key in
             if let value = UserDefaults.standard.object(forKey: key) {
                 snapshot[key] = value
@@ -40,6 +41,7 @@ final class ExpressRoutingTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         super.tearDown()
+        SharedDefaultsLock.release()
     }
 
     // MARK: - TranscriptionService
@@ -404,6 +406,27 @@ final class ExpressRoutingTests: XCTestCase {
         XCTAssertEqual(calls.count, 2, "one decode per pause, none at key release")
     }
 
+    func testPausesDontQueueDecodesBehindOneStillRunning() async throws {
+        // Each decode takes a while, as on a long recording: the pauses that
+        // come while one runs must not each queue another.
+        let backend = SlowExpressBackend(text: "Ship it on Friday.", delay: .milliseconds(400))
+        let service = makeService(base: try makeInstalledBase(), backend: backend)
+        try await service.loadModel(named: ExpressEngine.modelID)
+        await service.beginLiveTranscriptionSession()
+        var recorded: [Float] = []
+        for _ in 0..<4 {
+            recorded += speech(seconds: 2) + silence(seconds: 1)
+        }
+
+        await feed(recorded, to: service)
+        let started = await backend.calls
+        XCTAssertEqual(started, 1, "one early decode at a time, not one per pause")
+        let text = try await service.finalizeLiveTranscription(audioSamples: recorded)
+        XCTAssertEqual(text, "Ship it on Friday.")
+        let total = await backend.calls
+        XCTAssertLessThanOrEqual(total, 2, "the early decode plus at most one at key release")
+    }
+
     func testAFaintLastWordAfterTheEarlyDecodeIsNotLost() async throws {
         let backend = ScriptedExpressBackend(["Ship it", "Ship it now."])
         let service = makeService(base: try makeInstalledBase(), backend: backend)
@@ -724,6 +747,25 @@ private actor FakeExpressBackend: ExpressBackend {
 }
 
 /// Returns its scripted transcripts in order, then repeats the last one.
+private actor SlowExpressBackend: ExpressBackend {
+    private let text: String
+    private let delay: Duration
+    private(set) var calls = 0
+
+    init(text: String, delay: Duration) {
+        self.text = text
+        self.delay = delay
+    }
+
+    func transcribe(_ audioSamples: [Float]) async throws -> String {
+        calls += 1
+        try await Task.sleep(for: delay)
+        return text
+    }
+
+    func setWordBoost(_ terms: [WordBoostTerm]) async -> Int { terms.count }
+}
+
 private actor ScriptedExpressBackend: ExpressBackend {
     private var texts: [String]
     private(set) var sampleCounts: [Int] = []

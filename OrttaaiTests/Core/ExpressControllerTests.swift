@@ -22,6 +22,7 @@ final class ExpressControllerTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        SharedDefaultsLock.acquire()
         savedDefaults = savedKeys.reduce(into: [:]) { snapshot, key in
             if let value = UserDefaults.standard.object(forKey: key) {
                 snapshot[key] = value
@@ -46,6 +47,7 @@ final class ExpressControllerTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         super.tearDown()
+        SharedDefaultsLock.release()
     }
 
     // MARK: - Helpers

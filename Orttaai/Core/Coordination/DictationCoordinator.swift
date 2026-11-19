@@ -111,6 +111,11 @@ final class DictationCoordinator {
     /// deterministic under test. Recording timing itself still uses `Date()`.
     private let now: () -> Date
     private var hotkeyGesture = HotkeyGestureInterpreter()
+    /// Which message's auto-dismiss timer may still clear the error state.
+    private var errorDismissGeneration = 0
+    /// Set when Express failed to load during the current dictation, so the
+    /// load isn't tried (and its fallback notice shown) twice in one session.
+    private var expressFailedThisSession = false
     /// Separate interpreter for the edit-command shortcut so its tap/hold
     /// state never crosses with the push-to-talk key's.
     private var editHotkeyGesture = HotkeyGestureInterpreter()
@@ -232,11 +237,24 @@ final class DictationCoordinator {
 
     // MARK: - Hotkey gestures (tap vs hold)
 
+    /// A message from the last session ("Some audio was lost…", "Couldn't
+    /// insert text…") is only shown, never waited on: by the time it appears
+    /// that session has ended, so a key press clears it and starts afresh
+    /// instead of being ignored for the two seconds it stays up.
+    private func dismissMessageForNewPress() {
+        guard case .error = state else { return }
+        errorDismissGeneration &+= 1
+        state = .idle
+        Logger.dictation.info("Message dismissed by a new key press")
+    }
+
     /// Key-down on the push-to-talk hotkey. Recording starts immediately on
     /// key-down in idle — tap/hold disambiguation never delays capture. While
     /// a hands-free recording is active, a key-down stops it (second tap).
-    /// In processing/injecting/error the event is ignored.
+    /// A message on screen is dismissed and the press starts a recording; in
+    /// processing/injecting the event is ignored.
     func handleHotkeyDown() {
+        dismissMessageForNewPress()
         switch state {
         case .idle:
             hotkeyGesture.recordPress(at: now().timeIntervalSinceReferenceDate)
@@ -289,6 +307,7 @@ final class DictationCoordinator {
     /// this key, so it toggles whatever the hands-free setting says. Ignored
     /// while an edit is recording or anything is still being processed.
     func handleRightOptionTap() {
+        dismissMessageForNewPress()
         switch state {
         case .idle:
             startRecording()
@@ -312,6 +331,7 @@ final class DictationCoordinator {
     /// being processed.
     func handleRightCommandTap() {
         guard settings.editCommandsEnabled else { return }
+        dismissMessageForNewPress()
         switch state {
         case .idle:
             guard !isCapturingEditSelection else { return }
@@ -350,6 +370,7 @@ final class DictationCoordinator {
     /// dictation is recording or processing.
     func handleEditHotkeyDown() {
         guard settings.editCommandsEnabled else { return }
+        dismissMessageForNewPress()
 
         switch state {
         case .idle:
@@ -1266,7 +1287,7 @@ final class DictationCoordinator {
             throw OrttaaiError.modelNotLoaded
         }
 
-        if settings.isExpressEngineActive {
+        if settings.isExpressEngineActive, !expressFailedThisSession {
             do {
                 try await ensureModelLoaded(settings.expressModel.modelID)
                 return
@@ -1275,7 +1296,10 @@ final class DictationCoordinator {
                 Logger.model.error(
                     "Express could not load (\(error.localizedDescription, privacy: .public)); dictating with \(whisperModelID)"
                 )
-                NotificationCenter.default.post(name: .expressEngineDidFallBack, object: error.localizedDescription)
+                if !expressFailedThisSession {
+                    expressFailedThisSession = true
+                    NotificationCenter.default.post(name: .expressEngineDidFallBack, object: error.localizedDescription)
+                }
             }
         }
         try await ensureModelLoaded(whisperModelID)
@@ -1297,7 +1321,7 @@ final class DictationCoordinator {
             )
         } else {
             Logger.model.warning(
-                "Transcription model was not loaded at recording finalization; loading \(selectedModelID)"
+                "Transcription model was not loaded; loading \(selectedModelID)"
             )
         }
         // Never downloads: a model that is not on disk is reported through
@@ -1351,10 +1375,21 @@ final class DictationCoordinator {
     /// persistence.
     private func startBackgroundDecodeLoop() {
         stopBackgroundDecodePolling()
+        expressFailedThisSession = false
         backgroundDecodeTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
             await self.syncTranscriptionSettings()
+            // Load the model dictation needs while the speaker is still
+            // talking, so a model that was unloaded (a language change, say) or
+            // never warmed is ready by key release instead of loading then.
+            // Release awaits the same load if it's still running.
+            do {
+                try await self.ensureTranscriptionModelLoaded()
+            } catch {
+                Logger.model.error("Loading the model at key-down failed: \(error.localizedDescription, privacy: .public)")
+            }
+            guard !Task.isCancelled else { return }
             await self.transcriptionService.setVocabularyBias(terms: self.sessionVocabularyBiasTerms())
             await self.transcriptionService.setWordBoostVocabulary(self.sessionWordBoostTerms())
             guard !Task.isCancelled else { return }
@@ -1593,9 +1628,14 @@ final class DictationCoordinator {
     }
 
     private func autoDismissError() {
+        errorDismissGeneration &+= 1
+        let generation = errorDismissGeneration
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-            guard let self = self, case .error = self.state else { return }
+            // Only this message's own timer clears it: a press may have
+            // dismissed it and a newer session shown another.
+            guard let self = self, case .error = self.state,
+                  self.errorDismissGeneration == generation else { return }
             self.state = .idle
         }
     }
@@ -1638,6 +1678,7 @@ extension DictationCoordinator {
     /// Loads the speech model ahead of the first turn, so finishing it is quick.
     func preparePractice() async {
         await syncTranscriptionSettings()
+        expressFailedThisSession = false
         do {
             try await ensureTranscriptionModelLoaded()
         } catch {

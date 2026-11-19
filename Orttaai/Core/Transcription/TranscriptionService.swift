@@ -110,6 +110,11 @@ actor TranscriptionService: Transcribing {
         /// Express's whole decode started when the speaker went quiet, and
         /// how much of the recording it covers.
         var expressEarlyDecode: (coveredSampleCount: Int, task: Task<String?, Never>)?
+        /// The early decode hasn't finished. Express decodes one recording at
+        /// a time, so a new pause waits for it rather than queuing another
+        /// whole-recording decode behind it (on a long dictation those piled
+        /// up and the decode at key release waited for all of them).
+        var expressEarlyDecodeRunning = false
     }
 
     private static let liveTranscriptionMinSampleCount = 16_000 * 2
@@ -611,9 +616,10 @@ actor TranscriptionService: Transcribing {
     /// second after new speech, while they're still holding the key. It
     /// stands in for the decode at key release when only silence follows it
     /// (`finalizeExpress`); if they speak again, the next pause starts
-    /// another. Pauses are found as for Whisper's pause commits.
+    /// another, once the one before it has finished. Pauses are found as for
+    /// Whisper's pause commits.
     private func startExpressEarlyDecodeAtPause(backend: any ExpressBackend) {
-        guard var session = liveSession else { return }
+        guard var session = liveSession, !session.expressEarlyDecodeRunning else { return }
         let recorded = expressRecording.count
         let probeStart = max(0, recorded - Self.expressPauseProbeSampleCount)
         let probe = expressRecording[probeStart...]
@@ -623,8 +629,15 @@ actor TranscriptionService: Transcribing {
               probeStart + speechEnd > session.expressEarlyDecode?.coveredSampleCount ?? 0
         else { return }
         let audio = expressRecording
+        session.expressEarlyDecodeRunning = true
         session.expressEarlyDecode = (recorded, Task {
-            try? await backend.transcribe(audio, keepingPreparedScores: true)
+            let text = try? await backend.transcribe(audio, keepingPreparedScores: true)
+            // Back on this actor: free the session for the next pause, unless
+            // a newer session or decode has taken its place.
+            if self.liveSession?.expressEarlyDecode?.coveredSampleCount == recorded {
+                self.liveSession?.expressEarlyDecodeRunning = false
+            }
+            return text
         })
         liveSession = session
     }

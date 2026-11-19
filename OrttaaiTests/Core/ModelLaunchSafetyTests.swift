@@ -17,6 +17,7 @@ final class ModelLaunchSafetyTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        SharedDefaultsLock.acquire()
         savedDefaults = savedKeys.reduce(into: [:]) { snapshot, key in
             if let value = UserDefaults.standard.object(forKey: key) {
                 snapshot[key] = value
@@ -34,6 +35,7 @@ final class ModelLaunchSafetyTests: XCTestCase {
             }
         }
         super.tearDown()
+        SharedDefaultsLock.release()
     }
 
     // MARK: - Launch never touches the model folders

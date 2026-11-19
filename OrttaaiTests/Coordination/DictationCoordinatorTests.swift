@@ -395,6 +395,7 @@ final class DictationCoordinatorTests: XCTestCase {
 
     @MainActor
     override func setUpWithError() throws {
+        SharedDefaultsLock.acquire()
         savedDefaults = isolatedDefaultKeys.reduce(into: [:]) { snapshot, key in
             if let value = UserDefaults.standard.object(forKey: key) {
                 snapshot[key] = value
@@ -446,6 +447,7 @@ final class DictationCoordinatorTests: XCTestCase {
                 defaults.removeObject(forKey: key)
             }
         }
+        SharedDefaultsLock.release()
     }
 
     @MainActor
@@ -722,6 +724,59 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(finalizeCount, 1)
         XCTAssertEqual(injectionService.injectedTexts, ["Hello world"])
         XCTAssertEqual(settings.activeModelId, selectedModelId)
+    }
+
+    @MainActor
+    func testTheModelLoadsAtKeyDownNotAtRelease() async {
+        let selectedModelId = settings.effectiveSelectedModelId
+        let previousActiveModelId = settings.activeModelId
+        defer { settings.activeModelId = previousActiveModelId }
+        await transcriptionService.resetLoadedModelsForTest(isLoaded: false)
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let loadedWhileRecording = await transcriptionService.loadedModelNames
+        XCTAssertEqual(loadedWhileRecording, [selectedModelId], "loaded while the key is still held")
+
+        // Long enough to count as a dictation.
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        coordinator.stopRecording()
+        _ = await waitUntil { self.coordinator.state == .idle }
+        let loadedModelNames = await transcriptionService.loadedModelNames
+        XCTAssertEqual(loadedModelNames, [selectedModelId], "release doesn't load it again")
+        XCTAssertEqual(injectionService.injectedTexts, ["Hello world"])
+    }
+
+    @MainActor
+    func testAKeyPressWhileAMessageShowsStartsANewDictation() async {
+        injectionService.mockResult = .failedAllMethods
+        audioService.mockSamples = Array(repeating: 0.1, count: 40_000)
+        coordinator.startRecording()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        coordinator.stopRecording()
+        let showedMessage = await waitUntil {
+            if case .error = self.coordinator.state { return true }
+            return false
+        }
+        XCTAssertTrue(showedMessage)
+
+        coordinator.handleHotkeyDown()
+
+        guard case .recording = coordinator.state else {
+            return XCTFail("the press must start recording, not be ignored (state: \(coordinator.state))")
+        }
+        // The old message's timer must not end the new recording.
+        try? await Task.sleep(nanoseconds: 2_200_000_000)
+        guard case .recording = coordinator.state else {
+            return XCTFail("still recording after the old message's two seconds (state: \(coordinator.state))")
+        }
+        coordinator.stopRecording()
+        _ = await waitUntil {
+            if case .recording = self.coordinator.state { return false }
+            if case .processing = self.coordinator.state { return false }
+            return true
+        }
     }
 
     @MainActor
