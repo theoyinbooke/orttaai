@@ -39,6 +39,26 @@ nonisolated enum WhatsNewCatalog {
     static let maxDetailLength = 140
 
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "1.22.1", items: [
+            WhatsNewItem(
+                id: "1.22.1-ready-sooner",
+                title: "Ready when you let go",
+                detail: "The speech model loads as you start talking, so the text comes right after you release the key.",
+                art: .symbol("bolt.fill")
+            ),
+            WhatsNewItem(
+                id: "1.22.1-long-dictations",
+                title: "Long dictations finish faster",
+                detail: "Pauses in a long dictation no longer pile up work for the end, so the last words arrive sooner.",
+                art: .symbol("text.alignleft")
+            ),
+            WhatsNewItem(
+                id: "1.22.1-press-again",
+                title: "Press again right away",
+                detail: "A key press while a message shows starts your next dictation instead of being ignored.",
+                art: .symbol("hand.tap")
+            ),
+        ]),
         WhatsNewRelease(version: "1.22.0", items: [
             WhatsNewItem(
                 id: "1.22-express-pro",
