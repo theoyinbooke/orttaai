@@ -48,8 +48,9 @@ The owner's 50 real-voice recordings (gauntlet `corpus_real`) with the learned l
 
 Two things this run found and fixed:
 - **The line was too close.** At 0.25 above the highest kept "email", "no email until the evening" (−4.89) was changed. It is now 1.5 above.
+- **The line could fall far below a weak fix.** Found by the Windows and Linux port, on a voice whose kept "email"s scored near −11 against a fix at −3: the line went to −7.2 and an "email" at −5.7 was changed. The line now stays within 1.5 of your weakest fix (never above 0 for it). The owner's numbers above are unchanged.
 - **No anchor reached the transcriber.** From async code, Swift picked the protocol's async do-nothing defaults over the transcriber's plain methods. Those methods are now `async`.
 
 ## Testing
 
-`xcodebuild test` hangs on the external drive. Use the direct-launch recipe in `docs/coach-plan.md`, "Testing note". 1160 tests pass.
+`xcodebuild test` hangs on the external drive. Use the direct-launch recipe in `docs/coach-plan.md`, "Testing note". 1173 tests pass (with the voice-edit fixes merged from `fix/voice-edit`).
