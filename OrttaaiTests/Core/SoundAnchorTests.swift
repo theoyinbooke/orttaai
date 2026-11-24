@@ -298,6 +298,19 @@ final class OwnVoiceLineTests: XCTestCase {
         XCTAssertTrue(!anchor.accepts(-5.5))
         XCTAssertTrue(!anchor.accepts(-6.6))
     }
+
+    func testTheLineStaysNearAWeakFixWhenKeptWordsAreFarBelow() {
+        // A voice whose fix scored -3 and whose kept "email"s score near -11.
+        var anchor = SoundAnchor(heard: "email", term: "Eimailar", sounds: ["emaila"], said: [-3])
+        for kept: Float in [-11.9, -11.4, -11.4] { anchor.learnNotSaid(kept) }
+        XCTAssertEqual(anchor.line, -4.5)
+        XCTAssertFalse(anchor.accepts(-5.7), "a real email")
+        XCTAssertTrue(anchor.accepts(-3))
+        // A strong fix doesn't lift the line above zero.
+        var strong = SoundAnchor(heard: "email", term: "Eimailar", sounds: ["emaila"], said: [3.9])
+        for kept: Float in [-11.9, -11.4, -11.4] { strong.learnNotSaid(kept) }
+        XCTAssertEqual(strong.line, 0)
+    }
 }
 
 /// ExpressTranscriber.applying, which is limited to macOS 15.

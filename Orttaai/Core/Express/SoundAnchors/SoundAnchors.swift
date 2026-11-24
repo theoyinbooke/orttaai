@@ -90,6 +90,12 @@ nonisolated struct SoundAnchor: Codable, Sendable, Equatable {
             // may go as low as your voice says (your real "email"s scored
             // -9.4 to -5.5, your fast Eimailar -3.6).
             if notSaid.count >= Self.ownWordsToTrust {
+                // Never far below your weakest fix, and never above zero for
+                // it: kept words far below a weak fix would otherwise pull
+                // the line down to where a real "email" passes (found on the
+                // desktop: a fix at -3, kept "email"s near -11, the line at
+                // -7.2 and an "email" at -5.7 changed).
+                line = max(line, min(0, lowestSaid - Self.marginBelowYourFix))
                 return min(Self.highestLine, max(Self.lowestLineFromYourVoice, line))
             }
         } else if let highestNotSaid = notSaid.max() {
@@ -110,6 +116,9 @@ nonisolated struct SoundAnchor: Codable, Sendable, Equatable {
     /// Kept heard words ("email" you left as it was) needed before the line
     /// follows your voice below `lowestLine`.
     static let ownWordsToTrust = 3
+    /// How far below your weakest fix the line may sit when your kept heard
+    /// words are far below it.
+    static let marginBelowYourFix: Float = 1.5
     static let lowestLineFromYourVoice: Float = -8
 
     func accepts(_ margin: Float) -> Bool { margin > line }
