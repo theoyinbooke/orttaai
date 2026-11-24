@@ -99,9 +99,9 @@ final class SoundAnchorTests: XCTestCase {
     func testFixesBothWaysPutTheLineBetween() {
         var anchor = SoundAnchor(heard: "email", term: "Eimailar", sounds: ["emailer"], said: [3, 5])
         anchor.learnNotSaid(1)
-        XCTAssertTrue(anchor.line == 2)
-        XCTAssertTrue(!anchor.accepts(1.5))
-        XCTAssertTrue(anchor.accepts(2.5))
+        XCTAssertTrue(anchor.line == 2.5)
+        XCTAssertTrue(!anchor.accepts(2.4))
+        XCTAssertTrue(anchor.accepts(2.6))
     }
 
     func testOnlyFixesBackRaiseTheLine() {
@@ -293,7 +293,7 @@ final class OwnVoiceLineTests: XCTestCase {
         anchor.learnNotSaid(-9.3)
         XCTAssertTrue(anchor.line == -2)  // two kept words: not trusted yet
         anchor.learnNotSaid(-5.5)
-        XCTAssertTrue(anchor.line == -5.25)
+        XCTAssertTrue(anchor.line == -4)
         XCTAssertTrue(anchor.accepts(-3.6))
         XCTAssertTrue(!anchor.accepts(-5.5))
         XCTAssertTrue(!anchor.accepts(-6.6))

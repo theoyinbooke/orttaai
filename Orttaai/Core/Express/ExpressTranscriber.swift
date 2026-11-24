@@ -327,12 +327,19 @@ actor ExpressTranscriber: ExpressBackend {
     /// Each heard word the anchors judged in the last decode.
     private var lastSoundDecisions: [SoundAnchorJudge.Decision] = []
 
-    func setSoundAnchors(_ book: SoundAnchorBook) {
+    // `async`, as the protocol's do-nothing defaults are: from async code
+    // Swift prefers an async overload, and a plain method here lost to them.
+    func setSoundAnchors(_ book: SoundAnchorBook) async {
         soundAnchors = book
     }
 
-    func soundDecisions() -> [SoundAnchorJudge.Decision] {
+    func soundDecisions() async -> [SoundAnchorJudge.Decision] {
         lastSoundDecisions
+    }
+
+    /// For the own-voice eval: anchors set, Word Boost model and session.
+    func soundState() -> (anchors: Int, model: Bool, session: Bool) {
+        (soundAnchors.anchors.count, wordBoostModel != nil, wordBoost != nil)
     }
 
     private func soundAnchorReplacements(

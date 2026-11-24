@@ -102,8 +102,11 @@ nonisolated struct SoundAnchor: Codable, Sendable, Equatable {
         return min(Self.highestLine, max(Self.lowestLine, line))
     }
 
-    /// How far above your highest kept heard word the line stays.
-    static let marginAboveYourWord: Float = 0.25
+    /// How far above your highest kept heard word the line stays. 0.25 was
+    /// too close: the owner's first three kept "email"s topped out at -5.5,
+    /// but "no email until the evening" in their voice scored -4.89 and was
+    /// changed. 1.5 keeps it, and still takes their fast Eimailar (-3.57).
+    static let marginAboveYourWord: Float = 1.5
     /// Kept heard words ("email" you left as it was) needed before the line
     /// follows your voice below `lowestLine`.
     static let ownWordsToTrust = 3
