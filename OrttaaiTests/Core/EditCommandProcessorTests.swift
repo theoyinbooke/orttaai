@@ -13,7 +13,7 @@ final class EditCommandProcessorTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        for key in ["editCommandsEnabled", "editCommandTimeoutMs", "editCommandMaxChars"] {
+        for key in ["editCommandsEnabled", "editCommandTimeoutMs", "editCommandMaxChars", "localLLMPolishEnabled", "polishEngine"] {
             UserDefaults.standard.removeObject(forKey: key)
         }
     }
@@ -260,6 +260,93 @@ final class EditCommandProcessorTests: XCTestCase {
         XCTAssertEqual(client.generateCallCount, 0)
     }
 
+    func testEditKeepsTheLineBreakATripleClickSelects() async {
+        // A triple-click selects the paragraph with its line break. Pasting
+        // the edit without it would join the next paragraph onto this one.
+        let client = ScriptedLLMClient(result: .success("He and I have finished the report."))
+        let processor = EditCommandProcessor(settings: settings, llmClient: client)
+        let outcome = await processor.performEdit(
+            selection: "  me and him has finished the report\n",
+            instruction: "fix the grammar"
+        )
+        XCTAssertEqual(outcome, .edited(text: "  He and I have finished the report.\n"))
+    }
+
+    func testEditKeepsThePolishModelLoadedAsLongAsPolishDoes() async {
+        // The server keeps a model for as long as its last request asked.
+        // A shorter time here would unload the model polish counts on.
+        settings.localLLMPolishEnabled = true
+        settings.polishEngine = PolishEngineChoice.localLLM.rawValue
+        let client = ScriptedLLMClient(result: .success("He and I have finished the report."))
+        let processor = EditCommandProcessor(settings: settings, llmClient: client)
+        _ = await processor.performEdit(selection: "me and him has finished the report", instruction: "fix the grammar")
+        XCTAssertEqual(client.lastKeepAlive, LocalLLMTextProcessor.polishKeepAlive)
+    }
+
+    func testEditAloneKeepsTheModelFiveMinutes() async {
+        settings.localLLMPolishEnabled = false
+        let client = ScriptedLLMClient(result: .success("He and I have finished the report."))
+        let processor = EditCommandProcessor(settings: settings, llmClient: client)
+        _ = await processor.performEdit(selection: "me and him has finished the report", instruction: "fix the grammar")
+        XCTAssertEqual(client.lastKeepAlive, "5m")
+    }
+
+    // MARK: - A model that has to load first
+
+    private var editTimeoutMs: Int {
+        EditCommandProcessor.effectiveTimeoutMs(
+            requestedTimeoutMs: AppSettings.editCommandTimeoutMs,
+            model: settings.normalizedLocalLLMPolishModel
+        )
+    }
+
+    @MainActor
+    func testFirstEditAllowsTimeForTheModelToLoad() async {
+        var clock = Date()
+        let client = ScriptedLLMClient(result: .success("He and I have finished the report."))
+        let processor = EditCommandProcessor(settings: settings, llmClient: client, now: { clock })
+
+        _ = await processor.performEdit(selection: "me and him has finished the report", instruction: "fix the grammar")
+        XCTAssertEqual(
+            client.lastTimeoutMs,
+            editTimeoutMs + EditCommandProcessor.modelLoadAllowanceMs,
+            "A model the server has unloaded takes seconds to come back"
+        )
+
+        _ = await processor.performEdit(selection: "me and him has finished the report", instruction: "fix the grammar")
+        XCTAssertEqual(client.lastTimeoutMs, editTimeoutMs, "It has just answered, so it's loaded")
+
+        clock.addTimeInterval(5 * 60)
+        _ = await processor.performEdit(selection: "me and him has finished the report", instruction: "fix the grammar")
+        XCTAssertEqual(
+            client.lastTimeoutMs,
+            editTimeoutMs + EditCommandProcessor.modelLoadAllowanceMs,
+            "The server lets it go after five minutes"
+        )
+    }
+
+    @MainActor
+    func testModelLoadsWhileTheInstructionIsSpokenAndTheEditWaitsForIt() async {
+        let client = ScriptedLLMClient(result: .success("He and I have finished the report."))
+        client.warmDelayNs = 300_000_000
+        let processor = EditCommandProcessor(settings: settings, llmClient: client)
+
+        processor.warmIfIdle()
+        processor.warmIfIdle()
+        let outcome = await processor.performEdit(
+            selection: "me and him has finished the report",
+            instruction: "fix the grammar"
+        )
+
+        XCTAssertEqual(outcome, .edited(text: "He and I have finished the report."))
+        XCTAssertEqual(client.events, ["load started", "loaded", "generate"])
+        XCTAssertEqual(client.lastTimeoutMs, editTimeoutMs, "The load has had its time")
+
+        processor.warmIfIdle()
+        await Task.yield()
+        XCTAssertEqual(client.warmCallCount, 1, "A model that just answered isn't loaded again")
+    }
+
     func testPerformEditRequiresAnInstruction() async {
         let client = ScriptedLLMClient(result: .success("whatever"))
         let processor = EditCommandProcessor(settings: settings, llmClient: client)
@@ -276,6 +363,36 @@ private final class ScriptedLLMClient: LocalLLMServing, @unchecked Sendable {
     private let lock = NSLock()
     private var _generateCallCount = 0
     private var _lastPrompt: String?
+    private var _lastKeepAlive: String?
+    private var _lastTimeoutMs: Int?
+    private var _warmCallCount = 0
+    private var _events: [String] = []
+    /// How long loading the model takes.
+    var warmDelayNs: UInt64 = 0
+
+    var lastTimeoutMs: Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastTimeoutMs
+    }
+
+    var warmCallCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _warmCallCount
+    }
+
+    var events: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _events
+    }
+
+    var lastKeepAlive: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastKeepAlive
+    }
 
     var generateCallCount: Int {
         lock.lock()
@@ -319,6 +436,9 @@ private final class ScriptedLLMClient: LocalLLMServing, @unchecked Sendable {
         lock.lock()
         _generateCallCount += 1
         _lastPrompt = prompt
+        _lastKeepAlive = keepAlive
+        _lastTimeoutMs = timeoutMs
+        _events.append("generate")
         lock.unlock()
         return try result.get()
     }
@@ -354,6 +474,16 @@ private final class ScriptedLLMClient: LocalLLMServing, @unchecked Sendable {
         timeoutMs: Int,
         keepAlive: String
     ) async throws -> Int {
-        0
+        lock.lock()
+        _warmCallCount += 1
+        _events.append("load started")
+        lock.unlock()
+        if warmDelayNs > 0 {
+            try? await Task.sleep(nanoseconds: warmDelayNs)
+        }
+        lock.lock()
+        _events.append("loaded")
+        lock.unlock()
+        return 0
     }
 }
