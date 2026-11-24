@@ -220,6 +220,24 @@ final class MockInjectionService: TextInjecting {
         injectedTexts.append(text)
         return mockResult
     }
+
+    /// When set, the target app is away when the paste starts: this runs
+    /// while it's away, and then the app comes back.
+    var whileAppIsAway: (() -> Void)?
+
+    func inject(
+        text: String,
+        targetApp: NSRunningApplication?,
+        confirmAfterWaiting: (() async -> Bool)?
+    ) async -> InjectionResult {
+        if let whileAppIsAway {
+            whileAppIsAway()
+            if let confirmAfterWaiting, await !confirmAfterWaiting() {
+                return .notConfirmed
+            }
+        }
+        return await inject(text: text, targetApp: targetApp)
+    }
 }
 
 /// History store whose writes always fail, for exercising the bounded-retry
@@ -351,6 +369,12 @@ final class MockEditProcessor: EditCommandProcessing {
         receivedSelections.append(selection)
         receivedInstructions.append(instruction)
         return outcome
+    }
+
+    private(set) var warmCount = 0
+
+    func warmIfIdle() {
+        warmCount += 1
     }
 }
 
@@ -2103,6 +2127,21 @@ final class DictationCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testEditThatCouldNotBePastedIsInHistoryOnce() async throws {
+        selectionCapture.peekResult = .captured(CapturedSelection(text: "old sentence", method: .axRead))
+        editProcessor.outcome = .edited(text: "Old.")
+        injectionService.mockResult = .failedAllMethods
+
+        await dictate("Make this shorter.")
+
+        XCTAssertEqual(coordinator.state, .error(message: "Couldn't insert the edit. Press Cmd+V to paste it."))
+        _ = try await waitForTranscription()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let rows = try databaseManager.fetchRecent(limit: 10)
+        XCTAssertEqual(rows.map(\.entryKind), ["edit"], "The edit is saved; the instruction isn't saved again as a dictation")
+    }
+
+    @MainActor
     func testEditIsNotPastedWhenTheSelectionMovedAway() async {
         selectionCapture.result = CapturedSelection(text: "teh original", method: .axRead)
         selectionCapture.selectionStillThere = false
@@ -2112,6 +2151,47 @@ final class DictationCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.state, .error(message: "The selection changed, so nothing was replaced"))
         XCTAssertTrue(injectionService.injectedTexts.isEmpty, "Pasting would add the result beside the original")
+    }
+
+    @MainActor
+    func testEditIsNotPastedWhenTheSelectionChangedWhileItsAppWasAway() async {
+        // Another app came to the front while the model worked. The paste
+        // waits for this one to come back, and by then a click has moved
+        // the selection.
+        selectionCapture.result = CapturedSelection(text: "teh original", method: .axRead)
+        editProcessor.outcome = .edited(text: "the original")
+        injectionService.whileAppIsAway = { [selectionCapture] in
+            selectionCapture?.selectionStillThere = false
+        }
+
+        await rightCommandEdit("fix the spelling")
+
+        XCTAssertEqual(coordinator.state, .error(message: "The selection changed, so nothing was replaced"))
+        XCTAssertTrue(injectionService.injectedTexts.isEmpty, "Pasting would add the result beside the original")
+    }
+
+    @MainActor
+    func testEditStillPastesWhenItsAppComesBackWithTheSelection() async {
+        selectionCapture.result = CapturedSelection(text: "teh original", method: .axRead)
+        editProcessor.outcome = .edited(text: "the original")
+        injectionService.whileAppIsAway = {}
+
+        await rightCommandEdit("fix the spelling")
+
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(injectionService.injectedTexts, ["the original"])
+    }
+
+    @MainActor
+    func testEditKeyLoadsTheEditModelWhileTheInstructionIsSpoken() async {
+        await dictate("Thanks, see you on Monday.")
+        XCTAssertEqual(editProcessor.warmCount, 0, "A dictation doesn't load the edit model")
+
+        selectionCapture.result = CapturedSelection(text: "teh original", method: .axRead)
+        editProcessor.outcome = .edited(text: "the original")
+        await rightCommandEdit("fix the spelling")
+
+        XCTAssertEqual(editProcessor.warmCount, 1)
     }
 
     @MainActor

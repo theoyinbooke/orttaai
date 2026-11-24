@@ -20,6 +20,10 @@ enum InjectionResult: Equatable {
     /// Paste, retry, AX insertion, and typed keystrokes all verifiably failed.
     /// The transcript is left on the clipboard so the user can Cmd+V it.
     case failedAllMethods
+    /// The paste had to wait for its app to come back to the front, and the
+    /// caller then said not to paste. Nothing was pasted and the clipboard
+    /// is as it was.
+    case notConfirmed
 }
 
 /// Outcome of the secure-field guard. The policy is: an AX API failure keeps
@@ -79,10 +83,27 @@ struct InjectionTelemetry: Sendable {
 protocol TextInjecting: AnyObject {
     var lastInjectionTelemetry: InjectionTelemetry? { get }
     func inject(text: String, targetApp: NSRunningApplication?) async -> InjectionResult
+    /// The same, for text that replaces a selection. When the paste had to
+    /// wait for the app to come back to the front, `confirmAfterWaiting` is
+    /// asked once it's back whether to still paste; false ends in
+    /// `.notConfirmed`.
+    func inject(
+        text: String,
+        targetApp: NSRunningApplication?,
+        confirmAfterWaiting: (() async -> Bool)?
+    ) async -> InjectionResult
 }
 
 extension TextInjecting {
     var lastInjectionTelemetry: InjectionTelemetry? { nil }
+
+    func inject(
+        text: String,
+        targetApp: NSRunningApplication?,
+        confirmAfterWaiting: (() async -> Bool)?
+    ) async -> InjectionResult {
+        await inject(text: text, targetApp: targetApp)
+    }
 
     func inject(text: String) async -> InjectionResult {
         await inject(text: text, targetApp: nil)
@@ -251,6 +272,14 @@ final class TextInjectionService: TextInjecting {
     }
 
     func inject(text: String, targetApp: NSRunningApplication? = nil) async -> InjectionResult {
+        await inject(text: text, targetApp: targetApp, confirmAfterWaiting: nil)
+    }
+
+    func inject(
+        text: String,
+        targetApp: NSRunningApplication?,
+        confirmAfterWaiting: (() async -> Bool)?
+    ) async -> InjectionResult {
         let injectionStart = CFAbsoluteTimeGetCurrent()
         lastInjectionTelemetry = nil
         // Each step's time, for the timing line logged at the end.
@@ -314,6 +343,11 @@ final class TextInjectionService: TextInjecting {
                         restoreClipboardIfUnchanged(saved, expectedChangeCount: stagedClipboardChangeCount)
                         Logger.injection.info("Blocked: focused element is a secure text field")
                         return .blockedSecureField
+                    }
+                    if let confirmAfterWaiting, await !confirmAfterWaiting() {
+                        restoreClipboardIfUnchanged(saved, expectedChangeCount: stagedClipboardChangeCount)
+                        Logger.injection.info("Not pasted: what it was to replace changed while the app was away")
+                        return .notConfirmed
                     }
                     if clipboard.changeCount != stagedClipboardChangeCount {
                         saved = await clipboard.save(giveUpAfterMs: ClipboardManager.saveLimitMs)

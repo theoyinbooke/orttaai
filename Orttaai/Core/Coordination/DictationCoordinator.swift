@@ -45,6 +45,9 @@ final class DictationCoordinator {
     enum EditInstructionResult: Equatable {
         case applied
         case notApplied
+        /// The edit couldn't be pasted and is in History, left on the
+        /// clipboard to paste by hand.
+        case savedNotInserted
         /// No local model answered; the caller may dictate the words instead.
         case modelUnavailable
     }
@@ -601,6 +604,8 @@ final class DictationCoordinator {
             startBackgroundDecodeLoop()
             // A polish model that went idle loads while the user talks.
             (textProcessor as? PolishWarming)?.warmPolishIfIdle()
+            // So does the edit model, while the instruction is spoken.
+            if kind == .edit { editProcessor.warmIfIdle() }
             startAudioHealthMonitor()
             if let selectedDeviceID {
                 if let activeDeviceID = audioService.activeInputDeviceID, activeDeviceID != selectedDeviceID {
@@ -812,7 +817,7 @@ final class DictationCoordinator {
                     dictateWhenModelUnavailable: editFromDictationKey
                 )
                 switch result {
-                case .applied:
+                case .applied, .savedNotInserted:
                     return
                 case .notApplied:
                     if editFromDictationKey {
@@ -903,7 +908,7 @@ final class DictationCoordinator {
                     return method
                 case .failedAllMethods:
                     return .failed
-                case .blockedSecureField:
+                case .blockedSecureField, .notConfirmed:
                     return nil
                 }
             }()
@@ -949,6 +954,11 @@ final class DictationCoordinator {
                 state = .error(message: "Can't dictate into password fields")
                 endSessionContext()
                 autoDismissError()
+
+            case .notConfirmed:
+                // Only an edit asks for confirmation; a dictation never does.
+                state = .idle
+                endSessionContext()
             }
 
         } catch {
@@ -1047,6 +1057,7 @@ final class DictationCoordinator {
         let outcome = await editProcessor.performEdit(selection: selection.text, instruction: instruction)
         let editMs = Int((CFAbsoluteTimeGetCurrent() - editStart) * 1000)
         var outcomeApplied = false
+        var savedNotInserted = false
 
         switch outcome {
         case .edited(let editedText):
@@ -1064,7 +1075,22 @@ final class DictationCoordinator {
             }
             state = .injecting
             let injectionStart = CFAbsoluteTimeGetCurrent()
-            let result = await injectionService.inject(text: editedText, targetApp: targetApp)
+            // The paste waits when another app has come to the front. By the
+            // time this one is back, a click may have moved the selection:
+            // it's checked again then.
+            var stillSelected: (() async -> Bool)?
+            if selection.method != .clipboardCopy {
+                let selectionCapture = self.selectionCapture
+                let processIdentifier = targetApp?.processIdentifier
+                stillSelected = {
+                    await selectionCapture.isStillSelected(selection.text, processIdentifier: processIdentifier)
+                }
+            }
+            let result = await injectionService.inject(
+                text: editedText,
+                targetApp: targetApp,
+                confirmAfterWaiting: stillSelected
+            )
             let injectionMs = Int((CFAbsoluteTimeGetCurrent() - injectionStart) * 1000)
             let injectionTelemetry = injectionService.lastInjectionTelemetry
             let processingMs = Int((CFAbsoluteTimeGetCurrent() - processingStart) * 1000)
@@ -1115,10 +1141,15 @@ final class DictationCoordinator {
                 )
                 // Leave the selection in place so Cmd+V replaces it.
                 editSelection = nil
+                savedNotInserted = true
                 state = .error(message: "Couldn't insert the edit. Press Cmd+V to paste it.")
                 autoDismissError()
             case .blockedSecureField:
                 state = .error(message: "Can't edit password fields")
+                autoDismissError()
+            case .notConfirmed:
+                editSelection = nil
+                state = .error(message: "The selection changed, so nothing was replaced")
                 autoDismissError()
             }
             endSessionContext()
@@ -1140,6 +1171,7 @@ final class DictationCoordinator {
             endSessionContext()
             autoDismissError()
         }
+        if savedNotInserted { return .savedNotInserted }
         return outcomeApplied ? .applied : .notApplied
     }
 
