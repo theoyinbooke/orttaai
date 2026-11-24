@@ -918,6 +918,12 @@ final class DictationCoordinator {
 
             switch result {
             case .success(let method):
+                // Its sound and what the sound anchors decided, for learning
+                // from what you then change (SoundAnchorLearning).
+                SoundAnchorLearning.shared.remember(
+                    samples: samples, inserted: output.text,
+                    decisions: await transcriptionService.lastSoundDecisions()
+                )
                 editLearner?.watch(insertedText: output.text, targetApp: targetApp)
                 rememberInsertion(output.text)
                 if sessionLostAudio {

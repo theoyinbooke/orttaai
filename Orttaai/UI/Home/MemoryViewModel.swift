@@ -129,6 +129,8 @@ final class MemoryViewModel {
 
         do {
             _ = try databaseManager.deleteDictionaryEntry(id: id)
+            // What the word taught about its sound goes with it.
+            SoundAnchorStore.shared.forget(term: entry.target)
             if editingDictionaryID == id {
                 resetDictionaryDraft()
             }

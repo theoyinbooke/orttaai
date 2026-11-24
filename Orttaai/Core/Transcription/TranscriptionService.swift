@@ -32,6 +32,11 @@ protocol Transcribing: Actor {
     /// Express live segments: decode at the speaker's pauses while recording.
     /// Read when a live session begins.
     func setExpressLiveSegments(_ enabled: Bool)
+    /// Sound anchors (Express): what the last decode judged, learning from a
+    /// fix, and taking up what fixes have taught.
+    func lastSoundDecisions() async -> [SoundAnchorJudge.Decision]
+    func learnSound(from audioSamples: [Float], heard: String, term: String, occurrence: Int) async -> ExpressLearnedSound?
+    func refreshSoundAnchors() async
     func updateSettings(
         language: String,
         computeMode: String,
@@ -45,6 +50,11 @@ extension Transcribing {
 
     /// Engines other than Express decode the way they always do.
     func setExpressLiveSegments(_ enabled: Bool) {}
+
+    /// Engines without Word Boost's model have no sound to judge or learn from.
+    func lastSoundDecisions() async -> [SoundAnchorJudge.Decision] { [] }
+    func learnSound(from audioSamples: [Float], heard: String, term: String, occurrence: Int) async -> ExpressLearnedSound? { nil }
+    func refreshSoundAnchors() async {}
 
     func liveAudioSnapshotStart(capturedSampleCount: Int) -> Int? { 0 }
 
@@ -341,6 +351,7 @@ actor TranscriptionService: Transcribing {
         let wk = try await whisperKitFactory(config)
         whisperKit = wk
         expressBackend = nil
+        SoundAnchorStore.shared.setSoundIsListening(false)
         loadedModelIDValue = modelName
         modelStorageAccess = retainedAccess
         if didDownload {
@@ -379,6 +390,8 @@ actor TranscriptionService: Transcribing {
         loadedModelIDValue = model.modelID
         modelStorageAccess = access
         wordBoostTermCount = await backend.setWordBoost(wordBoostTerms)
+        SoundAnchorStore.shared.setSoundIsListening(wordBoostTermCount > 0)
+        await backend.setSoundAnchors(await SoundAnchorStore.shared.bookForDictation(terms: wordBoostTerms))
         Logger.transcription.info("Model loaded: \(model.modelID)")
     }
 
@@ -394,7 +407,27 @@ actor TranscriptionService: Transcribing {
         wordBoostTerms = terms
         if let expressBackend {
             wordBoostTermCount = await expressBackend.setWordBoost(terms)
+            SoundAnchorStore.shared.setSoundIsListening(wordBoostTermCount > 0)
+            await expressBackend.setSoundAnchors(await SoundAnchorStore.shared.bookForDictation(terms: terms))
         }
+    }
+
+    // MARK: Sound anchors
+
+    /// Hands the transcriber what your fixes have taught since it last asked.
+    func refreshSoundAnchors() async {
+        guard let expressBackend else { return }
+        await expressBackend.setSoundAnchors(await SoundAnchorStore.shared.bookForDictation(terms: wordBoostTerms))
+    }
+
+    /// Each heard word the sound anchors judged in the last decode.
+    func lastSoundDecisions() async -> [SoundAnchorJudge.Decision] {
+        await expressBackend?.soundDecisions() ?? []
+    }
+
+    /// What a fix teaches about how your word sounded in `audioSamples`.
+    func learnSound(from audioSamples: [Float], heard: String, term: String, occurrence: Int) async -> ExpressLearnedSound? {
+        try? await expressBackend?.learnSound(from: audioSamples, heard: heard, term: term, occurrence: occurrence)
     }
 
     /// The root WhisperKit should resolve the tokenizer from; see

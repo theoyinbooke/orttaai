@@ -385,8 +385,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     } catch {
                         Logger.memory.error("Failed to record an edit check: \(error.localizedDescription)")
                     }
+                },
+                review: { inserted, before, caret, after, corrections in
+                    SoundAnchorLearning.shared.review(inserted: inserted, before: before, caret: caret, after: after, suggestions: corrections)
                 }
             )
+            // Fixes teach how your words sound (sound anchors), learned with
+            // the transcriber against your dictionary's words.
+            SoundAnchorLearning.shared.transcription = transcription
+            SoundAnchorLearning.shared.dictionaryTargets = { [weak db] in
+                Set(((try? db?.fetchDictionaryEntries()) ?? []).filter(\.isActive).map { $0.target.lowercased() })
+            }
 
             let coord = DictationCoordinator(
                 audioService: audio,

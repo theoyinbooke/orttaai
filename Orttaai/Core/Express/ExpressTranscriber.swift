@@ -24,6 +24,20 @@ protocol ExpressBackend: Actor {
     func prepareWordBoost(_ audioPrefix: [Float]) async
     /// Drops scores kept for a recording that will not be decoded.
     func discardPreparedWordBoost() async
+    /// What your fixes taught about how your words sound.
+    func setSoundAnchors(_ book: SoundAnchorBook) async
+    /// Each heard word the sound anchors judged in the last decode.
+    func soundDecisions() async -> [SoundAnchorJudge.Decision]
+    /// What a fix teaches: in this recording you said `term` where the
+    /// dictation had `heard`.
+    func learnSound(from audioSamples: [Float], heard: String, term: String, occurrence: Int) async throws -> ExpressLearnedSound?
+}
+
+/// What one fix taught: the ways your word sounded, best first, and how
+/// strongly the sound backed it.
+nonisolated struct ExpressLearnedSound: Sendable, Equatable {
+    var sounds: [String]
+    var margin: Float
 }
 
 extension ExpressBackend {
@@ -32,6 +46,9 @@ extension ExpressBackend {
     }
     func prepareWordBoost(_ audioPrefix: [Float]) async {}
     func discardPreparedWordBoost() async {}
+    func setSoundAnchors(_ book: SoundAnchorBook) async {}
+    func soundDecisions() async -> [SoundAnchorJudge.Decision] { [] }
+    func learnSound(from audioSamples: [Float], heard: String, term: String, occurrence: Int) async throws -> ExpressLearnedSound? { nil }
 }
 
 /// Fluid Speech Mini through FluidAudio. Decoding is fast enough (about 40 ms
@@ -52,6 +69,9 @@ actor ExpressTranscriber: ExpressBackend {
         let directory: URL
         let spotter: CtcKeywordSpotter
         let tokenizer: CtcTokenizer
+        let blankID: Int
+        /// Token id to SentencePiece piece, for spelling what was heard.
+        let pieces: [Int: String]
     }
 
     private struct WordBoostSession {
@@ -98,7 +118,9 @@ actor ExpressTranscriber: ExpressBackend {
                 wordBoostModel = WordBoostModel(
                     directory: wordBoostFolder,
                     spotter: CtcKeywordSpotter(models: ctcModels, blankId: ctcModels.vocabulary.count),
-                    tokenizer: try await CtcTokenizer.load(from: wordBoostFolder)
+                    tokenizer: try await CtcTokenizer.load(from: wordBoostFolder),
+                    blankID: ctcModels.vocabulary.count,
+                    pieces: Self.pieces(in: wordBoostFolder)
                 )
             } catch {
                 Logger.transcription.error("Word Boost model failed to load: \(error.localizedDescription, privacy: .public)")
@@ -196,6 +218,7 @@ actor ExpressTranscriber: ExpressBackend {
         var decoderState = TdtDecoderState.make()
         let result = try await asr.transcribe(samples, decoderState: &decoderState)
         var text = result.text
+        lastSoundDecisions = []
         if let wordBoost, let model = wordBoostModel, let timings = result.tokenTimings, !timings.isEmpty {
             text = await boosted(text, timings: timings, samples: samples, session: wordBoost, model: model)
         }
@@ -224,11 +247,13 @@ actor ExpressTranscriber: ExpressBackend {
                 marginSeconds: 0.5,
                 minSimilarity: max(session.sizeConfig.minSimilarity, session.vocabulary.minSimilarity)
             )
-            let replacements = evidence.candidates.compactMap { candidate -> (Range<Int>, String)? in
+            var replacements = evidence.candidates.compactMap { candidate -> (Range<Int>, String)? in
                 guard candidate.legacyOutcome == .applied,
                       let range = candidate.baseTextUTF8Range,
                       let vocabularyScore = candidate.rawVocabularyCTCScore,
-                      let originalScore = candidate.rawOriginalCTCScore else { return nil }
+                      let originalScore = candidate.rawOriginalCTCScore,
+                      // A word your fixes taught by sound is decided by the sound.
+                      !soundAnchors.decidesBySound(term: candidate.canonicalTerm) else { return nil }
                 let margin = vocabularyScore - originalScore
                 let accepted = WordBoostGuard.accepts(.init(
                     heard: candidate.basePhrase,
@@ -247,6 +272,11 @@ actor ExpressTranscriber: ExpressBackend {
                 return accepted ? (range, candidate.canonicalTerm) : nil
             }
             Logger.transcription.info("Word Boost: \(replacements.count, privacy: .public) of \(evidence.candidates.count, privacy: .public) proposals applied")
+            if !soundAnchors.isEmpty {
+                let anchored = await soundAnchorReplacements(text, timings: timings, samples: samples, scores: scores, model: model)
+                replacements.removeAll { kept in anchored.contains { $0.0.overlaps(kept.0) } }
+                replacements += anchored
+            }
             return Self.applying(replacements, to: evidence.baseText)
         } catch {
             Logger.transcription.error("Word Boost skipped: \(error.localizedDescription, privacy: .public)")
@@ -287,6 +317,136 @@ actor ExpressTranscriber: ExpressBackend {
         let chunk = ScoredChunk(range: range, fingerprint: fingerprint, logProbs: spot.logProbs, frameDuration: spot.frameDuration)
         scoredChunks[range.lowerBound] = chunk
         return chunk
+    }
+
+    // MARK: Sound anchors
+
+    /// What your fixes taught about how your words sound (SoundAnchors):
+    /// "email" written as Eimailar only where the sound says Eimailar.
+    private var soundAnchors = SoundAnchorBook()
+    /// Each heard word the anchors judged in the last decode.
+    private var lastSoundDecisions: [SoundAnchorJudge.Decision] = []
+
+    func setSoundAnchors(_ book: SoundAnchorBook) {
+        soundAnchors = book
+    }
+
+    func soundDecisions() -> [SoundAnchorJudge.Decision] {
+        lastSoundDecisions
+    }
+
+    private func soundAnchorReplacements(
+        _ text: String,
+        timings: [TokenTiming],
+        samples: [Float],
+        scores: (logProbs: [[Float]], frameDuration: Double),
+        model: WordBoostModel
+    ) async -> [(Range<Int>, String)] {
+        let words = SoundWord.words(fromTokens: timings.map { ($0.token, $0.startTime, $0.endTime) })
+        var (replacements, decisions) = SoundAnchorJudge.judge(soundAnchors, text: text, words: words) { range, heard, sound in
+            guard let window = SoundContrast.window(for: range, in: words, frameDuration: scores.frameDuration, frameCount: scores.logProbs.count) else { return nil }
+            return SoundContrast.margin(scores.logProbs, window: window, heard: heard, term: sound, blank: model.blankID) { model.tokenizer.encode($0) }
+        }
+        // Where the sound check kept the heard word, listen again slowed
+        // down: a fast Eimailar whose ending was swallowed is often heard then.
+        let spellings = SoundAnchorJudge.soundSpellings(soundAnchors)
+        let ranges = SoundAnchorJudge.utf8Ranges(of: words, in: text)
+        for index in decisions.indices where !decisions[index].applied {
+            guard let range = decisions[index].wordRange, range.count == 1, let utf8 = ranges[range.lowerBound],
+                  !replacements.contains(where: { $0.0.overlaps(utf8) }),
+                  await heardWhenSlowed(range, words: words, samples: samples, heard: decisions[index].heard,
+                                        term: decisions[index].term, spellings: spellings) else { continue }
+            replacements.append((utf8, decisions[index].term))
+            decisions[index].applied = true
+            decisions[index].margin = SoundAnchorJudge.slowListenMargin
+        }
+        lastSoundDecisions = decisions
+        // Scores only, never what was said.
+        let scoresText = decisions.map { String(format: "%@%.1f", $0.applied ? "+" : "kept ", $0.margin) }.joined(separator: ", ")
+        Logger.transcription.info("Sound anchors: \(decisions.filter(\.applied).count, privacy: .public) of \(decisions.count, privacy: .public) heard words written your way (\(scoresText, privacy: .public))")
+        return replacements
+    }
+
+    /// The heard word and two words either side, slowed with the pitch kept
+    /// and transcribed again: whether your word was heard.
+    private func heardWhenSlowed(_ range: Range<Int>, words: [SoundWord], samples: [Float], heard: String, term: String, spellings: [String: String]) async -> Bool {
+        let lower = max(0, range.lowerBound - 2), upper = min(words.count - 1, range.upperBound + 1)
+        let start = max(0, Int((words[lower].start - 0.3) * Double(Self.sampleRate)))
+        let end = min(samples.count, Int((words[upper].end + 0.3) * Double(Self.sampleRate)))
+        guard start < end else { return false }
+        let window = Array(samples[start..<end])
+        for rate in SoundAnchorJudge.slowListenRates {
+            guard var slowed = SlowListen.stretched(window, rate: rate) else { return false }
+            if slowed.count < Self.minimumSampleCount { slowed += [Float](repeating: 0, count: Self.minimumSampleCount - slowed.count) }
+            var state = TdtDecoderState.make()
+            guard let result = try? await asr.transcribe(slowed, decoderState: &state) else { return false }
+            if SoundAnchorJudge.slowListenHeard(SoundContrast.key(result.text), heard: heard, term: term, spellings: spellings) { return true }
+        }
+        return false
+    }
+
+    /// Learns from a fix: in this recording you said `term` where the
+    /// dictation had `heard` (its `occurrence`-th time, from 0). Nil without
+    /// Word Boost's model or when the heard words aren't found.
+    func learnSound(from audioSamples: [Float], heard: String, term: String, occurrence: Int) async throws -> ExpressLearnedSound? {
+        guard let model = wordBoostModel, let session = wordBoost else { return nil }
+        var samples = ExpressAudioConditioner.liftingQuietTail(audioSamples)
+        if samples.count < Self.minimumSampleCount {
+            samples += [Float](repeating: 0, count: Self.minimumSampleCount - samples.count)
+        }
+        var decoderState = TdtDecoderState.make()
+        let result = try await asr.transcribe(samples, decoderState: &decoderState)
+        let words = SoundWord.words(fromTokens: (result.tokenTimings ?? []).map { ($0.token, $0.startTime, $0.endTime) })
+        let found = SoundContrast.occurrences(of: heard, in: words)
+        guard !found.isEmpty else { return nil }
+        let range = found[min(max(0, occurrence), found.count - 1)]
+        var chunks: [[[Float]]] = []
+        var frameDuration: Double?
+        for chunk in WordBoostChunks.chunks(forSampleCount: samples.count) {
+            let spot = try await model.spotter.spotKeywordsWithLogProbs(
+                audioSamples: Array(samples[chunk]), customVocabulary: session.vocabulary, minScore: nil
+            )
+            chunks.append(spot.logProbs)
+            if frameDuration == nil { frameDuration = spot.frameDuration }
+        }
+        guard let frameDuration else { return nil }
+        let logProbs = WordBoostChunks.stitch(chunks, frameDuration: frameDuration)
+        var options = SoundAnchorJudge.soundOptions(heard: heard, term: term)
+        if let spelled = Self.spelling(of: range, in: words, logProbs: logProbs, model: model),
+           SoundAnchorJudge.isPlausibleSound(spelled, heard: heard, term: term) { options.append(spelled) }
+        let heardText = words[range].map(\.text).joined(separator: " ")
+        guard let window = SoundContrast.window(for: range, in: words, frameDuration: frameDuration, frameCount: logProbs.count) else { return nil }
+        var scored: [(String, Float)] = []
+        for option in Set(options.map { $0.lowercased() }) {
+            if let margin = SoundContrast.margin(logProbs, window: window, heard: heardText, term: option, blank: model.blankID, encode: { model.tokenizer.encode($0) }) {
+                scored.append((option, margin))
+            }
+        }
+        scored.sort { $0.1 > $1.1 }
+        guard let best = scored.first else { return nil }
+        return ExpressLearnedSound(sounds: scored.prefix(SoundAnchorJudge.soundsLearnedPerFix).map(\.0), margin: best.1)
+    }
+
+    /// The CTC model's own best path through the recording, lined up with
+    /// the speech model's words: how `range` sounded, spelled its way.
+    private static func spelling(of range: Range<Int>, in words: [SoundWord], logProbs: [[Float]], model: WordBoostModel) -> String? {
+        var pieces: [Int] = []
+        var previous = -1
+        for row in logProbs {
+            guard let best = row.indices.max(by: { row[$0] < row[$1] }) else { continue }
+            if best != previous, best != model.blankID { pieces.append(best) }
+            previous = best
+        }
+        let text = pieces.compactMap { model.pieces[$0] }.joined().replacingOccurrences(of: "▁", with: " ").lowercased()
+        return SoundContrast.spelling(of: range, in: words, spelled: text.split(separator: " ").map(String.init))
+    }
+
+    private static func pieces(in folder: URL) -> [Int: String] {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("vocab.json")),
+              let table = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        var pieces: [Int: String] = [:]
+        for (key, piece) in table { if let id = Int(key) { pieces[id] = piece } }
+        return pieces
     }
 
     /// Replaces UTF-8 byte ranges of `text` with terms, keeping punctuation
