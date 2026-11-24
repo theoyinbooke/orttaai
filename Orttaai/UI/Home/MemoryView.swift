@@ -644,9 +644,11 @@ struct MemoryView: View {
             }
             .frame(width: 84, alignment: .leading)
 
-            Text(suggestion.candidateSource)
+            // A word learned by its sound is suggested as itself.
+            let isNewWord = suggestion.candidateSource.caseInsensitiveCompare(suggestion.candidateTarget) == .orderedSame
+            Text(isNewWord ? "New word" : suggestion.candidateSource)
                 .font(.Orttaai.secondary)
-                .foregroundStyle(Color.Orttaai.textPrimary)
+                .foregroundStyle(isNewWord ? Color.Orttaai.textTertiary : Color.Orttaai.textPrimary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
