@@ -50,6 +50,16 @@ nonisolated enum EditInstructionClassifier {
         "text", "selection", "paragraph", "paragraphs", "sentence", "sentences"
     ]
 
+    /// "Text" names the selection only after one of these ("fix the text").
+    /// Elsewhere it's a message or a verb ("write a text to mom", "text me").
+    static let textPointers: Set<String> = [
+        "the", "this", "that", "these", "those", "my", "selected", "whole", "entire", "above", "following"
+    ]
+
+    /// "On the list", "to my list": a list things go on, not a format.
+    static let listPlaces: Set<String> = ["to", "on", "onto", "from", "off"]
+    static let listOwners: Set<String> = ["the", "my", "our", "your", "their", "his", "her"]
+
     /// Short commands that are instructions only as the whole utterance.
     static let wholeCommands: Set<[String]> = [
         ["fix", "this"], ["fix", "it"], ["fix", "that"],
@@ -92,6 +102,17 @@ nonisolated enum EditInstructionClassifier {
         guard commonVerbs.contains(verb) else { return false }
         // "Make sure you call her" is a sentence, not a command.
         if verb == "make", rest.first == "sure" { return false }
-        return rest.contains(where: qualityWords.contains)
+        return words.indices.dropFirst().contains { index in
+            let word = words[index]
+            guard qualityWords.contains(word) else { return false }
+            switch word {
+            case "text":
+                return textPointers.contains(words[index - 1])
+            case "list":
+                return !(index >= 2 && listOwners.contains(words[index - 1]) && listPlaces.contains(words[index - 2]))
+            default:
+                return true
+            }
+        }
     }
 }

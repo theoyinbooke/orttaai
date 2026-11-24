@@ -25,7 +25,12 @@ final class EditInstructionClassifierTests: XCTestCase {
             "Fix it",
             "Summarize in three bullets",
             "Rewrite for a five year old",
-            "Summarize the text"
+            "Summarize the text",
+            "Fix the text.",
+            "Clean up this text",
+            "Make it a list",
+            "Format the list",
+            "Put these in a list"
         ]
         for instruction in instructions {
             XCTAssertTrue(EditInstructionClassifier.isInstruction(instruction), instruction)
@@ -53,6 +58,13 @@ final class EditInstructionClassifierTests: XCTestCase {
             "Make this happen.",
             "Add this to my cart.",
             "Fix it before the demo tomorrow.",
+            // "List" as somewhere things go, and "text" as a message.
+            "Put it on the list.",
+            "Add milk to the list",
+            "Remove me from the list",
+            "Add her to my list for Friday",
+            "Change the meeting to three and text me",
+            "Write a text to mom",
             // Searches that start with an edit verb.
             "translate hello into Spanish",
             "summarize the history of Rome",
