@@ -25,6 +25,13 @@ enum EditCommandOutcome: Equatable {
 /// live LLM.
 protocol EditCommandProcessing: AnyObject {
     func performEdit(selection: String, instruction: String) async -> EditCommandOutcome
+    /// Loads the edit model if it has gone idle. Called when an edit
+    /// starts recording, so the model loads while the instruction is spoken.
+    func warmIfIdle()
+}
+
+extension EditCommandProcessing {
+    func warmIfIdle() {}
 }
 
 /// Applies a spoken instruction to selected text through the local polish LLM
@@ -38,16 +45,87 @@ final class EditCommandProcessor: EditCommandProcessing {
     /// Whether the breaker last tripped because no model answered at all, as
     /// opposed to a slow or bad answer. Only the first means "unavailable".
     private var lastTripWasUnreachable = false
+    /// The model that last answered, and when: the local server keeps it
+    /// loaded for `keepAlive` after that.
+    private var lastAnswer: (key: String, at: Date)?
+    private var warmTask: Task<Void, Never>?
+    private let now: () -> Date
 
-    init(settings: AppSettings, llmClient: (any LocalLLMServing)? = nil) {
+    /// A model counts as still loaded for this long after it answered;
+    /// under the five minutes the server is asked to keep it.
+    static let loadedFor: TimeInterval = 4 * 60
+    /// How long a model may take to load, on top of the edit's own time. A
+    /// model the server has unloaded takes several seconds to come back, and
+    /// counting that against the edit made the first edit fail.
+    static let modelLoadAllowanceMs = 14_000
+
+    init(settings: AppSettings, llmClient: (any LocalLLMServing)? = nil, now: @escaping () -> Date = Date.init) {
         self.settings = settings
         self.injectedClient = llmClient
+        self.now = now
     }
 
     /// Resolved per request so switching providers takes effect immediately.
     /// Edits ride the same local-only provider policy as polish.
     private var llmClient: any LocalLLMServing {
         injectedClient ?? settings.polishLLMClient
+    }
+
+    /// How long the server keeps the model after an edit. The server goes by
+    /// its last request, so when Text Polish runs on this same model the
+    /// edit asks for polish's time: asking for less would unload a model
+    /// polish still counts as loaded.
+    private var keepAlive: String {
+        settings.localLLMPolishEnabled && settings.usesLocalLLMPolish
+            ? LocalLLMTextProcessor.polishKeepAlive
+            : "5m"
+    }
+
+    private func modelKey(_ model: String) -> String {
+        "\(settings.polishLLMEndpoint)|\(model)"
+    }
+
+    private func isLoaded(_ key: String) -> Bool {
+        guard let lastAnswer, lastAnswer.key == key else { return false }
+        return now().timeIntervalSince(lastAnswer.at) < Self.loadedFor
+    }
+
+    func warmIfIdle() {
+        let model = settings.normalizedLocalLLMPolishModel
+        guard !model.isEmpty, warmTask == nil else { return }
+        let key = modelKey(model)
+        guard !isLoaded(key) else { return }
+        let client = llmClient
+        let endpoint = settings.polishLLMEndpoint
+        let keepAlive = self.keepAlive
+        let breaker = circuitBreaker
+        warmTask = Task { [weak self] in
+            defer { self?.warmTask = nil }
+            // Not while backing off from a server that isn't there.
+            guard await breaker.canAttempt() else { return }
+            do {
+                let elapsedMs = try await client.warmModel(
+                    baseURLString: endpoint,
+                    model: model,
+                    timeoutMs: Self.modelLoadAllowanceMs,
+                    keepAlive: keepAlive
+                )
+                self?.lastAnswer = (key, self?.now() ?? Date())
+                Logger.ai.info("Warmed the edit model [model=\(model), elapsedMs=\(elapsedMs)]")
+            } catch {
+                Logger.ai.debug("Couldn't warm the edit model: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// The selection's own leading and trailing whitespace, put back around
+    /// the edit. A triple-click selects a paragraph with its line break;
+    /// pasting the edit without it joins the next paragraph onto this one.
+    static func keepingOuterWhitespace(of selection: String, around edited: String) -> String {
+        let leading = selection.prefix(while: \.isWhitespace)
+        guard leading.count < selection.count else { return edited }
+        let trailing = String(selection.reversed().prefix(while: \.isWhitespace).reversed())
+        return String(leading) + edited + trailing
     }
 
     func performEdit(selection: String, instruction: String) async -> EditCommandOutcome {
@@ -73,11 +151,20 @@ final class EditCommandProcessor: EditCommandProcessing {
             return lastTripWasUnreachable ? .unavailable(reason: reason) : .failed(reason: reason)
         }
 
+        // A load started when the edit began recording finishes first, and
+        // has then had its time.
+        var loadAllowanceMs = Self.modelLoadAllowanceMs
+        if let warmTask {
+            await warmTask.value
+            loadAllowanceMs = 0
+        }
+
         let prompt = Self.makeEditPrompt(selection: normalizedSelection, instruction: normalizedInstruction)
+        let key = modelKey(model)
         let timeoutMs = Self.effectiveTimeoutMs(
             requestedTimeoutMs: AppSettings.editCommandTimeoutMs,
             model: model
-        )
+        ) + (isLoaded(key) ? 0 : loadAllowanceMs)
         let numPredict = Self.numPredictTokens(selectionLength: normalizedSelection.count)
         let startedAt = Date()
         Logger.ai.debug("Edit command request started [model=\(model), selectionChars=\(normalizedSelection.count), timeoutMs=\(timeoutMs)]")
@@ -94,8 +181,9 @@ final class EditCommandProcessor: EditCommandProcessing {
                 temperature: 0,
                 numPredict: numPredict,
                 numContext: nil,
-                keepAlive: "5m"
+                keepAlive: keepAlive
             )
+            lastAnswer = (key, now())
 
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
             guard let editedText = Self.sanitizeEditOutput(
@@ -116,7 +204,7 @@ final class EditCommandProcessor: EditCommandProcessing {
                 return .unchanged
             }
             Logger.ai.debug("Edit command applied [model=\(model), elapsedMs=\(elapsedMs)]")
-            return .edited(text: editedText)
+            return .edited(text: Self.keepingOuterWhitespace(of: selection, around: editedText))
         } catch {
             let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
             Logger.ai.debug("Edit command failed [model=\(model), elapsedMs=\(elapsedMs)]: \(error.localizedDescription)")

@@ -750,6 +750,60 @@ final class TextInjectionServiceTests: XCTestCase {
         XCTAssertEqual(clipboard.stringToReturn, "Copied while waiting", "and put back after the paste")
     }
 
+    func testReplacementIsNotPastedWhenItsSelectionChangedWhileWaiting() async throws {
+        let app = try standInApp()
+        inspector.detailsResult = normalDetails()
+        clipboard.restoredStringToReturn = "Previous clipboard"
+        let back = Date().addingTimeInterval(0.3)
+        let service = makeService(inFront: { Date() >= back })
+
+        let result = await service.inject(text: "the original", targetApp: app, confirmAfterWaiting: { false })
+
+        XCTAssertEqual(result, .notConfirmed)
+        XCTAssertEqual(keyPoster.pasteChordCount, 0, "Pasting would add the edit beside the text it was for")
+        XCTAssertEqual(clipboard.stringToReturn, "Previous clipboard", "The clipboard is put back")
+    }
+
+    func testReplacementIsPastedWhenItsSelectionIsStillThereAfterWaiting() async throws {
+        let app = try standInApp()
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        keyPoster.onPasteChord = { [inspector] _ in
+            inspector?.simulatedFieldValue = "the original"
+        }
+        let back = Date().addingTimeInterval(0.3)
+        let service = makeService(inFront: { Date() >= back })
+        var asked = 0
+
+        let result = await service.inject(text: "the original", targetApp: app, confirmAfterWaiting: {
+            asked += 1
+            return true
+        })
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(asked, 1)
+        XCTAssertEqual(keyPoster.pasteChordCount, 1)
+    }
+
+    func testNothingIsAskedWhenTheAppNeverLeftTheFront() async throws {
+        let app = try standInApp()
+        inspector.detailsResult = normalDetails()
+        inspector.simulatedFieldValue = ""
+        keyPoster.onPasteChord = { [inspector] _ in
+            inspector?.simulatedFieldValue = "the original"
+        }
+        let service = makeService(inFront: { true })
+        var asked = 0
+
+        let result = await service.inject(text: "the original", targetApp: app, confirmAfterWaiting: {
+            asked += 1
+            return false
+        })
+
+        XCTAssertEqual(result, .success(method: .paste))
+        XCTAssertEqual(asked, 0, "The caller checked just before; only a wait makes that stale")
+    }
+
     func testFieldThatTurnedSecureWhileWaitingIsNotTypedInto() async throws {
         let app = try standInApp()
         inspector.detailsResult = normalDetails()

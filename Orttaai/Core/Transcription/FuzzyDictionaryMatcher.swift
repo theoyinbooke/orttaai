@@ -53,6 +53,17 @@ nonisolated enum EnglishLexicon {
     /// must not assume an unlisted word is unusual.
     static var isAvailable: Bool { !words.isEmpty }
 
+    /// Every listed word, for looking up which everyday word a name of yours
+    /// starts like (SoundAnchorGuesses).
+    static var listedWords: Set<String> { words }
+
+    /// `word` (lowercase) is in the list itself, not only as an inflection:
+    /// "email" and "sounder" are, "emailer" isn't.
+    static func isListedWord(_ word: String) -> Bool {
+        if word.count < 3 { return shortWords.contains(word) }
+        return words.contains(word) || supplementalWords.contains(word)
+    }
+
     /// `word` must already be lowercase. Accepts listed words and their
     /// regular inflections (verses, codes, stopped, running).
     static func isRealWord(_ word: String) -> Bool {

@@ -231,13 +231,17 @@ struct LearnedWordToastView: View {
                         .foregroundStyle(Color(hex: "E8B45A"))
                         .lineLimit(1)
                     HStack(spacing: 6) {
-                        Text(heard)
-                            .foregroundStyle(Color.Orttaai.textSecondary)
-                            .strikethrough(color: Color.Orttaai.textTertiary)
-                            .layoutPriority(1)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.Orttaai.textTertiary)
+                        // A word learned by its sound comes as itself: no
+                        // "heard -> written" pair to show.
+                        if heard.caseInsensitiveCompare(corrected) != .orderedSame {
+                            Text(heard)
+                                .foregroundStyle(Color.Orttaai.textSecondary)
+                                .strikethrough(color: Color.Orttaai.textTertiary)
+                                .layoutPriority(1)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Color.Orttaai.textTertiary)
+                        }
                         Text(corrected)
                             .fontWeight(.bold)
                             .foregroundStyle(Color.Orttaai.textPrimary)
@@ -296,6 +300,8 @@ struct LearnedWordToastView: View {
             withAnimation(.linear(duration: MilestoneToastController.visibleSeconds)) { remaining = 0 }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Learned a word: \(heard) to \(corrected). Review in Memory, Suggestions.")
+        .accessibilityLabel(heard.caseInsensitiveCompare(corrected) == .orderedSame
+            ? "Learned a word: \(corrected). Review in Memory, Suggestions."
+            : "Learned a word: \(heard) to \(corrected). Review in Memory, Suggestions.")
     }
 }

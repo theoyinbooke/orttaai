@@ -205,6 +205,9 @@ final class RuleBasedTextProcessor: TextProcessor, VocabularyBiasProviding {
         for entry in orderedEntries where entry.isActive {
             let source = entry.source.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !source.isEmpty else { continue }
+            // "email" -> Eimailar as a text rule rewrote every "email" you
+            // said; with Express listening, the sound decides each one.
+            guard !SoundAnchorStore.shared.decidesBySound(source: source, target: entry.target) else { continue }
 
             let escapedSource = NSRegularExpression.escapedPattern(for: source)
             let pattern = "(?<![\\p{L}\\p{N}_])\(escapedSource)(?![\\p{L}\\p{N}_])"

@@ -44,6 +44,9 @@ nonisolated enum WordBoostGuard {
     /// on margin alone because a word like "I'm" or "mini" was missing from
     /// the word list.
     static let minimumSpellingSimilarity: Float = 0.5
+    /// An ordinary word plus an everyday ending word must sound this much
+    /// more like the term to be merged into it.
+    static let everydayEndingMargin: Float = 2.0
     /// A near-spelled join may differ by this many letters...
     static let nearSpelledMaxEdits = 2
     /// ...when the term is at least this long, so code -> Xcode never counts.
@@ -66,11 +69,27 @@ nonisolated enum WordBoostGuard {
         if spellingSimilarity(heardLetters, termLetters) < minimumSpellingSimilarity {
             return false
         }
+        // One ordinary word is what was said: changes -> ChatGpt and
+        // header -> Hetzner passed the margin on the iPhone, and in the
+        // gauntlet set no single ordinary word was ever rightly replaced.
+        // Where a single word should become one of yours ("email" said as
+        // Eimailar), the sound anchors decide it by the sound.
+        if heardWords.count == 1, EnglishLexicon.isAvailable, EnglishLexicon.isRealWord(heardWords[0]) {
+            return false
+        }
         // "keep LM Studio" -> "LM Studio" would delete a spoken word.
         if heardWords.count > termWords.count, termWords.allSatisfy(heardWords.contains) {
             return false
         }
         if candidate.acousticMargin < marginFloor {
+            return false
+        }
+        // "an email or a text" -> "an Eimailar text": an ordinary word and an
+        // everyday ending word ("or", "a", "at") sound almost exactly like a
+        // longer name, so they're merged only on clearly better sound.
+        if heardWords.count > 1, let last = heardWords.last, SoundAnchorJudge.soundsLikeAnEnding.contains(last),
+           EnglishLexicon.isAvailable, heardWords.allSatisfy(EnglishLexicon.isRealWord),
+           candidate.acousticMargin < everydayEndingMargin {
             return false
         }
         if EnglishLexicon.isAvailable, heardWords.allSatisfy(EnglishLexicon.isRealWord) {

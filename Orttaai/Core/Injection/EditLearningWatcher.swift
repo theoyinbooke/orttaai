@@ -77,6 +77,11 @@ final class EditLearningWatcher: InsertedTextWatching {
     /// suggestions.
     private let save: ([LearningSuggestionDraft]) -> Int
     private let report: (EditCheckOutcome, String?, Int) -> Void
+    /// Sees every change to a finished dictation before suggestions are
+    /// made, and returns the suggestions still worth making (sound anchors:
+    /// SoundAnchorLearning). Arguments: inserted text, field before, caret,
+    /// field after, the name-like corrections found.
+    private let review: ((String, String, Int?, String, [EditCorrection]) -> [EditCorrection])?
     private let sleep: (Duration) async -> Void
     private var current: Watch?
     private var polling: Task<Void, Never>?
@@ -88,12 +93,14 @@ final class EditLearningWatcher: InsertedTextWatching {
         settings: AppSettings,
         save: @escaping ([LearningSuggestionDraft]) -> Int,
         report: @escaping (EditCheckOutcome, String?, Int) -> Void = { _, _, _ in },
+        review: ((String, String, Int?, String, [EditCorrection]) -> [EditCorrection])? = nil,
         sleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     ) {
         self.reader = reader
         self.settings = settings
         self.save = save
         self.report = report
+        self.review = review
         self.sleep = sleep
     }
 
@@ -227,12 +234,15 @@ final class EditLearningWatcher: InsertedTextWatching {
         guard let watch = current else { return }
         current = nil
 
-        let corrections = EditCorrectionFinder.corrections(
+        var corrections = EditCorrectionFinder.corrections(
             inserted: watch.inserted,
             before: watch.baseline.text ?? "",
             insertionEndUTF16: watch.baseline.caretUTF16,
             after: watch.latestText
         )
+        if let review {
+            corrections = review(watch.inserted, watch.baseline.text ?? "", watch.baseline.caretUTF16, watch.latestText, corrections)
+        }
         guard !corrections.isEmpty else {
             let edited = EditCorrectionFinder.comparable(watch.latestText)
                 != EditCorrectionFinder.comparable(watch.baseline.text ?? "")

@@ -35,11 +35,15 @@ nonisolated enum EditCorrectionFinder {
     /// `before` is the field right after the dictation `inserted` went in,
     /// with the caret at `insertionEndUTF16` (the end of the inserted text);
     /// `after` is the same field later.
+    /// - Parameter nameLikeOnly: false for every small replacement inside
+    ///   the dictation, as the sound anchors want them ("email" fixed to
+    ///   Eimailar, or Eimailar put back to "email").
     static func corrections(
         inserted: String,
         before rawBefore: String,
         insertionEndUTF16 rawCaret: Int?,
-        after rawAfter: String
+        after rawAfter: String,
+        nameLikeOnly: Bool = true
     ) -> [EditCorrection] {
         let inserted = comparable(inserted)
         let before = comparable(rawBefore)
@@ -81,7 +85,9 @@ nonisolated enum EditCorrectionFinder {
 
             let heard = String(before[first.range.lowerBound..<last.range.upperBound])
             let corrected = String(after[correctedFirst.range.lowerBound..<correctedLast.range.upperBound])
-            if isDictionaryWorthy(
+            if !nameLikeOnly, heard != corrected {
+                corrections.append(EditCorrection(heard: heard, corrected: corrected))
+            } else if isDictionaryWorthy(
                 heard: heard,
                 corrected: corrected,
                 correctedWords: correctedWords.map(\.text),
